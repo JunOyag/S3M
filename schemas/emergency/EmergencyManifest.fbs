@@ -1,0 +1,43 @@
+// ---- EmergencyManifest.fbs ----
+// Une instance par user_id en détresse. Chiffrée avec K_emergency_content ;
+// ancrée en DHT sous emergency_dht_key = H(K_attach || "emergency").
+// Ne référence jamais de Connecteur émetteur : n'importe quel Connecteur du
+// même user_id peut la découvrir et la réconcilier (§3.12.4).
+// Source: ST-P2P-STORAGE-2026-V2.md §3.12.4
+namespace P2PStorage.Emergency;
+
+/// Partenaire de proximité sollicité pour un dépôt d'urgence.
+table EmergencyPartner {
+  partner_id: uint16;
+  node_id: [ubyte];
+  ip: string;
+  port: uint16;
+}
+
+/// Bloc de données brut déposé en urgence (aucune parité à ce stade).
+table EmergencyBlockEntry {
+  block_hash: [ubyte];            /// bloc de données brut, chiffré K_block
+  partner_id: uint16;             /// référence dans EmergencyPartner
+}
+
+/// Mutation FS en attente de réconciliation — même forme que QueuedMutation (§3.12.2).
+table EmergencyMutation {
+  timestamp: uint64;
+  op: string;                     /// "write_block" | "update_entry" | "delete_entry"
+  fs_path: string;
+  block_hash: [ubyte];
+  entry: DirectoryEntry;          /// §3.13
+  blocks_to_delete: [[ubyte]];
+}
+
+/// Racine de l'espace de secours pour un utilisateur en détresse.
+table EmergencyManifest {
+  user_id: [ubyte];               /// = pub_user (§2.1), seul identifiant porté — pas de Connecteur émetteur
+  partners: [EmergencyPartner];
+  blocks: [EmergencyBlockEntry];
+  mutations: [EmergencyMutation];
+  base_fs_root_hash: [ubyte];     /// même rôle que WriteQueue.fbs, détection de divergence
+  timestamp: uint64;
+}
+
+root_type EmergencyManifest;

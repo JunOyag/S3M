@@ -1,0 +1,39 @@
+// ---- ContainerFile.fbs ----
+// Stockage physique des blocs sur volume : fichiers de conteneur de taille
+// fixe (4 GiO), un ou plusieurs par propriétaire logique (Utilisateur
+// rattaché, Partenaire de troc, ou dépositaire d'urgence), blocs stockés
+// séquentiellement avec trous cartographiés par bitmap.
+//
+// AJOUT POST-V2 : absent de ST-P2P-STORAGE-2026-V2.md (VolumeConfig, §3.11,
+// ne définissait qu'un point de montage, jamais la disposition physique des
+// blocs dessus). Voir docs/04-protocols/stockage-physique.md pour la
+// justification complète et le détail des algorithmes.
+namespace P2PStorage.Node;
+
+/// Un fichier de conteneur de 4 GiO (65536 slots de 64 KiO chacun),
+/// appartenant à un SEUL propriétaire logique — jamais mélangé entre
+/// propriétaires, pour permettre une suppression en masse rapide (voir
+/// §5.3.3, §3.7.1).
+table ContainerFile {
+  container_id: uint32;          /// identifiant unique, compteur global du Nœud
+  volume_id: uint32;               /// référence VolumeConfig.volume_id — sur quel volume ce conteneur est physiquement placé (un Nœud peut avoir plusieurs volumes, NodeConfig.volumes)
+  owner_type: uint8;              /// 0 = AttachedUser (blocs de données locaux, jamais dispersés) ; 1 = Partner (parité hébergée en réciprocité, troc entrant) ; 2 = EmergencyDepositor (dépôt de secours temporaire, §3.12.4)
+  owner_id: [ubyte];              /// AttachedUser.user_id, PartnerAccount.partner_node_id, ou EmergencyManifest.user_id selon owner_type
+  sequence_number: uint32;        /// rang parmi les conteneurs de ce propriétaire (0, 1, 2, ...) — sert au nommage de fichier
+  slot_count: uint32;             /// nombre de slots (65536 par défaut = 4 GiO / 64 KiO, correspondance exacte)
+  occupied_bitmap: [ubyte];       /// 1 bit par slot (8192 octets pour 65536 slots) ; 0 = libre/trou, 1 = occupé
+  file_path: string;              /// chemin relatif à VolumeConfig.mount_path **du volume désigné par volume_id** — pas d'ambiguïté possible entre plusieurs volumes
+  created_at: uint64;
+}
+
+/// Localisation physique d'un bloc donné. Index LOCAL UNIQUEMENT — jamais
+/// sérialisé dans NodeManifest, jamais publié : trop volumineux pour être
+/// recompacté à chaque mutation (des millions d'entrées possibles, même
+/// problème d'échelle que §3.6). Vit comme enregistrement individuel dans
+/// le cache SQLite/LMDB rapide déjà prévu par §3.5, clé = block_hash.
+/// Décrite ici en FlatBuffers pour la forme de l'enregistrement uniquement.
+table BlockLocation {
+  block_hash: [ubyte];
+  container_id: uint32;           /// référence ContainerFile.container_id
+  slot_index: uint32;              /// position dans le conteneur, 0..slot_count-1
+}

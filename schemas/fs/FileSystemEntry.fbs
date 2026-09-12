@@ -1,0 +1,42 @@
+// ---- FileSystemEntry.fbs ----
+// Encodée dans le contenu EN CLAIR des blocs de données (avant chiffrement K_block).
+// Invisible au Nœud/aux partenaires — jamais transmise ni indexée telle quelle sur le réseau.
+// Source: ST-P2P-STORAGE-2026-V2.md §3.13
+namespace P2PStorage.FS;
+
+/// Métadonnée libre clé/valeur portée par une entrée de répertoire.
+table Metadata {
+  key: string;
+  value: string;
+}
+
+/// Attributs POSIX-like d'une entrée FS.
+table Attributes {
+  permissions: uint16;
+  created_at: uint64;
+  modified_at: uint64;
+}
+
+/// Une entrée (fichier ou sous-répertoire) dans un DirectoryBlock.
+table DirectoryEntry {
+  name: string;
+  size_bytes: uint64;
+  mime_type: string;
+  first_block_hash: [ubyte];      /// hash du premier bloc de données de l'élément référencé
+  attributes: Attributes;
+  encryption_salt: [ubyte];       /// avec key_version, dérive K_block pour tous les blocs de cet élément (§3.8)
+  key_version: uint16;            /// version de master_key utilisée pour ce fichier/répertoire (§3.8)
+  metadata: [Metadata];
+}
+
+/// Bloc de répertoire — chaîné par next_hash au-delà de la capacité d'un bloc (~300 entrées, §3.13).
+table DirectoryBlock {
+  entries: [DirectoryEntry];
+  next_hash: [ubyte];             /// vide/absent si dernier bloc du répertoire
+}
+
+/// Bloc de contenu de fichier — chaîné par next_hash, padding zéro sur le dernier bloc.
+table FileBlock {
+  data: [ubyte];                  /// fragment brut (padding zéro sur le dernier bloc jusqu'à 64 KiO)
+  next_hash: [ubyte];             /// vide/absent si dernier bloc du fichier
+}

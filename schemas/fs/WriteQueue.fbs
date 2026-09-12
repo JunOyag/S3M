@@ -1,0 +1,21 @@
+// ---- WriteQueue.fbs (local Connecteur uniquement, jamais publiée) ----
+// Source: ST-P2P-STORAGE-2026-V2.md §3.12.2
+namespace P2PStorage.FS;
+
+/// Une mutation FS en attente de synchronisation avec le Nœud.
+table QueuedMutation {
+  timestamp: uint64;
+  op: string;                     /// "write_block" | "update_entry" | "delete_entry"
+  fs_path: string;                /// chemin logique concerné, pour la résolution de conflit
+  block_hash: [ubyte];            /// pour "write_block" : bloc déjà chiffré en attente d'envoi
+  entry: DirectoryEntry;          /// pour "update_entry" : nouvelle entrée FS (§3.13)
+  blocks_to_delete: [[ubyte]];    /// pour "delete_entry" : chaîne complète à tombstoner (§4.3)
+}
+
+/// File d'attente locale complète, jamais publiée sur la DHT.
+table WriteQueue {
+  base_fs_root_hash: [ubyte];     /// fs_root_hash connu à la mise en file — détection de divergence (§3.12.2)
+  mutations: [QueuedMutation];
+}
+
+root_type WriteQueue;

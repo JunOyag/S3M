@@ -1,0 +1,135 @@
+# =============================================================================
+# impl/layers.yml — Phasage architectural de l'implémentation (jugement humain)
+# =============================================================================
+# CONTRAIREMENT à `manifest.yml` (refs documentaires, cycliques — voir
+# `scripts/plan.py --graph manifest`) et au graphe des schémas (mécanique,
+# acyclique — voir `scripts/plan.py --graph schema`), ce fichier n'est PAS
+# dérivé automatiquement. C'est un phasage architectural écrit à la main :
+# aucun algorithme de graphe ne peut décider qu'"implémenter la détection de
+# fraude PoS suppose que le troc 1:1 existe déjà" — c'est un jugement de
+# dépendance réelle entre composants, pas une relation textuelle entre pages.
+#
+# `component` (ajouté après la décision de stack, voir impl/TECH_STACK.md) :
+#   - core      : impl/core (Rust natif + WASM) — logique pure partagée
+#   - node      : impl/node (Rust natif) — démon hébergeur uniquement
+#   - connector : impl/connector (TypeScript/Bun) — client uniquement
+#   - node+connector : logique existant des deux côtés, chacun dans son
+#                       propre langage (pas de code partagé au-delà du
+#                       "core" commun — ex. chaque camp gère sa propre
+#                       moitié d'un protocole à deux acteurs)
+#
+# À curer/ajuster par l'équipe (humaine ou agent orchestrateur) avant de
+# lancer un chantier — ce premier jet reflète la lecture de la spec telle
+# qu'elle existe au moment de sa rédaction, pas une vérité absolue.
+#
+# Usage attendu : une phase ne démarre qu'une fois la précédente livrée
+# (testée, verified_by peuplé — voir AGENTS.md). Au sein d'une phase, les
+# id listés sont parallélisables entre agents/équipes différents — sous
+# réserve qu'un même `component` ne soit pas travaillé par deux agents sur
+# des fichiers qui se recoupent (voir AGENTS.md §4).
+# =============================================================================
+
+phases:
+
+  - phase: 0
+    name: "Fondations cryptographiques"
+    note: >
+      Fonctions quasi pures (KDF, conversions de clés, VDF) — dépendent de
+      primitives crypto standard, de rien d'autre dans ce projet. Base de
+      tout le reste. Entièrement dans impl/core (Rust), compilé natif pour
+      le Nœud et en WASM pour le Connecteur — voir impl/TECH_STACK.md.
+    ids:
+      - { id: network.vdf-identity,     component: core }
+      - { id: crypto.k-attach,          component: core }
+      - { id: crypto.k-block,           component: core }
+      - { id: crypto.k-self,            component: core }
+      - { id: crypto.k-node-self,       component: core }
+      - { id: crypto.k-dispersal,       component: core }
+      - { id: crypto.master-key-chain,  component: core }
+
+  - phase: 1
+    name: "Schémas de données (codegen)"
+    note: >
+      Ne pas curer manuellement — utiliser `scripts/plan.py --graph schema`
+      pour l'ordre exact de génération de code (flatc), qui est un vrai DAG
+      mécaniquement fiable, contrairement à ce fichier. flatc émet les
+      types nativement pour Rust (impl/core, impl/node) ET TypeScript
+      (impl/connector) — pas besoin de passer ces types par le pont WASM,
+      voir impl/TECH_STACK.md.
+    ids: []  # volontairement vide, voir la note
+
+  - phase: 2
+    name: "Stockage physique & annuaire réseau"
+    note: >
+      Suppose la Phase 0 (chiffrement des métadonnées publiées) et la
+      Phase 1 (structures sérialisées) disponibles.
+    ids:
+      - { id: protocols.stockage-physique, component: node }
+      - { id: network.dht-directory,       component: node+connector }
+      - { id: network.bootstrap,            component: connector }
+
+  - phase: 3
+    name: "Mécaniques coeur du protocole"
+    note: >
+      Le "moteur" : découpage/reconstruction Reed-Solomon, arbre d'index,
+      encodage FS, adressage par contenu. Suppose Phases 0-2.
+    ids:
+      - { id: protocols.erasure-coding,               component: core }
+      - { id: protocols.index-adaptatif,               component: node+connector }
+      - { id: protocols.dispersion-transactionnelle,    component: node }
+      - { id: protocols.fs-structure,                    component: connector }
+      - { id: protocols.tombstones,                       component: node }
+
+  - phase: 4
+    name: "Accès applicatif & résilience client"
+    note: >
+      Tout ce qui touche à la disponibilité perçue par le Connecteur en
+      cas de panne partielle. Suppose Phase 3 fonctionnelle et testée.
+    ids:
+      - { id: protocols.acces-applicatif,   component: connector }
+      - { id: protocols.integrite-lecture,   component: connector }
+      - { id: protocols.write-queue,          component: connector }
+      - { id: protocols.quota-sync,            component: node+connector }
+      - { id: protocols.espace-secours,         component: node+connector }
+      - { id: protocols.volatilite-reparation,   component: node }
+      - { id: protocols.migration-noeud,          component: node+connector }
+      - { id: protocols.suppression-dispersal,     component: node }
+
+  - phase: 5
+    name: "Sécurité active"
+    note: >
+      PoS, détection de fraude, rupture bilatérale — a besoin que le troc
+      1:1 et la dispersion (Phase 3-4) existent déjà pour avoir quelque
+      chose à challenger/rompre.
+    ids:
+      - { id: securite.pos-challenges,           component: node }
+      - { id: securite.blacklist-fraude,          component: node }
+      - { id: securite.incidents-compromissions,   component: node+connector }
+      - { id: securite.integrite-autoreparation,    component: node+connector }
+
+  - phase: 6
+    name: "Déploiement & opérations"
+    note: >
+      Dashboards, disaster recovery, packaging — suppose l'essentiel du
+      système fonctionnel pour avoir quelque chose à opérer/restaurer.
+    ids:
+      - { id: deploiement.disaster-recovery,      component: node+connector }
+      - { id: deploiement.formats-serialisation,   component: core }
+      - { id: deploiement.packaging,                component: node+connector }
+
+  - phase: 7
+    name: "Agilité cryptographique (post-quantique) — optionnel pour un MVP"
+    note: >
+      Peut être développé en parallèle des phases 5-6 par une équipe
+      dédiée une fois la Phase 0 stable, puisqu'il s'agit d'un mode
+      alternatif de la même primitive (K_attach) plutôt que d'une
+      dépendance stricte sur les phases intermédiaires. Marqué "optionnel"
+      car absent des exigences d'un MVP fonctionnel. Entièrement core
+      (Rust) : ce sont des primitives cryptographiques, pas de la logique
+      réseau ou de stockage.
+    ids:
+      - { id: agilite.kem-vs-nike,         component: core }
+      - { id: agilite.k-attach-kem,         component: core }
+      - { id: agilite.signature-mldsa,       component: core }
+      - { id: agilite.tag-hybride,            component: core }
+      - { id: agilite.migration-vehicule,      component: node+connector }

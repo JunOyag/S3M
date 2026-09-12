@@ -1,0 +1,66 @@
+// ---- NodeManifest.fbs ----
+// Source: ST-P2P-STORAGE-2026-V2.md §3.3 / §3.11
+include "ContainerFile.fbs";
+namespace P2PStorage.Node;
+
+/// Un volume physique monté par le Nœud.
+table VolumeConfig {
+  volume_id: uint32;               /// identifiant stable, unique par Nœud — assigné à la déclaration du volume, référencé par ContainerFile.volume_id (ajout post-V2, cf. ContainerFile.fbs)
+  volume_label: string;           /// identifiant lisible (ex: "disk1")
+  mount_path: string;             /// déclaratif : référence pour l'admin en cas de réinstallation
+  max_capacity_bytes: uint64;
+}
+
+/// Quota alloué à un utilisateur rattaché.
+table UserQuota {
+  user_id: [ubyte];
+  quota_bytes: uint64;
+}
+
+/// Solde du troc 1:1 avec un partenaire, agrégé Nœud↔Partenaire sur tous les Users (§3.3).
+table PartnerAccount {
+  partner_node_id: [ubyte];
+  blocks_hosted_for_partner: uint64;   /// blocs de CE nœud stockés chez le partenaire (troc sortant)
+  blocks_hosted_by_partner: uint64;    /// blocs du partenaire stockés par CE nœud (troc entrant)
+}
+
+/// Configuration opérationnelle du Nœud.
+table NodeConfig {
+  volumes: [VolumeConfig];
+  default_replication_coefficient: uint8; /// coefficient de redondance = parité / k ; 3 par défaut → N = k + 3k = 4k
+  duree_max_idle_seconds: uint32;   /// délai avant padding zéro d'un paquet incomplet (§4.1)
+  republish_interval: uint32;       /// fréquence de republication DHT Node (§3.9)
+  emergency_reserved_bytes: uint64; /// espace réservé aux dépôts d'urgence de tiers (§3.12.4)
+  emergency_backup_capacity: uint32; /// U_backup : nb max d'utilisateurs externes en détresse acceptés (§3.12.4)
+  user_quotas: [UserQuota];
+  partner_accounts: [PartnerAccount];
+}
+
+/// Utilisateur rattaché à ce Nœud.
+table AttachedUser {
+  user_id: [ubyte];                /// = pub_user (clé publique Ed25519 brute, §2.1)
+  salt: [ubyte];                   /// fixé par le Connecteur à l'attachement, pour re-dériver K_attach
+  attached_at: uint64;
+  key_algorithm: uint8;            /// 0 = Ed25519/X25519 (défaut) ; 1 = ML-DSA/ML-KEM ; 2 = hybride (§8.4)
+  kem_ciphertext: [ubyte];         /// vide si key_algorithm=0 ; sinon ciphertext ML-KEM figé à l'attachement (§8.2)
+}
+
+/// Partenaire exclu suite à une fraude PoS avérée (§5.3.5). Champ additif (§3.5).
+table BlacklistedPartner {
+  partner_node_id: [ubyte];
+  blacklisted_at: uint64;
+  reason: string;                 /// ex: "pos_invalid_response"
+}
+
+/// Racine du manifeste Nœud — chiffrée au repos avec K_node_self dérivée de la seed (§3.8).
+table NodeManifest {
+  node_id: [ubyte];
+  config: NodeConfig;
+  attached_users: [AttachedUser];
+  blacklisted_partners: [BlacklistedPartner];
+  containers: [ContainerFile];     /// stockage physique des blocs — ajout post-V2, voir ContainerFile.fbs
+  timestamp: uint64;
+  schema_version: uint16;
+}
+
+root_type NodeManifest;

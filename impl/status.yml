@@ -1,0 +1,396 @@
+# impl/status.yml — suivi d'implémentation (code), séparé de manifest.yml (doc).
+# Généré une fois par scripts/init_impl_status.py, puis édité manuellement par
+# les agents au fil du chantier. Ne pas régénérer après le lancement du projet
+# (écraserait la progression) — le script refuse d'écraser un fichier existant.
+
+entries:
+  agilite.k-attach-kem:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  agilite.kem-vs-nike:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  agilite.migration-vehicule:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  agilite.signature-mldsa:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  agilite.tag-hybride:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  crypto.k-attach:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  crypto.k-block:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  crypto.k-dispersal:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  crypto.k-node-self:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  crypto.k-self:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  crypto.key-hierarchy:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  crypto.master-key-chain:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  deploiement.disaster-recovery:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  deploiement.formats-serialisation:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  deploiement.packaging:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  dispersal.BlockEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  dispersal.DispersalManifest:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  dispersal.IndexNode:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  dispersal.MasterKeyEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  dispersal.Partner:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  dispersal.Stripe:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  emergency.EmergencyBlockEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  emergency.EmergencyManifest:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  emergency.EmergencyMutation:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  emergency.EmergencyPartner:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  fs.Attributes:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  fs.DirectoryBlock:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  fs.DirectoryEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  fs.FileBlock:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  fs.Metadata:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  fs.QueuedMutation:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  fs.WriteQueue:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.bootstrap:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.dht-directory:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.vdf-identity:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.AttachedUser:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.BlacklistedPartner:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.BlockLocation:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.ContainerFile:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.Mutation:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.MutationLog:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.NodeConfig:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.NodeManifest:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.PartnerAccount:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.StripeRemoval:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.UserQuota:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  node.VolumeConfig:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.acces-applicatif:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.dispersion-transactionnelle:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.erasure-coding:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.espace-secours:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.fs-structure:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.index-adaptatif:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.integrite-lecture:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.migration-noeud:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.quota-sync:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.stockage-physique:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.suppression-dispersal:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.tombstones:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.volatilite-reparation:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.write-queue:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  securite.blacklist-fraude:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  securite.incidents-compromissions:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  securite.integrite-autoreparation:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  securite.pos-challenges:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''

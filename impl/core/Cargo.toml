@@ -1,0 +1,30 @@
+[package]
+name = "p2p-storage-core"
+version = "0.1.0"
+edition = "2021"
+description = "Primitives cryptographiques et structurelles du protocole P2P (ST-P2P-STORAGE-2026-V2), sans I/O réseau ni disque."
+license = "MIT"
+
+# cdylib pour wasm-pack (consommé par impl/connector en WASM, §7.3 du protocole
+# — Connecteur en Bun), rlib pour impl/node (Rust natif).
+[lib]
+name = "p2p_storage_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+hkdf = "0.12"
+sha2 = "0.10"
+thiserror = "1"
+zeroize = { version = "1", features = ["derive"] }
+
+# Activée uniquement avec `--features wasm` (build ciblant impl/connector).
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen"]
+
+[dev-dependencies]
+hex = "0.4"

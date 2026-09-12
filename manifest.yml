@@ -1,0 +1,566 @@
+# =============================================================================
+# manifest.yml — Source de vérité unique du plan documentaire
+# =============================================================================
+# Chaque page (schéma OU narrative) est déclarée UNE FOIS ici :
+#   id       : identifiant stable, cible de tout $ref / lien croisé
+#   kind     : "schema" (1 table FlatBuffers = 1 page) | "narrative" (protocole/procédure)
+#   path     : chemin du fichier .md sous docs/
+#   title    : titre affiché
+#   section  : numéro §X de la spécification d'origine (traçabilité, non normatif)
+#   fbs      : (schema uniquement) "fichier.fbs#Table" — source de vérité des champs
+#   refs     : liste d'id vers lesquels cette page pointe ($ref sortants)
+#   verified_by: liste d'identifiants de test (convention, vide tant qu'aucune
+#                suite de tests n'existe réellement — cf. décision projet)
+#
+# gen_docs.py lit ce fichier pour :
+#   1. générer build/schemas/**/*.schema.json (avec $ref JSON Pointer réels)
+#      à partir des fichiers .fbs référencés par le champ `fbs`
+#   2. générer docs/objects/index.json (id -> path) et la section
+#      "Référencé par" de chaque page, PAR INVERSION du graphe `refs`
+#      (donc jamais renseignée à la main — supprime tout doublon de maintenance)
+#   3. générer le nav MkDocs (ou laisser mkdocs-awesome-pages-plugin le déduire
+#      de l'arborescence, voir mkdocs.yml)
+# =============================================================================
+
+pages:
+
+  # ---------------------------------------------------------------- overview
+  - id: overview.architecture
+    kind: narrative
+    path: 00-overview/architecture.md
+    title: "Vue d'ensemble & Architecture Globale"
+    section: "§1"
+    refs: [protocols.erasure-coding, network.vdf-identity]
+
+  - id: overview.glossary
+    kind: narrative
+    path: 00-overview/glossary.md
+    title: "Glossaire"
+    section: "—"
+    refs: []
+
+  # --------------------------------------------------------------- network/dht
+  - id: network.vdf-identity
+    kind: narrative
+    path: 01-network-dht/vdf-identity.md
+    title: "VDF de Wesolowski — Identités anti-Sybil"
+    section: "§2.1"
+    refs: [securite.blacklist-fraude]
+
+  - id: network.dht-directory
+    kind: narrative
+    path: 01-network-dht/dht-directory.md
+    title: "Annuaire DHT & Entrées Publiées"
+    section: "§2.1, §3.9"
+    refs: [dispersal.DispersalManifest, node.NodeManifest, crypto.k-self, crypto.k-node-self]
+
+  - id: network.bootstrap
+    kind: narrative
+    path: 01-network-dht/bootstrap.md
+    title: "Amorçage (Bootstrapping) & Résolution"
+    section: "§2.2"
+    refs: [network.dht-directory, protocols.write-queue]
+
+  # -------------------------------------------------------- schemas: node.*
+  - id: node.VolumeConfig
+    kind: schema
+    path: 02-schemas/node/VolumeConfig.md
+    title: "VolumeConfig"
+    section: "§3.11"
+    fbs: "schemas/node/NodeManifest.fbs#VolumeConfig"
+    refs: [node.ContainerFile, protocols.stockage-physique, protocols.dispersion-transactionnelle]
+
+  - id: node.UserQuota
+    kind: schema
+    path: 02-schemas/node/UserQuota.md
+    title: "UserQuota"
+    section: "§3.11"
+    fbs: "schemas/node/NodeManifest.fbs#UserQuota"
+    refs: []
+
+  - id: node.PartnerAccount
+    kind: schema
+    path: 02-schemas/node/PartnerAccount.md
+    title: "PartnerAccount"
+    section: "§3.11"
+    fbs: "schemas/node/NodeManifest.fbs#PartnerAccount"
+    refs: []
+
+  - id: node.NodeConfig
+    kind: schema
+    path: 02-schemas/node/NodeConfig.md
+    title: "NodeConfig"
+    section: "§3.11"
+    fbs: "schemas/node/NodeManifest.fbs#NodeConfig"
+    refs: [node.VolumeConfig, node.UserQuota, node.PartnerAccount]
+
+  - id: node.AttachedUser
+    kind: schema
+    path: 02-schemas/node/AttachedUser.md
+    title: "AttachedUser"
+    section: "§3.11"
+    fbs: "schemas/node/NodeManifest.fbs#AttachedUser"
+    refs: [crypto.k-attach]
+
+  - id: node.BlacklistedPartner
+    kind: schema
+    path: 02-schemas/node/BlacklistedPartner.md
+    title: "BlacklistedPartner"
+    section: "§3.11, §5.3.5"
+    fbs: "schemas/node/NodeManifest.fbs#BlacklistedPartner"
+    refs: [securite.blacklist-fraude]
+
+  - id: node.NodeManifest
+    kind: schema
+    path: 02-schemas/node/NodeManifest.md
+    title: "NodeManifest"
+    section: "§3.3, §3.11"
+    fbs: "schemas/node/NodeManifest.fbs#NodeManifest"
+    refs: [node.NodeConfig, node.AttachedUser, node.BlacklistedPartner, node.ContainerFile, crypto.k-node-self]
+
+  - id: node.StripeRemoval
+    kind: schema
+    path: 02-schemas/node/StripeRemoval.md
+    title: "StripeRemoval"
+    section: "§3.11"
+    fbs: "schemas/node/MutationLog.fbs#StripeRemoval"
+    refs: [dispersal.Stripe]
+
+  - id: node.Mutation
+    kind: schema
+    path: 02-schemas/node/Mutation.md
+    title: "Mutation"
+    section: "§3.11"
+    fbs: "schemas/node/MutationLog.fbs#Mutation"
+    refs: [dispersal.BlockEntry, node.StripeRemoval, node.BlacklistedPartner, node.PartnerAccount]
+
+  - id: node.MutationLog
+    kind: schema
+    path: 02-schemas/node/MutationLog.md
+    title: "MutationLog"
+    section: "§3.5, §3.11"
+    fbs: "schemas/node/MutationLog.fbs#MutationLog"
+    refs: [node.Mutation]
+
+  # ---------------------------------------------------- schemas: node.* (stockage physique, ajout post-V2)
+  - id: node.ContainerFile
+    kind: schema
+    path: 02-schemas/node/ContainerFile.md
+    title: "ContainerFile"
+    section: "§4.4 (ajout post-V2)"
+    fbs: "schemas/node/ContainerFile.fbs#ContainerFile"
+    refs: [protocols.stockage-physique, securite.blacklist-fraude, dispersal.IndexNode, node.BlockLocation, node.VolumeConfig]
+
+  - id: node.BlockLocation
+    kind: schema
+    path: 02-schemas/node/BlockLocation.md
+    title: "BlockLocation"
+    section: "§4.4 (ajout post-V2)"
+    fbs: "schemas/node/ContainerFile.fbs#BlockLocation"
+    refs: [protocols.index-adaptatif, protocols.stockage-physique, node.ContainerFile]
+
+  # ---------------------------------------------------- schemas: dispersal.*
+  - id: dispersal.Partner
+    kind: schema
+    path: 02-schemas/dispersal/Partner.md
+    title: "Partner"
+    section: "§3.11"
+    fbs: "schemas/dispersal/DispersalManifest.fbs#Partner"
+    refs: []
+
+  - id: dispersal.BlockEntry
+    kind: schema
+    path: 02-schemas/dispersal/BlockEntry.md
+    title: "BlockEntry"
+    section: "§3.11"
+    fbs: "schemas/dispersal/DispersalManifest.fbs#BlockEntry"
+    refs: [dispersal.Partner, crypto.master-key-chain]
+
+  - id: dispersal.MasterKeyEntry
+    kind: schema
+    path: 02-schemas/dispersal/MasterKeyEntry.md
+    title: "MasterKeyEntry"
+    section: "§3.8, §3.11"
+    fbs: "schemas/dispersal/DispersalManifest.fbs#MasterKeyEntry"
+    refs: [crypto.master-key-chain]
+
+  - id: dispersal.Stripe
+    kind: schema
+    path: 02-schemas/dispersal/Stripe.md
+    title: "Stripe"
+    section: "§3.11"
+    fbs: "schemas/dispersal/DispersalManifest.fbs#Stripe"
+    refs: [dispersal.BlockEntry, protocols.erasure-coding]
+
+  - id: dispersal.IndexNode
+    kind: schema
+    path: 02-schemas/dispersal/IndexNode.md
+    title: "IndexNode"
+    section: "§3.6, §3.11"
+    fbs: "schemas/dispersal/DispersalManifest.fbs#IndexNode"
+    refs: [dispersal.Stripe, protocols.index-adaptatif]
+
+  - id: dispersal.DispersalManifest
+    kind: schema
+    path: 02-schemas/dispersal/DispersalManifest.md
+    title: "DispersalManifest"
+    section: "§3.4, §3.11"
+    fbs: "schemas/dispersal/DispersalManifest.fbs#DispersalManifest"
+    refs: [dispersal.Partner, dispersal.IndexNode, crypto.k-attach]
+
+  # ------------------------------------------------------------- schemas: fs.*
+  - id: fs.Metadata
+    kind: schema
+    path: 02-schemas/fs/Metadata.md
+    title: "Metadata"
+    section: "§3.13"
+    fbs: "schemas/fs/FileSystemEntry.fbs#Metadata"
+    refs: []
+
+  - id: fs.Attributes
+    kind: schema
+    path: 02-schemas/fs/Attributes.md
+    title: "Attributes"
+    section: "§3.13"
+    fbs: "schemas/fs/FileSystemEntry.fbs#Attributes"
+    refs: []
+
+  - id: fs.DirectoryEntry
+    kind: schema
+    path: 02-schemas/fs/DirectoryEntry.md
+    title: "DirectoryEntry"
+    section: "§3.13"
+    fbs: "schemas/fs/FileSystemEntry.fbs#DirectoryEntry"
+    refs: [fs.Attributes, fs.Metadata, crypto.k-block]
+
+  - id: fs.DirectoryBlock
+    kind: schema
+    path: 02-schemas/fs/DirectoryBlock.md
+    title: "DirectoryBlock"
+    section: "§3.13"
+    fbs: "schemas/fs/FileSystemEntry.fbs#DirectoryBlock"
+    refs: [fs.DirectoryEntry]
+
+  - id: fs.FileBlock
+    kind: schema
+    path: 02-schemas/fs/FileBlock.md
+    title: "FileBlock"
+    section: "§3.13"
+    fbs: "schemas/fs/FileSystemEntry.fbs#FileBlock"
+    refs: []
+
+  - id: fs.QueuedMutation
+    kind: schema
+    path: 02-schemas/fs/QueuedMutation.md
+    title: "QueuedMutation"
+    section: "§3.12.2"
+    fbs: "schemas/fs/WriteQueue.fbs#QueuedMutation"
+    refs: [fs.DirectoryEntry]
+
+  - id: fs.WriteQueue
+    kind: schema
+    path: 02-schemas/fs/WriteQueue.md
+    title: "WriteQueue"
+    section: "§3.12.2"
+    fbs: "schemas/fs/WriteQueue.fbs#WriteQueue"
+    refs: [fs.QueuedMutation]
+
+  # ------------------------------------------------------- schemas: emergency.*
+  - id: emergency.EmergencyPartner
+    kind: schema
+    path: 02-schemas/emergency/EmergencyPartner.md
+    title: "EmergencyPartner"
+    section: "§3.12.4"
+    fbs: "schemas/emergency/EmergencyManifest.fbs#EmergencyPartner"
+    refs: []
+
+  - id: emergency.EmergencyBlockEntry
+    kind: schema
+    path: 02-schemas/emergency/EmergencyBlockEntry.md
+    title: "EmergencyBlockEntry"
+    section: "§3.12.4"
+    fbs: "schemas/emergency/EmergencyManifest.fbs#EmergencyBlockEntry"
+    refs: [emergency.EmergencyPartner]
+
+  - id: emergency.EmergencyMutation
+    kind: schema
+    path: 02-schemas/emergency/EmergencyMutation.md
+    title: "EmergencyMutation"
+    section: "§3.12.4"
+    fbs: "schemas/emergency/EmergencyManifest.fbs#EmergencyMutation"
+    refs: [fs.DirectoryEntry]
+
+  - id: emergency.EmergencyManifest
+    kind: schema
+    path: 02-schemas/emergency/EmergencyManifest.md
+    title: "EmergencyManifest"
+    section: "§3.12.4"
+    fbs: "schemas/emergency/EmergencyManifest.fbs#EmergencyManifest"
+    refs: [emergency.EmergencyPartner, emergency.EmergencyBlockEntry, emergency.EmergencyMutation, crypto.k-attach]
+
+  # ------------------------------------------------------------------- crypto
+  - id: crypto.key-hierarchy
+    kind: narrative
+    path: 03-crypto/key-hierarchy.md
+    title: "Hiérarchie des Clés — Vue d'ensemble"
+    section: "§3.8"
+    refs: [crypto.k-attach, crypto.k-dispersal, crypto.k-block, crypto.k-node-self, crypto.k-self, crypto.master-key-chain]
+
+  - id: crypto.k-attach
+    kind: narrative
+    path: 03-crypto/k-attach.md
+    title: "K_attach — Métadonnées de Dispersion"
+    section: "§3.8"
+    refs: [dispersal.DispersalManifest, node.AttachedUser, network.dht-directory]
+
+  - id: crypto.k-dispersal
+    kind: narrative
+    path: 03-crypto/k-dispersal.md
+    title: "K_dispersal_content / K_dispersal_block"
+    section: "§3.8"
+    refs: [dispersal.IndexNode, crypto.k-attach, protocols.migration-noeud]
+
+  - id: crypto.k-block
+    kind: narrative
+    path: 03-crypto/k-block.md
+    title: "K_block — Contenu Réel des Blocs"
+    section: "§3.8"
+    refs: [fs.DirectoryEntry, crypto.master-key-chain]
+
+  - id: crypto.k-node-self
+    kind: narrative
+    path: 03-crypto/k-node-self.md
+    title: "K_node_self — Confidentialité de la Cartographie Nœud"
+    section: "§3.8"
+    refs: [node.NodeManifest]
+
+  - id: crypto.k-self
+    kind: narrative
+    path: 03-crypto/k-self.md
+    title: "K_self — Récupération depuis la Seed"
+    section: "§3.8"
+    refs: [network.dht-directory, deploiement.disaster-recovery]
+
+  - id: crypto.master-key-chain
+    kind: narrative
+    path: 03-crypto/master-key-chain.md
+    title: "Continuité de Chiffrement — master_key_chain"
+    section: "§3.8"
+    refs: [crypto.k-block, securite.incidents-compromissions]
+
+  # ---------------------------------------------------------------- protocols
+  - id: protocols.index-adaptatif
+    kind: narrative
+    path: 04-protocols/index-adaptatif.md
+    title: "Arbre d'Index Adaptatif"
+    section: "§3.6"
+    refs: [dispersal.IndexNode, dispersal.Stripe]
+
+  - id: protocols.dispersion-transactionnelle
+    kind: narrative
+    path: 04-protocols/dispersion-transactionnelle.md
+    title: "Protocole Transactionnel de Dispersion"
+    section: "§3.7"
+    refs: [dispersal.Stripe, dispersal.DispersalManifest, protocols.tombstones]
+
+  - id: protocols.migration-noeud
+    kind: narrative
+    path: 04-protocols/migration-noeud.md
+    title: "Migration vers un Nouveau Nœud"
+    section: "§3.7.1"
+    refs: [crypto.k-attach, crypto.k-dispersal, protocols.dispersion-transactionnelle, securite.incidents-compromissions]
+
+  - id: protocols.suppression-dispersal
+    kind: narrative
+    path: 04-protocols/suppression-dispersal.md
+    title: "Suppression Explicite d'une Entrée DispersalManifest"
+    section: "§3.7.2"
+    refs: [protocols.migration-noeud, network.dht-directory]
+
+  - id: protocols.acces-applicatif
+    kind: narrative
+    path: 04-protocols/acces-applicatif.md
+    title: "Accès Applicatif — Lecteur Monté WebDAV"
+    section: "§3.12"
+    refs: [fs.DirectoryEntry, protocols.write-queue, protocols.espace-secours]
+
+  - id: protocols.integrite-lecture
+    kind: narrative
+    path: 04-protocols/integrite-lecture.md
+    title: "Vérification d'Intégrité & Gestion des Incohérences"
+    section: "§3.12.1"
+    refs: [protocols.acces-applicatif, securite.integrite-autoreparation]
+
+  - id: protocols.write-queue
+    kind: narrative
+    path: 04-protocols/write-queue.md
+    title: "Écriture Hors-Ligne — WriteQueue"
+    section: "§3.12.2"
+    refs: [fs.WriteQueue, protocols.quota-sync]
+
+  - id: protocols.quota-sync
+    kind: narrative
+    path: 04-protocols/quota-sync.md
+    title: "Gestion du Quota à la Synchronisation"
+    section: "§3.12.3"
+    refs: [protocols.write-queue, node.UserQuota]
+
+  - id: protocols.espace-secours
+    kind: narrative
+    path: 04-protocols/espace-secours.md
+    title: "Espace de Secours — Écriture d'Urgence"
+    section: "§3.12.4"
+    refs: [emergency.EmergencyManifest, protocols.write-queue, crypto.k-attach]
+
+  - id: protocols.fs-structure
+    kind: narrative
+    path: 04-protocols/fs-structure.md
+    title: "Structure du Système de Fichiers"
+    section: "§3.13"
+    refs: [fs.DirectoryEntry, fs.DirectoryBlock, fs.FileBlock]
+
+  - id: protocols.erasure-coding
+    kind: narrative
+    path: 04-protocols/erasure-coding.md
+    title: "Codage d'Effacement & Tolérance aux Pannes"
+    section: "§4.1"
+    refs: [dispersal.Stripe]
+
+  - id: protocols.volatilite-reparation
+    kind: narrative
+    path: 04-protocols/volatilite-reparation.md
+    title: "Gestion de la Volatilité & Sur-redondance"
+    section: "§4.2"
+    refs: [protocols.erasure-coding]
+
+  - id: protocols.tombstones
+    kind: narrative
+    path: 04-protocols/tombstones.md
+    title: "Suppression Bilatérale (Tombstones 1:1)"
+    section: "§4.3"
+    refs: [node.PartnerAccount, protocols.stockage-physique]
+
+  # ------------------------------------------------- stockage physique (ajout post-V2)
+  - id: protocols.stockage-physique
+    kind: narrative
+    path: 04-protocols/stockage-physique.md
+    title: "Stockage Physique des Blocs sur Volume"
+    section: "§4.4 (ajout post-V2)"
+    refs:
+      - overview.architecture
+      - node.VolumeConfig
+      - node.ContainerFile
+      - node.BlockLocation
+      - node.PartnerAccount
+      - node.MutationLog
+      - protocols.erasure-coding
+      - protocols.tombstones
+      - protocols.migration-noeud
+      - protocols.espace-secours
+      - protocols.index-adaptatif
+      - securite.blacklist-fraude
+      - deploiement.disaster-recovery
+      - secours.reference-consolidee
+
+  # ----------------------------------------------------------------- sécurité
+  - id: securite.pos-challenges
+    kind: narrative
+    path: 05-securite/pos-challenges.md
+    title: "Challenges Dynamiques & QoS (PoS)"
+    section: "§5.1"
+    refs: [securite.blacklist-fraude]
+
+  - id: securite.incidents-compromissions
+    kind: narrative
+    path: 05-securite/incidents-compromissions.md
+    title: "Gestion des Incidents & Compromissions"
+    section: "§5.2"
+    refs: [crypto.master-key-chain, protocols.migration-noeud, protocols.espace-secours]
+
+  - id: securite.blacklist-fraude
+    kind: narrative
+    path: 05-securite/blacklist-fraude.md
+    title: "Rupture de Confiance & Liste Noire"
+    section: "§5.3"
+    refs: [node.BlacklistedPartner, network.vdf-identity, protocols.dispersion-transactionnelle, protocols.stockage-physique]
+
+  - id: securite.integrite-autoreparation
+    kind: narrative
+    path: 05-securite/integrite-autoreparation.md
+    title: "Intégrité des Blocs Locaux & Auto-réparation"
+    section: "§5.4"
+    refs: [protocols.integrite-lecture]
+
+  # ----------------------------------------------------- procédures de secours
+  - id: secours.reference-consolidee
+    kind: narrative
+    path: 06-procedures-secours/reference-consolidee.md
+    title: "Procédures de Secours — Référence Consolidée"
+    section: "§6"
+    refs:
+      - protocols.write-queue
+      - protocols.espace-secours
+      - protocols.integrite-lecture
+      - protocols.volatilite-reparation
+      - securite.blacklist-fraude
+      - protocols.migration-noeud
+      - securite.incidents-compromissions
+      - crypto.master-key-chain
+
+  # --------------------------------------------------------------- déploiement
+  - id: deploiement.disaster-recovery
+    kind: narrative
+    path: 07-deploiement/disaster-recovery.md
+    title: "Gestion des Clés (Disaster Recovery)"
+    section: "§7.1"
+    refs: [crypto.k-self, crypto.k-node-self, crypto.master-key-chain, protocols.stockage-physique]
+
+  - id: deploiement.formats-serialisation
+    kind: narrative
+    path: 07-deploiement/formats-serialisation.md
+    title: "Formats de Sérialisation et Performance"
+    section: "§7.2"
+    refs: []
+
+  - id: deploiement.packaging
+    kind: narrative
+    path: 07-deploiement/packaging.md
+    title: "Packaging & Interface (Dashboards)"
+    section: "§7.3"
+    refs: [protocols.write-queue, protocols.espace-secours, securite.blacklist-fraude]
+
+  # ------------------------------------------------------------ agilité crypto
+  - id: agilite.kem-vs-nike
+    kind: narrative
+    path: 08-agilite-crypto/kem-vs-nike.md
+    title: "Contrainte Structurelle : un KEM n'est pas un NIKE"
+    section: "§8.1"
+    refs: [crypto.k-attach]
+
+  - id: agilite.k-attach-kem
+    kind: narrative
+    path: 08-agilite-crypto/k-attach-kem.md
+    title: "Redesign de K_attach en mode KEM"
+    section: "§8.2"
+    refs: [crypto.k-attach, node.AttachedUser, agilite.kem-vs-nike]
+
+  - id: agilite.signature-mldsa
+    kind: narrative
+    path: 08-agilite-crypto/signature-mldsa.md
+    title: "Signature : Remplacement Direct (Ed25519 → ML-DSA)"
+    section: "§8.3"
+    refs: []
+
+  - id: agilite.tag-hybride
+    kind: narrative
+    path: 08-agilite-crypto/tag-hybride.md
+    title: "Tag d'Algorithme & Mode Hybride"
+    section: "§8.4"
+    refs: [node.AttachedUser]
+
+  - id: agilite.migration-vehicule
+    kind: narrative
+    path: 08-agilite-crypto/migration-vehicule.md
+    title: "Véhicule de Migration (Réutilisation)"
+    section: "§8.5"
+    refs: [securite.incidents-compromissions, crypto.master-key-chain]

@@ -1,0 +1,47 @@
+site_name: "Spécification P2P Storage — Documentation as Code"
+site_description: "Stockage distribué souverain & échange pair-à-pair — doc pilotée par le code"
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: fr
+  palette:
+    - scheme: default
+      primary: indigo
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.indexes
+    - content.code.copy
+    - toc.follow
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - gen_docs.py
+  # Déduit le nav de l'arborescence docs/ (fichiers .pages optionnels par
+  # dossier pour forcer un titre/ordre) : évite de dupliquer manifest.yml
+  # dans un nav: manuel qui finirait par diverger.
+  - awesome-pages
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path:
+        - build/schemas
+        - docs
+      check_paths: true
+  - pymdownx.highlight
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra:
+  generator: false

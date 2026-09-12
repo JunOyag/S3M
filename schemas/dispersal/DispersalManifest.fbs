@@ -1,0 +1,56 @@
+// ---- DispersalManifest.fbs ----
+// Une instance par couple (User, Node). Chiffrée intégralement avec K_attach ;
+// ancrée en DHT sous dht_key = H(K_attach).
+// Source: ST-P2P-STORAGE-2026-V2.md §3.4 / §3.6 / §3.11
+namespace P2PStorage.Dispersal;
+
+/// Un partenaire de troc, référencé par id court depuis les BlockEntry (déduplication, §3.4).
+table Partner {
+  partner_id: uint16;             /// référencé depuis les BlockEntry, unique dans ce Manifeste
+  node_id: [ubyte];
+  ip: string;
+  port: uint16;
+}
+
+/// Une entrée de bloc (donnée ou parité) au sein d'une Stripe.
+table BlockEntry {
+  block_hash: [ubyte];
+  block_index: uint16;            /// 0..k-1 = données (toujours locales), k..N-1 = parité
+  partner_id: uint16;             /// 0/sentinel OBLIGATOIRE pour block_index 0..k-1 ; ref réelle vers Partner pour k..N-1
+  key_version: uint16;            /// version de master_key utilisée pour K_block (§3.8)
+  is_padding: bool;                /// true = bloc de comblement (§4.1), remplacé dès réception du vrai bloc
+}
+
+/// Un maillon de la chaîne de clés maîtresses (§3.8). Ne fait PAS partie du
+/// DispersalManifest lui-même : publié dans l'entrée DHT User, chiffré K_self.
+/// Inclus ici pour la cohérence des schémas (cf. note spec §3.11).
+table MasterKeyEntry {
+  version: uint16;
+  wrapped_key: [ubyte];           /// master_key[version] chiffrée sous la master_key courante
+}
+
+/// Un groupe de k blocs de données + coef×k blocs de parité (N = k + coef×k).
+table Stripe {
+  stripe_id: [ubyte];
+  k: uint8;
+  m: uint8;                       /// total N = k + coef×k (coef=3 par défaut → N=4k)
+  blocks: [BlockEntry];
+}
+
+/// Nœud de l'arbre d'index adaptatif (§3.6) : feuille de Stripes ou niveau d'indirection.
+table IndexNode {
+  is_leaf: bool;
+  stripes: [Stripe];              /// rempli si is_leaf = true
+  children: [Stripe];             /// rempli si is_leaf = false ; chaque Stripe encode un IndexNode enfant
+}
+
+/// Racine du catalogue de dispersion pour un couple (Utilisateur, Nœud).
+table DispersalManifest {
+  user_id: [ubyte];
+  node_id: [ubyte];
+  partners: [Partner];            /// table dédupliquée, propre à ce couple (User, Node)
+  root: IndexNode;
+  timestamp: uint64;
+}
+
+root_type DispersalManifest;
