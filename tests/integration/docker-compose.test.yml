@@ -1,0 +1,70 @@
+# tests/integration/docker-compose.test.yml
+#
+# Réseau Docker ISOLÉ pour tests d'intégration locaux — jamais connecté à un
+# bootstrap DHT public réel. 1 Nœud hébergeur + 1 Connecteur + 12 partenaires
+# (minimum requis par le protocole pour disperser une stripe complète,
+# coef=3/k=4 -> 12 blocs de parité, §4.1 du protocole).
+#
+# STATUT : squelette Phase 0. `impl/node` et `impl/connector` n'ont pas
+# encore de Dockerfile (Phase 2+) — ce fichier échouera au `build` tant
+# qu'ils n'existent pas. Structure et topologie posées à l'avance pour ne
+# pas avoir à redécider le nombre de partenaires plus tard.
+
+networks:
+  p2p-test:
+    driver: bridge
+    internal: true   # pas de sortie vers l'internet réel — isolation forcée
+
+x-partner-defaults: &partner-defaults
+  build:
+    context: ../../impl/node          # même image que le Nœud hébergeur —
+    dockerfile: Dockerfile             # un partenaire EST un Nœud, juste sans
+  networks: [p2p-test]                 # utilisateur rattaché
+  environment:
+    ROLE: partner
+    LOG_LEVEL: debug
+  # Volume éphémère (pas de named volume) : un partenaire redémarré dans un
+  # scénario doit repartir VIDE, pas retrouver ses anciens blocs — cohérent
+  # avec les scénarios de perte/migration.
+
+services:
+  node-host:
+    build:
+      context: ../../impl/node
+      dockerfile: Dockerfile
+    networks: [p2p-test]
+    environment:
+      ROLE: host
+      LOG_LEVEL: debug
+    volumes:
+      - node-host-data:/data           # copie locale intégrale des k blocs
+                                        # (§1, §3.3) — volume nommé, doit
+                                        # survivre à un simple redémarrage
+                                        # du conteneur (scénario "Nœud
+                                        # temporairement indisponible" ≠
+                                        # perte de disque)
+
+  connector:
+    build:
+      context: ../../impl/connector
+      dockerfile: Dockerfile
+    networks: [p2p-test]
+    depends_on: [node-host]
+    environment:
+      NODE_HOST: node-host
+
+  partner-01: { <<: *partner-defaults }
+  partner-02: { <<: *partner-defaults }
+  partner-03: { <<: *partner-defaults }
+  partner-04: { <<: *partner-defaults }
+  partner-05: { <<: *partner-defaults }
+  partner-06: { <<: *partner-defaults }
+  partner-07: { <<: *partner-defaults }
+  partner-08: { <<: *partner-defaults }
+  partner-09: { <<: *partner-defaults }
+  partner-10: { <<: *partner-defaults }
+  partner-11: { <<: *partner-defaults }
+  partner-12: { <<: *partner-defaults }
+
+volumes:
+  node-host-data:
