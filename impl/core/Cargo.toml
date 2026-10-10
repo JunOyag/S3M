@@ -13,6 +13,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }
+# Ré-export de la même famille de courbes que ed25519-dalek/x25519-dalek —
+# utilisé par keys.rs pour la biration Edwards->Montgomery (RFC 7748 §6.1).
+curve25519-dalek = "4"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 hkdf = "0.12"
 sha2 = "0.10"

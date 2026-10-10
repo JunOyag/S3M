@@ -36,10 +36,25 @@ entries:
     notes: ''
   crypto.k-attach:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: cline-agent
+    tests:
+      - rfc_vectors::ed25519_to_x25519_matches_libsodium_conversion_vectors
+      - rfc_vectors::pub_conversion_rejects_small_order_points
+      - rfc_vectors::x25519_dh_matches_rfc7748_vectors
+      - rfc_vectors::ed25519_key_derivation_matches_rfc8032_vectors
+      - rfc_vectors::k_attach_is_symmetric_between_user_and_node
+      - rfc_vectors::k_attach_derivation_is_deterministic_and_salt_dependent
+      - rfc_vectors::sig_priv_dispersal_is_deterministic_and_domain_separated
+    notes: >-
+      Conversion Ed25519->X25519 (graine 32B, clamp(SHA-512(graine)[0..32]),
+      équivalent crypto_sign_ed25519_sk/pk_to_curve25519) + dérivation K_attach
+      (HKDF-SHA256, salt fixé par le Connecteur, info vide) + sig_priv_dispersal
+      (info "dispersal-signing"). Vecteurs externes cités : RFC 7748 §5.2,
+      RFC 8032 §7.1, libsodium test/default/ed25519_convert. derive_sig_priv_user
+      (§3.9) volontairement laissée en todo!() — spec vivant sur
+      network.dht-directory (Phase 2). Voir SPEC_GAPS.md pour le chemin
+      BIP-39 -> graine 32B (non bloquant).
   crypto.k-block:
     kind: narrative
     status: not_started

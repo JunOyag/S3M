@@ -312,6 +312,14 @@ pages:
     title: "K_attach — Métadonnées de Dispersion"
     section: "§3.8"
     refs: [dispersal.DispersalManifest, node.AttachedUser, network.dht-directory]
+    verified_by:
+      - rfc_vectors::ed25519_to_x25519_matches_libsodium_conversion_vectors
+      - rfc_vectors::pub_conversion_rejects_small_order_points
+      - rfc_vectors::x25519_dh_matches_rfc7748_vectors
+      - rfc_vectors::ed25519_key_derivation_matches_rfc8032_vectors
+      - rfc_vectors::k_attach_is_symmetric_between_user_and_node
+      - rfc_vectors::k_attach_derivation_is_deterministic_and_salt_dependent
+      - rfc_vectors::sig_priv_dispersal_is_deterministic_and_domain_separated
 
   - id: crypto.k-dispersal
     kind: narrative
