@@ -46,6 +46,7 @@ phases:
       - { id: crypto.k-node-self,       component: core }
       - { id: crypto.k-dispersal,       component: core }
       - { id: crypto.master-key-chain,  component: core }
+      - { id: crypto.identity-derivation, component: core }
 
   - phase: 1
     name: "Schémas de données (codegen)"

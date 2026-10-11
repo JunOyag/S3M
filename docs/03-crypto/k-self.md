@@ -14,7 +14,9 @@ K_self = KDF(priv_user, "attachment-recovery")
 ```
 
 Dérivée uniquement de la clé privée du User — ne dépend d'aucune information
-externe.
+externe. `priv_user` elle-même dérive de la phrase mnémonique BIP-39 selon
+un schéma de chemins fixe — voir
+[crypto.identity-derivation](identity-derivation.md).
 
 ## Rôle
 

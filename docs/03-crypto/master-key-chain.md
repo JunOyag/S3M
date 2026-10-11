@@ -13,10 +13,14 @@ verified_by: []
 
 [`crypto.k-block`](k-block.md) dérive de la seed BIP-39 du User. Lors d'une
 rotation d'identité suite à compromission
-([`securite.incidents-compromissions`](../05-securite/incidents-compromissions.md)),
-la nouvelle seed produit une `master_key` mathématiquement indépendante de
-l'ancienne — elle ne permet donc pas, seule, de déchiffrer les blocs
-existants. Rechiffrer l'intégralité des données dispersées à chaque rotation
+([`securite.incidents-compromissions`](../05-securite/incidents-compromissions.md)) —
+index d'identité suivant si seule une clé dérivée a fuité, nouvelle phrase
+mnémonique si la seed elle-même a fuité (règle :
+[`crypto.identity-derivation`](identity-derivation.md)) — la rotation
+s'accompagne d'une `master_key` mathématiquement indépendante de l'ancienne
+(chemin dédié `m/0x703270'/3'/version'`, voir la section « Clé maîtresse »
+de la page citée) :
+elle ne permet donc pas, seule, de déchiffrer les blocs existants. Rechiffrer l'intégralité des données dispersées à chaque rotation
 serait une opération réseau prohibitive (récupération via le Nœud,
 déchiffrement, rechiffrement, redispersion complète).
 

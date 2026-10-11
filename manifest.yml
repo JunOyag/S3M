@@ -59,7 +59,7 @@ pages:
     path: 01-network-dht/bootstrap.md
     title: "Amorçage (Bootstrapping) & Résolution"
     section: "§2.2"
-    refs: [network.dht-directory, protocols.write-queue]
+    refs: [network.dht-directory, protocols.write-queue, crypto.identity-derivation]
 
   # -------------------------------------------------------- schemas: node.*
   - id: node.VolumeConfig
@@ -304,7 +304,7 @@ pages:
     path: 03-crypto/key-hierarchy.md
     title: "Hiérarchie des Clés — Vue d'ensemble"
     section: "§3.8"
-    refs: [crypto.k-attach, crypto.k-dispersal, crypto.k-block, crypto.k-node-self, crypto.k-self, crypto.master-key-chain]
+    refs: [crypto.k-attach, crypto.k-dispersal, crypto.k-block, crypto.k-node-self, crypto.k-self, crypto.master-key-chain, crypto.identity-derivation]
 
   - id: crypto.k-attach
     kind: narrative
@@ -332,21 +332,28 @@ pages:
     path: 03-crypto/k-node-self.md
     title: "K_node_self — Confidentialité de la Cartographie Nœud"
     section: "§3.8"
-    refs: [node.NodeManifest]
+    refs: [node.NodeManifest, crypto.identity-derivation]
 
   - id: crypto.k-self
     kind: narrative
     path: 03-crypto/k-self.md
     title: "K_self — Récupération depuis la Seed"
     section: "§3.8"
-    refs: [network.dht-directory, deploiement.disaster-recovery]
+    refs: [network.dht-directory, deploiement.disaster-recovery, crypto.identity-derivation]
 
   - id: crypto.master-key-chain
     kind: narrative
     path: 03-crypto/master-key-chain.md
     title: "Continuité de Chiffrement — master_key_chain"
     section: "§3.8"
-    refs: [crypto.k-block, securite.incidents-compromissions]
+    refs: [crypto.k-block, securite.incidents-compromissions, crypto.identity-derivation]
+
+  - id: crypto.identity-derivation
+    kind: narrative
+    path: 03-crypto/identity-derivation.md
+    title: "Dérivation des Identités — BIP-39 → SLIP-0010"
+    section: "§5.2, §7.1"
+    refs: [crypto.key-hierarchy, crypto.k-self, crypto.k-node-self, securite.incidents-compromissions, deploiement.disaster-recovery, network.dht-directory]
 
   # ---------------------------------------------------------------- protocols
   - id: protocols.index-adaptatif
@@ -475,7 +482,7 @@ pages:
     path: 05-securite/incidents-compromissions.md
     title: "Gestion des Incidents & Compromissions"
     section: "§5.2"
-    refs: [crypto.master-key-chain, protocols.migration-noeud, protocols.espace-secours]
+    refs: [crypto.master-key-chain, protocols.migration-noeud, protocols.espace-secours, crypto.identity-derivation]
 
   - id: securite.blacklist-fraude
     kind: narrative
@@ -513,7 +520,7 @@ pages:
     path: 07-deploiement/disaster-recovery.md
     title: "Gestion des Clés (Disaster Recovery)"
     section: "§7.1"
-    refs: [crypto.k-self, crypto.k-node-self, crypto.master-key-chain, protocols.stockage-physique]
+    refs: [crypto.k-self, crypto.k-node-self, crypto.master-key-chain, protocols.stockage-physique, crypto.identity-derivation]
 
   - id: deploiement.formats-serialisation
     kind: narrative

@@ -11,8 +11,11 @@ verified_by: []
 
 - **Absence/Échec PoS (timeout)** : purge après 6 mois hors-ligne — voir
   [`protocols.volatilite-reparation`](../04-protocols/volatilite-reparation.md).
-- **Compromission clé User** : nouveau jeu de clés via seed BIP-39, re-wrap
-  de la chaîne de clés maîtresses ([`crypto.master-key-chain`](../03-crypto/master-key-chain.md))
+- **Compromission clé User** : nouvelle identité User (index suivant si seule
+  une clé dérivée a fuité, nouvelle phrase mnémonique si la seed elle-même
+  a fuité — règle complète sur
+  [`crypto.identity-derivation`](../03-crypto/identity-derivation.md)),
+  re-wrap de la chaîne de clés maîtresses ([`crypto.master-key-chain`](../03-crypto/master-key-chain.md))
   et réémission de l'entrée DHT. Les blocs existants ne sont **pas**
   rechiffrés.
 
@@ -25,8 +28,12 @@ invalide leur attachement simultanément, nécessitant une réattache complète.
 ### Mécanisme — clé de secours et pointeur de migration
 
 1. **Clé de secours pré-provisionnée** : dès sa création, le Nœud dérive
-   `priv_node_recovery`/`pub_node_recovery` sur un chemin distinct de la même
-   seed. `pub_node_recovery` est publiée dès l'origine, en clair, dans
+   `priv_node_recovery`/`pub_node_recovery` sur le chemin dédié
+   `m/0x703270'/2'/<index>'` — en miroir de l'identité `…/1'/<index>'` de la
+   même seed (schéma complet :
+   [`crypto.identity-derivation`](../03-crypto/identity-derivation.md)) —
+   « un chemin de dérivation distinct » au sens du §5.2.
+   `pub_node_recovery` est publiée dès l'origine, en clair, dans
    l'entrée DHT Node ([`network.dht-directory`](../01-network-dht/dht-directory.md))
    — un champ immuable.
 2. En cas de compromission de `priv_node` (mais pas la seed), l'opérateur
@@ -49,7 +56,10 @@ invalide leur attachement simultanément, nécessitant une réattache complète.
 ### Variante — perte sans compromission (panne matérielle) {: #variante-perte-sans-compromission }
 
 Même mécanisme lorsque l'opérateur a perdu l'accès opérationnel (disque
-détruit) tout en conservant la seed. Il dérive un nouveau `node_id` depuis
+détruit) tout en conservant la seed. Il dérive un nouveau `node_id` à
+l'index suivant `…/1'/<index+1>'` — avec sa clé de secours miroir
+`…/2'/<index+1>'` (voir
+[`crypto.identity-derivation`](../03-crypto/identity-derivation.md)) — depuis
 cette même seed et suit
 [`protocols.migration-noeud`](../04-protocols/migration-noeud.md), avec deux
 différences :

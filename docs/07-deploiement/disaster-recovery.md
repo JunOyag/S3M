@@ -9,7 +9,9 @@ verified_by: []
 
 # Gestion des Clés (Disaster Recovery)
 
-Dérivation cryptographique basée sur BIP-39 (phrases mnémoniques). C'est de
+Dérivation cryptographique basée sur BIP-39 (phrases mnémoniques — schéma
+de chemins :
+[`crypto.identity-derivation`](../03-crypto/identity-derivation.md)). C'est de
 ces seeds que dérivent toutes les clés opérationnelles
 ([`crypto.key-hierarchy`](../03-crypto/key-hierarchy.md)) ainsi que les clés
 de signature et l'espace de secours.
