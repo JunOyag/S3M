@@ -65,7 +65,7 @@ mécanisme de lecture des versions antérieures (pas de re-dérivation depuis la
 Rotation d'identité seule : pas de nouvelle version ; nouvelle seed ou fuite de
 `master_key` : nouvelle version + re-wrap de la chaîne. Documenté dans
 `crypto.identity-derivation`, liens depuis `crypto.master-key-chain` et
-`securite.incidents-compromissions`. Commit : <hash à renseigner>.
+`securite.incidents-compromissions`. Commit : 79d2750.
 
 ## crypto.identity-derivation — Découverte de l'index courant après perte totale
 
@@ -94,4 +94,4 @@ entrée vivante n'y est déjà. Si rien n'est trouvé : message « vérifier la 
 Limite documentée : si toutes les entrées ont expiré, un index compromis peut être
 retrouvé par erreur ; recommander de conserver l'index courant avec la sauvegarde de la
 phrase. Documenté dans `crypto.identity-derivation`, liens depuis
-`deploiement.disaster-recovery`. Commit : <hash à renseigner>.
+`deploiement.disaster-recovery`. Commit : 79d2750.
