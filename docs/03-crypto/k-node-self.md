@@ -14,7 +14,9 @@ K_node_self = KDF(priv_node, "node-recovery")
 ```
 
 Dérivée uniquement de la clé privée du Nœud — symétrique de
-[`crypto.k-self`](k-self.md) côté User.
+[`crypto.k-self`](k-self.md) côté User. `priv_node` elle-même dérive de la
+phrase mnémonique BIP-39 selon un schéma de chemins fixe — voir
+[`crypto.identity-derivation`](identity-derivation.md).
 
 ## Ce qu'elle protège
 

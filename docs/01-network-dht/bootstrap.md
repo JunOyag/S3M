@@ -33,7 +33,9 @@ la DHT.
 
 ## Chemin d'amorçage à froid (nouvelle machine, même seed)
 
-Aucun état local préexistant n'est requis — seule la seed BIP-39 suffit :
+Aucun état local préexistant n'est requis — seule la seed BIP-39 suffit
+(chemins de dérivation :
+[`crypto.identity-derivation`](../03-crypto/identity-derivation.md)) :
 
 1. Calcul de `user_dht_key = KDF(priv_user, pub_user, "dht-lookup")` depuis
    la seed seule.

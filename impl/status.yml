@@ -70,6 +70,12 @@ entries:
     owner: null
     tests: []
     notes: ''
+  crypto.identity-derivation:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
   crypto.master-key-chain:
     kind: narrative
     status: not_started
