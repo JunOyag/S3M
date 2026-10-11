@@ -334,6 +334,11 @@ pages:
     title: "K_block — Contenu Réel des Blocs"
     section: "§3.8"
     refs: [fs.DirectoryEntry, crypto.master-key-chain]
+    verified_by:
+      - k_block_vectors::k_block_derivation_is_deterministic
+      - k_block_vectors::k_block_differs_per_block_hash
+      - k_block_vectors::k_block_differs_per_encryption_salt
+      - k_block_vectors::k_block_differs_per_master_key_version
 
   - id: crypto.k-node-self
     kind: narrative
