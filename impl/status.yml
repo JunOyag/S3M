@@ -73,10 +73,20 @@ entries:
       externe.
   crypto.k-dispersal:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: cline-agent
+    tests:
+      - k_dispersal_vectors::k_dispersal_derivation_is_deterministic
+      - k_dispersal_vectors::k_dispersal_block_differs_per_block_hash
+      - k_dispersal_vectors::k_dispersal_content_is_domain_separated_from_k_attach_and_signing_key
+    notes: >-
+      Deux étages HKDF-SHA256, sortie 32 octets, salt interne par défaut :
+      K_dispersal_content = HKDF(K_attach, info="dispersal-content"),
+      K_dispersal_block = HKDF(K_dispersal_content, info=block_hash).
+      Sens unique garanti par l'absence de fonction inverse (HKDF non
+      inversible) ; séparation de domaine testée contre K_attach et
+      sig_priv_dispersal. Dérivation propre au protocole : invariants
+      structurels seuls, pas de vecteur externe.
   crypto.k-node-self:
     kind: narrative
     status: not_started
