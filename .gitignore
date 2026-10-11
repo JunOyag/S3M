@@ -5,3 +5,6 @@ __pycache__/
 .venv/
 impl/plan.json
 impl/schema-order.json
+
+# Rust / Cargo — artefacts de compilation regeneres par `cargo build` / `cargo test`
+target/
