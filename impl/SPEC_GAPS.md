@@ -37,8 +37,9 @@ inter-implémentations sur la dérivation elle-même.
 
 **Résolution** : tranché par l'orchestrateur le 2026-10-10 — schéma de
 chemins BIP-39 → SLIP-0010 (ed25519, durci, `m/0x703270'/{0'|1'|2'}/<index>',
-passphrase vide par défaut). Documenté sur
-`docs/03-crypto/identity-derivation.md` (voir le commit de résolution).
+passphrase vide par défaut). Commit : a0dd36b (branche
+`docs/identity-derivation`, doc seule — séparée de `feat/crypto-k-attach`
+par la règle « une branche, un id »).
 
 
 ## crypto.master-key-chain — Chemin de dérivation de `master_key[version]`
@@ -65,7 +66,8 @@ mécanisme de lecture des versions antérieures (pas de re-dérivation depuis la
 Rotation d'identité seule : pas de nouvelle version ; nouvelle seed ou fuite de
 `master_key` : nouvelle version + re-wrap de la chaîne. Documenté dans
 `crypto.identity-derivation`, liens depuis `crypto.master-key-chain` et
-`securite.incidents-compromissions`. Commit : 79d2750.
+`securite.incidents-compromissions`. Commit : a0dd36b (branche
+`docs/identity-derivation`).
 
 ## crypto.identity-derivation — Découverte de l'index courant après perte totale
 
@@ -94,4 +96,5 @@ entrée vivante n'y est déjà. Si rien n'est trouvé : message « vérifier la 
 Limite documentée : si toutes les entrées ont expiré, un index compromis peut être
 retrouvé par erreur ; recommander de conserver l'index courant avec la sauvegarde de la
 phrase. Documenté dans `crypto.identity-derivation`, liens depuis
-`deploiement.disaster-recovery`. Commit : 79d2750.
+`deploiement.disaster-recovery`. Commit : a0dd36b (branche
+`docs/identity-derivation`).
