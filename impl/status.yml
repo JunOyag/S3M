@@ -89,10 +89,18 @@ entries:
       structurels seuls, pas de vecteur externe.
   crypto.k-node-self:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: cline-agent
+    tests:
+      - k_node_self_vectors::k_node_self_derivation_is_deterministic
+      - k_node_self_vectors::k_node_self_differs_per_priv_node
+      - k_node_self_vectors::k_node_self_is_domain_separated_from_k_self
+    notes: >-
+      K_node_self = HKDF-SHA256(priv_node, info="node-recovery"), salt
+      interne par défaut, sortie 32 octets. Symétrique de K_self côté Nœud,
+      dérivable de la seed seule (restauration). Domaine séparé de
+      "attachment-recovery" testé. Dérivation propre au protocole :
+      invariants structurels seuls, graines RFC 8032 en entrée seulement.
   crypto.k-self:
     kind: narrative
     status: done

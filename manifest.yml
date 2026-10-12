@@ -350,6 +350,10 @@ pages:
     title: "K_node_self — Confidentialité de la Cartographie Nœud"
     section: "§3.8"
     refs: [node.NodeManifest, crypto.identity-derivation]
+    verified_by:
+      - k_node_self_vectors::k_node_self_derivation_is_deterministic
+      - k_node_self_vectors::k_node_self_differs_per_priv_node
+      - k_node_self_vectors::k_node_self_is_domain_separated_from_k_self
 
   - id: crypto.k-self
     kind: narrative
