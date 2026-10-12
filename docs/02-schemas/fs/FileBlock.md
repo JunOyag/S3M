@@ -18,11 +18,14 @@ Bloc de contenu de fichier — fragment brut, chaîné par `next_hash`.
 --8<-- "fs/FileBlock.table.md"
 ```
 
-Le dernier bloc de la chaîne, si son contenu utile ne remplit pas les
-64 KiO, est complété par un **padding à zéro** jusqu'à la taille fixe du
-bloc ; `size_bytes` (porté par la
-[`fs.DirectoryEntry`](DirectoryEntry.md) parente) fait foi pour distinguer
-le contenu réel du padding à la lecture.
+Le dernier bloc de la chaîne, si son contenu utile ne remplit pas la
+taille fixe, est complété par un **padding à zéro** ; `size_bytes` (porté
+par la [`fs.DirectoryEntry`](DirectoryEntry.md) parente) fait foi pour
+distinguer le contenu réel du padding à la lecture. La taille exacte, la
+trame de chiffrement et la politique de nonce des blocs relèvent de
+[`crypto.symmetric-suite`](../../03-crypto/symmetric-suite.md) et
+[`crypto.k-block`](../../03-crypto/k-block.md) — cette page ne décrit que
+la structure du bloc.
 
 **Immuabilité** : une chaîne de `FileBlock`, une fois écrite, n'est pas
 modifiée en place (l'adressage par contenu rendrait toute édition en milieu

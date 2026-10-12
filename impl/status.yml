@@ -57,7 +57,7 @@ entries:
       BIP-39 -> graine 32B (non bloquant).
   crypto.k-block:
     kind: narrative
-    status: done
+    status: not_started
     owner: cline-agent
     tests:
       - k_block_vectors::k_block_derivation_is_deterministic
@@ -65,28 +65,31 @@ entries:
       - k_block_vectors::k_block_differs_per_encryption_salt
       - k_block_vectors::k_block_differs_per_master_key_version
     notes: >-
-      K_block = HKDF-SHA256(master_key[version], salt=encryption_salt,
-      info=block_hash), sortie 32 octets. Mapping : salt = salt par
-      fichier/répertoire (porté par fs.DirectoryEntry), info = block_hash
-      (clé distincte par bloc, révocabilité individuelle). Dérivation
-      propre au protocole : invariants structurels seuls, pas de vecteur
-      externe.
+      Formule révisée par l'arbitrage symmetric-suite (impl/SPEC_GAPS.md,
+      doc e13b2e7) : K_block = KDF(master_key[version], encryption_salt),
+      sans block_hash — clé par élément, blocs déterministes à nonce
+      synthétique (voir crypto.symmetric-suite). Entrée rouverte : le code
+      (impl/core/src/k_block.rs, commit 194d653 sur main) et les tests
+      ci-dessus encodent encore l'ancienne formule info=block_hash —
+      passe code requise. Revue cryptographique requise avant done.
   crypto.k-dispersal:
     kind: narrative
-    status: done
+    status: not_started
     owner: cline-agent
     tests:
       - k_dispersal_vectors::k_dispersal_derivation_is_deterministic
       - k_dispersal_vectors::k_dispersal_block_differs_per_block_hash
       - k_dispersal_vectors::k_dispersal_content_is_domain_separated_from_k_attach_and_signing_key
     notes: >-
-      Deux étages HKDF-SHA256, sortie 32 octets, salt interne par défaut :
-      K_dispersal_content = HKDF(K_attach, info="dispersal-content"),
-      K_dispersal_block = HKDF(K_dispersal_content, info=block_hash).
-      Sens unique garanti par l'absence de fonction inverse (HKDF non
-      inversible) ; séparation de domaine testée contre K_attach et
-      sig_priv_dispersal. Dérivation propre au protocole : invariants
-      structurels seuls, pas de vecteur externe.
+      Formule révisée par l'arbitrage symmetric-suite (impl/SPEC_GAPS.md,
+      doc e13b2e7) : K_dispersal_content = KDF(K_attach,
+      "dispersal-content"), K_dispersal_block = KDF(K_dispersal_content,
+      "dispersal-block") — étiquette de domaine fixe, sans block_hash ;
+      blocs de l'arbre d'index en déterministe à nonce synthétique.
+      Entrée rouverte : le code (impl/core/src/k_dispersal.rs, commit
+      6b6ee07 sur main) et les tests ci-dessus encodent encore
+      info=block_hash — passe code requise. Revue cryptographique requise
+      avant done.
   crypto.k-node-self:
     kind: narrative
     status: done
@@ -130,13 +133,19 @@ entries:
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Revue cryptographique requise avant done (rotation et wrap,
+      dérivation K_block révisée sans block_hash par l'arbitrage
+      symmetric-suite).
   crypto.symmetric-suite:
     kind: narrative
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Revue cryptographique requise avant done (régimes AEAD/HKDF/hash,
+      politique de nonce et nonce synthétique arbitrés, SPEC_GAPS
+      crypto.k-block/k-dispersal résolu).
   deploiement.disaster-recovery:
     kind: narrative
     status: not_started

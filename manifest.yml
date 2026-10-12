@@ -327,10 +327,7 @@ pages:
     title: "K_dispersal_content / K_dispersal_block"
     section: "§3.8"
     refs: [dispersal.IndexNode, crypto.k-attach, protocols.migration-noeud]
-    verified_by:
-      - k_dispersal_vectors::k_dispersal_derivation_is_deterministic
-      - k_dispersal_vectors::k_dispersal_block_differs_per_block_hash
-      - k_dispersal_vectors::k_dispersal_content_is_domain_separated_from_k_attach_and_signing_key
+    verified_by: []
 
   - id: crypto.k-block
     kind: narrative
@@ -338,11 +335,7 @@ pages:
     title: "K_block — Contenu Réel des Blocs"
     section: "§3.8"
     refs: [fs.DirectoryEntry, crypto.master-key-chain]
-    verified_by:
-      - k_block_vectors::k_block_derivation_is_deterministic
-      - k_block_vectors::k_block_differs_per_block_hash
-      - k_block_vectors::k_block_differs_per_encryption_salt
-      - k_block_vectors::k_block_differs_per_master_key_version
+    verified_by: []
 
   - id: crypto.k-node-self
     kind: narrative

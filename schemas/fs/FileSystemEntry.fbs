@@ -37,6 +37,6 @@ table DirectoryBlock {
 
 /// Bloc de contenu de fichier — chaîné par next_hash, padding zéro sur le dernier bloc.
 table FileBlock {
-  data: [ubyte];                  /// fragment brut (padding zéro sur le dernier bloc jusqu'à 64 KiO)
+  data: [ubyte];                  /// fragment brut ; le bloc sérialisé est complété jusqu'à 65 506 o (padding zéro)
   next_hash: [ubyte];             /// vide/absent si dernier bloc du fichier
 }
