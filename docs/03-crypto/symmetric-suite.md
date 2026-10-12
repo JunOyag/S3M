@@ -84,6 +84,11 @@ deux versions** : la version wrappée et la version courante. Toute tentative
 de transplanter un wrap d'une version vers une autre échoue alors à la
 vérification du tag.
 
+L'en-tête de version (2 o) authentifie ici la **version de protocole** sous
+laquelle le wrap a été produit — il n'entre que dans l'AAD : il n'est pas
+repris comme préfixe de la valeur stockée `wrapped_key` (48 o, sans en-tête,
+voir [§ clé de wrap](#cle-de-wrap-de-master_keyversion)).
+
 ## KDF — HKDF-SHA256
 
 - **HKDF-SHA256, sortie 32 octets** — le KDF de tout le chantier Phase 0
@@ -121,7 +126,12 @@ K_wrap = HKDF-SHA256(ikm  = master_key[version_courante],
   ‖ u16(version_courante)` — toute tentative de transplanter un wrap d'une
   version vers une autre échoue à la vérification du tag.
 - `wrapped_key = 48 o` : les 32 o de la clé wrappée chiffrée ‖ le tag de
-  16 o (le nonce est implicite, non transmis).
+  16 o (le nonce est implicite, non transmis). L'en-tête de version (2 o)
+  de l'AAD n'est **pas** préfixé à cette valeur : `wrapped_key` mesure
+  exactement 48 o, l'en-tête n'existant ici que comme donnée authentifiée
+  (le champ est une valeur structurée de `master_key_chain`, pas un payload
+  brut de
+  [`deploiement.formats-serialisation`](../07-deploiement/formats-serialisation.md)).
 
 ## Registre des étiquettes KDF
 
