@@ -567,7 +567,7 @@ pages:
     path: 07-deploiement/formats-serialisation.md
     title: "Formats de Sérialisation et Performance"
     section: "§7.2"
-    refs: []
+    refs: [crypto.symmetric-suite, crypto.master-key-chain]
 
   - id: deploiement.packaging
     kind: narrative

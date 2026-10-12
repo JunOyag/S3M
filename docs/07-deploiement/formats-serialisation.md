@@ -20,6 +20,19 @@ verified_by: []
   cycle append-only → compaction.
 - **Payload** : octets bruts chiffrés avec en-tête fixe de 2 octets pour la
   version.
+- **En-tête de version (2 o)** : `u16` **gros-boutiste** (convention réseau,
+  comme l'encodage canonique de [`crypto.symmetric-suite`](../03-crypto/symmetric-suite.md)) ;
+  `0x0000` réservé et interdit ; **valeur courante `1`** pour ce cycle de
+  développement. L'incrémentation (versions suivantes) est décidée par
+  orchestration d'évolutions disruptives : les implémentations des différentes
+  versions **coexistent**, aucun bump silencieux. Portée : préfixe des trames
+  chiffrées et donnée authentifiée (AAD) — y compris pour le wrap, où l'en-tête
+  n'existe **qu'en AAD** (`wrapped_key` = 48 o sans en-tête, voir la clé de wrap
+  de [`crypto.symmetric-suite`](../03-crypto/symmetric-suite.md) et la lecture
+  d'un bloc ancien de [`crypto.master-key-chain`](../03-crypto/master-key-chain.md)).
+  Un bump de version change l'AAD : tous les chiffrés déterministes (blocs à
+  nonce synthétique) changent avec lui — corollaire assumé, même logique que la
+  rotation de clé.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
