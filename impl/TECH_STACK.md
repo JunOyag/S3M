@@ -183,17 +183,19 @@ plutôt que de laisser un agent écrire l'arithmétique depuis zéro :
 - **Reed-Solomon** — la crate `reed-solomon-erasure` (Rust, implémentation
   GF(2⁸) largement utilisée en production) plutôt qu'un réimplémentation.
 
-Le reste (KDF, conversions Ed25519/X25519, wrapping de clés) est
-suffisamment simple et bien couvert par des bibliothèques standard
-(`ed25519-dalek`, `x25519-dalek`, `hkdf`) pour qu'un agent les compose
-correctement, sous réserve de tests couvrant les vecteurs de test connus
-des standards concernés (RFC 7748, RFC 8032).
+Le reste (suite symétrique AEAD/KDF/hash, conversions Ed25519/X25519,
+wrapping de clés) est suffisamment simple et bien couvert par des
+bibliothèques standard (`chacha20poly1305`, `hkdf`, `hmac`, `sha2`,
+`ed25519-dalek`, `x25519-dalek`) pour qu'un agent les compose correctement,
+sous réserve de tests couvrant les vecteurs de test connus des standards
+concernés (RFC 7748, RFC 8032, RFC 8439, RFC 5869, RFC 4231, RFC 6234).
 
 ## Bibliothèques retenues, par composant
 
 | Besoin | `impl/core` (Rust) | `impl/connector` (TS/Bun) |
 |---|---|---|
 | Ed25519 / X25519 | `ed25519-dalek`, `x25519-dalek` | *(via WASM depuis `impl/core`)* |
+| Suite symétrique — AEAD ChaCha20-Poly1305, HKDF-SHA256, SHA-256, HMAC-SHA256 ([`crypto.symmetric-suite`](../docs/03-crypto/symmetric-suite.md)) | `chacha20poly1305`, `hkdf`, `sha2`, `hmac` | *(via WASM depuis `impl/core`)* |
 | VDF Wesolowski | binding FFI vers `chiavdf` | *(via WASM — vérification uniquement, génération non pertinente côté client léger)* |
 | Reed-Solomon | `reed-solomon-erasure` | *(via WASM)* |
 | Sérialisation réseau | `flatbuffers` (crate officielle) | `flatbuffers` (paquet npm officiel) |
