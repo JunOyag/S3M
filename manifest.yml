@@ -379,6 +379,13 @@ pages:
     section: "§5.2, §7.1"
     refs: [crypto.key-hierarchy, crypto.k-self, crypto.k-node-self, securite.incidents-compromissions, deploiement.disaster-recovery, network.dht-directory]
 
+  - id: crypto.symmetric-suite
+    kind: narrative
+    path: 03-crypto/symmetric-suite.md
+    title: "Suite cryptographique symétrique (AEAD, KDF, hash)"
+    section: "§3.8"
+    refs: [crypto.key-hierarchy, crypto.master-key-chain, crypto.k-block, crypto.k-attach, crypto.k-dispersal, crypto.k-self, crypto.k-node-self, crypto.identity-derivation, deploiement.formats-serialisation, agilite.kem-vs-nike, overview.architecture]
+
   # ---------------------------------------------------------------- protocols
   - id: protocols.index-adaptatif
     kind: narrative

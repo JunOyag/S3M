@@ -69,6 +69,53 @@ Rotation d'identité seule : pas de nouvelle version ; nouvelle seed ou fuite de
 `securite.incidents-compromissions`. Commit : a0dd36b (branche
 `docs/identity-derivation`).
 
+## crypto.k-block / crypto.k-dispersal — Circularité `block_hash` ↔ `K_block` / `K_dispersal_block` et taille utile du bloc
+
+**Constat** : `docs/03-crypto/k-block.md` publie
+`K_block = KDF(master_key[version], block_hash, encryption_salt)`, mais
+`docs/04-protocols/integrite-lecture.md` décrit le Connecteur qui « recalcule
+le hash du contenu (**ciphertext**) reçu et le compare au `block_hash`
+attendu » — `block_hash` est donc le hash du **chiffré**, lequel est produit
+avec `K_block` lui-même. La formule exige le hash du résultat du chiffrement
+qui produit ce résultat : cercle vicieux, impossible à évaluer au moment de
+l'écriture d'un bloc. **La même circularité frappe `crypto.k-dispersal`** :
+`K_dispersal_block = KDF(K_dispersal_content, block_hash)`
+(`docs/03-crypto/k-dispersal.md`) chiffre les blocs internes de l'arbre
+d'index « sur le principe de `k-block` » — si `block_hash` y désigne comme en
+lecture d'intégrité le hash du chiffré, la dérivation est circulaire pour la
+même raison ; la page ne précise d'ailleurs pas quel `block_hash` (clair ?
+chiffré ? quel niveau de l'arbre ?). Second constat : `overview.architecture`
+fixe une taille
+de bloc de 64 KiO avec « en-tête fixe » et `deploiement.formats-serialisation`
+un en-tête de 2 octets ; avec la tag AEAD de 16 octets retenue pour
+`crypto.symmetric-suite`, la place utile dans les 65 536 octets n'est pas
+explicitée — 64 KiO de clair (chiffré à 65 536 + 18 o ?) ou 64 KiO de chiffré
+(clair à 65 518 o ?), sachant que `fs.FileBlock` impose un padding « jusqu'à
+la taille fixe du bloc » sans préciser de quel côté.
+
+**Question** : (1) remplacer `block_hash` dans les deux formules par un
+identifiant **calculable avant chiffrement** — piste : dérivation par **rang**
+du bloc (position dans le fichier / niveau de l'arbre d'index) +
+`encryption_salt` **neuf à chaque réémission** du
+bloc (le salt réelant le hasard du chiffrement et restant porté par
+`fs.DirectoryEntry`) ; ou un autre préfixe/champ déjà disponible avant
+chiffrement ? Quel `block_hash` exact pour les niveaux de l'arbre d'index
+dispersal ? (2) Les 64 KiO désignent-ils le clair ou le chiffré — la tag
+(16 o) et l'en-tête (2 o) sont-elles déduites de cette taille, et que vaut
+donc la taille utile par bloc ?
+
+**Impact si non résolu** : **bloquant** pour l'écriture de blocs via
+`crypto.k-block` **et** `crypto.k-dispersal` (formules publiées non
+évaluables) et pour la
+composition clé+AEAD de `crypto.symmetric-suite` (AAD, budget de taille du
+bloc). Non détecté par les tests existants : `k_block_vectors` et
+`k_dispersal_vectors` tiennent `block_hash` en
+entrée opaque, la circularité n'apparaît qu'à
+l'intégration écriture→lecture.
+
+**Résolution** : *(rempli par l'orchestrateur une fois tranché, avec la
+référence du commit qui met à jour docs/ en conséquence)*
+
 ## crypto.identity-derivation — Découverte de l'index courant après perte totale
 
 **Constat** : après une perte totale, la seed seule (même avec la bonne

@@ -131,6 +131,12 @@ entries:
     owner: null
     tests: []
     notes: ''
+  crypto.symmetric-suite:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
   deploiement.disaster-recovery:
     kind: narrative
     status: not_started
