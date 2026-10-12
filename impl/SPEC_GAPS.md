@@ -187,3 +187,48 @@ retrouvé par erreur ; recommander de conserver l'index courant avec la sauvegar
 phrase. Documenté dans `crypto.identity-derivation`, liens depuis
 `deploiement.disaster-recovery`. Commit : a0dd36b (branche
 `docs/identity-derivation`).
+
+
+## crypto.master-key-chain — Clé de wrap de `wrapped_key` : directe ou KDF ?
+
+**Constat** : l'inventaire du registre des étiquettes KDF
+(`crypto.symmetric-suite`) ne trouve **aucune étiquette de dérivation** pour
+le wrap de `master_key[version]` : `crypto.master-key-chain` dit seulement
+« chiffrée sous la `master_key` courante », `crypto.symmetric-suite` nomme
+un domaine **AAD** `« master-key-wrap »` et une « clé de wrap » à usage
+unique (nonce nul), sans formule `K_wrap = KDF(…)` ; le stub
+`impl/core/src/master_key_chain.rs` (`todo!` — « wrap symétrique sous
+new_master_key ») suggère un chiffrement direct sous la clé courante. La
+mention `master-key-wrap/v1` n'apparaît nulle part dans `docs/`.
+
+**Question** : le wrap est-il un AEAD **direct** sous `master_key[version]`
+(donc sans étiquette KDF, `master-key-wrap` restant une simple étiquette
+AAD) — ou faut-il une dérivation du type
+`K_wrap = KDF(master_key[version], "master-key-wrap/v1")`, à ajouter au
+registre de `crypto.symmetric-suite` ?
+
+**Impact si non résolu** : contournable — le registre reste tel quel et le
+stub `rewrap_chain_on_rotation` est de toute façon `todo!` ; bloquant pour
+la passe code de `crypto.master-key-chain` (impossible d'implémenter un
+wrap sans savoir s'il y a un KDF intermédiaire).
+
+**Résolution** : tranché par l'arbitre — dérivation intermédiaire, pas de
+chiffrement direct. La clé de wrap est une **dérivée HKDF-SHA256** ajoutée
+au registre des étiquettes de `crypto.symmetric-suite` comme 13ᵉ étiquette :
+
+```
+K_wrap = HKDF-SHA256(ikm = master_key[version_courante], salt = ∅,
+                      info = encodage canonique("p2p-storage/master-key-wrap/v1"
+                                                ‖ u16(version_wrappée)
+                                                ‖ u16(version_courante)))
+```
+
+Le préfixe fixe `p2p-storage/master-key-wrap/v1` est l'**étiquette** ; les
+deux `u16` (version wrappée, version courante) portés en `info` garantissent
+l'unicité par couple de versions. Chiffrement : **ChaCha20-Poly1305**, clé à
+usage unique → nonce nul, trame `chiffré ‖ tag`, `wrapped_key = 48 o` (32 o
+chiffrés ‖ 16 o tag). `AAD = en-tête (2 o) ‖ "master-key-wrap" ‖
+u16(version_wrappée) ‖ u16(version_courante)` — un wrap ne se transplante
+pas d'une version à une autre. `crypto.master-key-chain` renvoie à cette
+règle pour l'étape « déchiffrer `wrapped_key` ». Commit doc : `dd08775`
+(branche `docs/symmetric-suite`).
