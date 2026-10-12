@@ -19,6 +19,13 @@ curve25519-dalek = "4"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 hkdf = "0.12"
 sha2 = "0.10"
+# Suite symétrique (crypto.symmetric-suite) : AEAD ChaCha20-Poly1305 (RFC 8439)
+# et HMAC-SHA256 (nonce synthétique, RFC 4231). Features minimales : le noyau
+# ne tire jamais d'aléa (aucun `OsRng`/`getrandom` — la politique de nonce
+# aléatoire est appliquée par l'appelant), la cible WASM reste donc intacte.
+# Voir impl/TECH_STACK.md.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+hmac = "0.12"
 thiserror = "1"
 zeroize = { version = "1", features = ["derive"] }
 

@@ -12,6 +12,15 @@ pub enum CoreError {
     #[error("longueur de clé invalide : attendu {expected} octets, reçu {got}")]
     InvalidKeyLength { expected: usize, got: usize },
 
+    #[error("longueur de nonce invalide : attendu {expected} octets, reçu {got}")]
+    InvalidNonceLength { expected: usize, got: usize },
+
+    #[error("opération AEAD en échec (nonce incorrect ou tag d'authentification rejeté)")]
+    AeadFailure,
+
+    #[error("calcul HMAC-SHA256 échoué")]
+    HmacFailure,
+
     #[error("échec de dérivation HKDF")]
     KdfFailure,
 
