@@ -95,10 +95,16 @@ entries:
     notes: ''
   crypto.k-self:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: cline-agent
+    tests:
+      - k_self_vectors::k_self_derivation_is_deterministic
+      - k_self_vectors::k_self_differs_per_priv_user
+    notes: >-
+      K_self = HKDF-SHA256(priv_user, info="attachment-recovery"), salt
+      interne par défaut, sortie 32 octets. Ne dépend d'aucune info externe
+      (reconstruction depuis la seed seule). Dérivation propre au protocole :
+      invariants structurels seuls, graines RFC 8032 en entrée seulement.
   crypto.key-hierarchy:
     kind: narrative
     status: not_started

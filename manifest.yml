@@ -357,6 +357,9 @@ pages:
     title: "K_self — Récupération depuis la Seed"
     section: "§3.8"
     refs: [network.dht-directory, deploiement.disaster-recovery, crypto.identity-derivation]
+    verified_by:
+      - k_self_vectors::k_self_derivation_is_deterministic
+      - k_self_vectors::k_self_differs_per_priv_user
 
   - id: crypto.master-key-chain
     kind: narrative
