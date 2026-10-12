@@ -141,19 +141,42 @@ entries:
       symmetric-suite).
   crypto.symmetric-suite:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: cline-agent
+    tests:
+      - labels::info_labels_are_globally_unique
+      - labels::aad_contexts_are_unique
+      - labels::labels_match_the_spec_registry
+      - symmetric_suite_vectors::aead_seal_matches_rfc8439_section_2_8_2
+      - symmetric_suite_vectors::aead_open_rejects_forgery
+      - symmetric_suite_vectors::hkdf_sha256_matches_rfc5869_vectors
+      - symmetric_suite_vectors::hmac_sha256_matches_rfc4231_vectors
+      - symmetric_suite_vectors::sha256_matches_rfc6234_vectors
+      - symmetric_suite_vectors::canonical_encode_matches_spec_layout
+      - symmetric_suite_vectors::k_nonce_matches_generated_composition_vector
+      - symmetric_suite_vectors::k_wrap_matches_generated_composition_vector
+      - symmetric_suite_vectors::k_block_single_label_info_matches_generated_composition_vector
+      - symmetric_suite_vectors::synthetic_nonce_matches_generated_composition_vector
+      - symmetric_suite_vectors::wrap_composition_is_48_octets_without_header
+      - symmetric_suite_vectors::block_frame_matches_generated_composition_vector
     notes: >-
-      Revue cryptographique requise avant done (régimes AEAD/HKDF/hash,
+      Revue cryptographique validée (régimes AEAD/HKDF/hash,
       politique de nonce et nonce synthétique arbitrés, SPEC_GAPS
       crypto.k-block/k-dispersal résolu). Registre des étiquettes KDF
       (unicité globale, 13 étiquettes dont la nouvelle
       p2p-storage/master-key-wrap/v1, exception K_attach réservée à la v1
       X25519) et registre distinct des contextes d'AAD (master-key-wrap,
       block, contextes par clé) intégrés à la page ; clé de wrap K_wrap
-      (HKDF sans sel, ChaCha20-Poly1305 nonce nul, wrapped_key 48 o)
-      spécifiée. Test d'unicité labels.rs à créer à la passe code.
+      (HKDF sans sel, ChaCha20-Poly1305 nonce nul, wrapped_key 48 o sans
+      en-tête, l'en-tête de version n'entrant que dans l'AAD) spécifiée.
+      Passe code effectuée : primitives liées (crates chacha20poly1305,
+      hkdf, hmac, sha2 — jamais réimplémentées), registres dans
+      src/labels.rs, nonce synthétique et K_wrap dans
+      src/symmetric_suite.rs ; vecteurs RFC 8439 §2.8.2, RFC 5869 A.1-A.3,
+      RFC 4231 TC1-TC4, RFC 6234 §8.5 + compositions générées par
+      tests/vectors/gen_symmetric_suite_vectors.py (cryptography,
+      indépendante du code testé) — 15 tests verts (cargo test).
+      verified_by renseigné dans manifest.yml (15 identifiants de test).
   deploiement.disaster-recovery:
     kind: narrative
     status: not_started

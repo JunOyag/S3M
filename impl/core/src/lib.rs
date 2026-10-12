@@ -15,7 +15,9 @@ pub mod k_block;
 pub mod k_self;
 pub mod k_node_self;
 pub mod k_dispersal;
+pub mod labels;
 pub mod master_key_chain;
+pub mod symmetric_suite;
 pub mod vdf;
 
 pub use error::CoreError;
