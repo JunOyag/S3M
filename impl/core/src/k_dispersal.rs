@@ -12,8 +12,12 @@
 //! 32 octets. La formule ne nomme aucun salt externe pour ces deux
 //! dérivations — seul le domaine `info` y figure :
 //! - `info` = `"dispersal-content"` (premier étage, depuis `K_attach`) ;
-//! - `info` = `block_hash` (second étage, liaison au bloc — même principe
-//!   que `K_block`, voir `k_block.rs`).
+//! - `info` = `"dispersal-block"` (second étage, étiquette fixe — retour à
+//!   la formule ST d'origine, arbitrage documenté dans `impl/SPEC_GAPS.md`
+//!   : `K_dispersal_block` **indépendante de `block_hash`** ; le chiffrement
+//!   déterministe à nonce synthétique porte la liaison au contenu, sur le
+//!   principe exact de `K_block`, voir `k_block.rs`).
+//!
 //! Salt HKDF interne par défaut dans les deux cas (comme
 //! `derive_sig_priv_dispersal` dans `k_attach.rs`).
 //!
@@ -47,15 +51,15 @@ pub fn derive_k_dispersal_content(k_attach: &[u8; 32]) -> Result<[u8; 32], CoreE
     Ok(okm)
 }
 
-/// Second étage : clé propre à un bloc interne, dérivée bloc par bloc par le
-/// nouveau Nœud sans intervention du Connecteur (page spec).
+/// Second étage : clé commune aux blocs internes, dérivée une seule fois par
+/// le nouveau Nœud sans intervention du Connecteur (page spec, §«
+/// Conséquence pour la migration »).
 pub fn derive_k_dispersal_block(
     k_dispersal_content: &[u8; 32],
-    block_hash: &[u8; 32],
 ) -> Result<[u8; 32], CoreError> {
     let mut okm = [0u8; 32];
     Hkdf::<Sha256>::new(None, k_dispersal_content)
-        .expand(block_hash, &mut okm)
+        .expand(b"dispersal-block", &mut okm)
         .map_err(|_| CoreError::KdfFailure)?;
     Ok(okm)
 }

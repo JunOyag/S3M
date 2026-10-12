@@ -327,7 +327,9 @@ pages:
     title: "K_dispersal_content / K_dispersal_block"
     section: "§3.8"
     refs: [dispersal.IndexNode, crypto.k-attach, protocols.migration-noeud]
-    verified_by: []
+    verified_by:
+      - k_dispersal_vectors::k_dispersal_derivation_is_deterministic
+      - k_dispersal_vectors::k_dispersal_content_is_domain_separated_from_k_attach_and_signing_key
 
   - id: crypto.k-block
     kind: narrative
