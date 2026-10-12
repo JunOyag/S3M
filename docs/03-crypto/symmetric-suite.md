@@ -37,8 +37,36 @@ zéro), **implicite** : il n'est pas transmis, la trame est
 | Cas | Nonce | Borne |
 |---|---|---|
 | Clé à usage unique (ex. clé de wrap de [`crypto.master-key-chain`](master-key-chain.md)) | Constant, 12 octets à zéro | Nulle : la clé n'est jamais réutilisée, donc aucun risque de réutilisation de nonce |
-| Clé multi-messages | Aléatoire 12 o (`OsRng`), préfixe en clair | **2^32 messages par clé** — borne documentée, au-delà de laquelle la rotation de clé est obligatoire (probabilité de collision de nonce ≲ 2⁻³³) |
-| `K_block` / `K_dispersal_block` | **Sous réserve de l'arbitrage** en cours dans `impl/SPEC_GAPS.md` (circularité `block_hash`) | À fixer à la résolution |
+| Valeurs **non adressées par contenu** sous clé multi-messages (entrées DHT chiffrées sous `K_self` / `K_node_self` / `K_attach`, …) | Aléatoire 12 o (`OsRng`), préfixe en clair | **2^32 messages par clé** — borne documentée, au-delà de laquelle la rotation de clé est obligatoire (probabilité de collision de nonce ≲ 2⁻³³) |
+| Valeurs **adressées par contenu** : les blocs (`K_block`, `K_dispersal_block`) | **Synthétique**, déterministe — voir ci-dessous, stocké en préfixe | **~2^48 messages distincts par clé** (borne de collision d'un nonce de 96 bits) |
+
+### Nonce synthétique — blocs adressés par contenu
+
+Un bloc est adressé par son contenu : le chiffrement est donc
+**déterministe**, et le nonce est fabriqué plutôt que tiré au sort :
+
+```
+nonce = 12 premiers octets de HMAC-SHA256(K_nonce, u32(len(AAD)) ‖ AAD ‖ clair)
+```
+
+- **`K_nonce`** : `HKDF-SHA256(K_enc, info = "p2p-storage/synthetic-nonce/v1")`,
+  **sans sel** — `K_enc` est la clé de chiffrement de l'usage concerné
+  (`K_block`, `K_dispersal_block`, …). Règle générique de la suite.
+- **Entrée du HMAC en encodage canonique** (même convention que le KDF,
+  u32 gros-boutiste) : `u32(len(AAD)) ‖ AAD ‖ clair` ; l'AAD porte
+  l'étiquette de contexte de l'usage (« block », …).
+- Le nonce **est transmis** : la trame reste `nonce ‖ chiffré ‖ tag`,
+  préfixée par l'en-tête de version de protocole (2 o). Surcoût de trame :
+  **30 o** (2 + 12 + 16) — pour un bloc complet de 64 KiO, il reste
+  **65 506 o de clair**.
+- Sous la même clé, deux messages distincts ont des nonces distincts (collision
+  de HMAC négligeable, borne ~2^48) et un même message produit toujours le
+  même chiffré — c'est ce qui rend le bloc adressable par son contenu.
+
+> **À faire relire par un cryptographe** : cette politique de nonce
+> (dérivation synthétique de `K_nonce`, encodage du HMAC, bornes de
+> collision, AAD des blocs) a été arbitrée en spec (`impl/SPEC_GAPS.md`) et
+> doit être revue par un cryptographe avant le gel de la suite.
 
 ## AAD (associated data)
 
@@ -68,12 +96,11 @@ vérification du tag.
   ordonnées différemment produisent donc deux entrées HKDF distinctes — la
   frontière entre composantes ne peut pas être ambiguë.
 
-## Hash de contenu — SHA-256 (à confirmer)
+## Hash de contenu — SHA-256
 
 Le hash d'intégrité de contenu (challenges PoS, comparaison `block_hash` en
-lecture, empreintes de blocs) est **SHA-256** — *à confirmer* : aucun endroit
-de la spécification ne le nomme explicitement aujourd'hui, cette page est le
-premier endroit qui le ferme. La confirmation sera répercutée ici.
+lecture, empreintes de blocs) est **SHA-256** — confirmé, et cette page est
+le seul endroit de la spécification qui le fixe.
 
 ## Version de protocole
 
@@ -93,9 +120,7 @@ de clés, voir [`agilite.kem-vs-nike`](../08-agilite-crypto/kem-vs-nike.md).
 
 - **Aucune formule de dérivation de clé de bloc** : `K_block` et
   `K_dispersal_block` relèvent de leurs pages respectives
-  ([`crypto.k-block`](k-block.md), [`crypto.k-dispersal`](k-dispersal.md)) —
-  dont la formule actuellement publiée est bloquée à l'arbitrage
-  `impl/SPEC_GAPS.md` (circularité `block_hash`).
+  ([`crypto.k-block`](k-block.md), [`crypto.k-dispersal`](k-dispersal.md)).
 - **Aucune procédure de rotation** : voir
   [`crypto.master-key-chain`](master-key-chain.md) et
   [`crypto.identity-derivation`](identity-derivation.md) pour les rôles et

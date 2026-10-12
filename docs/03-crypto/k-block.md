@@ -10,17 +10,42 @@ verified_by: []
 # K_block — Contenu Réel des Blocs
 
 ```
-K_block = KDF(master_key[version], block_hash, encryption_salt)
+K_block = KDF(master_key[version], encryption_salt)
 ```
 
 - Dérivée uniquement de la seed BIP-39 du User — **jamais partagée avec le
   Nœud**.
-- Une clé distincte par bloc (`block_hash` + `encryption_salt`), révocable
-  individuellement sans affecter les autres blocs.
-- `encryption_salt` est fixé une fois par fichier (ou par répertoire), porté
-  par l'entrée FS correspondante
+- **Indépendante de `block_hash`** : la formule ne lit aucun hash du
+  chiffrement qu'elle produit — circularité `block_hash` ↔ `K_block`
+  arbitrée dans `impl/SPEC_GAPS.md` (clés sans `block_hash`, chiffrement
+  déterministe à nonce synthétique).
+- Une clé distincte par **élément** (fichier ou répertoire) : révocable au
+  niveau de l'élément sans affecter les autres.
+- `encryption_salt` est tiré d'un **CSPRNG à chaque émission**, conservé dans
+  la file d'attente locale ([`fs.WriteQueue`](../02-schemas/fs/WriteQueue.md))
+  pendant l'attente de synchronisation, puis porté par l'entrée FS
+  correspondante
   ([`fs.DirectoryEntry`](../02-schemas/fs/DirectoryEntry.md)) — tous les
-  blocs d'un même fichier/répertoire le partagent, seul `block_hash` varie.
+  blocs d'un même fichier/répertoire le partagent.
+
+## Chiffrement déterministe, nonce synthétique
+
+`K_block` chiffre des blocs **adressés par contenu** : le chiffrement est
+déterministe, avec un **nonce synthétique** (règle de
+[`crypto.symmetric-suite`](symmetric-suite.md)) :
+
+```
+nonce = 12 premiers octets de HMAC-SHA256(K_nonce, u32(len(AAD)) ‖ AAD ‖ clair)
+```
+
+- **AAD d'un bloc** : en-tête de version (2 o) ‖ étiquette de contexte
+  `« block »` — aucun champ supplémentaire : deux écritures identiques d'un
+  même contenu doivent produire exactement le même chiffré.
+- **Trame** : en-tête (2 o) ‖ nonce (12 o) ‖ chiffré ‖ tag (16 o) — surcoût
+  de **30 o** ; dans un bloc complet de 64 KiO, **65 506 o de clair**
+  (padding zéro du clair jusqu'à 65 506 o).
+- `block_hash` est le hash du **chiffré**, calculé après chiffrement — il
+  n'entre ni dans `K_block` ni dans le nonce.
 
 ## Chiffrement avant envoi, jamais côté Nœud
 

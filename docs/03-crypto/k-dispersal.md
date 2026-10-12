@@ -11,8 +11,14 @@ verified_by: []
 
 ```
 K_dispersal_content = KDF(K_attach, "dispersal-content")
-K_dispersal_block   = KDF(K_dispersal_content, block_hash)
+K_dispersal_block   = KDF(K_dispersal_content, "dispersal-block")
 ```
+
+`K_dispersal_block` est **indépendante de `block_hash`** (étiquette de
+domaine fixe — arbitrage documenté dans `impl/SPEC_GAPS.md`) : les blocs de
+l'arbre d'index sont chiffrés en déterministe avec nonce synthétique, sur le
+principe exact de [`crypto.k-block`](k-block.md), et `block_hash` de chaque
+bloc est calculé après chiffrement.
 
 Le pointeur `dispersal_root_hash`/`dispersal_root_partners` publié en DHT ne
 couvre que la **racine** de l'arbre d'index
@@ -26,7 +32,7 @@ puisque c'est une clé **partagée** Nœud↔Connecteur.
 
 ## Séparation délibérée en deux étages
 
-`K_dispersal_content` sert de base à tous les `K_dispersal_block`, mais **ne
+`K_dispersal_content` sert de base à `K_dispersal_block`, mais **ne
 permet pas** de reconstituer `K_attach` ni `sig_priv_dispersal = KDF(K_attach,
 "dispersal-signing")` — une dérivation à sens unique. Cela permet de
 transmettre `K_dispersal_content` à un tiers pour qu'il déchiffre des blocs,
@@ -40,7 +46,8 @@ C'est ce qui rend possible le flux décrit dans
 Connecteur transmet `dispersal_root_hash`, `dispersal_root_partners` et
 `K_dispersal_content` au nouveau Nœud — jamais `K_attach` ni
 `sig_priv_dispersal`. Le nouveau Nœud récupère et déchiffre alors seul les
-blocs, en dérivant `K_dispersal_block` bloc par bloc, **sans intervention
+blocs, en dérivant `K_dispersal_block` (une seule fois — étiquette de
+domaine), **sans intervention
 supplémentaire du Connecteur**, tout en restant structurellement incapable
 de signer quoi que ce soit sur l'ancienne entrée DHT.
 

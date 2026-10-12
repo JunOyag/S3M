@@ -48,7 +48,7 @@ conservée à travers les rotations, sous forme d'une chaîne wrappée :
    [`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md)).
 2. Déchiffrer l'entrée `wrapped_key` correspondante dans `master_key_chain`
    avec la clé maîtresse courante → `master_key[version]`.
-3. Dériver `K_block = KDF(master_key[version], block_hash, encryption_salt)`.
+3. Dériver `K_block = KDF(master_key[version], encryption_salt)`.
 4. Déchiffrer le bloc.
 
 Coût constant, indépendant du nombre de rotations subies. Les blocs
