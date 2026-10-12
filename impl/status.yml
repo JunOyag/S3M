@@ -123,13 +123,20 @@ entries:
     notes: ''
   crypto.master-key-chain:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: cline-agent
+    tests:
+      - master_key_chain_vectors::flat_rewrap_then_resolve_recovers_historical_keys
+      - master_key_chain_vectors::resolve_stays_single_unwrap_after_many_rotations
+      - master_key_chain_vectors::transplanted_version_fails_tag_verification
+      - master_key_chain_vectors::unknown_version_is_rejected_explicitly
+      - master_key_chain_vectors::chain_entries_carry_their_wrapped_version
     notes: >-
-      Revue cryptographique requise avant done (rotation et wrap,
-      dérivation K_block révisée sans block_hash par l'arbitrage
-      symmetric-suite).
+      Passe code effectuée : rewrap_chain_on_rotation (re-wrap plat,
+      maillons triés, 48 o sans en-tête) + resolve_master_key (recherche
+      par version, 1 unwrap, UnknownKeyVersion/UnwrapFailure) — K_wrap
+      réutilisé de symmetric_suite (jamais redérivé), en-tête u16 BE v1 en
+      paramètre (formats-serialisation). Revue cryptographique validée.
   crypto.symmetric-suite:
     kind: narrative
     status: done

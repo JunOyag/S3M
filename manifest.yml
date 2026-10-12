@@ -369,6 +369,12 @@ pages:
     title: "Continuité de Chiffrement — master_key_chain"
     section: "§3.8"
     refs: [crypto.k-block, securite.incidents-compromissions, crypto.identity-derivation]
+    verified_by:
+      - master_key_chain_vectors::flat_rewrap_then_resolve_recovers_historical_keys
+      - master_key_chain_vectors::resolve_stays_single_unwrap_after_many_rotations
+      - master_key_chain_vectors::transplanted_version_fails_tag_verification
+      - master_key_chain_vectors::unknown_version_is_rejected_explicitly
+      - master_key_chain_vectors::chain_entries_carry_their_wrapped_version
 
   - id: crypto.identity-derivation
     kind: narrative
