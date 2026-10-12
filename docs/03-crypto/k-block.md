@@ -10,7 +10,7 @@ verified_by: []
 # K_block — Contenu Réel des Blocs
 
 ```
-K_block = KDF(master_key[version], encryption_salt)
+K_block = KDF(master_key[version], info = "p2p-storage/block/v1", salt = encryption_salt)
 ```
 
 - Dérivée uniquement de la seed BIP-39 du User — **jamais partagée avec le
@@ -25,7 +25,8 @@ K_block = KDF(master_key[version], encryption_salt)
   révocable individuellement ») : corollaire assumé du chiffrement
   déterministe à nonce synthétique arbitré dans `impl/SPEC_GAPS.md` —
   révoquer la clé d'un élément révoque désormais l'ensemble de ses blocs,
-  pas un bloc isolé. Accepté par l'arbitre le 2026-10-11.
+  pas un bloc isolé. Voir l'entrée SPEC_GAPS « Circularité `block_hash` ↔
+  `K_block` » (résolue au commit doc `e13b2e7`).
 - `encryption_salt` est tiré d'un **CSPRNG à chaque émission**, conservé dans
   la file d'attente locale ([`fs.WriteQueue`](../02-schemas/fs/WriteQueue.md))
   pendant l'attente de synchronisation, puis porté par l'entrée FS

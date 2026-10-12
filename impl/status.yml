@@ -66,12 +66,14 @@ entries:
       - k_block_vectors::k_block_differs_per_master_key_version
     notes: >-
       Formule révisée par l'arbitrage symmetric-suite (impl/SPEC_GAPS.md,
-      doc e13b2e7) : K_block = KDF(master_key[version], encryption_salt),
-      sans block_hash — clé par élément, blocs déterministes à nonce
-      synthétique (voir crypto.symmetric-suite). Entrée rouverte : le code
-      (impl/core/src/k_block.rs, commit 194d653 sur main) et les tests
-      ci-dessus encodent encore l'ancienne formule info=block_hash —
-      passe code requise. Revue cryptographique requise avant done.
+      doc e13b2e7), étiquette confirmée et portée au registre de
+      crypto.symmetric-suite : K_block = KDF(master_key[version], info =
+      "p2p-storage/block/v1", salt = encryption_salt), sans block_hash —
+      clé par élément, blocs déterministes à nonce synthétique. Entrée
+      rouverte : le code (impl/core/src/k_block.rs, commit 194d653 sur
+      main) et les tests ci-dessus encodent encore l'ancienne formule
+      info=block_hash — passe code requise. Revue cryptographique requise
+      avant done.
   crypto.k-dispersal:
     kind: narrative
     status: not_started
@@ -145,7 +147,13 @@ entries:
     notes: >-
       Revue cryptographique requise avant done (régimes AEAD/HKDF/hash,
       politique de nonce et nonce synthétique arbitrés, SPEC_GAPS
-      crypto.k-block/k-dispersal résolu).
+      crypto.k-block/k-dispersal résolu). Registre des étiquettes KDF
+      (unicité globale, 13 étiquettes dont la nouvelle
+      p2p-storage/master-key-wrap/v1, exception K_attach réservée à la v1
+      X25519) et registre distinct des contextes d'AAD (master-key-wrap,
+      block, contextes par clé) intégrés à la page ; clé de wrap K_wrap
+      (HKDF sans sel, ChaCha20-Poly1305 nonce nul, wrapped_key 48 o)
+      spécifiée. Test d'unicité labels.rs à créer à la passe code.
   deploiement.disaster-recovery:
     kind: narrative
     status: not_started

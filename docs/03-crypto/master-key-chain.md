@@ -47,8 +47,13 @@ conservée à travers les rotations, sous forme d'une chaîne wrappée :
    `DispersalManifest`, court-circuité en fonctionnement normal, voir
    [`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md)).
 2. Déchiffrer l'entrée `wrapped_key` correspondante dans `master_key_chain`
-   avec la clé maîtresse courante → `master_key[version]`.
-3. Dériver `K_block = KDF(master_key[version], encryption_salt)`.
+   avec la clé maîtresse courante → `master_key[version]` — wrap AEAD sous
+   `K_wrap`, dérivée selon la règle de
+   [`crypto.symmetric-suite`](symmetric-suite.md).
+3. Dériver `K_block = KDF(master_key[version], info = "p2p-storage/block/v1",
+   salt = encryption_salt)`
+   (étiquette portée par le registre de
+   [`crypto.symmetric-suite`](symmetric-suite.md)).
 4. Déchiffrer le bloc.
 
 Coût constant, indépendant du nombre de rotations subies. Les blocs

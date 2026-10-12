@@ -96,6 +96,124 @@ vérification du tag.
   ordonnées différemment produisent donc deux entrées HKDF distinctes — la
   frontière entre composantes ne peut pas être ambiguë.
 
+### Clé de wrap de `master_key[version]`
+
+La clé de wrap `K_wrap`, qui chiffre une clé maîtresse dans une entrée
+`wrapped_key` de [`crypto.master-key-chain`](master-key-chain.md), est
+dérivée ainsi — aucun KDF plus riche n'est nécessaire puisque la clé wrappée
+est à usage unique :
+
+```
+K_wrap = HKDF-SHA256(ikm  = master_key[version_courante],
+                      salt = ∅,
+                      info = encodage canonique("p2p-storage/master-key-wrap/v1"
+                                                ‖ u16(version_wrappée)
+                                                ‖ u16(version_courante)))
+```
+
+- `version_courante` est celle dont dérive `K_wrap`, `version_wrappée` celle
+  de la clé maîtresse wrappée ; les deux sont dans l'`info`, donc deux
+  dérivations distinctes ne partagent jamais de clé.
+- Chiffrement : **ChaCha20-Poly1305**, clé `K_wrap` **à usage unique** —
+  nonce nul (12 octets zéro, implicite, voir *Politique de nonce*), trame
+  `chiffré ‖ tag`.
+- `AAD = en-tête de version (2 o) ‖ "master-key-wrap" ‖ u16(version_wrappée)
+  ‖ u16(version_courante)` — toute tentative de transplanter un wrap d'une
+  version vers une autre échoue à la vérification du tag.
+- `wrapped_key = 48 o` : les 32 o de la clé wrappée chiffrée ‖ le tag de
+  16 o (le nonce est implicite, non transmis).
+
+## Registre des étiquettes KDF
+
+Chaque dérivation de clé du protocole porte une **étiquette de domaine** —
+le paramètre `info` HKDF-SHA256 ci-dessus, ou le suffixe concaténé pour
+les rares dérivées par simple hachage. Ce registre est la **source unique**
+des étiquettes ; deux règles :
+
+1. **Unicité globale** : une étiquette n'apparaît qu'une fois dans le
+   registre, quel que soit le secret d'entrée, la page qui la définit ou le
+   KDF employé. Une étiquette ne sert **jamais** à deux dérivations
+   distinctes, même séparées par des secrets différents.
+2. **Immuabilité** : une étiquette publiée n'est jamais détournée ni
+   réutilisée pour une autre fonction ; toute révision d'une dérivation est
+   une nouvelle étiquette versionnée (`…/vN`), donc une nouvelle version de
+   protocole.
+
+L'unicité et l'absence de doublon font l'objet d'un test unitaire du noyau
+(`impl/core`, `tests/labels.rs`), à créer à la passe code.
+
+### Étiquettes HKDF-SHA256 (paramètre `info`)
+
+| Étiquette | Dérivée | Secret d'entrée | Page définissant la dérivation |
+|---|---|---|---|
+| *(exception : `info` vide)* | `K_attach` | secret DH X25519 brut | [`crypto.k-attach`](k-attach.md) |
+| `"dispersal-signing"` | `sig_priv_dispersal` | `K_attach` | [`crypto.k-attach`](k-attach.md) |
+| `"dispersal-content"` | `K_dispersal_content` | `K_attach` | [`crypto.k-dispersal`](k-dispersal.md) |
+| `"dispersal-block"` | `K_dispersal_block` | `K_dispersal_content` | [`crypto.k-dispersal`](k-dispersal.md) |
+| `"attachment-recovery"` | `K_self` | `priv_user` | [`crypto.k-self`](k-self.md) |
+| `"node-recovery"` | `K_node_self` | `priv_node` | [`crypto.k-node-self`](k-node-self.md) |
+| `"emergency-content"` | `K_emergency_content` | `K_attach` | [`protocols.espace-secours`](../04-protocols/espace-secours.md) |
+| `"emergency-signing"` | `sig_priv_emergency` | `K_attach` | [`protocols.espace-secours`](../04-protocols/espace-secours.md) |
+| `"dht-lookup"` | `user_dht_key` | `priv_user` ‖ `pub_user` | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
+| `"dht-signing"` | `sig_priv_user` | `priv_user` ‖ `pub_user` | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
+| `"p2p-storage/block/v1"` | `K_block` | `master_key[version]` | [`crypto.k-block`](k-block.md) |
+| `"p2p-storage/synthetic-nonce/v1"` | `K_nonce` | `K_enc` | cette page |
+| `"p2p-storage/master-key-wrap/v1"` | `K_wrap` | `master_key[version_courante]` | cette page ([§ clé de wrap](#cle-de-wrap-de-master_keyversion)) |
+
+- **Exception `K_attach`** : c'est la **seule** dérivation dont l'entrée soit
+  le secret DH brut ; son `info` vide **ne vaut que pour la v1 X25519** et
+  **aucune autre dérivation ne
+  prend le secret DH en entrée** — le reste part toujours d'une clé déjà
+  étiquetée (y compris `sig_priv_dispersal` et les clés d'espace de secours,
+  dérivées de `K_attach` et non du secret brut). Les variantes
+  post-quantiques de cette même dérivation
+  ([`agilite.k-attach-kem`](../08-agilite-crypto/k-attach-kem.md),
+  [`agilite.tag-hybride`](../08-agilite-crypto/tag-hybride.md)) ne portent
+  **pas** cette étiquette vide : elles recevront une étiquette **versionnée
+  portant l'identifiant d'algorithme** (p. ex. `…/v2/<alg-id>`), à trancher
+  à leur passe.
+- Les préfixes `p2p-storage/` sont **réservés** aux dérivations nouvelles :
+  une étiquette sans préfixe est héritée du vocabulaire initial du chantier
+  Phase 0 et reste inchangée.
+
+### Contextes d'AAD (registre distinct)
+
+Les étiquettes de contexte `AAD` forment un **registre séparé** du registre
+des étiquettes `info` ci-dessus : mêmes règles d'unicité et d'immuabilité,
+mais elles qualifient un *chiffré* (elles entrent dans l'AAD), pas une
+*dérivation*. Rappel de la forme générale (voir § AAD plus haut) :
+
+```
+AAD = en-tête de version (2 o) ‖ contexte ‖ champs spécifiques
+```
+
+| Contexte | Chiffré / clé | Champs spécifiques après le contexte | Page |
+|---|---|---|---|
+| `"master-key-wrap"` | `wrapped_key` / `K_wrap` | `u16(version_wrappée)` ‖ `u16(version_courante)` | cette page ([§ clé de wrap](#cle-de-wrap-de-master_keyversion)) |
+| `"block"` | blocs / `K_block`, `K_dispersal_block` | aucun (chiffrement déterministe : deux écritures identiques → même AAD → même chiffré) | [`crypto.k-block`](k-block.md) |
+| contextes par clé | chaque autre valeur chiffrée (`K_self`, `K_node_self`, `K_attach`, `K_emergency_content`, …) | listés sur la page de la clé concernée | page de la clé |
+
+### Dérivées par simple hachage (hors KDF)
+
+Le hachage de clé n'est pas un KDF, mais la même règle d'unicité
+s'applique aux étiquettes concaténées :
+
+| Dérivation | Produit | Page |
+|---|---|---|
+| `H(K_attach)` | `dht_key` du DispersalManifest | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
+| `H(K_attach ‖ "emergency")` | `emergency_dht_key` | [`protocols.espace-secours`](../04-protocols/espace-secours.md) |
+
+`H(pub_key)` (challenge VDF, tag hybride) n'est **pas** une dérivation de
+clé : hors registre.
+
+### Hors registre — chemins SLIP-0010
+
+Les dérivations d'identités (`priv_user`, `priv_node`, clé de secours,
+`master_key[version]`) ne portent pas d'étiquette KDF : ce sont des
+chemins SLIP-0010 durcis, définis — avec la table des rôles — sur
+[`crypto.identity-derivation`](identity-derivation.md), page de référence
+non recopiée ici.
+
 ## Hash de contenu — SHA-256
 
 Le hash d'intégrité de contenu (challenges PoS, comparaison `block_hash` en
