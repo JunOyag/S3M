@@ -113,6 +113,48 @@ bloc). Non détecté par les tests existants : `k_block_vectors` et
 entrée opaque, la circularité n'apparaît qu'à
 l'intégration écriture→lecture.
 
+**Résolution** : tranché par l'orchestrateur le 2026-11-10 — *doc d'abord,
+code ensuite*.
+
+1. **Blocs adressés par contenu → chiffrement déterministe.** Le nonce est
+   **synthétique** : `nonce = 12 premiers octets de HMAC-SHA256(K_nonce,
+   u32(len(AAD)) ‖ AAD ‖ clair)` (encodage canonique, u32 gros-boutiste),
+   **stocké en préfixe** de la trame. `K_nonce = HKDF-SHA256(K_enc,
+   info = "p2p-storage/synthetic-nonce/v1")` sans sel — règle générique de
+   `crypto.symmetric-suite`, appliquée à `K_block` et `K_dispersal_block` ;
+   l'AAD porte l'étiquette de contexte de l'usage. Borne de collision du
+   nonce synthétique : ~2^48 messages distincts par clé (birthday sur
+   96 bits), documentée à côté de la borne 2^32 du nonce aléatoire. La piste
+   « dérivation par rang » proposée dans la Question est abandonnée.
+2. **Clés indépendantes de `block_hash`** : `K_block = KDF(master_key[version],
+   encryption_salt)` (suppression de `block_hash` de l'entrée du KDF) ;
+   `K_dispersal_block = KDF(K_dispersal_content, "dispersal-block")`
+   (étiquette de domaine fixe). Ni le KDF ni le nonce ne dépendent du hash du
+   chiffré → circularité levée ; le `block_hash` (y compris celui des
+   niveaux de l'arbre d'index dispersal) est calculé **après** chiffrement,
+   comme en lecture d'intégrité.
+3. **`encryption_salt` tiré d'un CSPRNG à chaque émission**, conservé dans
+   la `WriteQueue` pendant l'attente de synchronisation, puis porté par
+   `fs.DirectoryEntry`.
+4. **Taille de bloc** : les 64 KiO désignent le bloc **complet** — surcoût
+   de trame 30 o (en-tête 2 o + nonce 12 o + tag 16 o), **65 506 o de
+   clair** par bloc, padding zéro du clair jusqu'à 65 506 o. Les deux
+   sous-questions de taille sont ainsi tranchées.
+5. Pages mises à jour par ce même chantier : `docs/03-crypto/k-block.md`,
+   `docs/03-crypto/k-dispersal.md`, `docs/03-crypto/master-key-chain.md`,
+   `docs/03-crypto/symmetric-suite.md`. **Code à revoir ensuite** :
+   `impl/core/src/k_block.rs`, `impl/core/src/k_dispersal.rs`, leurs tests
+   et les notes `impl/status.yml` encodent encore l'ancienne formule —
+   l'entrée reste ouverte jusqu'à cette passe code (doc d'abord, code
+   ensuite).
+6. La politique de nonce synthétique est **à faire relire par un
+   cryptographe** avant gel (mention également portée dans
+   `crypto.symmetric-suite`).
+
+**Commit doc** : `e13b2e7` (branche `docs/symmetric-suite`, doc seule —
+code `impl/core` et cette entrée SPEC_GAPS traités séparément, règle
+« une branche, un id »).
+
 **Résolution** : *(rempli par l'orchestrateur une fois tranché, avec la
 référence du commit qui met à jour docs/ en conséquence)*
 
