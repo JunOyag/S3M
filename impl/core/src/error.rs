@@ -30,6 +30,12 @@ pub enum CoreError {
     #[error("unwrap de clé échoué (mauvaise clé courante ou donnée corrompue)")]
     UnwrapFailure,
 
+    #[error("dérivation d'identité échouée (PBKDF2-HMAC-SHA512 ou HMAC-SHA512 SLIP-0010)")]
+    IdentityDerivation,
+
+    #[error("index de dérivation durcie hors bornes (attendu < 2^31) : {index}")]
+    InvalidDerivationIndex { index: u32 },
+
     // À compléter au fil de la Phase 0 — une variante par échec distinct
     // rencontré, jamais un `Other(String)` fourre-tout (perd l'info côté
     // appelant WASM/FFI).

@@ -9,6 +9,7 @@
 //! si un besoin de code n'a pas de contrepartie dans la spec.
 
 pub mod error;
+pub mod identity_derivation;
 pub mod keys;
 pub mod k_attach;
 pub mod k_block;

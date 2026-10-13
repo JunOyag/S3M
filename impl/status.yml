@@ -117,10 +117,34 @@ entries:
     notes: ''
   crypto.identity-derivation:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: cline-agent
+    tests:
+      - identity_derivation_vectors::bip39_seed_matches_trezor_vector_trezor_passphrase
+      - identity_derivation_vectors::bip39_seed_matches_trezor_vector_empty_passphrase
+      - identity_derivation_vectors::bip39_seed_matches_trezor_vector_second_mnemonic
+      - identity_derivation_vectors::slip10_master_key_matches_spec_vector
+      - identity_derivation_vectors::slip10_hardened_child_matches_spec_vector
+      - identity_derivation_vectors::purpose_hardened_serialization_is_0x80703270
+      - identity_derivation_vectors::identity_derivation_is_deterministic
+      - identity_derivation_vectors::roles_are_domain_separated
+      - identity_derivation_vectors::identity_index_rotation_changes_the_key
+      - identity_derivation_vectors::node_recovery_key_accompanies_node_index_without_reuse
+      - identity_derivation_vectors::master_key_versions_are_independent_and_bounded
+      - identity_derivation_vectors::wrong_passphrase_yields_a_different_identity_without_error
+      - identity_derivation_vectors::out_of_range_hardened_index_is_rejected
+    notes: >-
+      Chaîne BIP-39 -> SLIP-0010 ed25519 implémentée dans impl/core :
+      PBKDF2-HMAC-SHA512 (2048 it., sel "mnemonic"+passphrase, composé sur
+      hmac/sha2 sans dépendance additionnelle) -> HMAC-SHA512(clé="ed25519
+      seed") -> m/0x703270'/{0'|1'|2'|3'}'/<index>' entièrement durci. Rôle
+      3' = master_key[version] (u16), raccourci typé derive_master_key —
+      master_key_chain reste l'unique lecture des versions historiques.
+      Vecteurs externes : Trezor BIP-39 (3) + SLIP-0010 ed25519 "Test vector
+      2" (seed 64 o, m + m/0'). Normalisation NFKD présumée côté appelant
+      ( Connecteur TS ) ; balayage DHT de découverte d'index hors périmètre
+      noyau (I/O — network.bootstrap). Variantes d'erreur dédiées ajoutées à
+      error.rs : IdentityDerivation, InvalidDerivationIndex.
   crypto.master-key-chain:
     kind: narrative
     status: done
