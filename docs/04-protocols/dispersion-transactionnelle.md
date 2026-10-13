@@ -31,7 +31,7 @@ l'ancienne version reste intégralement valide et récupérable.
 3. **Commit = publication DHT** : une fois la racine confirmée, publication
    **fire-and-forget** de la nouvelle entrée DHT (`dispersal_root_hash` +
    `dispersal_root_partners`) — voir
-   [`network.dht-directory`](../01-network-dht/dht-directory.md#dispersalmanifest)
+   [`network.dht-directory`](../01-network-dht/dht-directory.md#champs-publies)
    pour le détail des champs publiés.
 4. **Purge différée** : après un délai de grâce, tombstones bilatéraux
    ([`protocols.tombstones`](tombstones.md)) sur les blocs orphelins de

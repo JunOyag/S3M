@@ -35,7 +35,7 @@ DispersalManifest, `sig_priv_dispersal = KDF(K_attach, "dispersal-signing")`
 — voir [`crypto.k-attach`](../03-crypto/k-attach.md#portee-de-signature-derivee)
 pour le détail de cette dérivation et son asymétrie d'usage.
 
-## Champs publiés par type d'entrée
+## Champs publiés par type d'entrée {: #champs-publies }
 
 | Identité | Champs publiés | Durée de vie |
 |---|---|---|
@@ -54,7 +54,7 @@ tout premier bloc via erasure coding, il faut donc déjà savoir *qui* héberge
 ses fragments de parité. D'où la nécessité de publier, en clair dans
 l'entrée DHT, les partenaires du **stripe racine spécifiquement**.
 
-## Expiration & republication — trois régimes
+## Expiration & republication — trois régimes {: #expiration-et-republication }
 
 - **Node et DispersalManifest** (6 mois) : republication mensuelle
   obligatoire, même sans changement de contenu, lissée sur le mois (hash de

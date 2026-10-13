@@ -32,7 +32,7 @@ voir [`protocols.fs-structure`](fs-structure.md) pour l'encodage exact.
     ([`protocols.migration-noeud`](migration-noeud.md)) si les pannes sont
     trop fréquentes.
 
-## Chemin de secours (reconstruction, lecture seule)
+## Chemin de secours (reconstruction, lecture seule) {: #chemin-de-secours }
 
 Si le nœud hébergeur est indisponible, le Connecteur peut reconstruire,
 pour chaque bloc recherché, les k blocs de la stripe correspondante à

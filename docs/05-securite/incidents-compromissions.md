@@ -47,11 +47,13 @@ invalide leur attachement simultanément, nécessitant une réattache complète.
 4. **Continuité réseau** : si la même machine/IP/port est conservée, le
    nouveau Nœud peut être joignable à la même adresse sous sa nouvelle
    identité.
-5. **Limite fondamentale** : si c'est la **seed elle-même** qui est
-   exfiltrée, `priv_node_recovery` est également compromise — aucun
-   mécanisme cryptographique ne peut garantir l'authenticité d'un pointeur de
-   migration. Nécessite une communication hors-bande, hors du périmètre
-   cryptographique de ce protocole.
+
+### Limite fondamentale {: #limite-fondamentale }
+
+Si c'est la **seed elle-même** qui est exfiltrée, `priv_node_recovery` est
+également compromise — aucun mécanisme cryptographique ne peut garantir
+l'authenticité d'un pointeur de migration. Nécessite une communication
+hors-bande, hors du périmètre cryptographique de ce protocole.
 
 ### Variante — perte sans compromission (panne matérielle) {: #variante-perte-sans-compromission }
 
