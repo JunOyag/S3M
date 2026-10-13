@@ -382,6 +382,20 @@ pages:
     title: "Dérivation des Identités — BIP-39 → SLIP-0010"
     section: "§5.2, §7.1"
     refs: [crypto.key-hierarchy, crypto.k-self, crypto.k-node-self, securite.incidents-compromissions, deploiement.disaster-recovery, network.dht-directory]
+    verified_by:
+      - identity_derivation_vectors::bip39_seed_matches_trezor_vector_trezor_passphrase
+      - identity_derivation_vectors::bip39_seed_matches_trezor_vector_empty_passphrase
+      - identity_derivation_vectors::bip39_seed_matches_trezor_vector_second_mnemonic
+      - identity_derivation_vectors::slip10_master_key_matches_spec_vector
+      - identity_derivation_vectors::slip10_hardened_child_matches_spec_vector
+      - identity_derivation_vectors::purpose_hardened_serialization_is_0x80703270
+      - identity_derivation_vectors::identity_derivation_is_deterministic
+      - identity_derivation_vectors::roles_are_domain_separated
+      - identity_derivation_vectors::identity_index_rotation_changes_the_key
+      - identity_derivation_vectors::node_recovery_key_accompanies_node_index_without_reuse
+      - identity_derivation_vectors::master_key_versions_are_independent_and_bounded
+      - identity_derivation_vectors::wrong_passphrase_yields_a_different_identity_without_error
+      - identity_derivation_vectors::out_of_range_hardened_index_is_rejected
 
   - id: crypto.symmetric-suite
     kind: narrative
