@@ -50,6 +50,11 @@ Octet 0                 8192              8192 + 65536×65536 (= 8192 + 4 GiO)
 
 - **En-tête** : les 8192 premiers octets portent `occupied_bitmap` — 1 bit
   par slot, `0` = libre/trou, `1` = occupé.
+- **Sérialisation du bitmap** : pour le slot d’index `i`, le bit `i % 8` de
+  l’octet `i / 8` (division entière, indices à partir de zéro) indique son
+  occupation. Le slot `0` correspond donc au bit de poids faible (bit 0) du
+  premier octet. Cette règle fixe l’ordre des bits dans chaque octet, sans
+  supposer d’ordre des octets pour une valeur multi-octet.
 - **Slot `i`** : occupe les octets `[8192 + i×65536, 8192 + (i+1)×65536)`.
 - Fichier créé **sparse** (trous logiques non alloués physiquement) : la
   taille sur disque réelle (`du`) reste proportionnelle aux slots
