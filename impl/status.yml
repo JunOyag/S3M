@@ -494,10 +494,24 @@ entries:
     notes: ''
   protocols.stockage-physique:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: codex
+    tests:
+      - tests::layout_limits_and_bitmap_mapping_are_exact
+      - tests::allocator_checks_containers_by_sequence_before_slot_index
+      - tests::writes_fixed_sparse_container_and_persists_location
+      - tests::owners_are_isolated_and_paths_use_type_and_hex_id
+      - tests::reuses_first_slot_and_removes_empty_container
+      - tests::padding_replacement_keeps_exact_location_and_slot
+      - tests::rewriting_existing_hash_keeps_its_location_and_updates_contents
+      - tests::selects_volume_with_greatest_remaining_capacity_for_new_containers
+      - tests::validates_input_size_and_location_bitmap_on_restore
+      - tests::compaction_snapshots_state_and_owner_purge_cleans_all_volumes
+      - tests::allocates_slots_in_container_sequence_order
+    notes: >-
+      Convention bitmap arbitrée : LSB = slot d'indice inférieur.
+      Tests Rust du composant node; validation cargo test, clippy, fmt et
+      mkdocs build --strict réussies.
   protocols.suppression-dispersal:
     kind: narrative
     status: not_started
