@@ -333,21 +333,39 @@ entries:
     notes: ''
   network.vdf-identity:
     kind: narrative
-    status: blocked
+    status: done
     owner: cline-agent
-    tests: []
+    tests:
+      - vdf_smoke::roundtrip_verifies_with_protocol_constants
+      - vdf_smoke::roundtrip_verifies_with_fast_t
+      - vdf_smoke::proof_is_rejected_for_another_identity
+      - vdf_smoke::proof_is_rejected_when_a_byte_is_altered
+      - vdf_smoke::proof_is_rejected_with_wrong_t
+      - vdf_smoke::proof_is_rejected_with_nonzero_recursion
+      - vdf_smoke::verification_with_t_max_is_bounded_and_rejected
+      - vdf_smoke::empty_and_truncated_proofs_are_rejected
+      - vdf_smoke::random_bytes_proof_is_rejected
+      - vdf_smoke::t_zero_is_rejected_before_any_ffi_call
     notes: >-
-      Analyse spec + binding effectuée (page §2.1, refs manifest, stub vdf.rs,
-      crate chiavdf 1.1.14 examinée). 4 entrées SPEC_GAPS ouvertes en attente
-      d'arbitrage : (1) λ Δ = 2048 bits vs plafond BQFC 1024 bits de chiavdf
-      + procédure HashPrime; (2) mapping H(pub_key) -> forme réduite g non
-      défini et non exposé par la façade C de chiavdf; (3) T en itérations non
-      fixé (~1 min seulement); (4) vérification WASM promise par TECH_STACK
-      incompatible avec la crate + outillage natif absent (cmake, compilateur
-      C++, libclang; pas de droits admin sur la machine). Aucune passe code
-      possible sans arbitrage (constantes de protocole non tranchées) ni
-      compilation de chiavdf en l'état. Stub todo!() conservé intact;
-      AUCUNE réimplémentation maison (CLAUDE.md règle 5).
+      Arbitrage SPEC_GAPS du 17/10/2026 appliqué intégralement : binding FFI
+      vers chiavdf 1.1.14 (create_discriminant / prove / verify_n_wesolowski),
+      AUCUNE réimplémentation (CLAUDE.md règle 5). Constantes de protocole
+      dans vdf.rs : DISCRIMINANT_BITS=1024, T=5_400_000, RECURSION=0. Delta
+      recalcule par le verificateur (SHA-256(pub_key) -> HashPrime 1024, Δ non
+      transmis) ; forme de départ BQFC 0x08 = generateur (2,1,c), designation
+      confirmee dans cpp/bqfc.c (BQFC_IS_GEN = 1<<3) et note "a confirmer"
+      levee dans la page. Garde-fous avant tout appel FFI : y=100 o, pi=100 o
+      (blob 200 o), x_s=100 o et discriminant=128 o fixes par le type, T=0
+      rejete. Feature cargo `vdf` (optionnelle, hors wasm32, non active par
+      defaut) : sans elle (dev local) ou en WASM, CoreError::VdfUnavailable ;
+      cargo test/clippy locaux restent verts sans outillage C++. Builds et
+      tests `--features vdf` en CI, matrix .github/workflows/vdf-identity.yml
+      (windows-latest MSVC+LLVM+DLL MPIR, ubuntu x86/ARM, macos-latest gmp),
+      conformement a l'arbitrage. Validation locale : suite complete verte
+      contre un stub temporaire de la crate (memes signatures, semantique
+      falsifiee) + cargo test par defaut + clippy -D warnings + build
+      wasm32-unknown-unknown --features wasm,vdf (chiavdf jamais compile en
+      WASM) ; la semantique reelle chiavdf est validee par la CI.
   node.AttachedUser:
     kind: schema
     status: not_started

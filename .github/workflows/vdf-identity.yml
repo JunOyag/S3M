@@ -1,0 +1,89 @@
+# Builds et tests de network.vdf-identity (binding FFI chiavdf).
+#
+# L'arbitrage SPEC_GAPS du 17/10/2026 (impl/SPEC_GAPS.md, entrée « Vérification
+# WASM promise par TECH_STACK et outillage de build du binding ») impose que
+# ces builds et tests tournent en CI : la crate compile du C++ via CMake et ne
+# se construit ni en WASM, ni sur une machine de développement Windows sans
+# droits administrateur. Dépendances par plateforme : impl/TECH_STACK.md,
+# section « Environnement de build et CI (chiavdf) ».
+name: network.vdf-identity
+
+on:
+  push:
+    paths:
+      - 'impl/core/**'
+      - '.github/workflows/vdf-identity.yml'
+  pull_request:
+    paths:
+      - 'impl/core/**'
+      - '.github/workflows/vdf-identity.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  vdf-smoke:
+    name: vdf-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # La génération de protocole (T = 5 400 000) prend 31 s à 83 s selon la
+    # plateforme (page docs § « Calibration de T ») ; le reste du budget est
+    # la compilation C++ de chiavdf au premier build.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    defaults:
+      run:
+        working-directory: impl/core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux — cmake, GMP, libclang
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake libgmp-dev libclang-dev
+
+      - name: macOS — gmp et cmake (keg-only)
+        if: runner.os == 'macOS'
+        run: brew install gmp cmake
+
+      - name: macOS — CPATH et LIBRARY_PATH vers le préfixe gmp
+        if: runner.os == 'macOS'
+        run: |
+          echo "CPATH=$(brew --prefix gmp)/include" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$(brew --prefix gmp)/lib" >> "$GITHUB_ENV"
+
+      - name: Windows — LLVM/libclang pour bindgen (ne pas écraser INCLUDE)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\Program Files\LLVM\bin\libclang.dll')) {
+            choco install llvm -y --no-progress
+          }
+          'LIBCLANG_PATH=C:\Program Files\LLVM\bin' |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Compiler les tests (feature vdf)
+        run: cargo test --features vdf --no-run
+
+      - name: Windows — DLL MPIR à côté des binaires de test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # La crate lie MPIR via mpir.lib (import library) : mpir.dll et ses
+          # variantes CPU doivent se trouver à côté de l'exécutable de test.
+          $reg = if ($env:CARGO_HOME) { Join-Path $env:CARGO_HOME 'registry\src' }
+                 else { Join-Path $env:USERPROFILE '.cargo\registry\src' }
+          $dlls = Get-ChildItem -Path $reg -Recurse -Filter 'mpir*.dll' -ErrorAction SilentlyContinue
+          foreach ($d in $dlls) {
+            Copy-Item $d.FullName -Destination 'target\debug' -Force
+            Copy-Item $d.FullName -Destination 'target\debug\deps' -Force
+          }
+          Write-Host ("{0} DLL MPIR copiées (runtime VC++ préinstallé sur le runner)" -f $dlls.Count)
+
+      - name: Tests (feature vdf — arbitrage SPEC_GAPS : la VDF se teste en CI)
+        run: cargo test --features vdf

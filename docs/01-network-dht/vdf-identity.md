@@ -75,8 +75,13 @@ les identités.
   qui porte l'identité : deux identités distinctes calculent donc dans des
   groupes `Cl(Δ)` différents, et une preuve n'est pas réutilisable d'une
   identité à l'autre.
-  > **À confirmer** dans `bqfc.h` : désignation exacte de cet élément (forme
-  > génératrice ou autre élément de référence) avant le gel de la page.
+  > Confirmé dans la source de `chiavdf` 1.1.14 (`cpp/bqfc.c`) : `0x08` est le
+  > drapeau `BQFC_IS_GEN` (`1 << 3`), qui code la forme spéciale **`(2, 1, c)`**
+  > — la « generator » de la source, avec `c = (1 − Δ) / 8` — et non
+  > l'élément neutre `(1, 1, (1 − Δ) / 4)` (drapeau distinct,
+  > `BQFC_IS_1 = 1 << 2`). Cette forme existe pour tout discriminant traité
+  > ici : le masque `{0, 1, 2, λ−1}` de `HashPrime` impose `p ≡ 7 mod 8`,
+  > donc `Δ = −p ≡ 1 mod 8`.
 - `y = g^(2^T)`, où `g` est la forme de départ, est calculé par `T` mises au
   carré successives dans `Cl(Δ)` (algorithme NUDUPL) — chaque étape dépendant
   strictement de la précédente.
