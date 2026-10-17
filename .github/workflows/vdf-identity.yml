@@ -74,16 +74,20 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # La crate lie MPIR via mpir.lib (import library) : mpir.dll et ses
-          # variantes CPU doivent se trouver à côté de l'exécutable de test.
           $reg = if ($env:CARGO_HOME) { Join-Path $env:CARGO_HOME 'registry\src' }
                  else { Join-Path $env:USERPROFILE '.cargo\registry\src' }
-          $dlls = Get-ChildItem -Path $reg -Recurse -Filter 'mpir*.dll' -ErrorAction SilentlyContinue
-          foreach ($d in $dlls) {
-            Copy-Item $d.FullName -Destination 'target\debug' -Force
-            Copy-Item $d.FullName -Destination 'target\debug\deps' -Force
+          $dir = Get-ChildItem -Path $reg -Directory -Recurse -Filter 'mpir_gc_x64' |
+                 Where-Object { $_.Parent.Name -like 'chiavdf-*' } |
+                 Select-Object -First 1
+          if (-not $dir) { throw "mpir_gc_x64 introuvable dans $reg" }
+          $target = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).target_directory
+          foreach ($sub in 'debug', 'debug\deps') {
+            $dest = Join-Path $target $sub
+            if (-not (Test-Path $dest -PathType Container)) { throw "Dossier absent : $dest" }
+            Get-ChildItem -Path $dir.FullName -Filter '*.dll' |
+              Copy-Item -Destination $dest -Force
           }
-          Write-Host ("{0} DLL MPIR copiées (runtime VC++ préinstallé sur le runner)" -f $dlls.Count)
-
-      - name: Tests (feature vdf — arbitrage SPEC_GAPS : la VDF se teste en CI)
+          Write-Host ("DLL MPIR copiées depuis {0} vers {1}" -f $dir.FullName, $target)
+      
+      - name: "Tests (feature vdf — arbitrage SPEC_GAPS : la VDF se teste en CI)"
         run: cargo test --features vdf
