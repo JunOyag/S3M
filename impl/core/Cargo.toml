@@ -32,9 +32,25 @@ zeroize = { version = "1", features = ["derive"] }
 # Activée uniquement avec `--features wasm` (build ciblant impl/connector).
 wasm-bindgen = { version = "0.2", optional = true }
 
+# VDF (network.vdf-identity, Phase 0) : la crate `chiavdf` compile du C++ par
+# CMake (MPIR sous Windows, GMP ailleurs) et génère ses bindings avec
+# bindgen/libclang — elle ne produit aucun artefact wasm32-unknown-unknown et
+# ne se compile pas sans l'outillage décrit dans impl/TECH_STACK.md,
+# section « Environnement de build et CI (chiavdf) ». Deux verrous
+# cumulatifs, conformes à l'arbitrage SPEC_GAPS du 17/10/2026 :
+#   1. dépendance déclarée uniquement hors `wasm32` (cible explicite) — le
+#      build `--features wasm` de l'impl/connector ne la voit jamais ;
+#   2. optionnelle, activée par la feature `vdf` NON active par défaut — un
+#      `cargo test` local sans cmake/C++/libclang reste vert (la VDF y
+#      renvoie CoreError::VdfUnavailable), et seuls les builds CI lancent
+#      `cargo test --features vdf`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+chiavdf = { version = "1.1.14", optional = true }
+
 [features]
 default = []
 wasm = ["dep:wasm-bindgen"]
+vdf = ["dep:chiavdf"]
 
 [dev-dependencies]
 hex = "0.4"

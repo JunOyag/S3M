@@ -36,6 +36,27 @@ pub enum CoreError {
     #[error("index de dérivation durcie hors bornes (attendu < 2^31) : {index}")]
     InvalidDerivationIndex { index: u32 },
 
+    #[error(
+        "VDF (chiavdf) non liée : feature `vdf` inactive ou cible non native — voir impl/TECH_STACK.md"
+    )]
+    VdfUnavailable,
+
+    #[error("paramètre VDF invalide : {reason}")]
+    InvalidVdfParameter { reason: &'static str },
+
+    #[error("longueur invalide pour {field} : attendu {expected} octets, reçu {got}")]
+    InvalidVdfLength {
+        field: &'static str,
+        expected: usize,
+        got: usize,
+    },
+
+    #[error("chiavdf : dérivation du discriminant échouée (create_discriminant)")]
+    VdfDiscriminantFailure,
+
+    #[error("chiavdf : échec de génération de la preuve VDF (prove)")]
+    VdfProveFailure,
+
     // À compléter au fil de la Phase 0 — une variante par échec distinct
     // rencontré, jamais un `Other(String)` fourre-tout (perd l'info côté
     // appelant WASM/FFI).
