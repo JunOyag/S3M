@@ -8,9 +8,9 @@ stabilité, maintenabilité, rapidité (au sens performance).
 
 | Composant | Langage | Où |
 |---|---|---|
-| **Noyau partagé** (`impl/core`) | **Rust**, compilé nativement + en WASM | Primitives cryptographiques, Reed-Solomon, VDF |
+| **Noyau partagé** (`impl/core`) | **Rust**, compilé nativement + en WASM (**sauf la VDF : natif uniquement**) | Primitives cryptographiques, Reed-Solomon (natif + WASM) ; VDF (natif, `chiavdf`) |
 | **Nœud** (`impl/node`) | **Rust**, lie `impl/core` nativement | Démon hébergeur : réseau, stockage physique, PoS |
-| **Connecteur** (`impl/connector`) | **TypeScript**, exécuté sur **Bun** | Client WebDAV, importe `impl/core` compilé en WASM |
+| **Connecteur** (`impl/connector`) | **TypeScript**, exécuté sur **Bun** | Client WebDAV, importe `impl/core` compilé en WASM ; charge `chiavdf` en natif pour la VDF |
 
 Le Connecteur en TypeScript/Bun n'est pas un choix libre : c'est déjà ce
 que dit la spec elle-même
@@ -38,13 +38,23 @@ revue de code.
 `wasm-pack`/`wasm-bindgen` (importé par le Connecteur, Bun ayant un support
 WASM correct). Une seule implémentation, deux cibles de compilation.
 
+**Exception : la VDF.** `chiavdf` est une bibliothèque C++/GMP pilotée par
+CMake : elle ne produit pas d'artefact `wasm32-unknown-unknown`. La VDF est
+donc la seule brique de `impl/core` **compilée en natif uniquement** (sous
+`cfg(not(target_arch = "wasm32"))`) et le Connecteur la charge par une liaison
+native, non par le pont WASM — voir « Exception : la VDF côté Connecteur »
+ci-dessous.
+
 **Ce qui va dans `impl/core`** (logique pure, sans I/O réseau/disque — donc
 compilable en WASM sans douleur) :
 - Toutes les clés de [`crypto.key-hierarchy`](../docs/03-crypto/key-hierarchy.md)
   (KDF, conversion Ed25519→X25519, wrapping `master_key_chain`).
 - VDF de Wesolowski ([`network.vdf-identity`](../docs/01-network-dht/vdf-identity.md)) —
   génération **et** vérification, les deux étant nécessaires des deux
-  côtés (un Connecteur vérifie l'identité d'un Nœud avant de s'y attacher).
+  côtés : un Connecteur vérifie l'identité d'un Nœud avant de s'y attacher,
+  et **génère** lui-même sa propre identité User (§2.1 : la VDF s'applique
+  aux identités Node et User). Seule exception à « compilable en WASM » :
+  cette brique est **native uniquement** (voir ci-dessous).
 - Reed-Solomon encode/decode ([`protocols.erasure-coding`](../docs/04-protocols/erasure-coding.md)) —
   le Nœud encode, le Connecteur décode en chemin de secours ; c'est la
   même bibliothèque, pas deux.
@@ -155,7 +165,8 @@ ne passe que des buffers en entrée/sortie).
 
 **Conclusion du réexamen : la décision initiale (TypeScript/Bun + pont
 WASM vers `impl/core`) est confirmée, avec un niveau de confiance plus
-élevé qu'au premier jet.** Bonnes pratiques à appliquer dès la mise en
+élevé qu'au premier jet — à une exception près, la VDF (voir la
+sous-section suivante), qui ne peut pas passer par le pont WASM.** Bonnes pratiques à appliquer dès la mise en
 place du pont :
 - Profil de compilation du crate WASM : `opt-level = "s"` + `lto = true`
   (garde le `.wasm` compact, le chargement asynchrone d'un gros module
@@ -166,6 +177,37 @@ place du pont :
   éventuelle instabilité passagère de l'écosystème post-rachat en migrant
   vers Node.js/Deno si jamais nécessaire, sans réécriture complète.
 
+### Exception : la VDF côté Connecteur
+
+Le Connecteur a besoin de la VDF **en génération et en vérification** :
+génération de sa propre identité User, vérification de l'identité des Nœuds
+et des entrées DHT. Comme `chiavdf` ne se compile pas en WASM, le Connecteur
+passe par une **liaison native**, par plateforme. La forme exacte reste à
+arbitrer en passe code :
+
+- **`bun:ffi`** : bibliothèque dynamique chargée dans le process Bun ;
+  simple, mais un bug du code natif peut corrompre la mémoire du process
+  hôte (le bac à sable que le WASM aurait offert disparaît).
+- **Binaire sidecar** : `chiavdf` dans un processus séparé, appelé depuis
+  Bun ; l'isolation est conservée, au prix d'un artefact de plus à
+  distribuer.
+
+Les appels VDF étant rares (une génération par identité, quelques
+vérifications par résolution) et dominés par le calcul, le surcoût de
+marshalling ne départage pas les deux options. Dans les deux cas :
+
+- l'interface avec `chiavdf` reste derrière une fine interface dans
+  `impl/connector` (même principe que pour les appels spécifiques à Bun,
+  ci-dessus), pour pouvoir changer de mécanisme sans réécriture ;
+- les entrées étant fournies par des pairs potentiellement hostiles, le
+  contrôle des longueurs est obligatoire avant tout appel (voir « Contraintes
+  du binding `chiavdf` ») ;
+- le Connecteur n'est plus un exécutable entièrement autonome : il
+  embarque une bibliothèque native par plateforme, ce qui nuance la
+  formulation « exécutable portable » de
+  [`deploiement.packaging`](../docs/07-deploiement/packaging.md) — à refléter
+  dans cette page.
+
 ## Bibliothèques spécifiques à ne PAS réimplémenter
 
 Deux endroits de la spec sont mathématiquement assez subtils pour que la
@@ -175,11 +217,14 @@ plutôt que de laisser un agent écrire l'arithmétique depuis zéro :
 - **VDF de Wesolowski sur groupe de classes** — le réseau Chia résout
   exactement ce problème en production (c'est la même construction :
   discriminant négatif, `Cl(Δ)`, preuve de Wesolowski). Lier
-  `impl/core` à `chiavdf` (bibliothèque C++ auditée, avec interface C
-  exposée) via un wrapper FFI Rust (`cxx` ou `bindgen`), plutôt que de
+  `impl/core` à la crate `chiavdf` 1.1.14 (bibliothèque C++ du réseau Chia,
+  interface C exposée, bindings Rust générés par `bindgen`), plutôt que de
   demander à un agent d'implémenter NUDUPL lui-même. Un bug ici casserait
   la propriété anti-Sybil de tout le réseau — risque disproportionné par
-  rapport au gain d'avoir "tout en Rust pur".
+  rapport au gain d'avoir "tout en Rust pur". Les paramètres de protocole
+  (taille du discriminant, nombre d'itérations, dérivation de `Δ`) sont
+  définis dans [`network.vdf-identity`](../docs/01-network-dht/vdf-identity.md)
+  et ne sont pas répétés ici.
 - **Reed-Solomon** — la crate `reed-solomon-erasure` (Rust, implémentation
   GF(2⁸) largement utilisée en production) plutôt qu'un réimplémentation.
 
@@ -196,13 +241,65 @@ concernés (RFC 7748, RFC 8032, RFC 8439, RFC 5869, RFC 4231, RFC 6234).
 |---|---|---|
 | Ed25519 / X25519 | `ed25519-dalek`, `x25519-dalek` | *(via WASM depuis `impl/core`)* |
 | Suite symétrique — AEAD ChaCha20-Poly1305, HKDF-SHA256, SHA-256, HMAC-SHA256 ([`crypto.symmetric-suite`](../docs/03-crypto/symmetric-suite.md)) | `chacha20poly1305`, `hkdf`, `sha2`, `hmac` | *(via WASM depuis `impl/core`)* |
-| VDF Wesolowski | binding FFI vers `chiavdf` | *(via WASM — vérification uniquement, génération non pertinente côté client léger)* |
+| VDF Wesolowski | crate `chiavdf` 1.1.14 (**natif uniquement**, `cfg(not(target_arch = "wasm32"))`) | liaison **native** : `bun:ffi` ou binaire sidecar — génération **et** vérification, **pas de WASM** |
 | Reed-Solomon | `reed-solomon-erasure` | *(via WASM)* |
 | Sérialisation réseau | `flatbuffers` (crate officielle) | `flatbuffers` (paquet npm officiel) |
 | libp2p | `rust-libp2p` | `js-libp2p` |
 | Stockage local (Nœud) | `rusqlite` (WAL) ou `heed` (LMDB) | — |
 | Fichiers creux / hole-punching | `nix` (`fallocate` via `libc`/`rustix`) | — |
 | WebDAV | — | `webdav-server` ou implémentation légère sur `Bun.serve` |
+
+## Contraintes du binding `chiavdf`
+
+Constatées à la lecture de la crate (`lib.rs`) et validées par les tests de
+la CI :
+
+- L'interface publique se réduit à trois fonctions : `create_discriminant`,
+  `prove` et `verify_n_wesolowski`. La bibliothèque ne fournit ni hash
+  vers forme, ni arithmétique de formes : ne pas en écrire à côté.
+- La taille du discriminant est plafonnée par la bibliothèque (voir la
+  valeur retenue dans `network.vdf-identity`) ; la dépasser fait échouer
+  la génération et la vérification.
+- Les entrées sont à taille fixe (forme de départ, preuve, discriminant).
+  `verify_n_wesolowski` transmet la forme de départ à la couche C++
+  **sans sa longueur** : le wrapper Rust doit donc vérifier les trois
+  longueurs avant tout appel, sous peine de lecture hors limites sur une
+  entrée venant d'un pair hostile.
+- Le vérificateur recalcule `Δ` à partir de `pub_key` ; il n'accepte
+  jamais un `Δ` fourni par le prouveur.
+- Tests à couvrir, avec borne de temps : aller-retour valide, octet
+  altéré, mauvais `T`, preuve rejouée pour une autre identité (déjà
+  validés en CI), puis preuve vide ou tronquée, octets aléatoires,
+  `T = 0`, `T = u64::MAX`, `recursion ≠ 0` (à ajouter).
+
+## Environnement de build et CI (`chiavdf`)
+
+La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
+(libclang). Plateformes validées en CI (GitHub Actions : `windows-latest`,
+`ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest`) :
+
+| Plateforme | Dépendances de build |
+|---|---|
+| Linux (x86, ARM) | `cmake`, `libgmp-dev`, `libclang-dev` |
+| macOS | `brew install gmp cmake`, avec `CPATH` et `LIBRARY_PATH` pointant vers le préfixe de `gmp` |
+| Windows | Visual Studio (MSVC) + `cmake` + LLVM ; `LIBCLANG_PATH` vers le `bin` de LLVM ; **ne pas écraser `INCLUDE`** (bindgen ne retrouverait plus les en-têtes système) |
+
+- **Windows : MSVC uniquement.** La crate embarque sa propre MPIR pour
+  MSVC. La chaîne MinGW n'est pas supportée : le build exige un `mpir`
+  MSVC, et avec une bibliothèque de substitution le prouveur est resté
+  bloqué à l'exécution lors de l'essai. Elle est exclue.
+- **Les builds et tests de la VDF tournent en CI.** Une machine de
+  développement Windows sans droits d'administration ne peut pas installer
+  l'outillage MSVC et ne compile donc pas `chiavdf` en local ; les autres
+  briques de `impl/core` restent compilables et testables localement.
+- **Exécution sous Windows** : les DLL de MPIR (`mpir.dll` et ses variantes
+  par processeur) doivent se trouver à côté du binaire, et le runtime Visual
+  C++ (`MSVCP140`, `VCRUNTIME140`, `VCRUNTIME140_1`) être présent sur la
+  machine. **La licence de MPIR est à faire valider avant toute
+  distribution.**
+- La feature `wasm` de `impl/core` exclut la VDF par
+  `cfg(not(target_arch = "wasm32"))`, pour que `wasm-pack` ne tente jamais
+  de compiler `chiavdf`.
 
 ## Ce que ça change dans `AGENTS.md`
 

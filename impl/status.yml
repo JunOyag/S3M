@@ -333,10 +333,21 @@ entries:
     notes: ''
   network.vdf-identity:
     kind: narrative
-    status: not_started
-    owner: null
+    status: blocked
+    owner: cline-agent
     tests: []
-    notes: ''
+    notes: >-
+      Analyse spec + binding effectuée (page §2.1, refs manifest, stub vdf.rs,
+      crate chiavdf 1.1.14 examinée). 4 entrées SPEC_GAPS ouvertes en attente
+      d'arbitrage : (1) λ Δ = 2048 bits vs plafond BQFC 1024 bits de chiavdf
+      + procédure HashPrime; (2) mapping H(pub_key) -> forme réduite g non
+      défini et non exposé par la façade C de chiavdf; (3) T en itérations non
+      fixé (~1 min seulement); (4) vérification WASM promise par TECH_STACK
+      incompatible avec la crate + outillage natif absent (cmake, compilateur
+      C++, libclang; pas de droits admin sur la machine). Aucune passe code
+      possible sans arbitrage (constantes de protocole non tranchées) ni
+      compilation de chiavdf en l'état. Stub todo!() conservé intact;
+      AUCUNE réimplémentation maison (CLAUDE.md règle 5).
   node.AttachedUser:
     kind: schema
     status: not_started
