@@ -313,22 +313,35 @@ mod tests {
             )
         }
 
-        fn assert_same_decision(
-            identity_bytes: &[u8],
+        fn pure_decision(identity_bytes: &[u8], proof: &VdfProof) -> bool {
+            let started = trace("pure verify_identity_bytes_with_iterations", "START");
+            let pure_result = verify_identity_bytes_with_iterations(identity_bytes, proof, FAST_T);
+            trace_end("pure verify_identity_bytes_with_iterations", started);
+            pure_result.expect("pure Rust verifier failed to produce a decision")
+        }
+
+        fn mpir_decision(
             proof: &VdfProof,
             start_form: &[u8; FORM_SIZE],
             discriminant: &[u8; 128],
         ) -> bool {
-            let started = trace("pure verify_identity_bytes_with_iterations", "START");
-            let pure_result = verify_identity_bytes_with_iterations(identity_bytes, proof, FAST_T);
-            trace_end("pure verify_identity_bytes_with_iterations", started);
-            let pure = pure_result.expect("pure Rust verifier failed to produce a decision");
             let mut blob = [0u8; PROOF_SIZE];
             blob[..FORM_SIZE].copy_from_slice(&proof.y);
             blob[FORM_SIZE..].copy_from_slice(&proof.pi);
             let started = trace("chiavdf::verify_n_wesolowski", "START");
             let mpir = chiavdf::verify_n_wesolowski(discriminant, start_form, &blob, FAST_T, 0);
             trace_end("chiavdf::verify_n_wesolowski", started);
+            mpir
+        }
+
+        fn assert_same_decision(
+            identity_bytes: &[u8],
+            proof: &VdfProof,
+            start_form: &[u8; FORM_SIZE],
+            discriminant: &[u8; 128],
+        ) -> bool {
+            let pure = pure_decision(identity_bytes, proof);
+            let mpir = mpir_decision(proof, start_form, discriminant);
             assert_eq!(pure, mpir, "pure Rust and MPIR decisions differ");
             pure
         }
@@ -360,7 +373,7 @@ mod tests {
         }
 
         #[test]
-        fn tagged_identity_mpir_vector_and_rejections_match() {
+        fn tagged_identity_mpir_vector_matches_and_pure_rejects_noncanonical_encoding() {
             let tagged_identity = [vec![0x07], vec![0x31; 32]].concat();
             let (proof, start_form, discriminant) = mpir_proof(&tagged_identity);
             assert!(
@@ -368,11 +381,17 @@ mod tests {
                 "MPIR cross-check must accept the generated T=100 tagged-identity vector"
             );
 
+            // MPIR ignores this non-canonical trailing byte, while the pure
+            // verifier requires the exact canonical encoding.
             let mut altered = proof.clone();
             altered.pi[25] ^= 1;
             assert!(
-                !assert_same_decision(&tagged_identity, &altered, &start_form, &discriminant),
-                "MPIR cross-check must reject the altered T=100 tagged-identity proof"
+                !pure_decision(&tagged_identity, &altered),
+                "pure verifier must reject the non-canonical T=100 proof encoding"
+            );
+            assert!(
+                mpir_decision(&altered, &start_form, &discriminant),
+                "MPIR's permissive decoder accepts the non-canonical encoding"
             );
 
             let mut other_tag = tagged_identity.clone();
