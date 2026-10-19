@@ -62,3 +62,32 @@ jobs:
       - name: "Diagnostic ciblé MPIR — T=100 et mesures horodatées"
         timeout-minutes: 45
         run: cargo test --features vdf --lib vdf_pure::tests::mpir_cross_check -- --nocapture --test-threads=1
+
+  wasm-mpir-fixture:
+    name: MPIR fixture (WASM / Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: impl/core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Rust stable et la cible WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Installer wasm-bindgen-test-runner
+        run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
+
+      - name: Exécuter le vérificateur WASM sur la fixture MPIR
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+          WASM_BINDGEN_TEST_TIMEOUT: 180
+        run: cargo test --target wasm32-unknown-unknown --features wasm --lib vdf_pure::tests::wasm_mpir_fixture -- --nocapture

@@ -375,37 +375,59 @@ entries:
       - vdf_pure::tests::rejects_wrong_challenge_wrong_iterations_and_malformed_forms
       - vdf_pure::tests::identity_api_enforces_lengths_and_tagged_identity_shape
       - vdf_pure::tests::mpir_cross_check::verifies_chia_reference_vector_with_mpir
+      - vdf_pure::tests::mpir_cross_check::tagged_identity_mpir_fixture_matches_and_mutations_are_rejected
+      - vdf_pure::tests::wasm_mpir_fixture::verifies_mpir_fixture_and_rejects_y_and_public_key_mutations
       - vdf_pure_wasm::executes_pure_verifier_on_embedded_chia_vector_for_wrong_identity
     notes: >-
       cargo test natif complet réussi. Harnais WASM Node, 1 test réussi avec
       le vecteur Chia natif exact (400 hex chars/200 octets, decode direct):
       vérificateur 9,3989309 s, 6,0384659 s puis 11,0517409 s (variabilité
-      observée). Il rejette le vecteur car la clé fournie est hachée avant
-      la dérivation du challenge, pas une acceptation positive ni une fixture
-      MPIR. Les mesures WASM 6,7933643 s
-      et 8,3001951 s antérieures sont invalides pour cette comparaison:
-      elles employaient 173 octets plus 27 zéros. MPIR T=100:
-      create_discriminant explicite
-      5,9234 ms (13:12:09.693Z-13:12:09.699Z), et 10,1966 ms lors du run
-      borné récent (13:58:22.034Z-13:58:22.044Z). hash-to-form/
-      DeserializeForm non exposé isolément. chiavdf::prove, comprenant
-      discriminant, désérialisation, ProveSlow (boucle NUDUPL puis
-      GenerateWesolowski) et sérialisation, toujours actif au moins 30 s
-      dans le dernier run ciblé puis arrêté; un run antérieur l'avait vu
-      actif >200 s. Pas de séparation mesurable entre l'évaluation et la
-      preuve. verify après génération non atteint. Le test séparé MPIR
-      verify sur le vecteur Chia a dépassé 180 s puis été arrêté sans
-      résultat; create_discriminant associé 12,7113 ms à 13:40:13.162Z.
-      Aucun cross-check abouti, aucune fixture MPIR générée. Binaire sans
-      imports DLL MPIR/GMP observés; build chiavdf déclare MPIR statique
-      sous Windows. Clippy passe avec et sans feature vdf, tous targets et
-      -D warnings. Fixtures MPIR versionnées et accord à T protocolaire
-      absents: statut in_progress, verified_by vide. La dépendance
+      observée). Ce test rejette le vecteur: il appelle l'API legacy avec
+      [0x42; 32], challenge brut du vecteur, comme clé publique; l'API hache
+      cette clé avant de dériver le challenge. Il ne démontre donc ni une
+      acceptation positive WASM, ni l'exécution WASM d'une fixture générée
+      par MPIR. Les mesures WASM 6,7933643 s et 8,3001951 s antérieures sont
+      invalides pour cette comparaison: elles employaient 173 octets plus
+      27 zéros. MPIR T=100 local: create_discriminant explicite 5,9234 ms
+      (13:12:09.693Z-13:12:09.699Z), et 10,1966 ms lors du run borné récent
+      (13:58:22.034Z-13:58:22.044Z). hash-to-form/DeserializeForm non exposé
+      isolément. chiavdf::prove, comprenant discriminant, désérialisation,
+      ProveSlow (boucle NUDUPL puis GenerateWesolowski) et sérialisation,
+      toujours actif au moins 30 s dans le dernier run ciblé puis arrêté; un
+      run antérieur l'avait vu actif >200 s. Pas de séparation mesurable
+      entre l'évaluation et la preuve. verify après génération non atteint.
+      Le test séparé MPIR verify sur le vecteur Chia a dépassé 180 s puis
+      été arrêté sans résultat; create_discriminant associé 12,7113 ms à
+      13:40:13.162Z. Ces essais locaux antérieurs n'avaient pas abouti.
+      Evidence CI fournie pour .github/workflows/vdf-verifier-pure.yml:
+      cargo test --features vdf --lib
+      vdf_pure::tests::mpir_cross_check -- --nocapture --test-threads=1,
+      3 passed, 0 failed. MPIR a validé les vecteurs legacy et tagged T=100.
+      Durées chiavdf::prove rapportées: 22.1663 ms, 35.3954 ms, 15.1582 ms;
+      vérifications MPIR: 4.6212 ms, 4.9302 ms, 4.9001 ms, 6.4109 ms,
+      5.5881 ms; vérifications pures: 789.9214 ms, 1.0670431 s,
+      880.6922 ms, 441.9288 ms; create_discriminant: 9.2829–44.0067 ms.
+      Ces durées sont les mesures communiquées par le workflow et ne sont
+      pas extrapolées. Dans ce run, la fixture MPIR était régénérée pendant
+      le test, pas persistée/versionnée. Le cross-check prouve les décisions de
+      vérification legacy/tagged et le rejet tagged d'un autre key_algorithm
+      et d'un encodage non canonique. Le test tagged étend maintenant les
+      rejets du vecteur MPIR généré à un octet de y modifié et à un octet de
+      clé publique modifié; ces assertions ajoutées n'ont pas été exécutées
+      dans le run fourni. La fixture taguée T=100 est maintenant versionnée
+      dans tests/fixtures/vdf_tagged_identity_t100.hex. Le test natif compare
+      la génération MPIR à cette fixture et demande aux deux vérificateurs de
+      rejeter les mutations de y et de la clé publique. Un test WASM interne
+      vérifie la même fixture et ces deux rejets à T=100; le workflow ajoute
+      un job Node/WASM ciblé. Les 3 tests MPIR natifs et le test WASM sur Node
+      passent localement avec cette fixture. Ces nouveaux tests attendent
+      encore le run CI demandé; statut in_progress et verified_by vide
+      jusqu'à réception des résultats du workflow. Le test de référence natif
+      rejette également une preuve avec un octet de y altéré. Binaire sans
+      imports DLL MPIR/GMP observés;
+      build chiavdf déclare MPIR statique sous Windows. Clippy passe avec et
+      sans feature vdf, tous targets et -D warnings. La dépendance
       network.vdf-identity-tagged dans layers.yml demeure sans page manifeste.
-      Le diagnostic T=100 avec mesures horodatées doit être exécuté par le
-      workflow dédié .github/workflows/vdf-verifier-pure.yml (déclenchement
-      manuel disponible) sur Windows MSVC; aucun résultat MPIR CI n'est
-      encore disponible.
   node.AttachedUser:
     kind: schema
     status: not_started

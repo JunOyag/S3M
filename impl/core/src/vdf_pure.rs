@@ -164,6 +164,23 @@ mod tests {
             .expect("reference vector is exactly 200 bytes")
     }
 
+    #[cfg(any(feature = "vdf", target_arch = "wasm32"))]
+    fn tagged_identity_bytes() -> [u8; 33] {
+        let mut identity = [0x31; 33];
+        identity[0] = 0x07;
+        identity
+    }
+
+    #[cfg(any(feature = "vdf", target_arch = "wasm32"))]
+    fn tagged_mpir_fixture() -> [u8; PROOF_SIZE] {
+        let bytes =
+            hex::decode(include_str!("../tests/fixtures/vdf_tagged_identity_t100.hex").trim())
+                .expect("valid tagged-identity MPIR fixture hex");
+        bytes
+            .try_into()
+            .expect("tagged-identity MPIR fixture is exactly 200 bytes")
+    }
+
     #[test]
     fn accepts_chia_reference_vector_and_rejects_altered_bytes() {
         let proof = reference_proof();
@@ -259,7 +276,7 @@ mod tests {
             eprintln!("[unix_ms={unix_ms}] T={FAST_T} {phase} END elapsed={elapsed:?}");
         }
 
-        fn mpir_proof(identity_bytes: &[u8]) -> (VdfProof, [u8; FORM_SIZE], [u8; 128]) {
+        fn mpir_context(identity_bytes: &[u8]) -> ([u8; FORM_SIZE], [u8; 128]) {
             let challenge = Sha256::digest(identity_bytes);
             let mut start_form = [0u8; FORM_SIZE];
             start_form[0] = 0x08;
@@ -271,6 +288,13 @@ mod tests {
                 "chiavdf::create_discriminant failed"
             );
             trace_end("create_discriminant", started);
+
+            (start_form, discriminant)
+        }
+
+        fn mpir_proof(identity_bytes: &[u8]) -> (VdfProof, [u8; FORM_SIZE], [u8; 128]) {
+            let (start_form, discriminant) = mpir_context(identity_bytes);
+            let challenge = Sha256::digest(identity_bytes);
 
             // chiavdf 1.1.14 exposes no standalone hash-to-form operation.
             // Its prove wrapper deserializes x_s internally, so that work
@@ -373,12 +397,28 @@ mod tests {
         }
 
         #[test]
-        fn tagged_identity_mpir_vector_matches_and_pure_rejects_noncanonical_encoding() {
-            let tagged_identity = [vec![0x07], vec![0x31; 32]].concat();
+        fn tagged_identity_mpir_fixture_matches_and_mutations_are_rejected() {
+            let tagged_identity = tagged_identity_bytes();
             let (proof, start_form, discriminant) = mpir_proof(&tagged_identity);
+            let mut generated = [0u8; PROOF_SIZE];
+            generated[..FORM_SIZE].copy_from_slice(&proof.y);
+            generated[FORM_SIZE..].copy_from_slice(&proof.pi);
+            assert_eq!(
+                generated,
+                tagged_mpir_fixture(),
+                "MPIR-generated proof must match the versioned fixture"
+            );
             assert!(
                 assert_same_decision(&tagged_identity, &proof, &start_form, &discriminant),
-                "MPIR cross-check must accept the generated T=100 tagged-identity vector"
+                "MPIR cross-check must accept the versioned T=100 tagged-identity fixture"
+            );
+
+            // Both verifiers must reject a one-byte change to y.
+            let mut altered_y = proof.clone();
+            altered_y.y[25] ^= 1;
+            assert!(
+                !assert_same_decision(&tagged_identity, &altered_y, &start_form, &discriminant),
+                "both verifiers must reject a T=100 proof with one altered y byte"
             );
 
             // MPIR ignores this non-canonical trailing byte, while the pure
@@ -394,9 +434,17 @@ mod tests {
                 "MPIR's permissive decoder accepts the non-canonical encoding"
             );
 
-            let mut other_tag = tagged_identity.clone();
+            let mut other_public_key = tagged_identity;
+            other_public_key[1] ^= 1;
+            let (other_start, other_discriminant) = mpir_context(&other_public_key);
+            assert!(
+                !assert_same_decision(&other_public_key, &proof, &other_start, &other_discriminant),
+                "both verifiers must reject a proof bound to a public key changed by one byte"
+            );
+
+            let mut other_tag = tagged_identity;
             other_tag[0] ^= 1;
-            let (_, other_start, other_discriminant) = mpir_proof(&other_tag);
+            let (other_start, other_discriminant) = mpir_context(&other_tag);
             assert!(
                 !assert_same_decision(&other_tag, &proof, &other_start, &other_discriminant),
                 "MPIR cross-check must reject a proof bound to a different identity tag"
@@ -410,6 +458,46 @@ mod tests {
             assert!(
                 assert_same_decision(&public_key, &proof, &start_form, &discriminant),
                 "MPIR cross-check must accept the generated T=100 legacy-identity vector"
+            );
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    mod wasm_mpir_fixture {
+        use super::*;
+        use wasm_bindgen_test::wasm_bindgen_test;
+
+        const FAST_T: u64 = 100;
+
+        #[wasm_bindgen_test]
+        fn verifies_mpir_fixture_and_rejects_y_and_public_key_mutations() {
+            let identity = tagged_identity_bytes();
+            let fixture = tagged_mpir_fixture();
+            let proof = VdfProof {
+                y: fixture[..FORM_SIZE].to_vec(),
+                pi: fixture[FORM_SIZE..].to_vec(),
+            };
+
+            assert!(
+                verify_identity_bytes_with_iterations(&identity, &proof, FAST_T)
+                    .expect("WASM verifier must return a decision"),
+                "WASM verifier must accept the versioned MPIR fixture"
+            );
+
+            let mut altered_y = proof.clone();
+            altered_y.y[25] ^= 1;
+            assert!(
+                !verify_identity_bytes_with_iterations(&identity, &altered_y, FAST_T)
+                    .expect("altered y must return a verifier decision"),
+                "WASM verifier must reject a proof with one altered y byte"
+            );
+
+            let mut altered_identity = identity;
+            altered_identity[1] ^= 1;
+            assert!(
+                !verify_identity_bytes_with_iterations(&altered_identity, &proof, FAST_T)
+                    .expect("altered identity must return a verifier decision"),
+                "WASM verifier must reject a proof bound to a changed public key"
             );
         }
     }

@@ -100,17 +100,53 @@ La vérification MPIR indépendante du vecteur Chia existant (non généré par
 MPIR) avait précédemment mesuré `create_discriminant` à **12,7113 ms**
 (`13:40:13.162Z`–`13:40:13.174Z`). `verify_n_wesolowski` avait démarré à
 `13:40:13.175Z`, dépassé 180 s et été arrêtée manuellement sans résultat ni
-trace de fin. Aucun cross-check n'a abouti et aucune fixture MPIR n'a été
-générée. Le binaire natif observé n'importe pas de DLL MPIR/GMP; le `build.rs`
-de chiavdf déclare MPIR statique sous Windows. Ces observations ne prouvent
-pas à elles seules quelle archive statique a été retenue.
+trace de fin; à ce stade, aucun cross-check n'avait abouti. Le binaire natif
+observé n'importe pas de DLL MPIR/GMP; le `build.rs` de chiavdf déclare MPIR
+statique sous Windows. Ces observations ne prouvent pas à elles seules
+quelle archive statique a été retenue.
 
-`cargo test`, Clippy avec et sans `--features vdf`, `mkdocs build --strict`,
-`python scripts/status.py`, `python scripts/plan.py --graph schema`,
-`git diff --check` et `rustfmt --check` ciblé ont réussi. Les fixtures MPIR
-versionnées et l'accord sur la comparaison MPIR au `T` protocolaire restent
-absents; le statut demeure `in_progress` et `verified_by` reste vide. Aucun
-paramètre ou algorithme distinct de ceux de
+#### Cross-check MPIR CI communiqué (19/10/2026)
+
+Le workflow `.github/workflows/vdf-verifier-pure.yml` a ensuite réussi le
+test ciblé
+`cargo test --features vdf --lib vdf_pure::tests::mpir_cross_check -- --nocapture --test-threads=1` :
+**3 tests réussis, 0 échec**. MPIR et le vérificateur pur ont accepté les
+vecteurs legacy et tagged générés avec `T=100`; le test tagged vérifie aussi
+le rejet d'un tag `key_algorithm` différent et le rejet pur d'un encodage
+non canonique que le décodeur MPIR accepte. Les mesures rapportées par ce
+run sont :
+
+| Opération | Durées rapportées |
+|---|---|
+| `chiavdf::prove` | **22,1663 ms**, **35,3954 ms**, **15,1582 ms** |
+| vérification MPIR | **4,6212 ms**, **4,9302 ms**, **4,9001 ms**, **6,4109 ms**, **5,5881 ms** |
+| vérification pure | **789,9214 ms**, **1,0670431 s**, **880,6922 ms**, **441,9288 ms** |
+| `create_discriminant` | **9,2829–44,0067 ms** |
+
+Ce sont les mesures fournies pour ce run; elles ne sont pas extrapolées.
+Les trois tests réussis ne couvraient pas les rejets après altération de `y`
+et de la clé publique. Le test WASM précédent s'exécute sur le vecteur Chia
+exact de 200 octets, mais mesure un rejet parce que `[0x42; 32]` est passé
+comme clé legacy et haché avant dérivation du challenge; ce n'est ni le
+vecteur généré par MPIR, ni une acceptation positive.
+
+La fixture taguée MPIR T=100 est maintenant versionnée dans
+`impl/core/tests/fixtures/vdf_tagged_identity_t100.hex` (identité
+`0x07 || [0x31; 32]`). Le test natif compare la sortie de `chiavdf::prove`
+à cette fixture, puis fait vérifier par MPIR et Rust la preuve intacte, la
+preuve avec un octet de `y` altéré, et la preuve avec un octet de clé publique
+modifié. Le rejet pur d'un encodage non canonique que MPIR accepte reste
+testé séparément.
+
+Un test interne `wasm-bindgen-test` vérifie la même fixture en WASM à T=100,
+accepte la preuve intacte et rejette les mutations de `y` et de la clé
+publique. Il utilise la fonction privée à itérations explicites pour ne pas
+exposer de nouvelle API de production; le job Node/WASM correspondant est
+ajouté à `.github/workflows/vdf-verifier-pure.yml`. Les trois tests MPIR
+natives passent localement contre la DLL MPIR embarquée; le test WASM passe
+également sous Node. Le run GitHub Actions demandé reste à faire; jusqu'à
+réception de ses résultats, le statut reste `in_progress` et `verified_by`
+reste vide. Aucun paramètre ou algorithme distinct de ceux de
 [`network.vdf-identity`](vdf-identity.md) n'est introduit.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
