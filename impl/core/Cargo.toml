@@ -28,6 +28,10 @@ chacha20poly1305 = { version = "0.10", default-features = false, features = ["al
 hmac = "0.12"
 thiserror = "1"
 zeroize = { version = "1", features = ["derive"] }
+# Pure-Rust, WASM-compatible binary quadratic class groups and Chia-compatible
+# Wesolowski verification. Kept distinct from chiavdf: that optional native
+# dependency remains solely for legacy proof generation / reference tests.
+kyn-vdf = { version = "0.1.1", default-features = false }
 
 # Activée uniquement avec `--features wasm` (build ciblant impl/connector).
 wasm-bindgen = { version = "0.2", optional = true }
@@ -54,3 +58,5 @@ vdf = ["dep:chiavdf"]
 
 [dev-dependencies]
 hex = "0.4"
+wasm-bindgen-test = "0.3"
+web-time = "1"

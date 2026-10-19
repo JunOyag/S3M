@@ -58,6 +58,13 @@ pages:
       - vdf_smoke::random_bytes_proof_is_rejected
       - vdf_smoke::t_zero_is_rejected_before_any_ffi_call
 
+  - id: network.vdf-verifier-pure
+    kind: narrative
+    path: 01-network-dht/vdf-verifier-pure.md
+    title: "Vérificateur VDF pur — conformité native et WASM"
+    section: "§2.1"
+    refs: [network.vdf-identity]
+
   - id: network.dht-directory
     kind: narrative
     path: 01-network-dht/dht-directory.md

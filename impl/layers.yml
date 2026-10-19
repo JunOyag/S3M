@@ -40,6 +40,7 @@ phases:
       le Nœud et en WASM pour le Connecteur — voir impl/TECH_STACK.md.
     ids:
       - { id: network.vdf-identity,     component: core }
+      - { id: network.vdf-verifier-pure, component: core, depends_on: [network.vdf-identity-tagged] }
       - { id: crypto.k-attach,          component: core }
       - { id: crypto.k-block,           component: core }
       - { id: crypto.k-self,            component: core }

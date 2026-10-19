@@ -1,0 +1,64 @@
+name: network.vdf-verifier-pure
+
+on:
+  push:
+    paths:
+      - 'impl/core/**'
+      - '.github/workflows/vdf-verifier-pure.yml'
+  pull_request:
+    paths:
+      - 'impl/core/**'
+      - '.github/workflows/vdf-verifier-pure.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mpir-cross-check:
+    name: MPIR cross-check (Windows MSVC)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: impl/core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Windows — LLVM/libclang pour bindgen (ne pas écraser INCLUDE)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\Program Files\LLVM\bin\libclang.dll')) {
+            choco install llvm -y --no-progress
+          }
+          'LIBCLANG_PATH=C:\Program Files\LLVM\bin' |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Compiler les tests (feature vdf)
+        timeout-minutes: 25
+        run: cargo test --features vdf --no-run
+
+      - name: Windows — DLL MPIR à côté des binaires de test
+        shell: pwsh
+        run: |
+          $reg = if ($env:CARGO_HOME) { Join-Path $env:CARGO_HOME 'registry\src' }
+                 else { Join-Path $env:USERPROFILE '.cargo\registry\src' }
+          $dir = Get-ChildItem -Path $reg -Directory -Recurse -Filter 'mpir_gc_x64' |
+                 Where-Object { $_.Parent.Name -like 'chiavdf-*' } |
+                 Select-Object -First 1
+          if (-not $dir) { throw "mpir_gc_x64 introuvable dans $reg" }
+          $target = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).target_directory
+          foreach ($sub in 'debug', 'debug\deps') {
+            $dest = Join-Path $target $sub
+            if (-not (Test-Path $dest -PathType Container)) { throw "Dossier absent : $dest" }
+            Get-ChildItem -Path $dir.FullName -Filter '*.dll' |
+              Copy-Item -Destination $dest -Force
+          }
+          Write-Host ("DLL MPIR copiées depuis {0} vers {1}" -f $dir.FullName, $target)
+
+      - name: "Diagnostic ciblé MPIR — T=100 et mesures horodatées"
+        timeout-minutes: 45
+        run: cargo test --features vdf --lib vdf_pure::tests::mpir_cross_check -- --nocapture --test-threads=1
