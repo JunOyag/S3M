@@ -144,9 +144,11 @@ publique. Il utilise la fonction privée à itérations explicites pour ne pas
 exposer de nouvelle API de production; le job Node/WASM correspondant est
 ajouté à `.github/workflows/vdf-verifier-pure.yml`. Les trois tests MPIR
 natives passent localement contre la DLL MPIR embarquée; le test WASM passe
-également sous Node. Le run GitHub Actions demandé reste à faire; jusqu'à
-réception de ses résultats, le statut reste `in_progress` et `verified_by`
-reste vide. Aucun paramètre ou algorithme distinct de ceux de
+également sous Node. Le run GitHub Actions `39279840705` a validé les deux jobs : les 3 tests
+MPIR natifs passent, dont les rejets après mutations d'un octet de `y` et
+de la clé publique (**0 échec, 3,83 s**); le test WASM sous Node accepte la
+fixture et rejette ces mutations (**1 test passé, 14,81 s**). Aucun paramètre
+ou algorithme distinct de ceux de
 [`network.vdf-identity`](vdf-identity.md) n'est introduit.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->

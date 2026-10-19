@@ -64,6 +64,14 @@ pages:
     title: "Vérificateur VDF pur — conformité native et WASM"
     section: "§2.1"
     refs: [network.vdf-identity]
+    verified_by:
+      - vdf_pure::tests::accepts_chia_reference_vector_and_rejects_altered_bytes
+      - vdf_pure::tests::rejects_wrong_challenge_wrong_iterations_and_malformed_forms
+      - vdf_pure::tests::identity_api_enforces_lengths_and_tagged_identity_shape
+      - vdf_pure::tests::mpir_cross_check::verifies_chia_reference_vector_with_mpir
+      - vdf_pure::tests::mpir_cross_check::tagged_identity_mpir_fixture_matches_and_mutations_are_rejected
+      - vdf_pure::tests::wasm_mpir_fixture::verifies_mpir_fixture_and_rejects_y_and_public_key_mutations
+      - vdf_pure_wasm::executes_pure_verifier_on_embedded_chia_vector_for_wrong_identity
 
   - id: network.dht-directory
     kind: narrative
