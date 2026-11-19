@@ -14,7 +14,7 @@ struct Fake {
 }
 
 impl BlockSource for Fake {
-    fn from_node(&self, _: &BlockHash) -> Option<Vec<u8>> {
+    fn fetch_from_node(&self, _: &BlockHash) -> Option<Vec<u8>> {
         let i = self.calls.get();
         self.calls.set(i + 1);
         self.node_answers.get(i).cloned().flatten()

@@ -20,7 +20,7 @@ pub type BlockHash = [u8; 32];
 /// blocs, `impl/SPEC_GAPS.md`).
 pub trait BlockSource {
     /// Chemin normal : bloc demandé directement au Nœud hébergeur.
-    fn from_node(&self, hash: &BlockHash) -> Option<Vec<u8>>;
+    fn fetch_from_node(&self, hash: &BlockHash) -> Option<Vec<u8>>;
     /// Chemin de secours : reconstruction Reed-Solomon à partir de k
     /// fragments de parité chez les partenaires.
     fn reconstruct(&self, hash: &BlockHash) -> Option<Vec<u8>>;
@@ -51,7 +51,7 @@ fn valid(block: &Option<Vec<u8>>, hash: &BlockHash) -> bool {
 /// Lecture vérifiée avec `retries` nouvelles tentatives auprès du Nœud.
 pub fn fetch_verified(src: &dyn BlockSource, hash: &BlockHash, retries: usize) -> ReadOutcome {
     for _ in 0..=retries {
-        let b = src.from_node(hash);
+        let b = src.fetch_from_node(hash);
         if valid(&b, hash) {
             return ReadOutcome::Ok(b.unwrap());
         }
