@@ -4,7 +4,7 @@ Ce dépôt combine deux sous-projets qui doivent être fusionnés côte à côte
 - `p2p-storage-docs/` (spec pilotée par le code : `docs/`, `schemas/`, `manifest.yml`,
   `impl/layers.yml`, `impl/status.yml`, `impl/TECH_STACK.md`, `AGENTS.md`) — déjà fourni.
 - `impl/core/`, `impl/protocol/`, `impl/node/`, `impl/connector/` — code Rust à faire
-  croître phase par phase (`impl/protocol` est à créer, voir `impl/TECH_STACK.md`).
+  croître phase par phase (voir `impl/TECH_STACK.md`).
 
 **Avant toute action, lis `AGENTS.md` en entier.** Ce fichier CLAUDE.md ne le duplique pas
 (principe du projet : aucun fait à deux endroits) — il ne fait que rappeler les points sur
@@ -41,17 +41,16 @@ lesquels une session Claude Code se trompe le plus souvent.
 - **Spec V3 intégrée** (branche `docs/spec-v3`, entrée « Spec V3 » de `impl/SPEC_GAPS.md`) :
   Connecteur en Rust natif, plus de WASM, convention KDF unique, `K_block` par position,
   identité VDF marquée, enveloppe DHT signée.
-- **Phase 0 rouverte** : 9 ids repassent à `not_started` (voir leurs `notes` dans
-  `impl/status.yml`) ; le code V2 existant dans `impl/core` est à mettre à niveau, pas à
-  réécrire. `crypto.identity-derivation` reste `done`.
-- `protocols.stockage-physique` (node) est `done` alors que la Phase 0 ne l'est pas :
-  écart d'ordre hérité, accepté tel quel.
+- **Phase 0 terminée** (11 ids `done`, spec V3) et **Phase 1 terminée** : 41 types
+  FlatBuffers générés dans `impl/protocol` (`bash impl/protocol/gen.sh`, flatc 23.5.26
+  sous Docker). Prochaine phase : Phase 2 (`impl/layers.yml`).
+- `protocols.stockage-physique` (node) était `done` avant la Phase 0 : écart d'ordre hérité,
+  accepté tel quel.
 - `network.dht-directory` reprend de zéro ; l'essai V1 est archivé sur la branche locale
   `archive/dht-directory-v1` (référence uniquement, jamais fusionnée).
-- `impl/connector` est vide (le TypeScript a été archivé) ; `impl/protocol` n'existe pas
-  encore.
-- **Aucune compilation Rust sans feu vert explicite de l'utilisateur** (Docker prévu pour
-  les builds locaux, voir `impl/TECH_STACK.md`).
+- `impl/connector` est vide (le TypeScript a été archivé).
+- Builds : `cargo test` en local (Windows) ; tests `--features vdf` et clippy associé via
+  `bash impl/docker-test.sh` (Docker).
 
 ## Commandes utiles
 

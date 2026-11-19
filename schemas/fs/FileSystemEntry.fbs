@@ -4,7 +4,7 @@
 // Source: ST-P2P-STORAGE-2026-V2.md §3.13
 namespace P2PStorage.FS;
 
-/// Métadonnée libre clé/valeur portée par une entrée de répertoire.
+// Métadonnée libre clé/valeur portée par une entrée de répertoire.
 table Metadata {
   key: string;
   value: string;
@@ -22,21 +22,21 @@ table DirectoryEntry {
   name: string;
   size_bytes: uint64;
   mime_type: string;
-  first_block_hash: [ubyte];      /// hash du premier bloc de données de l'élément référencé
+  first_block_hash: [ubyte];      // hash du premier bloc de données de l'élément référencé
   attributes: Attributes;
-  encryption_salt: [ubyte];       /// 16 o CSPRNG, neuf à chaque réémission ; avec key_version et l'index du bloc, dérive K_block (§3.8)
-  key_version: uint16;            /// version de master_key utilisée pour ce fichier/répertoire (§3.8)
+  encryption_salt: [ubyte];       // 16 o CSPRNG, neuf à chaque réémission ; avec key_version et l'index du bloc, dérive K_block (§3.8)
+  key_version: uint16;            // version de master_key utilisée pour ce fichier/répertoire (§3.8)
   metadata: [Metadata];
 }
 
 /// Bloc de répertoire — chaîné par next_hash au-delà de la capacité d'un bloc (~300 entrées, §3.13).
 table DirectoryBlock {
   entries: [DirectoryEntry];
-  next_hash: [ubyte];             /// vide/absent si dernier bloc du répertoire
+  next_hash: [ubyte];             // vide/absent si dernier bloc du répertoire
 }
 
 /// Bloc de contenu de fichier — chaîné par next_hash, padding zéro sur le dernier bloc.
 table FileBlock {
-  data: [ubyte];                  /// fragment brut ; le bloc sérialisé est complété jusqu'à 65 506 o (padding zéro)
-  next_hash: [ubyte];             /// vide/absent si dernier bloc du fichier
+  data: [ubyte];                  // fragment brut ; le bloc sérialisé est complété jusqu'à 65 506 o (padding zéro)
+  next_hash: [ubyte];             // vide/absent si dernier bloc du fichier
 }

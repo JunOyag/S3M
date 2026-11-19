@@ -1,0 +1,18 @@
+[package]
+name = "p2p-storage-protocol"
+version = "0.1.0"
+edition = "2021"
+description = "Logique protocolaire partagée par le Nœud et le Connecteur (types FlatBuffers générés, enveloppes DHT, règles communes), sans I/O — spec V3."
+license = "MIT"
+
+[lib]
+name = "p2p_storage_protocol"
+
+[dependencies]
+# Même version que flatc (paquet Debian flatbuffers-compiler), voir gen.sh.
+flatbuffers = "=23.5.26"
+p2p-storage-core = { path = "../core" }
+
+[features]
+default = []
+vdf = ["p2p-storage-core/vdf"]

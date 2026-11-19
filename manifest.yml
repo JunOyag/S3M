@@ -95,6 +95,8 @@ pages:
     section: "§3.9"
     fbs: "schemas/network/DhtEnvelope.fbs#DhtEnvelope"
     refs: [network.dht-directory, network.vdf-identity, agilite.tag-hybride]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.VdfProof
     kind: schema
@@ -103,6 +105,9 @@ pages:
     section: "§2.1, §3.11"
     fbs: "schemas/network/DhtEnvelope.fbs#VdfProof"
     refs: [network.vdf-identity, network.dht-directory]
+    verified_by:
+      - schemas::node_entry_roundtrips_with_vdf_proof_and_migration_pointer
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.MigrationPointerPayload
     kind: schema
@@ -111,6 +116,8 @@ pages:
     section: "§5.2, §3.11"
     fbs: "schemas/network/DhtEnvelope.fbs#MigrationPointerPayload"
     refs: [network.SignedMigrationPointer, securite.incidents-compromissions]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.SignedMigrationPointer
     kind: schema
@@ -119,6 +126,9 @@ pages:
     section: "§5.2, §3.11"
     fbs: "schemas/network/DhtEnvelope.fbs#SignedMigrationPointer"
     refs: [network.MigrationPointerPayload, network.NodeEntry, securite.incidents-compromissions]
+    verified_by:
+      - schemas::node_entry_roundtrips_with_vdf_proof_and_migration_pointer
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.NodeSnapshotPointer
     kind: schema
@@ -127,6 +137,8 @@ pages:
     section: "§3.9, §3.11"
     fbs: "schemas/network/NodeEntry.fbs#NodeSnapshotPointer"
     refs: [crypto.k-node-self, dispersal.Partner, network.NodeEntry]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.NodeEntry
     kind: schema
@@ -135,6 +147,10 @@ pages:
     section: "§3.9, §3.11"
     fbs: "schemas/network/NodeEntry.fbs#NodeEntry"
     refs: [network.dht-directory, network.VdfProof, network.SignedMigrationPointer, network.NodeSnapshotPointer]
+    verified_by:
+      - schemas::dht_entries_carry_distinct_file_identifiers
+      - schemas::node_entry_roundtrips_with_vdf_proof_and_migration_pointer
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.AttachmentRecord
     kind: schema
@@ -143,6 +159,8 @@ pages:
     section: "§3.8, §3.11"
     fbs: "schemas/network/UserEntry.fbs#AttachmentRecord"
     refs: [crypto.k-attach, network.UserEntryPlaintext, agilite.k-attach-kem]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.UserEntryPlaintext
     kind: schema
@@ -151,6 +169,8 @@ pages:
     section: "§3.9, §3.11"
     fbs: "schemas/network/UserEntry.fbs#UserEntryPlaintext"
     refs: [crypto.k-self, network.AttachmentRecord, dispersal.MasterKeyEntry, crypto.master-key-chain, network.UserEntry]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.UserEntry
     kind: schema
@@ -159,6 +179,10 @@ pages:
     section: "§3.9, §3.11"
     fbs: "schemas/network/UserEntry.fbs#UserEntry"
     refs: [network.dht-directory, network.VdfProof, network.UserEntryPlaintext]
+    verified_by:
+      - schemas::dht_entries_carry_distinct_file_identifiers
+      - schemas::truncated_buffer_is_rejected_by_verifier
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.DispersalRootPointer
     kind: schema
@@ -167,6 +191,9 @@ pages:
     section: "§3.9, §3.11"
     fbs: "schemas/network/DispersalEntry.fbs#DispersalRootPointer"
     refs: [crypto.k-attach, crypto.k-dispersal, dispersal.Partner, network.DispersalEntry]
+    verified_by:
+      - schemas::index_node_salts_are_carried_by_parent_stripe_and_root_pointer
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.DispersalEntry
     kind: schema
@@ -175,6 +202,9 @@ pages:
     section: "§3.9, §3.11"
     fbs: "schemas/network/DispersalEntry.fbs#DispersalEntry"
     refs: [network.dht-directory, network.DispersalRootPointer, crypto.k-attach]
+    verified_by:
+      - schemas::dht_entries_carry_distinct_file_identifiers
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: network.EmergencyEntry
     kind: schema
@@ -183,6 +213,10 @@ pages:
     section: "§3.12.4, §3.11"
     fbs: "schemas/network/EmergencyEntry.fbs#EmergencyEntry"
     refs: [network.dht-directory, protocols.espace-secours, emergency.EmergencyManifest]
+    verified_by:
+      - schemas::dht_entries_carry_distinct_file_identifiers
+      - schemas::write_queue_and_emergency_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
 
   # -------------------------------------------------------- schemas: node.*
   - id: node.VolumeConfig
@@ -192,6 +226,8 @@ pages:
     section: "§3.11"
     fbs: "schemas/node/NodeManifest.fbs#VolumeConfig"
     refs: [node.ContainerFile, protocols.stockage-physique, protocols.dispersion-transactionnelle]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.UserQuota
     kind: schema
@@ -200,6 +236,8 @@ pages:
     section: "§3.11"
     fbs: "schemas/node/NodeManifest.fbs#UserQuota"
     refs: []
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.PartnerAccount
     kind: schema
@@ -208,6 +246,8 @@ pages:
     section: "§3.11"
     fbs: "schemas/node/NodeManifest.fbs#PartnerAccount"
     refs: []
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.NodeConfig
     kind: schema
@@ -216,6 +256,8 @@ pages:
     section: "§3.11"
     fbs: "schemas/node/NodeManifest.fbs#NodeConfig"
     refs: [node.VolumeConfig, node.UserQuota, node.PartnerAccount]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.AttachedUser
     kind: schema
@@ -224,6 +266,8 @@ pages:
     section: "§3.11"
     fbs: "schemas/node/NodeManifest.fbs#AttachedUser"
     refs: [crypto.k-attach]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.BlacklistedPartner
     kind: schema
@@ -232,6 +276,8 @@ pages:
     section: "§3.11, §5.3.5"
     fbs: "schemas/node/NodeManifest.fbs#BlacklistedPartner"
     refs: [securite.blacklist-fraude]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.NodeManifest
     kind: schema
@@ -240,6 +286,9 @@ pages:
     section: "§3.3, §3.11"
     fbs: "schemas/node/NodeManifest.fbs#NodeManifest"
     refs: [node.NodeConfig, node.AttachedUser, node.BlacklistedPartner, node.ContainerFile, crypto.k-node-self]
+    verified_by:
+      - schemas::node_mutation_log_union_and_manifest_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.StripeRemoval
     kind: schema
@@ -248,6 +297,8 @@ pages:
     section: "§3.11"
     fbs: "schemas/node/MutationLog.fbs#StripeRemoval"
     refs: [dispersal.Stripe]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.Mutation
     kind: schema
@@ -256,6 +307,9 @@ pages:
     section: "§3.11"
     fbs: "schemas/node/MutationLog.fbs#Mutation"
     refs: [dispersal.BlockEntry, node.StripeRemoval, node.BlacklistedPartner, node.PartnerAccount]
+    verified_by:
+      - schemas::node_mutation_log_union_and_manifest_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.MutationLog
     kind: schema
@@ -264,6 +318,9 @@ pages:
     section: "§3.5, §3.11"
     fbs: "schemas/node/MutationLog.fbs#MutationLog"
     refs: [node.Mutation]
+    verified_by:
+      - schemas::node_mutation_log_union_and_manifest_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
 
   # ---------------------------------------------------- schemas: node.* (stockage physique, ajout post-V2)
   - id: node.ContainerFile
@@ -273,6 +330,8 @@ pages:
     section: "§4.4 (ajout post-V2)"
     fbs: "schemas/node/ContainerFile.fbs#ContainerFile"
     refs: [protocols.stockage-physique, securite.blacklist-fraude, dispersal.IndexNode, node.BlockLocation, node.VolumeConfig]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: node.BlockLocation
     kind: schema
@@ -281,6 +340,8 @@ pages:
     section: "§4.4 (ajout post-V2)"
     fbs: "schemas/node/ContainerFile.fbs#BlockLocation"
     refs: [protocols.index-adaptatif, protocols.stockage-physique, node.ContainerFile]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   # ---------------------------------------------------- schemas: dispersal.*
   - id: dispersal.Partner
@@ -290,6 +351,8 @@ pages:
     section: "§3.11"
     fbs: "schemas/dispersal/DispersalManifest.fbs#Partner"
     refs: []
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: dispersal.BlockEntry
     kind: schema
@@ -298,6 +361,9 @@ pages:
     section: "§3.11"
     fbs: "schemas/dispersal/DispersalManifest.fbs#BlockEntry"
     refs: [dispersal.Partner, crypto.master-key-chain]
+    verified_by:
+      - schemas::node_mutation_log_union_and_manifest_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: dispersal.MasterKeyEntry
     kind: schema
@@ -306,6 +372,8 @@ pages:
     section: "§3.8, §3.11"
     fbs: "schemas/dispersal/DispersalManifest.fbs#MasterKeyEntry"
     refs: [crypto.master-key-chain]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: dispersal.Stripe
     kind: schema
@@ -314,6 +382,9 @@ pages:
     section: "§3.11"
     fbs: "schemas/dispersal/DispersalManifest.fbs#Stripe"
     refs: [dispersal.BlockEntry, protocols.erasure-coding]
+    verified_by:
+      - schemas::index_node_salts_are_carried_by_parent_stripe_and_root_pointer
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: dispersal.IndexNode
     kind: schema
@@ -322,6 +393,9 @@ pages:
     section: "§3.6, §3.11"
     fbs: "schemas/dispersal/DispersalManifest.fbs#IndexNode"
     refs: [dispersal.Stripe, protocols.index-adaptatif]
+    verified_by:
+      - schemas::index_node_salts_are_carried_by_parent_stripe_and_root_pointer
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: dispersal.DispersalManifest
     kind: schema
@@ -330,6 +404,9 @@ pages:
     section: "§3.4, §3.11"
     fbs: "schemas/dispersal/DispersalManifest.fbs#DispersalManifest"
     refs: [dispersal.Partner, dispersal.IndexNode, crypto.k-attach]
+    verified_by:
+      - schemas::index_node_salts_are_carried_by_parent_stripe_and_root_pointer
+      - schemas::every_generated_table_builds_and_verifies
 
   # ------------------------------------------------------------- schemas: fs.*
   - id: fs.Metadata
@@ -339,6 +416,8 @@ pages:
     section: "§3.13"
     fbs: "schemas/fs/FileSystemEntry.fbs#Metadata"
     refs: []
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: fs.Attributes
     kind: schema
@@ -347,6 +426,8 @@ pages:
     section: "§3.13"
     fbs: "schemas/fs/FileSystemEntry.fbs#Attributes"
     refs: []
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: fs.DirectoryEntry
     kind: schema
@@ -355,6 +436,9 @@ pages:
     section: "§3.13"
     fbs: "schemas/fs/FileSystemEntry.fbs#DirectoryEntry"
     refs: [fs.Attributes, fs.Metadata, crypto.k-block]
+    verified_by:
+      - layout::directory_block_reference_capacity_is_measured
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: fs.DirectoryBlock
     kind: schema
@@ -363,6 +447,9 @@ pages:
     section: "§3.13"
     fbs: "schemas/fs/FileSystemEntry.fbs#DirectoryBlock"
     refs: [fs.DirectoryEntry]
+    verified_by:
+      - layout::directory_block_reference_capacity_is_measured
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: fs.FileBlock
     kind: schema
@@ -371,6 +458,9 @@ pages:
     section: "§3.13"
     fbs: "schemas/fs/FileSystemEntry.fbs#FileBlock"
     refs: []
+    verified_by:
+      - layout::file_block_data_bytes_is_measured
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: fs.QueuedMutation
     kind: schema
@@ -379,6 +469,9 @@ pages:
     section: "§3.12.2"
     fbs: "schemas/fs/WriteQueue.fbs#QueuedMutation"
     refs: [fs.DirectoryEntry]
+    verified_by:
+      - schemas::write_queue_and_emergency_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: fs.WriteQueue
     kind: schema
@@ -387,6 +480,9 @@ pages:
     section: "§3.12.2"
     fbs: "schemas/fs/WriteQueue.fbs#WriteQueue"
     refs: [fs.QueuedMutation]
+    verified_by:
+      - schemas::write_queue_and_emergency_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
 
   # ------------------------------------------------------- schemas: emergency.*
   - id: emergency.EmergencyPartner
@@ -396,6 +492,8 @@ pages:
     section: "§3.12.4"
     fbs: "schemas/emergency/EmergencyManifest.fbs#EmergencyPartner"
     refs: []
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: emergency.EmergencyBlockEntry
     kind: schema
@@ -404,6 +502,8 @@ pages:
     section: "§3.12.4"
     fbs: "schemas/emergency/EmergencyManifest.fbs#EmergencyBlockEntry"
     refs: [emergency.EmergencyPartner]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: emergency.EmergencyMutation
     kind: schema
@@ -412,6 +512,8 @@ pages:
     section: "§3.12.4"
     fbs: "schemas/emergency/EmergencyManifest.fbs#EmergencyMutation"
     refs: [fs.DirectoryEntry]
+    verified_by:
+      - schemas::every_generated_table_builds_and_verifies
 
   - id: emergency.EmergencyManifest
     kind: schema
@@ -420,6 +522,9 @@ pages:
     section: "§3.12.4"
     fbs: "schemas/emergency/EmergencyManifest.fbs#EmergencyManifest"
     refs: [emergency.EmergencyPartner, emergency.EmergencyBlockEntry, emergency.EmergencyMutation, crypto.k-attach]
+    verified_by:
+      - schemas::write_queue_and_emergency_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
 
   # ------------------------------------------------------------------- crypto
   - id: crypto.key-hierarchy

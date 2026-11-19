@@ -42,9 +42,11 @@ noms, tailles, chaînage.
 
 ## Capacité
 
-Pour un nom et un type MIME de longueur usuelle, une entrée pèse environ 175
-octets — soit **≤ 300 entrées par `DirectoryBlock`** (64 KiO), au-delà
-duquel `next_hash` chaîne vers un bloc de continuation.
+Mesure (Phase 1, `impl/protocol`, test `layout::directory_block_reference_capacity_is_measured`) :
+avec un nom de 32 o, un type MIME de 24 o et sans métadonnée libre, **333
+entrées** tiennent dans un `DirectoryBlock` (65 506 o de clair, `next_hash`
+compris). La capacité réelle dépend des longueurs : le Connecteur mesure
+chaque bloc avant émission et chaîne par `next_hash` au-delà.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 

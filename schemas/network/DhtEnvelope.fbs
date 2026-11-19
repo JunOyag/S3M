@@ -4,30 +4,30 @@
 // Source: ST-P2P-STORAGE-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
 namespace P2PStorage.Dht;
 
-/// Enveloppe de toute entrée DHT (§3.9). La signature porte sur L(libellé du type) ‖ payload, octets exacts reçus — jamais réserialisés.
+// Enveloppe de toute entrée DHT (§3.9). La signature porte sur L(libellé du type) ‖ payload, octets exacts reçus — jamais réserialisés.
 table DhtEnvelope {
-  key_algorithm: uint8;           /// 0 = Ed25519 (seul accepté en V3) ; 1, 2 rejetés « algorithme non supporté » ; autre valeur rejetée
-  payload: [ubyte];               /// sérialisation FlatBuffers de l'entrée (NodeEntry, UserEntry, DispersalEntry ou EmergencyEntry), signée telle quelle
-  signature: [ubyte];             /// Ed25519, 64 o
+  key_algorithm: uint8;           // 0 = Ed25519 (seul accepté en V3) ; 1, 2 rejetés « algorithme non supporté » ; autre valeur rejetée
+  payload: [ubyte];               // sérialisation FlatBuffers de l'entrée (NodeEntry, UserEntry, DispersalEntry ou EmergencyEntry), signée telle quelle
+  signature: [ubyte];             // Ed25519, 64 o
 }
 
 /// Preuve VDF d'identité (§2.1) : le vérificateur recalcule Δ depuis `identity`, jamais transmis.
 table VdfProof {
-  identity: [ubyte];              /// identité marquée : key_algorithm (1 o) ‖ clé publique brute
-  y: [ubyte];                     /// 100 o
-  pi: [ubyte];                    /// 100 o
+  identity: [ubyte];              // identité marquée : key_algorithm (1 o) ‖ clé publique brute
+  y: [ubyte];                     // 100 o
+  pi: [ubyte];                    // 100 o
 }
 
 /// Contenu signé d'un pointeur de migration d'identité du Nœud (§5.2).
 table MigrationPointerPayload {
-  old_node_id: [ubyte];           /// doit être le node_id de l'entrée qui porte le pointeur
+  old_node_id: [ubyte];           // doit être le node_id de l'entrée qui porte le pointeur
   new_node_id: [ubyte];
-  seq: uint64;                    /// monotone, premier pointeur = 1
+  seq: uint64;                    // monotone, premier pointeur = 1
   timestamp: uint64;
 }
 
 /// Pointeur de migration signé par priv_node_recovery (§5.2).
 table SignedMigrationPointer {
-  payload: [ubyte];               /// sérialisation de MigrationPointerPayload
-  signature: [ubyte];             /// Ed25519 sur L("p2p-storage/sig/migration-pointer/v1") ‖ payload
+  payload: [ubyte];               // sérialisation de MigrationPointerPayload
+  signature: [ubyte];             // Ed25519 sur L("p2p-storage/sig/migration-pointer/v1") ‖ payload
 }

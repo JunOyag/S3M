@@ -39,8 +39,8 @@ dernier bloc est complété par un padding à zéro ; `size_bytes` fait foi
 pour distinguer contenu réel et padding.
 
 La capacité d'un `DirectoryBlock` est réduite d'un peu plus de 30 octets
-par l'en-tête, le nonce et le tag du format de bloc : la valeur « ≤ 300
-entrées » est à re-mesurer par un test.
+par l'en-tête, le nonce et le tag du format de bloc ; mesure de
+référence : 333 entrées (voir [`fs.DirectoryEntry`](../02-schemas/fs/DirectoryEntry.md)).
 
 ## Immuabilité & modification {: #immuabilite }
 

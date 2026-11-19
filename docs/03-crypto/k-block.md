@@ -54,8 +54,9 @@ version (2 o) ‖ nonce (12 o, aléatoire) ‖ chiffré ‖ tag (16 o)
   zéro à droite jusqu'à cette taille.
 - La capacité utile d'un `FileBlock` (`FILE_BLOCK_DATA_BYTES`) est mesurée
   par un test : plus grande taille de `data` pour laquelle le `FileBlock`
-  sérialisé (avec `next_hash` et surcoût FlatBuffers) tient dans 65 506 o —
-  de l'ordre de 65 400 o.
+  sérialisé (avec `next_hash` et surcoût FlatBuffers) tient dans 65 506 o :
+  **65 440 o** (mesuré en Phase 1, `impl/protocol`, test
+  `layout::file_block_data_bytes_is_measured`).
 - `block_hash` est le hash SHA-256 du bloc chiffré complet de 65 536 o,
   calculé après chiffrement. Une chaîne se chiffre donc **du dernier bloc
   vers le premier** : chaque bloc porte le `next_hash` du suivant

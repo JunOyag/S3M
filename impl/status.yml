@@ -217,109 +217,173 @@ entries:
     notes: ''
   dispersal.BlockEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::node_mutation_log_union_and_manifest_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   dispersal.DispersalManifest:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::index_node_salts_are_carried_by_parent_stripe_and_root_pointer
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   dispersal.IndexNode:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::index_node_salts_are_carried_by_parent_stripe_and_root_pointer
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   dispersal.MasterKeyEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   dispersal.Partner:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   dispersal.Stripe:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::index_node_salts_are_carried_by_parent_stripe_and_root_pointer
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   emergency.EmergencyBlockEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   emergency.EmergencyManifest:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::write_queue_and_emergency_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   emergency.EmergencyMutation:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
+      blocks_to_delete : hash de 32 o concaténés ([[ubyte]] invalide en
+      FlatBuffers).
   emergency.EmergencyPartner:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   fs.Attributes:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   fs.DirectoryBlock:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - layout::directory_block_reference_capacity_is_measured
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur. Capacité
+      de référence mesurée : 333 entrées (layout.rs).
   fs.DirectoryEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - layout::directory_block_reference_capacity_is_measured
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   fs.FileBlock:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - layout::file_block_data_bytes_is_measured
+      - schemas::every_generated_table_builds_and_verifies
     notes: >-
-      Inclure le test de mesure de FILE_BLOCK_DATA_BYTES (plus grande taille
-      de data dont le FileBlock sérialisé tient dans 65 506 o) — exigé par
-      crypto.k-block.
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
+      FILE_BLOCK_DATA_BYTES = 65 440 o mesuré (layout.rs).
   fs.Metadata:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   fs.QueuedMutation:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::write_queue_and_emergency_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
+      blocks_to_delete : hash de 32 o concaténés ([[ubyte]] invalide en
+      FlatBuffers).
   fs.WriteQueue:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::write_queue_and_emergency_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.bootstrap:
     kind: narrative
     status: not_started
@@ -380,76 +444,115 @@ entries:
       (cargo test --features vdf).
   node.AttachedUser:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.BlacklistedPartner:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.BlockLocation:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.ContainerFile:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.Mutation:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::node_mutation_log_union_and_manifest_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.MutationLog:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::node_mutation_log_union_and_manifest_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.NodeConfig:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.NodeManifest:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::node_mutation_log_union_and_manifest_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.PartnerAccount:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.StripeRemoval:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.UserQuota:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   node.VolumeConfig:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   protocols.acces-applicatif:
     kind: narrative
     status: not_started
@@ -574,76 +677,122 @@ entries:
     notes: ''
   network.AttachmentRecord:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.DhtEnvelope:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.DispersalEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::dht_entries_carry_distinct_file_identifiers
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.DispersalRootPointer:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::index_node_salts_are_carried_by_parent_stripe_and_root_pointer
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.EmergencyEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::dht_entries_carry_distinct_file_identifiers
+      - schemas::write_queue_and_emergency_roundtrip
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.MigrationPointerPayload:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.NodeEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::dht_entries_carry_distinct_file_identifiers
+      - schemas::node_entry_roundtrips_with_vdf_proof_and_migration_pointer
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.NodeSnapshotPointer:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.SignedMigrationPointer:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::node_entry_roundtrips_with_vdf_proof_and_migration_pointer
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.UserEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::dht_entries_carry_distinct_file_identifiers
+      - schemas::truncated_buffer_is_rejected_by_verifier
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.UserEntryPlaintext:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.VdfProof:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - schemas::node_entry_roundtrips_with_vdf_proof_and_migration_pointer
+      - schemas::every_generated_table_builds_and_verifies
+    notes: >-
+      Type Rust généré par flatc 23.5.26 dans impl/protocol/src/generated
+      (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   protocols.ecriture-differee:
     kind: narrative
     status: not_started

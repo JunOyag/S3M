@@ -1,19 +1,21 @@
 // ---- MutationLog.fbs (journal append-only avant compaction) ----
 // Source: ST-P2P-STORAGE-2026-V2.md §3.5 / §3.11
+include "NodeManifest.fbs";
+include "../dispersal/DispersalManifest.fbs";
 namespace P2PStorage.Node;
 
-/// Suppression d'une stripe complète.
+// Suppression d'une stripe complète.
 table StripeRemoval {
   stripe_id: [ubyte];
 }
 
 /// Union des payloads possibles pour une entrée de journal.
-union MutationPayload { BlockEntry, StripeRemoval, BlacklistedPartner, PartnerAccount }
+union MutationPayload { P2PStorage.Dispersal.BlockEntry, StripeRemoval, BlacklistedPartner, PartnerAccount }
 
 /// Une mutation individuelle, journalisée avant compaction en FlatBuffers complet.
 table Mutation {
   timestamp: uint64;
-  op: string;                     /// "add_block" | "remove_block" | "add_stripe" | "remove_stripe" | "add_blacklist" | "update_partner_account"
+  op: string;                     // "add_block" | "remove_block" | "add_stripe" | "remove_stripe" | "add_blacklist" | "update_partner_account"
   payload: MutationPayload;
 }
 

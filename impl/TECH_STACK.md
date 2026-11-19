@@ -98,7 +98,7 @@ RFC 5869, RFC 4231, RFC 6234).
 | Suite symétrique — ChaCha20-Poly1305, HKDF-SHA256, SHA-256, HMAC ([`crypto.symmetric-suite`](../docs/03-crypto/symmetric-suite.md)) | `chacha20poly1305`, `hkdf`, `sha2`, `hmac` |
 | VDF Wesolowski | `chiavdf` 1.1.14 (feature `vdf` de `impl/core`) |
 | Reed-Solomon | `reed-solomon-erasure` |
-| Sérialisation | `flatbuffers` (crate officielle, types générés par `flatc`) |
+| Sérialisation | `flatbuffers` = 23.5.26, types générés par `flatc` 23.5.26 (paquet Debian `flatbuffers-compiler`, `impl/protocol/gen.sh`) — les deux versions doivent rester identiques |
 | Réseau / DHT | `rust-libp2p` (Kademlia), Nœud et Connecteur |
 | Stockage local (Nœud) | `rusqlite` (WAL) |
 | Fichiers creux (Nœud) | `libc` (`fallocate`) |

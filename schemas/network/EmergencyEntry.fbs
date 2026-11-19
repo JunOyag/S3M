@@ -6,12 +6,12 @@
 include "../emergency/EmergencyManifest.fbs";
 namespace P2PStorage.Dht;
 
-/// Entrée DHT EmergencyManifest (§3.12.4). TTL 15 552 000 s, ni republication ni suppression.
+// Entrée DHT EmergencyManifest (§3.12.4). TTL 15 552 000 s, ni republication ni suppression.
 table EmergencyEntry {
-  sig_pub_emergency: [ubyte];     /// en clair, pour que les pairs vérifient les mises à jour
-  seq: uint64;                    /// monotone, en clair : contrôlé par les pairs sans déchiffrement
+  sig_pub_emergency: [ubyte];     // en clair, pour que les pairs vérifient les mises à jour
+  seq: uint64;                    // monotone, en clair : contrôlé par les pairs sans déchiffrement
   timestamp: uint64;
-  ciphertext: [ubyte];            /// nonce ‖ chiffré ‖ tag de EmergencyManifest sous K_emergency_content
+  ciphertext: [ubyte];            // nonce ‖ chiffré ‖ tag de EmergencyManifest sous K_emergency_content
 }
 
 root_type EmergencyEntry;

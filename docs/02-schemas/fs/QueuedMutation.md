@@ -24,7 +24,8 @@ côté Connecteur pendant une indisponibilité totale du réseau.
 - `entry` (pour `update_entry`) : nouvelle
   [`fs.DirectoryEntry`](DirectoryEntry.md).
 - `blocks_to_delete` (pour `delete_entry`) : liste complète de la chaîne à
-  tombstoner (voir [`protocols.tombstones`](../../04-protocols/tombstones.md))
+  tombstoner, sous forme de hash SHA-256 de 32 o **concaténés** (longueur
+  multiple de 32 ; FlatBuffers n'admet pas de vecteur de vecteurs) (voir [`protocols.tombstones`](../../04-protocols/tombstones.md))
   — **seul le Connecteur**, qui a déchiffré la chaîne, peut l'établir.
 
 Voir [`protocols.write-queue`](../../04-protocols/write-queue.md) pour le
