@@ -428,6 +428,9 @@ pages:
     title: "Hiérarchie des Clés — Vue d'ensemble"
     section: "§3.8"
     refs: [crypto.k-attach, crypto.k-dispersal, crypto.k-block, crypto.k-node-self, crypto.k-self, crypto.master-key-chain, crypto.identity-derivation]
+    verified_by:
+      - labels::kdf_labels_are_globally_unique
+      - labels::labels_match_the_spec_registry
 
   - id: crypto.k-attach
     kind: narrative

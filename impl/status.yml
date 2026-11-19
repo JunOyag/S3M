@@ -114,10 +114,16 @@ entries:
       symmetric_suite::kdf. Vecteur généré par cryptography.
   crypto.key-hierarchy:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - labels::kdf_labels_are_globally_unique
+      - labels::labels_match_the_spec_registry
+    notes: >-
+      Page de synthèse sans code propre : close une fois toutes les clés
+      référencées livrées (symmetric-suite, k-attach, k-block, k-dispersal,
+      k-self, k-node-self, master-key-chain, identity-derivation — toutes
+      done). Le registre des étiquettes couvre l'ensemble de la hiérarchie.
   crypto.identity-derivation:
     kind: narrative
     status: done
