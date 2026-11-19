@@ -66,11 +66,20 @@ pub fn fetch_verified(src: &dyn BlockSource, hash: &BlockHash, retries: usize) -
     ReadOutcome::Irrecoverable
 }
 
-/// État local : blocs marqués corrompus et incidents à signaler.
+/// Réparation à retransmettre au Nœud (`securite.integrite-autoreparation`) :
+/// bloc reconstruit et vérifié, qui remplace sa copie corrompue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairRequest {
+    pub block_hash: BlockHash,
+    pub block: Vec<u8>,
+}
+
+/// État local : blocs marqués corrompus, incidents et réparations à envoyer.
 #[derive(Debug, Default)]
 pub struct IntegrityLog {
     pub corrupted: BTreeSet<BlockHash>,
     pub pending_incidents: Vec<Incident>,
+    pub pending_repairs: Vec<RepairRequest>,
 }
 
 impl IntegrityLog {
@@ -86,6 +95,10 @@ impl IntegrityLog {
         match fetch_verified(src, hash, retries) {
             ReadOutcome::Ok(b) => Some(b),
             ReadOutcome::Repaired { block, incident } => {
+                self.pending_repairs.push(RepairRequest {
+                    block_hash: incident.block_hash,
+                    block: block.clone(),
+                });
                 self.pending_incidents.push(incident);
                 Some(block)
             }

@@ -87,3 +87,22 @@ fn unrecoverable_block_is_marked_corrupted() {
         assert!(log.pending_incidents.is_empty());
     }
 }
+
+/// `securite.integrite-autoreparation`, partie connector : la version
+/// reconstruite est retransmise au Nœud — même si le Nœud est joignable.
+#[test]
+fn reconstructed_block_is_queued_for_retransmission_to_the_node() {
+    let src = fake(
+        vec![Some(b"x".to_vec()), Some(b"x".to_vec())],
+        Some(GOOD.to_vec()),
+    );
+    let mut log = IntegrityLog::default();
+    log.read(&src, &h(), 1);
+    assert_eq!(
+        log.pending_repairs,
+        vec![RepairRequest {
+            block_hash: h(),
+            block: GOOD.to_vec()
+        }]
+    );
+}

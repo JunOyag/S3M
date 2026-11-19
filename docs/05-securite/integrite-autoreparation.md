@@ -48,6 +48,10 @@ les comparant à ceux du
 l'utilisateur rencontre lui-même l'erreur critique. Des anomalies répétées
 sur un même volume sont un signal de défaillance matérielle, remonté sur le
 dashboard ([`deploiement.packaging`](../07-deploiement/packaging.md)).
+Seuil retenu à l'implémentation (2026-11-19) : un volume est signalé à
+partir de **3 anomalies** lors d'un même passage. Le Nœud vérifie que le
+bloc renvoyé par le Connecteur correspond à son `block_hash` avant de
+remplacer sa copie.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 

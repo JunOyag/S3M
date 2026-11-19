@@ -858,10 +858,20 @@ entries:
     notes: ''
   securite.integrite-autoreparation:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - integrity::reconstructed_block_is_queued_for_retransmission_to_the_node
+      - self_repair::repair_replaces_corrupted_copy_only_with_a_block_matching_its_hash
+      - self_repair::scrubbing_detects_corruption_and_flags_failing_volumes
+    notes: >-
+      connector : IntegrityLog::pending_repairs, le bloc reconstruit après
+      incohérence est mis en attente de retransmission au Nœud, même
+      joignable. node : impl/node/src/self_repair.rs, remplacement de la copie
+      locale seulement si le hash du bloc reçu est correct, scrubbing des
+      blocs locaux contre les block_hash attendus, volume signalé à partir de
+      3 anomalies (seuil retenu, page précisée). Testé sur un stockage
+      physique réel.
   securite.pos-challenges:
     kind: narrative
     status: done

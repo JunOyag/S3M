@@ -933,6 +933,10 @@ pages:
     title: "Intégrité des Blocs Locaux & Auto-réparation"
     section: "§5.4"
     refs: [protocols.integrite-lecture]
+    verified_by:
+      - integrity::reconstructed_block_is_queued_for_retransmission_to_the_node
+      - self_repair::repair_replaces_corrupted_copy_only_with_a_block_matching_its_hash
+      - self_repair::scrubbing_detects_corruption_and_flags_failing_volumes
 
   # ----------------------------------------------------- procédures de secours
   - id: secours.reference-consolidee

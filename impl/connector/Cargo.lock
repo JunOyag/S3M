@@ -2051,6 +2051,7 @@ dependencies = [
 name = "p2p-storage-node"
 version = "0.1.0"
 dependencies = [
+ "flatbuffers",
  "futures",
  "libc",
  "libp2p",
