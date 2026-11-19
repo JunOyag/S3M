@@ -607,10 +607,24 @@ entries:
     notes: ''
   protocols.erasure-coding:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - erasure_coding::parity_count_is_coef_times_k
+      - erasure_coding::any_k_of_n_blocks_reconstruct_the_data
+      - erasure_coding::parity_alone_reconstructs_after_total_host_loss
+      - erasure_coding::fewer_than_k_blocks_is_an_explicit_error
+      - erasure_coding::parity_works_on_opaque_ciphertext_blocks
+      - erasure_coding::invalid_parameters_and_shard_sizes_are_rejected
+      - erasure_coding::parity_placement_requires_coef_times_k_distinct_partners
+      - erasure_coding::stripe_assembler_groups_by_k_and_pads_after_idle_timeout
+    notes: >-
+      impl/core/src/erasure.rs : parité coef×k par reed-solomon-erasure
+      (GF(2^8), liée), reconstruction depuis n'importe quels k blocs sur N
+      (parité seule comprise), placement chez coef×k partenaires distincts,
+      assemblage progressif par paquets de k avec padding après le délai
+      d'inactivité. Le remplacement a posteriori du padding relève de
+      protocols.dispersion-transactionnelle.
   protocols.espace-secours:
     kind: narrative
     status: not_started

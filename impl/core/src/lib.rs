@@ -8,6 +8,7 @@
 //! ne correspond à aucun id documenté — voir CLAUDE.md règle 4 (SPEC_GAPS.md)
 //! si un besoin de code n'a pas de contrepartie dans la spec.
 
+pub mod erasure;
 pub mod error;
 pub mod identity_derivation;
 pub mod k_attach;

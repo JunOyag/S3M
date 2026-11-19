@@ -776,6 +776,15 @@ pages:
     title: "Codage d'Effacement & Tolérance aux Pannes"
     section: "§4.1"
     refs: [dispersal.Stripe]
+    verified_by:
+      - erasure_coding::parity_count_is_coef_times_k
+      - erasure_coding::any_k_of_n_blocks_reconstruct_the_data
+      - erasure_coding::parity_alone_reconstructs_after_total_host_loss
+      - erasure_coding::fewer_than_k_blocks_is_an_explicit_error
+      - erasure_coding::parity_works_on_opaque_ciphertext_blocks
+      - erasure_coding::invalid_parameters_and_shard_sizes_are_rejected
+      - erasure_coding::parity_placement_requires_coef_times_k_distinct_partners
+      - erasure_coding::stripe_assembler_groups_by_k_and_pads_after_idle_timeout
 
   - id: protocols.volatilite-reparation
     kind: narrative

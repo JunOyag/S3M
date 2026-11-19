@@ -63,6 +63,18 @@ pub enum CoreError {
     #[error("tag key_algorithm inconnu : {tag}")]
     UnknownKeyAlgorithm { tag: u8 },
 
+    #[error("paramètres d'effacement invalides (k, coef, N ≤ 256)")]
+    ErasureParameters,
+
+    #[error("blocs de tailles différentes ou vides")]
+    ErasureShardSize,
+
+    #[error("moins de k blocs disponibles : reconstruction impossible")]
+    ErasureNotEnoughShards,
+
+    #[error("deux fragments de parité chez le même partenaire")]
+    ErasureDuplicatePartner,
+
     #[error("chiavdf : dérivation du discriminant échouée (create_discriminant)")]
     VdfDiscriminantFailure,
 
