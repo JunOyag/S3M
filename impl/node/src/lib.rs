@@ -13,6 +13,7 @@ pub mod incidents;
 pub mod migration;
 pub mod pos;
 pub mod quota_sync;
+pub mod restore;
 pub mod self_repair;
 pub mod tombstones;
 pub mod volatility;

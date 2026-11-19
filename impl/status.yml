@@ -199,10 +199,23 @@ entries:
       jusqu'à la tâche crypto.k-block.
   deploiement.disaster-recovery:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - restore::node_restores_snapshot_pointer_and_user_keys_from_seed_alone
+      - bootstrap::cold_path_resolves_current_node_from_seed_alone
+      - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
+      - migration::new_node_rebuilds_from_parity_and_signs_with_its_own_key
+    notes: >-
+      node : impl/node/src/restore.rs, depuis la seule seed Node : pointeur de
+      snapshot de l'entrée Node déchiffré sous K_node_self, K_attach et clé
+      DHT du DispersalManifest de chaque Utilisateur rattaché, reconstruction
+      depuis la parité (migration::rebuild_stripe). connector (étapes 5-6) :
+      network.bootstrap (fs_root_hash via K_self depuis la seed) et
+      crypto.master-key-chain (clés historiques). La restauration physique des
+      conteneurs est couverte par protocols.stockage-physique ; la
+      récupération réseau des fragments du snapshot dépend du protocole
+      d'échange (SPEC_GAPS).
   deploiement.formats-serialisation:
     kind: narrative
     status: done

@@ -966,6 +966,11 @@ pages:
     title: "Gestion des Clés (Disaster Recovery)"
     section: "§7.1"
     refs: [crypto.k-self, crypto.k-node-self, crypto.master-key-chain, protocols.stockage-physique, crypto.identity-derivation]
+    verified_by:
+      - restore::node_restores_snapshot_pointer_and_user_keys_from_seed_alone
+      - bootstrap::cold_path_resolves_current_node_from_seed_alone
+      - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
+      - migration::new_node_rebuilds_from_parity_and_signs_with_its_own_key
 
   - id: deploiement.formats-serialisation
     kind: narrative
