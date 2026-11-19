@@ -6,6 +6,7 @@
 //! thresholds used by the NodeManifest mutation cycle.
 
 pub mod dht_directory;
+pub mod dispersion;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};

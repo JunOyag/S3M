@@ -601,10 +601,22 @@ entries:
     notes: ''
   protocols.dispersion-transactionnelle:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - dispersion::parent_waits_for_k_plus_2_confirmations_on_every_child
+      - dispersion::bottom_up_then_commit_only_after_root_confirmed
+      - dispersion::journal_replay_is_idempotent
+      - dispersion::orphans_are_purged_after_grace_period_only
+      - dispersion::malformed_transactions_and_unknown_stripes_are_rejected
+    notes: >-
+      impl/node/src/dispersion.rs : dispersion ascendante, seuil k+2
+      confirmations de partenaires distincts avant le niveau parent, commit
+      seulement après confirmation de la racine, journal rejouable de façon
+      idempotente, purge différée des orphelins après délai de grâce
+      (paramètre : la spec ne fixe pas sa valeur). Persistance du journal dans
+      node.MutationLog et transport vers les partenaires : protocole d'échange
+      (SPEC_GAPS).
   protocols.erasure-coding:
     kind: narrative
     status: done

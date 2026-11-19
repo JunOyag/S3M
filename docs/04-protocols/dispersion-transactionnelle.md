@@ -25,9 +25,8 @@ l'ancienne version reste intégralement valide et récupérable.
 2. **Seuil de confirmation** : chaque Stripe doit recevoir au moins **k+2**
    confirmations partenaires avant que le niveau parent ne soit dispersé à
    son tour.
-   `verified_by: []` — *aucun test de conformité automatisé n'existe encore
-   pour ce seuil ; convention de liaison prête à être peuplée (voir
-   frontmatter), pas d'implémentation de référence pour l'instant.*
+   Testé par `dispersion::parent_waits_for_k_plus_2_confirmations_on_every_child`
+   (`impl/node`) : un partenaire ne compte qu'une fois par stripe.
 3. **Commit = publication DHT** : une fois la racine confirmée, publication
    **fire-and-forget** de la nouvelle entrée DHT (`dispersal_root_hash` +
    `dispersal_root_partners`) — voir

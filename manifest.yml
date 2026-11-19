@@ -712,6 +712,12 @@ pages:
     title: "Protocole Transactionnel de Dispersion"
     section: "§3.7"
     refs: [dispersal.Stripe, dispersal.DispersalManifest, protocols.tombstones]
+    verified_by:
+      - dispersion::parent_waits_for_k_plus_2_confirmations_on_every_child
+      - dispersion::bottom_up_then_commit_only_after_root_confirmed
+      - dispersion::journal_replay_is_idempotent
+      - dispersion::orphans_are_purged_after_grace_period_only
+      - dispersion::malformed_transactions_and_unknown_stripes_are_rejected
 
   - id: protocols.migration-noeud
     kind: narrative
