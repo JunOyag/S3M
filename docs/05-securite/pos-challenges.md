@@ -11,7 +11,9 @@ verified_by: []
 
 - Challenges réguliers de possession : calcul à la volée d'un hash
   dynamique (ex. `SHA-256(bloc + nonce)`).
-- Timeout strict calculé selon la latence moyenne mesurée du partenaire.
+- Timeout strict calculé selon la latence moyenne mesurée du partenaire. Valeurs retenues à
+  l'implémentation (2026-11-19) : délai = `max(1 s, 2 × moyenne + 500 ms)`,
+  moyenne glissante exponentielle (α = 1/8) des allers-retours mesurés.
 - Priorité QoS : bridage de bande passante autorisé pour le transfert de
   blocs mais **interdiction stricte** de brider les messages PoS.
 

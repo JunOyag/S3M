@@ -856,10 +856,21 @@ entries:
     notes: ''
   securite.pos-challenges:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - pos::honest_partner_passes_and_wrong_fragment_is_fraud
+      - pos::full_block_request_is_judged_like_a_challenge
+      - pos::timeout_follows_measured_mean_latency
+      - pos::pos_messages_are_never_throttled
+    notes: >-
+      impl/node/src/pos.rs : réponse SHA-256(fragment || nonce), référence
+      recalculée en local par Reed-Solomon depuis les k blocs, verdicts Passed
+      / Timeout (volatilité) / Fraud (rupture), demande de bloc complet jugée
+      comme un challenge, délai max(1 s, 2 x moyenne + 500 ms) sur moyenne
+      glissante (valeurs retenues, page précisée), bridage de bande passante
+      jamais appliqué au PoS. Échange réseau des challenges : protocole
+      d'échange (SPEC_GAPS).
   network.AttachmentRecord:
     kind: schema
     status: done
