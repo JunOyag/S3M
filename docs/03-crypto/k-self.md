@@ -13,6 +13,9 @@ verified_by: []
 K_self = KDF(priv_user, "attachment-recovery")
 ```
 
+Instanciation selon la [convention KDF](symmetric-suite.md#kdf-hkdf-sha256) : IKM = `priv_user`, sans sel ni entrée
+publique.
+
 Dérivée uniquement de la clé privée du User — ne dépend d'aucune information
 externe. `priv_user` elle-même dérive de la phrase mnémonique BIP-39 selon
 un schéma de chemins fixe — voir

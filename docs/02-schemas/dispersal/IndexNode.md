@@ -31,7 +31,10 @@ cette page ne décrit que la structure, pas la logique de scaling.
 Chaque `IndexNode` enfant est chiffré par bloc via
 [`crypto.k-dispersal`](../../03-crypto/k-dispersal.md)
 (`K_dispersal_block`) avant découpage en fragments — jamais en clair sur le
-réseau, y compris pour ces niveaux internes.
+réseau, y compris pour ces niveaux internes. Le sel de l'enfant est porté
+par le [`dispersal.Stripe`](Stripe.md) qui le référence
+(`encryption_salt`) ; celui de la racine par le pointeur DHT
+(`dispersal_root_salt`).
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 

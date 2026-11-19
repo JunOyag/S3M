@@ -35,6 +35,12 @@ l'arbre d'index adaptatif est lui-même un `Stripe` complet — voir
 ce qui garantit que la perte d'un partenaire ne casse jamais un sous-arbre
 entier, cohérent avec la tolérance aux pannes appliquée aux feuilles.
 
+Dans ce cas — et seulement dans ce cas — `encryption_salt` porte le sel
+de 16 octets de l'`IndexNode` enfant, neuf à chaque réémission du nœud,
+qui dérive sa clé de bloc `K_dispersal_block`
+([`crypto.k-dispersal`](../../03-crypto/k-dispersal.md)). Pour un Stripe
+de contenu utilisateur, le champ est vide.
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par

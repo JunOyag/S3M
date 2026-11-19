@@ -10,48 +10,56 @@ verified_by: []
 # K_block — Contenu Réel des Blocs
 
 ```
-K_block = KDF(master_key[version], info = "p2p-storage/block/v1", salt = encryption_salt)
+K_block = KDF(master_key[version], "block", encryption_salt, u32(index_du_bloc))
 ```
+
+Instanciation selon la [convention KDF](symmetric-suite.md#kdf-hkdf-sha256) :
+IKM = `master_key[version]`, étiquette `"block"`, sel = `encryption_salt`,
+entrée publique = index du bloc en `u32` big-endian.
 
 - Dérivée uniquement de la seed BIP-39 du User — **jamais partagée avec le
   Nœud**.
-- **Indépendante de `block_hash`** : la formule ne lit aucun hash du
-  chiffrement qu'elle produit — circularité `block_hash` ↔ `K_block`
-  arbitrée dans `impl/SPEC_GAPS.md` (clés sans `block_hash`, chiffrement
-  déterministe à nonce synthétique).
-- Une clé distincte par **élément** (fichier ou répertoire) : révocable au
-  niveau de l'élément sans affecter les autres. **Affaiblissement volontaire
-  de la propriété bloc par bloc du §3.8** (« une clé distincte par bloc,
-  révocable individuellement ») : corollaire assumé du chiffrement
-  déterministe à nonce synthétique arbitré dans `impl/SPEC_GAPS.md` —
-  révoquer la clé d'un élément révoque désormais l'ensemble de ses blocs,
-  pas un bloc isolé. Voir l'entrée SPEC_GAPS « Circularité `block_hash` ↔
-  `K_block` » (résolue au commit doc `e13b2e7`).
-- `encryption_salt` est tiré d'un **CSPRNG à chaque émission**, conservé dans
-  la file d'attente locale ([`fs.WriteQueue`](../02-schemas/fs/WriteQueue.md))
+- **`K_block` ne dépend pas du `block_hash`.** Le `block_hash` est le hash
+  du texte chiffré ; en dépendre créerait une circularité (il faudrait
+  connaître le hash d'un bloc pour le chiffrer). La clé dépend de la
+  **position** du bloc dans sa chaîne (`index_du_bloc`, 0 pour le premier
+  bloc de la chaîne) et du `encryption_salt` de la version du fichier ou du
+  répertoire.
+- **`encryption_salt` est neuf (16 octets d'un CSPRNG) à chaque création ou
+  réémission** d'un fichier ou d'un répertoire. Il est conservé dans la file
+  d'attente locale ([`fs.WriteQueue`](../02-schemas/fs/WriteQueue.md))
   pendant l'attente de synchronisation, puis porté par l'entrée FS
-  correspondante
-  ([`fs.DirectoryEntry`](../02-schemas/fs/DirectoryEntry.md)) — tous les
-  blocs d'un même fichier/répertoire le partagent.
+  correspondante ([`fs.DirectoryEntry`](../02-schemas/fs/DirectoryEntry.md)) ;
+  celui du répertoire racine est porté par l'entrée DHT User. **Règle
+  impérative : un `encryption_salt` n'est jamais réutilisé pour un contenu
+  différent.** Une écriture interrompue puis reprise repart avec un sel neuf.
+- **Granularité de révocation** : une clé distincte par version d'élément
+  (sel) et par position — révoquer une version revient à supprimer ses
+  blocs ([`protocols.tombstones`](../04-protocols/tombstones.md)).
 
-## Chiffrement déterministe, nonce synthétique
+## Format d'un bloc chiffré
 
-`K_block` chiffre des blocs **adressés par contenu** : le chiffrement est
-déterministe, avec un **nonce synthétique** (règle de
-[`crypto.symmetric-suite`](symmetric-suite.md)) :
+Chaque bloc de données stocké fait exactement **65 536 octets** :
 
 ```
-nonce = 12 premiers octets de HMAC-SHA256(K_nonce, u32(len(AAD)) ‖ AAD ‖ clair)
+version (2 o) ‖ nonce (12 o, aléatoire) ‖ chiffré ‖ tag (16 o)
 ```
 
-- **AAD d'un bloc** : en-tête de version (2 o) ‖ étiquette de contexte
-  `« block »` — aucun champ supplémentaire : deux écritures identiques d'un
-  même contenu doivent produire exactement le même chiffré.
-- **Trame** : en-tête (2 o) ‖ nonce (12 o) ‖ chiffré ‖ tag (16 o) — surcoût
-  de **30 o** ; dans un bloc complet de 64 KiO, **65 506 o de clair**
-  (padding zéro du clair jusqu'à 65 506 o).
-- `block_hash` est le hash du **chiffré**, calculé après chiffrement — il
-  n'entre ni dans `K_block` ni dans le nonce.
+- AEAD **ChaCha20-Poly1305** sous `K_block`
+  ([`crypto.symmetric-suite`](symmetric-suite.md)). Chaque `K_block` ne
+  chiffre qu'**un** bloc ; le nonce aléatoire est une défense en profondeur.
+- **AAD** : l'en-tête de version de 2 octets.
+- Clair utile : `65 536 − 2 − 12 − 16 = 65 506` octets. Le `FileBlock` ou le
+  `DirectoryBlock` sérialisé (FlatBuffers) est complété par du padding à
+  zéro à droite jusqu'à cette taille.
+- La capacité utile d'un `FileBlock` (`FILE_BLOCK_DATA_BYTES`) est mesurée
+  par un test : plus grande taille de `data` pour laquelle le `FileBlock`
+  sérialisé (avec `next_hash` et surcoût FlatBuffers) tient dans 65 506 o —
+  de l'ordre de 65 400 o.
+- `block_hash` est le hash SHA-256 du bloc chiffré complet de 65 536 o,
+  calculé après chiffrement. Une chaîne se chiffre donc **du dernier bloc
+  vers le premier** : chaque bloc porte le `next_hash` du suivant
+  ([`protocols.fs-structure`](../04-protocols/fs-structure.md)).
 
 ## Chiffrement avant envoi, jamais côté Nœud
 

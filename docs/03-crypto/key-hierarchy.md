@@ -15,6 +15,8 @@ BIP-39 (une pour le User, une pour le Node). Le schéma de chemins exact
 [`crypto.identity-derivation`](identity-derivation.md) ; la procédure de
 restauration associée sur
 [`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md).
+Toutes les dérivations `KDF(…)` suivent une convention unique
+([convention KDF](symmetric-suite.md#kdf-hkdf-sha256)).
 Cette page ne fait que pointer vers chaque clé ; le détail de dérivation et
 d'usage vit sur sa propre page.
 

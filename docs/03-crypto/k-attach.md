@@ -24,8 +24,13 @@ clé, chaque partie convertit sa paire en X25519 avant l'échange :
 ```
 priv_user_x25519 = ed25519_to_x25519(priv_user)
 pub_node_x25519  = ed25519_to_x25519(pub_node)
-K_attach = KDF(X25519(priv_user_x25519, pub_node_x25519), salt)
+K_attach = KDF(X25519(priv_user_x25519, pub_node_x25519), "attach", salt)
 ```
+
+Instanciation selon la [convention KDF](symmetric-suite.md#kdf-hkdf-sha256) : IKM = secret partagé X25519, étiquette
+`"attach"`, sel d'attachement, aucune entrée publique. La V2 donnait à
+cette dérivation un `info` vide ; l'étiquette `"attach"` lui est ajoutée
+en V3 pour la séparation de domaines.
 
 Côté Nœud, calcul symétrique avec ses propres clés. Le `salt` est fixé par
 le **Connecteur** au moment de l'attachement — stocké côté Nœud dans

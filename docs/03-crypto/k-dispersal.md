@@ -11,14 +11,28 @@ verified_by: []
 
 ```
 K_dispersal_content = KDF(K_attach, "dispersal-content")
-K_dispersal_block   = KDF(K_dispersal_content, "dispersal-block")
+K_dispersal_block   = KDF(K_dispersal_content, "dispersal-block", sel_du_nœud)
 ```
 
-`K_dispersal_block` est **indépendante de `block_hash`** (étiquette de
-domaine fixe — arbitrage documenté dans `impl/SPEC_GAPS.md`) : les blocs de
-l'arbre d'index sont chiffrés en déterministe avec nonce synthétique, sur le
-principe exact de [`crypto.k-block`](k-block.md), et `block_hash` de chaque
-bloc est calculé après chiffrement.
+Instanciation selon la [convention KDF](symmetric-suite.md#kdf-hkdf-sha256).
+`sel_du_nœud` est un sel de **16 octets d'un CSPRNG, neuf à chaque émission
+d'un `IndexNode`** sérialisé en bloc :
+
+- le sel d'un nœud enfant est porté par la référence que son parent garde
+  vers lui ([`dispersal.Stripe`](../02-schemas/dispersal/Stripe.md),
+  champ `encryption_salt`) ;
+- le sel de la racine de l'arbre est porté par le pointeur publié en DHT
+  (`DispersalRootPointer.dispersal_root_salt`, voir
+  [`network.dht-directory`](../01-network-dht/dht-directory.md)).
+
+Une clé = un nœud émis = un message : la position du nœud dans l'arbre n'a
+pas besoin d'entrer dans la dérivation. `K_dispersal_block` est
+**indépendante de `block_hash`** (même raison que
+[`crypto.k-block`](k-block.md)) ; le format de bloc chiffré (65 536 o, nonce
+aléatoire, AAD = en-tête de version) est celui de
+[`crypto.k-block`](k-block.md). Un nœud modifié est réémis en
+copy-on-write avec un sel neuf ; les nœuds inchangés gardent leur bloc et
+leur sel. Arbitrage du 2026-11-19 (`impl/SPEC_GAPS.md`, point ❓1 de la V3).
 
 Le pointeur `dispersal_root_hash`/`dispersal_root_partners` publié en DHT ne
 couvre que la **racine** de l'arbre d'index
@@ -43,11 +57,12 @@ de l'entrée DHT.
 
 C'est ce qui rend possible le flux décrit dans
 [`protocols.migration-noeud`](../04-protocols/migration-noeud.md) : le
-Connecteur transmet `dispersal_root_hash`, `dispersal_root_partners` et
+Connecteur transmet `dispersal_root_hash`, `dispersal_root_partners`,
+`dispersal_root_salt` et
 `K_dispersal_content` au nouveau Nœud — jamais `K_attach` ni
 `sig_priv_dispersal`. Le nouveau Nœud récupère et déchiffre alors seul les
-blocs, en dérivant `K_dispersal_block` (une seule fois — étiquette de
-domaine), **sans intervention
+blocs, en dérivant `K_dispersal_block` nœud par nœud à partir des sels
+portés par l'arbre lui-même, **sans intervention
 supplémentaire du Connecteur**, tout en restant structurellement incapable
 de signer quoi que ce soit sur l'ancienne entrée DHT.
 

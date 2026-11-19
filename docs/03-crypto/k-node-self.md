@@ -13,6 +13,9 @@ verified_by: []
 K_node_self = KDF(priv_node, "node-recovery")
 ```
 
+Instanciation selon la [convention KDF](symmetric-suite.md#kdf-hkdf-sha256) : IKM = `priv_node`, sans sel ni entrée
+publique.
+
 Dérivée uniquement de la clé privée du Nœud — symétrique de
 [`crypto.k-self`](k-self.md) côté User. `priv_node` elle-même dérive de la
 phrase mnémonique BIP-39 selon un schéma de chemins fixe — voir

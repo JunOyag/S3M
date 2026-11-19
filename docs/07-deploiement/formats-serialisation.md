@@ -30,9 +30,9 @@ verified_by: []
   n'existe **qu'en AAD** (`wrapped_key` = 48 o sans en-tête, voir la clé de wrap
   de [`crypto.symmetric-suite`](../03-crypto/symmetric-suite.md) et la lecture
   d'un bloc ancien de [`crypto.master-key-chain`](../03-crypto/master-key-chain.md)).
-  Un bump de version change l'AAD : tous les chiffrés déterministes (blocs à
-  nonce synthétique) changent avec lui — corollaire assumé, même logique que la
-  rotation de clé.
+  Un bump de version change l'AAD : un même contenu réémis sous une autre
+  version produit un autre chiffré, donc un autre `block_hash` — corollaire
+  assumé, même logique que la rotation de clé.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 

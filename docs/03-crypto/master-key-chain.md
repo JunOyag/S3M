@@ -50,10 +50,9 @@ conservée à travers les rotations, sous forme d'une chaîne wrappée :
    avec la clé maîtresse courante → `master_key[version]` — wrap AEAD sous
    `K_wrap`, dérivée selon la règle de
    [`crypto.symmetric-suite`](symmetric-suite.md).
-3. Dériver `K_block = KDF(master_key[version], info = "p2p-storage/block/v1",
-   salt = encryption_salt)`
-   (étiquette portée par le registre de
-   [`crypto.symmetric-suite`](symmetric-suite.md)).
+3. Dériver `K_block = KDF(master_key[version], "block", encryption_salt,
+   u32(index_du_bloc))` ([`crypto.k-block`](k-block.md) ; étiquette portée
+   par le registre de [`crypto.symmetric-suite`](symmetric-suite.md)).
 4. Déchiffrer le bloc.
 
 Coût constant, indépendant du nombre de rotations subies. Les blocs

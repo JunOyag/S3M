@@ -24,7 +24,7 @@ table DirectoryEntry {
   mime_type: string;
   first_block_hash: [ubyte];      /// hash du premier bloc de données de l'élément référencé
   attributes: Attributes;
-  encryption_salt: [ubyte];       /// avec key_version, dérive K_block pour tous les blocs de cet élément (§3.8)
+  encryption_salt: [ubyte];       /// 16 o CSPRNG, neuf à chaque réémission ; avec key_version et l'index du bloc, dérive K_block (§3.8)
   key_version: uint16;            /// version de master_key utilisée pour ce fichier/répertoire (§3.8)
   metadata: [Metadata];
 }

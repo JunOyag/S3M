@@ -28,8 +28,9 @@ noms, tailles, chaînage.
   d'un `BlockEntry` de type donnée (block_index 0..k-1, voir
   [`dispersal.BlockEntry`](../dispersal/BlockEntry.md)), **jamais** un
   `stripe_id`, qui ne sert qu'au regroupement erasure coding.
-- `encryption_salt` + `key_version` dérivent
-  [`crypto.k-block`](../../03-crypto/k-block.md) pour tous les blocs de cet
+- `encryption_salt` (16 octets d'un CSPRNG, neuf à chaque création ou
+  réémission, jamais réutilisé) + `key_version` + l'index du bloc dérivent
+  [`crypto.k-block`](../../03-crypto/k-block.md) pour chaque bloc de cet
   élément. `key_version` est lisible **ici uniquement par le Connecteur** —
   voir [`crypto.master-key-chain`](../../03-crypto/master-key-chain.md#pourquoi-deux-emplacements)
   pour le pourquoi de ce doublon délibéré avec

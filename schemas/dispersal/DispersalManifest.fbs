@@ -35,6 +35,7 @@ table Stripe {
   k: uint8;
   m: uint8;                       /// total N = k + coef×k (coef=3 par défaut → N=4k)
   blocks: [BlockEntry];
+  encryption_salt: [ubyte];       /// V3 : 16 o CSPRNG, rempli seulement si ce Stripe encode un IndexNode enfant — dérive K_dispersal_block (§3.8)
 }
 
 /// Nœud de l'arbre d'index adaptatif (§3.6) : feuille de Stripes ou niveau d'indirection.
