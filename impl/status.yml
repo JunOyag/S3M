@@ -79,12 +79,16 @@ entries:
       Vecteurs générés par cryptography.
   crypto.k-node-self:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - k_node_self_vectors::k_node_self_derivation_is_deterministic
+      - k_node_self_vectors::k_node_self_differs_per_priv_node
+      - k_node_self_vectors::k_node_self_is_domain_separated_from_k_self
+      - k_node_self_vectors::k_node_self_matches_generated_vector
     notes: >-
-      Rouvert par la spec V3 (2026-11-19). Passage à la convention KDF unique (valeurs de clé modifiées) ; nouveaux vecteurs. Le code V2 existant
-      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
+      Spec V3 : K_node_self = KDF(priv_node, "node-recovery") via
+      symmetric_suite::kdf. Vecteur généré par cryptography.
   crypto.k-self:
     kind: narrative
     status: done
