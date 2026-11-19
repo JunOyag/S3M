@@ -645,10 +645,22 @@ entries:
     notes: ''
   protocols.fs-structure:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - fs_structure::multi_block_file_roundtrips_and_chains_by_ciphertext_hash
+      - fs_structure::empty_file_is_one_block
+      - fs_structure::reemission_with_fresh_salt_produces_an_entirely_new_chain
+      - fs_structure::tampered_or_missing_blocks_are_rejected
+      - fs_structure::large_directory_spans_chained_blocks_and_roundtrips
+    notes: >-
+      impl/connector/src/fs.rs : fichiers en chaînes de FileBlock (≤
+      FILE_BLOCK_DATA_BYTES), répertoires en chaînes de DirectoryBlock remplis
+      à la mesure réelle, chiffrement du dernier bloc vers le premier sous
+      K_block(sel, index), next_hash = hash du bloc chiffré suivant,
+      réémission complète avec sel neuf, lecture avec vérification du hash de
+      chaque bloc et size_bytes faisant foi. La cascade jusqu'à fs_root_hash
+      et l'envoi au Nœud relèvent de protocols.acces-applicatif / write-queue.
   protocols.index-adaptatif:
     kind: narrative
     status: done

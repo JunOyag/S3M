@@ -781,6 +781,12 @@ pages:
     title: "Structure du Système de Fichiers"
     section: "§3.13"
     refs: [fs.DirectoryEntry, fs.DirectoryBlock, fs.FileBlock]
+    verified_by:
+      - fs_structure::multi_block_file_roundtrips_and_chains_by_ciphertext_hash
+      - fs_structure::empty_file_is_one_block
+      - fs_structure::reemission_with_fresh_salt_produces_an_entirely_new_chain
+      - fs_structure::tampered_or_missing_blocks_are_rejected
+      - fs_structure::large_directory_spans_chained_blocks_and_roundtrips
 
   - id: protocols.erasure-coding
     kind: narrative
