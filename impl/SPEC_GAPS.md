@@ -18,6 +18,27 @@ référence du commit qui met à jour docs/ en conséquence)*
 
 ---
 
+## Phases 3 à 5 — Protocole d'échange de blocs non spécifié
+
+**Constat** (2026-11-19) : la spec décrit ce que s'échangent le Connecteur,
+le Nœud et les partenaires (blocs, confirmations, tombstones, challenges
+PoS, ordres de migration) mais **aucun format de message ni protocole
+réseau** pour ces échanges — seule la DHT a un transport défini
+(`network.dht-directory`).
+
+**Question** : comment implémenter les ids qui en dépendent ?
+
+**Impact si non résolu** : bloquant pour toute communication de blocs.
+
+**Résolution** (orchestrateur, sur délégation de l'utilisateur, 2026-11-19) :
+chaque id livre sa **logique** (règles, états, calculs, messages signés)
+testée sans réseau ; le transport (messages libp2p requête/réponse entre
+Connecteur, Nœud et partenaires) est une fonctionnalité à spécifier puis
+implémenter, rattachée à `protocols.acces-applicatif`. Les notes de
+`impl/status.yml` de chaque id concerné le rappellent.
+
+---
+
 ## network.bootstrap — Rendezvous/STUN/TURN, `UserManifest`, récupération du bloc racine
 
 **Constat** (2026-11-19) : la page cite les protocoles de rendez-vous libp2p

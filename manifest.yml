@@ -699,6 +699,12 @@ pages:
     title: "Arbre d'Index Adaptatif"
     section: "§3.6"
     refs: [dispersal.IndexNode, dispersal.Stripe]
+    verified_by:
+      - index::branching_factor_is_measured_for_n16
+      - index::one_tib_needs_three_indirection_levels
+      - index::depth_grows_only_when_needed
+      - index::grouping_covers_every_item_once_and_ends_in_one_root
+      - index::index_node_is_sealed_per_node_salt
 
   - id: protocols.dispersion-transactionnelle
     kind: narrative

@@ -639,10 +639,21 @@ entries:
     notes: ''
   protocols.index-adaptatif:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - index::branching_factor_is_measured_for_n16
+      - index::one_tib_needs_three_indirection_levels
+      - index::depth_grows_only_when_needed
+      - index::grouping_covers_every_item_once_and_ends_in_one_root
+      - index::index_node_is_sealed_per_node_salt
+    notes: >-
+      impl/protocol/src/index.rs (partie commune Nœud/Connecteur) : facteur de
+      branchement mesuré sur les types générés (F = 68 et non 75 estimé ; 1
+      TiO tient toujours en 3 niveaux, page mise à jour), forme de l'arbre à
+      profondeur minimale, regroupement par niveaux, chiffrement de chaque
+      IndexNode sous K_dispersal_block(sel). Transport des blocs : voir
+      SPEC_GAPS (protocole d'échange).
   protocols.integrite-lecture:
     kind: narrative
     status: not_started

@@ -22,11 +22,14 @@ l'arbre adaptatif.
 - [`dispersal.Stripe`](../02-schemas/dispersal/Stripe.md) complète (N=16 pour
   k=4, coef=3) : ≈ **810 octets**.
 - Un bloc de 64 KiO contient donc, avec marge de sécurité :
-  **≤ 75 stripes par [`dispersal.IndexNode`](../02-schemas/dispersal/IndexNode.md)**.
+  **≤ 75 stripes par [`dispersal.IndexNode`](../02-schemas/dispersal/IndexNode.md)**
+  (estimation). **Mesure** sur les types générés (Phase 3, `impl/protocol`,
+  test `index::branching_factor_is_measured_for_n16`) : **F = 68** stripes
+  complètes (N = 16) dans les 65 506 o de clair d'un bloc.
 
-Avec ce facteur de branchement F=75 : 4,19M stripes / 75 ≈ 55 867 blocs
-feuilles ; / 75 ≈ 745 blocs de niveau 1 ; / 75 ≈ 10 blocs de niveau 2, qui
-tiennent dans une seule racine. **3 niveaux d'indirection suffisent** pour
+Avec F = 68 : 4,19M stripes / 68 ≈ 61 681 blocs feuilles ; / 68 ≈ 908
+blocs de niveau 1 ; / 68 ≈ 14 blocs de niveau 2, qui tiennent dans une
+seule racine. **3 niveaux d'indirection suffisent** pour
 1 TiO par utilisateur, avec marge confortable au-delà.
 
 ## Croissance adaptative
