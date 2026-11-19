@@ -57,6 +57,8 @@ pub enum DhtError {
     Expired,
     #[error("séquence non strictement croissante")]
     StaleSequence,
+    #[error("entrée plus ancienne que celle déjà détenue")]
+    StaleTimestamp,
     #[error("pointeur de migration incohérent avec l'entrée qui le porte")]
     MigrationMismatch,
     #[error(transparent)]
@@ -412,10 +414,15 @@ pub fn accept_record(
         EntryKind::Node => Some(key.try_into().map_err(|_| DhtError::Format("clé Node"))?),
         _ => None,
     };
-    let previous_seq = previous
+    let previous = previous
         .and_then(|p| inspect_envelope(p).ok())
-        .filter(|p| p.kind == summary.kind)
-        .and_then(|p| p.seq);
+        .filter(|p| p.kind == summary.kind);
+    let previous_seq = previous.and_then(|p| p.seq);
+    // Une entrée plus ancienne ne remplace jamais une plus récente (pas de
+    // résurrection d'une entrée supprimée ou republiée).
+    if previous.is_some_and(|p| p.seq.is_none() && summary.timestamp < p.timestamp) {
+        return Err(DhtError::StaleTimestamp);
+    }
     let ctx = VerifyContext {
         now,
         node_lookup_key: node_key.as_ref(),
@@ -454,4 +461,41 @@ pub fn verify_migration_pointer(
         .ok_or(DhtError::Format("new_node_id"))?
         .bytes()
         .to_vec())
+}
+
+/// Suppression explicite d'une entrée `DispersalManifest`
+/// (`protocols.suppression-dispersal`) : `DispersalEntry` **sans blob
+/// chiffré**, signée par `sig_priv_dispersal`, d'horodatage plus récent que
+/// l'entrée supprimée. Réservée au Nœud.
+pub fn dispersal_deletion_envelope(sig_priv_dispersal: &[u8; 32], timestamp: u64) -> Vec<u8> {
+    let sig_pub = SigningKey::from_bytes(sig_priv_dispersal)
+        .verifying_key()
+        .to_bytes();
+    let mut fbb = FlatBufferBuilder::new();
+    let key = fbb.create_vector(&sig_pub);
+    let e = dht::DispersalEntry::create(
+        &mut fbb,
+        &dht::DispersalEntryArgs {
+            sig_pub_dispersal: Some(key),
+            timestamp,
+            ciphertext: None,
+        },
+    );
+    dht::finish_dispersal_entry_buffer(&mut fbb, e);
+    let payload = fbb.finished_data().to_vec();
+    let sig = sign(
+        sig_priv_dispersal,
+        EntryKind::Dispersal.signature_label(),
+        &payload,
+    );
+    build_envelope(&payload, &sig)
+}
+
+/// Vrai si l'enveloppe est une suppression explicite de DispersalManifest.
+pub fn is_dispersal_deletion(envelope: &[u8]) -> bool {
+    flatbuffers::root::<dht::DhtEnvelope>(envelope)
+        .ok()
+        .and_then(|e| e.payload())
+        .and_then(|p| dht::root_as_dispersal_entry(p.bytes()).ok())
+        .is_some_and(|e| e.ciphertext().is_none_or(|c| c.is_empty()))
 }

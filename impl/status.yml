@@ -763,10 +763,18 @@ entries:
       mkdocs build --strict réussies.
   protocols.suppression-dispersal:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - dht_network::node_deletes_dispersal_entry_and_old_entry_cannot_come_back
+    notes: >-
+      Suppression explicite = DispersalEntry sans blob chiffré, signée par
+      sig_priv_dispersal, plus récente (protocol :
+      dispersal_deletion_envelope, is_dispersal_deletion ; node :
+      delete_dispersal_entry, seule API qui l'expose). Règle commune ajoutée à
+      accept_record : une entrée plus ancienne que celle détenue est refusée
+      (StaleTimestamp), ce qui empêche la résurrection. Pages suppression-
+      dispersal et dht-directory précisées. Testé sur trois Nœuds réels.
   protocols.tombstones:
     kind: narrative
     status: done

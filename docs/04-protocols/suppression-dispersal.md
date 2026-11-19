@@ -16,6 +16,14 @@ lorsqu'un Utilisateur le quitte
 ([`protocols.migration-noeud`](migration-noeud.md)) ou supprime son compte.
 Il signe la demande avec `sig_priv_dispersal` et la publie sur la DHT.
 
+**Forme retenue** (2026-11-19, Kademlia n'ayant pas de suppression
+authentifiée) : une [`network.DispersalEntry`](../02-schemas/network/DispersalEntry.md)
+**sans blob chiffré**, signée par `sig_priv_dispersal`, d'horodatage plus
+récent que l'entrée supprimée. Les pairs refusent ensuite toute entrée plus
+ancienne sous la même clé (règle commune de
+[`network.dht-directory`](../01-network-dht/dht-directory.md#regles-de-verification-a-la-lecture)),
+ce qui empêche de « ressusciter » l'entrée supprimée.
+
 ## Pourquoi seul le Nœud peut signer une suppression
 
 Contrairement à ce qu'autoriserait la dérivation symétrique de

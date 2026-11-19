@@ -735,6 +735,8 @@ pages:
     title: "Suppression Explicite d'une Entrée DispersalManifest"
     section: "§3.7.2"
     refs: [protocols.migration-noeud, network.dht-directory]
+    verified_by:
+      - dht_network::node_deletes_dispersal_entry_and_old_entry_cannot_come_back
 
   - id: protocols.acces-applicatif
     kind: narrative

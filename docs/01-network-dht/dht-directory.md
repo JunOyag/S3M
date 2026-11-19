@@ -185,13 +185,16 @@ offset_s = entier_big-endian( SHA-256( identifiant ) ) mod 2 592 000
 - Amorçage provisoire : liste d'adresses de Nœuds en configuration ; le
   mécanisme complet relève de [`network.bootstrap`](bootstrap.md).
 
-## Règles de vérification à la lecture
+## Règles de vérification à la lecture {: #regles-de-verification-a-la-lecture }
 
 Avant de rendre une entrée à l'appelant, `get` vérifie dans l'ordre :
 `file_identifier` du payload, tag `key_algorithm`, signature sur les octets
 reçus, preuve VDF (Node et User), cohérence du tag entre preuve et
 enveloppe, `timestamp` non expiré, et pour `EmergencyEntry` et
 `migration_pointer` un `seq` strictement supérieur à celui déjà détenu.
+Pour les autres types, une entrée d'horodatage **inférieur** à celui de
+l'entrée déjà détenue sous la même clé est refusée (pas de retour en
+arrière, pas de résurrection d'une entrée supprimée).
 Le déchiffrement AEAD n'est possible qu'avec la clé correspondante.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->

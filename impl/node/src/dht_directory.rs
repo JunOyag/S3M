@@ -320,3 +320,16 @@ fn handle_kad(
         _ => {}
     }
 }
+
+/// Suppression explicite d'une entrée DispersalManifest
+/// (`protocols.suppression-dispersal`) — réservée au Nœud : seul ce
+/// composant expose la fonction ; le Connecteur n'en a pas.
+pub async fn delete_dispersal_entry(
+    node: &DhtNode,
+    dht_key: Vec<u8>,
+    sig_priv_dispersal: &[u8; 32],
+    now: u64,
+) -> Result<(), DhtNodeError> {
+    let env = p2p_storage_protocol::dht::dispersal_deletion_envelope(sig_priv_dispersal, now);
+    node.put(dht_key, env).await
+}

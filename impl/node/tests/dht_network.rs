@@ -147,3 +147,29 @@ async fn node_never_returns_an_entry_it_cannot_verify() {
         Err(DhtNodeError::Rejected(DhtError::InvalidVdf))
     ));
 }
+
+/// `protocols.suppression-dispersal` : le Nœud publie une suppression
+/// signée (entrée vide, plus récente) ; l'ancienne entrée ne peut plus être
+/// réinjectée.
+#[tokio::test(flavor = "multi_thread")]
+async fn node_deletes_dispersal_entry_and_old_entry_cannot_come_back() {
+    use p2p_storage_node::dht_directory::delete_dispersal_entry;
+    use p2p_storage_protocol::dht::is_dispersal_deletion;
+    let (a, b, _c) = mesh([true; 3]).await;
+    let seed = [0x31; 32];
+    let old = dispersal_envelope(&seed, NOW - 10);
+    a.put(b"cle-d".to_vec(), old.clone()).await.unwrap();
+    delete_dispersal_entry(&a, b"cle-d".to_vec(), &seed, NOW)
+        .await
+        .unwrap();
+    let got = tokio::time::timeout(Duration::from_secs(10), b.get(b"cle-d".to_vec()))
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(is_dispersal_deletion(&got));
+    assert!(matches!(
+        a.put(b"cle-d".to_vec(), old).await,
+        Err(DhtNodeError::Rejected(DhtError::StaleTimestamp))
+    ));
+}
