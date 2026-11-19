@@ -28,3 +28,4 @@ pub use generated::p2_pstorage as fb;
 pub mod dht;
 pub mod index;
 pub mod layout;
+pub mod local_api;

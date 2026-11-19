@@ -232,10 +232,20 @@ entries:
       physique) couvrent le reste de la page.
   deploiement.packaging:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: in_progress
+    owner: claude-code
+    tests:
+      - local_api::binding_must_be_loopback_ipv4
+      - local_api::token_is_handed_over_in_the_url_fragment
+      - local_api::http_requests_require_bearer_token_host_and_matching_origin
+      - local_api::websocket_checks_handshake_then_first_message_token
+    notes: >-
+      Protection de l'API locale livrée (impl/protocol/src/local_api.rs,
+      commune Nœud/Connecteur) : liaison 127.0.0.1, jeton 256 bits à temps
+      constant, Origin/Host, jeton WebSocket au premier message, remise par
+      fragment d'URL. Restent pour clore : binaires exécutables Nœud et
+      Connecteur (aucun main aujourd'hui), serveur HTTP/WebSocket (crate à
+      trancher), dashboards statiques TypeScript, image Docker du Nœud.
   dispersal.BlockEntry:
     kind: schema
     status: done
