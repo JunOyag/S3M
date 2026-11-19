@@ -64,10 +64,6 @@ pub const RETIRED_LABELS: [&str; 3] = [
     "p2p-storage/master-key-wrap/v1",
 ];
 
-/// Transitoire : ancienne étiquette `K_block` (V2), retirée par la tâche
-/// `crypto.k-block`. Hors registre.
-pub const P2P_STORAGE_BLOCK_V1: &str = "p2p-storage/block/v1";
-
 /// Contexte AAD du wrap de `master_key` — suivi de
 /// `u16(version_wrappée) ‖ u16(version_courante)`. (Les blocs n'ont pas de
 /// contexte : leur AAD est l'en-tête de version seul.)

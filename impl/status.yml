@@ -57,12 +57,24 @@ entries:
       tâche network.dht-directory.
   crypto.k-block:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - k_block_vectors::k_block_matches_generated_vector
+      - k_block_vectors::k_block_differs_per_block_index
+      - k_block_vectors::k_block_differs_per_encryption_salt
+      - k_block_vectors::k_block_differs_per_master_key_version
+      - k_block_vectors::k_block_rejects_salt_of_wrong_length
+      - k_block_vectors::block_frame_matches_generated_vector_and_is_65536_octets
+      - k_block_vectors::block_rejects_oversized_plaintext_and_wrong_frame_size
+      - k_block_vectors::block_tampering_is_rejected
     notes: >-
-      Rouvert par la spec V3 (2026-11-19). K_block = KDF(master_key, "block", encryption_salt, u32(index)) ; trame 65 536 o, nonce aléatoire, AAD = en-tête de version ; test de mesure de FILE_BLOCK_DATA_BYTES. Le code V2 existant
-      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
+      Spec V3 : K_block = KDF(master_key, "block", encryption_salt 16 o,
+      u32(index)) ; seal_block/open_block : trame exacte de 65 536 o (en-tête
+      2 o ‖ nonce 12 o ‖ chiffré ‖ tag), AAD = en-tête, padding zéro jusqu'à
+      65 506 o. Vecteurs générés par cryptography. La mesure de
+      FILE_BLOCK_DATA_BYTES exige la sérialisation FlatBuffers de FileBlock :
+      elle est portée par l'id fs.FileBlock (Phase 1, impl/protocol).
   crypto.k-dispersal:
     kind: narrative
     status: done
@@ -272,7 +284,10 @@ entries:
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Inclure le test de mesure de FILE_BLOCK_DATA_BYTES (plus grande taille
+      de data dont le FileBlock sérialisé tient dans 65 506 o) — exigé par
+      crypto.k-block.
   fs.Metadata:
     kind: schema
     status: not_started

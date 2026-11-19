@@ -447,7 +447,15 @@ pages:
     title: "K_block — Contenu Réel des Blocs"
     section: "§3.8"
     refs: [fs.DirectoryEntry, crypto.master-key-chain]
-    verified_by: []
+    verified_by:
+      - k_block_vectors::k_block_matches_generated_vector
+      - k_block_vectors::k_block_differs_per_block_index
+      - k_block_vectors::k_block_differs_per_encryption_salt
+      - k_block_vectors::k_block_differs_per_master_key_version
+      - k_block_vectors::k_block_rejects_salt_of_wrong_length
+      - k_block_vectors::block_frame_matches_generated_vector_and_is_65536_octets
+      - k_block_vectors::block_rejects_oversized_plaintext_and_wrong_frame_size
+      - k_block_vectors::block_tampering_is_rejected
 
   - id: crypto.k-node-self
     kind: narrative

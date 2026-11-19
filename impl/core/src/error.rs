@@ -54,6 +54,9 @@ pub enum CoreError {
     #[error("longueur de sel invalide : attendu {expected} octets, reçu {got}")]
     InvalidSaltLength { expected: usize, got: usize },
 
+    #[error("format de bloc invalide : {reason}")]
+    BlockFormat { reason: &'static str },
+
     #[error("chiavdf : dérivation du discriminant échouée (create_discriminant)")]
     VdfDiscriminantFailure,
 
