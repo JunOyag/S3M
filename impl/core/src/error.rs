@@ -57,6 +57,12 @@ pub enum CoreError {
     #[error("format de bloc invalide : {reason}")]
     BlockFormat { reason: &'static str },
 
+    #[error("algorithme de clé non supporté (tag {tag}) : seul le tag 0 est accepté en V3")]
+    UnsupportedKeyAlgorithm { tag: u8 },
+
+    #[error("tag key_algorithm inconnu : {tag}")]
+    UnknownKeyAlgorithm { tag: u8 },
+
     #[error("chiavdf : dérivation du discriminant échouée (create_discriminant)")]
     VdfDiscriminantFailure,
 

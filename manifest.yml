@@ -46,7 +46,19 @@ pages:
     title: "VDF de Wesolowski — Identités anti-Sybil"
     section: "§2.1"
     refs: [securite.blacklist-fraude, agilite.tag-hybride, network.dht-directory, network.VdfProof, network.vdf-verifier-pure]
-    verified_by: []
+    verified_by:
+      - vdf_smoke::roundtrip_verifies_with_protocol_constants
+      - vdf_smoke::roundtrip_verifies_with_fast_t
+      - vdf_smoke::proof_is_rejected_for_another_identity
+      - vdf_smoke::proof_is_rejected_when_a_byte_is_altered
+      - vdf_smoke::proof_is_rejected_with_wrong_t
+      - vdf_smoke::proof_is_rejected_with_nonzero_recursion
+      - vdf_smoke::verification_with_t_max_is_bounded_and_rejected
+      - vdf_smoke::empty_and_truncated_proofs_are_rejected
+      - vdf_smoke::random_bytes_proof_is_rejected
+      - vdf_smoke::t_zero_is_rejected_before_any_ffi_call
+      - vdf_smoke::tagged_identity_is_one_algorithm_octet_followed_by_the_raw_key
+      - vdf_smoke::unsupported_and_unknown_key_algorithms_are_rejected_with_dedicated_errors
 
   - id: network.vdf-verifier-pure
     kind: narrative

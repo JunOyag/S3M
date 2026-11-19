@@ -10,7 +10,10 @@
 //!
 //! Points d'arbitrage (entrées `network.vdf-identity` d'impl/SPEC_GAPS.md,
 //! tranchées le 17/10/2026) que ce module applique :
-//! - **Δ par identité** : `challenge = SHA-256(pub_key)`, `Δ = −HashPrime(
+//! - **Identité marquée** (spec V3) : `identité = key_algorithm ‖ clé`
+//!   (33 o pour Ed25519, tag 0) ; seul le tag 0 est accepté, 1 et 2 sont
+//!   rejetés « algorithme non supporté », toute autre valeur « inconnue ».
+//! - **Δ par identité** : `challenge = SHA-256(identité)`, `Δ = −HashPrime(
 //!   challenge, 1024)` recalculé par le vérificateur — jamais reçu du
 //!   prouveur. (Le stub initial documentait un « Δ global » avec graine
 //!   GENESIS : périmé — la page a été mise à jour en conséquence.)
@@ -25,14 +28,9 @@
 //!   discriminant 128 octets (tailles fixes, garanties par le type), preuve
 //!   `y ‖ π` = 200 octets (contrôles de `y` et `π` ci-dessous).
 //!
-//! Liaison : feature `vdf` (non active par défaut) hors cible `wasm32` —
-//! voir `impl/TECH_STACK.md`. Sans cette feature (dev local sans outillage
-//! C++) ou en WASM (le Connecteur charge chiavdf par liaison native :
-//! `bun:ffi` ou binaire sidecar), les fonctions renvoient
-//! [`CoreError::VdfUnavailable`]. Les builds et tests `--features vdf`
-//! tournent en CI (`.github/workflows/vdf-identity.yml`) : une machine de
-//! développement Windows sans droits administrateur ne peut pas installer
-//! l'outillage MSVC (arbitrage du 17/10/2026).
+//! Liaison : feature `vdf` (non active par défaut). Sans elle, les fonctions
+//! renvoient [`CoreError::VdfUnavailable`] — Nœud et Connecteur, tous deux en
+//! Rust natif, activent la feature (spec V3, `impl/TECH_STACK.md`).
 
 use crate::error::CoreError;
 
@@ -60,7 +58,7 @@ pub const PROOF_SIZE: usize = 200;
 /// Taille du discriminant sérialisé : `λ / 8`.
 pub const DISCRIMINANT_SIZE: usize = 128;
 
-/// Preuve publiée avec l'identité : le tuple DHT est `(pub_key, y ‖ π)`.
+/// Preuve publiée avec l'identité : le tuple DHT est `(identité, y ‖ π)`.
 /// `T`, `recursion`, `λ` et la dérivation de `Δ` sont implicites — constantes
 /// de protocole ci-dessus, connues de tout vérificateur.
 #[derive(Debug, Clone)]
@@ -69,51 +67,80 @@ pub struct VdfProof {
     pub pi: Vec<u8>,
 }
 
-/// Génère la preuve d'identité avec les constantes de protocole ([`T`]
-/// itérations, [`RECURSION`]). Calcul séquentiel bloquant (~30 s à 1,5 min
-/// selon la plateforme) : à appeler depuis un thread dédié côté `impl/node`,
-/// jamais depuis une boucle async.
-pub fn generate_identity_proof(pub_key: &[u8; 32]) -> Result<VdfProof, CoreError> {
-    generate_identity_proof_params(pub_key, T)
+/// Tag `key_algorithm` d'Ed25519 / X25519 — seul accepté en V3.
+pub const KEY_ALGORITHM_ED25519: u8 = 0;
+/// Taille d'une identité marquée Ed25519 : 1 o de tag + 32 o de clé.
+pub const TAGGED_IDENTITY_LEN: usize = 33;
+
+/// Contrôle du tag `key_algorithm` (page § « Identité marquée ») : 0 accepté ;
+/// 1 (ML-DSA/ML-KEM) et 2 (hybride) reconnus mais non supportés ; tout autre
+/// tag inconnu.
+pub fn check_key_algorithm(key_algorithm: u8) -> Result<(), CoreError> {
+    match key_algorithm {
+        KEY_ALGORITHM_ED25519 => Ok(()),
+        1 | 2 => Err(CoreError::UnsupportedKeyAlgorithm { tag: key_algorithm }),
+        _ => Err(CoreError::UnknownKeyAlgorithm { tag: key_algorithm }),
+    }
 }
 
-/// Variante de [`generate_identity_proof`] avec `t` explicite — usage tests,
-/// calibration (réexamen de `T`, page § « Calibration de T ») et diagnostic.
-/// Une preuve générée avec `t ≠` [`T`] ne passera **pas** la vérification de
-/// protocole.
-pub fn generate_identity_proof_params(pub_key: &[u8; 32], t: u64) -> Result<VdfProof, CoreError> {
+/// Construit l'identité marquée `key_algorithm ‖ clé publique brute`.
+pub fn tagged_identity(
+    key_algorithm: u8,
+    public_key: &[u8; 32],
+) -> Result<[u8; TAGGED_IDENTITY_LEN], CoreError> {
+    check_key_algorithm(key_algorithm)?;
+    let mut identity = [0u8; TAGGED_IDENTITY_LEN];
+    identity[0] = key_algorithm;
+    identity[1..].copy_from_slice(public_key);
+    Ok(identity)
+}
+
+/// Génère la preuve d'une identité marquée avec les constantes de protocole
+/// ([`T`], [`RECURSION`]). Calcul séquentiel bloquant (~30 s à 1,5 min selon
+/// la plateforme) : à appeler depuis un thread dédié, jamais depuis une
+/// boucle async.
+pub fn generate_identity_proof(
+    identity: &[u8; TAGGED_IDENTITY_LEN],
+) -> Result<VdfProof, CoreError> {
+    generate_identity_proof_params(identity, T)
+}
+
+/// Variante de [`generate_identity_proof`] avec `t` explicite — tests,
+/// calibration et diagnostic. Une preuve générée avec `t ≠` [`T`] ne passe
+/// **pas** la vérification de protocole.
+pub fn generate_identity_proof_params(
+    identity: &[u8; TAGGED_IDENTITY_LEN],
+    t: u64,
+) -> Result<VdfProof, CoreError> {
+    check_key_algorithm(identity[0])?;
     if t == 0 {
         return Err(CoreError::InvalidVdfParameter { reason: "T = 0" });
     }
-    sys::generate(pub_key, t)
+    sys::generate(identity, t)
 }
 
 /// Vérifie une preuve en temps logarithmique — utilisable par tout pair DHT.
-/// Le vérificateur recalcule `Δ` lui-même à partir de `pub_key` et n'accepte
-/// jamais un `Δ` fourni par le prouveur (page § « Setup »), sans quoi une
-/// preuve calculée une seule fois serait réutilisable pour toutes les
-/// identités.
-pub fn verify_identity_proof(pub_key: &[u8; 32], proof: &VdfProof) -> Result<bool, CoreError> {
-    verify_identity_proof_params(pub_key, proof, T, RECURSION)
+/// Le vérificateur recalcule `Δ` à partir de l'identité marquée et n'accepte
+/// jamais un `Δ` fourni par le prouveur (page § « Setup »).
+pub fn verify_identity_proof(
+    identity: &[u8; TAGGED_IDENTITY_LEN],
+    proof: &VdfProof,
+) -> Result<bool, CoreError> {
+    verify_identity_proof_params(identity, proof, T, RECURSION)
 }
 
 /// Variante de [`verify_identity_proof`] avec `t` et `recursion` explicites
-/// — usage tests et diagnostic (voir [`generate_identity_proof_params`]).
+/// — tests et diagnostic.
 pub fn verify_identity_proof_params(
-    pub_key: &[u8; 32],
+    identity: &[u8; TAGGED_IDENTITY_LEN],
     proof: &VdfProof,
     t: u64,
     recursion: u64,
 ) -> Result<bool, CoreError> {
+    check_key_algorithm(identity[0])?;
     if t == 0 {
         return Err(CoreError::InvalidVdfParameter { reason: "T = 0" });
     }
-    // Garde-fous avant tout appel FFI (arbitrage du 17/10/2026) :
-    // `verify_n_wesolowski` lit `x_s` à taille fixe SANS en recevoir la
-    // longueur — lecture hors limites possible sur une entrée venant d'un
-    // pair hostile. `y` et `π` doivent valoir 100 octets chacun (donc
-    // `y ‖ π` = 200 octets pour `recursion = 0`) ; la forme de départ (100)
-    // et le discriminant (128) sont à taille fixe par leur type Rust.
     if proof.y.len() != FORM_SIZE {
         return Err(CoreError::InvalidVdfLength {
             field: "VdfProof.y",
@@ -128,7 +155,7 @@ pub fn verify_identity_proof_params(
             got: proof.pi.len(),
         });
     }
-    sys::verify(pub_key, proof, t, recursion)
+    sys::verify(identity, proof, t, recursion)
 }
 
 /// Binding réel : la crate `chiavdf` n'est liée qu'avec la feature `vdf`,
@@ -138,7 +165,7 @@ mod sys {
     use super::*;
     use sha2::{Digest, Sha256};
 
-    pub fn generate(pub_key: &[u8; 32], t: u64) -> Result<VdfProof, CoreError> {
+    pub fn generate(pub_key: &[u8], t: u64) -> Result<VdfProof, CoreError> {
         let challenge = Sha256::digest(pub_key);
         let x_s = default_start_form();
         // `prove` dérive Δ du challenge lui-même (CreateDiscriminant, même
@@ -160,7 +187,7 @@ mod sys {
     }
 
     pub fn verify(
-        pub_key: &[u8; 32],
+        pub_key: &[u8],
         proof: &VdfProof,
         t: u64,
         recursion: u64,
@@ -199,19 +226,17 @@ mod sys {
     }
 }
 
-/// Hors feature `vdf` ou en WASM : la VDF n'est pas liée (voir l'en-tête du
-/// module). Le Connecteur l'obtient par liaison native par plateforme
-/// (`bun:ffi` ou binaire sidecar), jamais par le pont WASM.
+/// Hors feature `vdf` : la VDF n'est pas liée (voir l'en-tête du module).
 #[cfg(not(all(feature = "vdf", not(target_arch = "wasm32"))))]
 mod sys {
     use super::*;
 
-    pub fn generate(_pub_key: &[u8; 32], _t: u64) -> Result<VdfProof, CoreError> {
+    pub fn generate(_pub_key: &[u8], _t: u64) -> Result<VdfProof, CoreError> {
         Err(CoreError::VdfUnavailable)
     }
 
     pub fn verify(
-        _pub_key: &[u8; 32],
+        _pub_key: &[u8],
         _proof: &VdfProof,
         _t: u64,
         _recursion: u64,

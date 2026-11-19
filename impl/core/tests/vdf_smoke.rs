@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use p2p_storage_core::vdf::{
     generate_identity_proof, generate_identity_proof_params, verify_identity_proof,
-    verify_identity_proof_params, VdfProof, FORM_SIZE,
+    tagged_identity, verify_identity_proof_params, VdfProof, FORM_SIZE, TAGGED_IDENTITY_LEN,
 };
 use p2p_storage_core::CoreError;
 
@@ -43,11 +43,18 @@ const GEN_FAST_BOUND: Duration = Duration::from_secs(120);
 const VERIFY_BOUND: Duration = Duration::from_secs(30);
 
 /// Identité de test A (fixture arbitraire).
-const PUB_KEY_A: [u8; 32] = [0xA1; 32];
+const PUB_KEY_A: [u8; TAGGED_IDENTITY_LEN] = tagged(0xA1);
 /// Identité de test B, distincte de A.
-const PUB_KEY_B: [u8; 32] = [0xB2; 32];
+const PUB_KEY_B: [u8; TAGGED_IDENTITY_LEN] = tagged(0xB2);
 
-fn fast_proof(pub_key: &[u8; 32]) -> VdfProof {
+/// Identité marquée Ed25519 (tag 0) d'une clé de test constante.
+const fn tagged(byte: u8) -> [u8; TAGGED_IDENTITY_LEN] {
+    let mut id = [byte; TAGGED_IDENTITY_LEN];
+    id[0] = 0;
+    id
+}
+
+fn fast_proof(pub_key: &[u8; TAGGED_IDENTITY_LEN]) -> VdfProof {
     generate_identity_proof_params(pub_key, FAST_T).expect("génération VDF (T rapide)")
 }
 
@@ -246,4 +253,36 @@ fn t_zero_is_rejected_before_any_ffi_call() {
     assert!(matches!(err, CoreError::InvalidVdfParameter { .. }));
 
     assert!(start.elapsed() < VERIFY_BOUND);
+}
+/// Spec V3 — l'identité est `key_algorithm ‖ clé` (33 o pour le tag 0).
+#[test]
+fn tagged_identity_is_one_algorithm_octet_followed_by_the_raw_key() {
+    let id = tagged_identity(0, &[0x5A; 32]).expect("tag 0");
+    assert_eq!(id[0], 0);
+    assert_eq!(&id[1..], &[0x5A; 32]);
+}
+
+/// Spec V3 — tags 1 et 2 reconnus mais non supportés, tag 255 inconnu :
+/// erreurs distinctes, avant tout appel FFI (vérifiable sans `chiavdf`).
+#[test]
+fn unsupported_and_unknown_key_algorithms_are_rejected_with_dedicated_errors() {
+    for tag in [1u8, 2] {
+        assert!(matches!(
+            tagged_identity(tag, &[0; 32]),
+            Err(CoreError::UnsupportedKeyAlgorithm { tag: t }) if t == tag
+        ));
+        let mut id = PUB_KEY_A;
+        id[0] = tag;
+        assert!(matches!(
+            generate_identity_proof_params(&id, FAST_T),
+            Err(CoreError::UnsupportedKeyAlgorithm { .. })
+        ));
+    }
+    let mut id = PUB_KEY_A;
+    id[0] = 255;
+    let proof = VdfProof { y: vec![0; FORM_SIZE], pi: vec![0; FORM_SIZE] };
+    assert!(matches!(
+        verify_identity_proof_params(&id, &proof, FAST_T, 0),
+        Err(CoreError::UnknownKeyAlgorithm { tag: 255 })
+    ));
 }
