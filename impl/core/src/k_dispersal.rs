@@ -1,65 +1,39 @@
-//! K_dispersal_content / K_dispersal_block — chiffrement des blocs internes
-//! de l'arbre d'index (au-delà de la racine). Id `crypto.k-dispersal`
-//! (Phase 0). Réf. spec : docs/03-crypto/k-dispersal.md (§3.8).
+//! K_dispersal_content / K_dispersal_block — id `crypto.k-dispersal` (Phase 0,
+//! spec V3). Réf. spec : docs/03-crypto/k-dispersal.md (§3.8).
 //!
 //! ```text
 //! K_dispersal_content = KDF(K_attach, "dispersal-content")
-//! K_dispersal_block   = KDF(K_dispersal_content, block_hash)
+//! K_dispersal_block   = KDF(K_dispersal_content, "dispersal-block", sel_du_nœud)
 //! ```
-//!
-//! Choix d'implémentation du « KDF » de la spec : HKDF-SHA-256 (bibliothèque
-//! `hkdf`, cf. impl/TECH_STACK.md et `k_attach.rs`/`k_block.rs`), sortie
-//! 32 octets. La formule ne nomme aucun salt externe pour ces deux
-//! dérivations — seul le domaine `info` y figure :
-//! - `info` = `"dispersal-content"` (premier étage, depuis `K_attach`) ;
-//! - `info` = `"dispersal-block"` (second étage, étiquette fixe — retour à
-//!   la formule ST d'origine, arbitrage documenté dans `impl/SPEC_GAPS.md`
-//!   : `K_dispersal_block` **indépendante de `block_hash`** ; le chiffrement
-//!   déterministe à nonce synthétique porte la liaison au contenu, sur le
-//!   principe exact de `K_block`, voir `k_block.rs`).
-//!
-//! Salt HKDF interne par défaut dans les deux cas (comme
-//! `derive_sig_priv_dispersal` dans `k_attach.rs`).
-//!
-//! Propriété de sécurité testée explicitement (invariant de la migration,
-//! page spec §« Séparation délibérée en deux étages ») : la dérivation est à
-//! sens unique — `K_dispersal_content` ne permet pas de reconstituer
-//! `K_attach` (HKDF n'est pas inversible ; le module n'expose aucune fonction
-//! dans ce sens — voir `tests/k_dispersal_vectors.rs`). Le stub de `keys.rs`
-//! le rappelle : toute fonction ajoutée ici qui prendrait
-//! `K_dispersal_content` en entrée pour produire `K_attach` serait un bug de
-//! conception.
-//!
-//! Invariants testés : déterminisme des deux étages, sensibilité au
-//! `block_hash`, séparation de domaine (`K_dispersal_content` distinct de
-//! `K_attach` et de `sig_priv_dispersal` pour le même `K_attach`) — voir
-//! `tests/k_dispersal_vectors.rs`.
-
-use hkdf::Hkdf;
-use sha2::Sha256;
+//! `sel_du_nœud` : 16 o CSPRNG, neuf à chaque émission d'un `IndexNode`,
+//! porté par le `Stripe` parent (`encryption_salt`) ou, pour la racine, par
+//! `DispersalRootPointer.dispersal_root_salt`. Une clé = un nœud = un
+//! message ; indépendante de `block_hash`. `K_dispersal_content` ne permet
+//! de reconstituer ni `K_attach` ni `sig_priv_dispersal` (sens unique).
 
 use crate::error::CoreError;
+use crate::labels;
+use crate::symmetric_suite::kdf;
 
-/// Premier étage : base commune à tous les blocs internes de l'arbre
-/// d'index, transmissible au nouveau Nœud en migration sans exposer
-/// `K_attach` (page spec, §« Conséquence pour la migration »).
+/// Taille du sel d'un `IndexNode` (spec V3).
+pub const INDEX_NODE_SALT_LEN: usize = 16;
+
+/// `K_dispersal_content = KDF(K_attach, "dispersal-content")`.
 pub fn derive_k_dispersal_content(k_attach: &[u8; 32]) -> Result<[u8; 32], CoreError> {
-    let mut okm = [0u8; 32];
-    Hkdf::<Sha256>::new(None, k_attach)
-        .expand(b"dispersal-content", &mut okm)
-        .map_err(|_| CoreError::KdfFailure)?;
-    Ok(okm)
+    kdf(k_attach, labels::DISPERSAL_CONTENT, &[], &[])
 }
 
-/// Second étage : clé commune aux blocs internes, dérivée une seule fois par
-/// le nouveau Nœud sans intervention du Connecteur (page spec, §«
-/// Conséquence pour la migration »).
+/// `K_dispersal_block = KDF(K_dispersal_content, "dispersal-block", sel_du_nœud)`.
+/// Un sel de longueur autre que 16 o est rejeté.
 pub fn derive_k_dispersal_block(
     k_dispersal_content: &[u8; 32],
+    index_node_salt: &[u8],
 ) -> Result<[u8; 32], CoreError> {
-    let mut okm = [0u8; 32];
-    Hkdf::<Sha256>::new(None, k_dispersal_content)
-        .expand(b"dispersal-block", &mut okm)
-        .map_err(|_| CoreError::KdfFailure)?;
-    Ok(okm)
+    if index_node_salt.len() != INDEX_NODE_SALT_LEN {
+        return Err(CoreError::InvalidSaltLength {
+            expected: INDEX_NODE_SALT_LEN,
+            got: index_node_salt.len(),
+        });
+    }
+    kdf(k_dispersal_content, labels::DISPERSAL_BLOCK, index_node_salt, &[])
 }

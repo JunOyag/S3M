@@ -22,6 +22,11 @@
 
 use p2p_storage_core::k_attach::derive_sig_priv_dispersal;
 use p2p_storage_core::k_dispersal::{derive_k_dispersal_block, derive_k_dispersal_content};
+use p2p_storage_core::CoreError;
+
+include!("vectors/symmetric_suite_expected.rs");
+
+const NODE_SALT: [u8; 16] = [0xB0; 16];
 
 const K_ATTACH: [u8; 32] = [
     0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
@@ -40,8 +45,8 @@ fn k_dispersal_derivation_is_deterministic() {
     assert_ne!(c1, [0u8; 32]);
     assert_ne!(c1, c_other);
 
-    let b1 = derive_k_dispersal_block(&c1).expect("HKDF");
-    let b2 = derive_k_dispersal_block(&c1).expect("HKDF");
+    let b1 = derive_k_dispersal_block(&c1, &NODE_SALT).expect("HKDF");
+    let b2 = derive_k_dispersal_block(&c1, &NODE_SALT).expect("HKDF");
     assert_eq!(b1, b2);
     assert_ne!(b1, [0u8; 32]);
 }
@@ -57,4 +62,29 @@ fn k_dispersal_content_is_domain_separated_from_k_attach_and_signing_key() {
     assert_ne!(content, K_ATTACH);
     assert_ne!(content, sig_priv);
     assert_ne!(sig_priv, K_ATTACH);
+}
+
+/// Spec V3 — valeurs exactes contre `cryptography`.
+#[test]
+fn k_dispersal_matches_generated_vectors() {
+    let k_attach: [u8; 32] = hex::decode(FX_K_ATTACH_HEX).unwrap().try_into().unwrap();
+    let content = derive_k_dispersal_content(&k_attach).expect("KDF");
+    assert_eq!(hex::encode(content), K_DISPERSAL_CONTENT_HEX);
+    let salt = hex::decode(FX_NODE_SALT_HEX).unwrap();
+    let block = derive_k_dispersal_block(&content, &salt).expect("KDF");
+    assert_eq!(hex::encode(block), K_DISPERSAL_BLOCK_HEX);
+}
+
+/// Spec V3 — une clé par sel de nœud : deux sels → deux clés ; sel de
+/// longueur incorrecte rejeté.
+#[test]
+fn k_dispersal_block_differs_per_index_node_salt() {
+    let content = derive_k_dispersal_content(&K_ATTACH).expect("KDF");
+    let a = derive_k_dispersal_block(&content, &NODE_SALT).expect("KDF");
+    let b = derive_k_dispersal_block(&content, &[0xB1; 16]).expect("KDF");
+    assert_ne!(a, b);
+    assert!(matches!(
+        derive_k_dispersal_block(&content, &[0u8; 15]),
+        Err(CoreError::InvalidSaltLength { expected: 16, got: 15 })
+    ));
 }

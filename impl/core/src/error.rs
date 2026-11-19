@@ -51,6 +51,9 @@ pub enum CoreError {
         got: usize,
     },
 
+    #[error("longueur de sel invalide : attendu {expected} octets, reçu {got}")]
+    InvalidSaltLength { expected: usize, got: usize },
+
     #[error("chiavdf : dérivation du discriminant échouée (create_discriminant)")]
     VdfDiscriminantFailure,
 

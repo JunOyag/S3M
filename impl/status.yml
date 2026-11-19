@@ -65,12 +65,18 @@ entries:
       dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.k-dispersal:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - k_dispersal_vectors::k_dispersal_derivation_is_deterministic
+      - k_dispersal_vectors::k_dispersal_content_is_domain_separated_from_k_attach_and_signing_key
+      - k_dispersal_vectors::k_dispersal_matches_generated_vectors
+      - k_dispersal_vectors::k_dispersal_block_differs_per_index_node_salt
     notes: >-
-      Rouvert par la spec V3 (2026-11-19). K_dispersal_block = KDF(K_dispersal_content, "dispersal-block", sel_du_nœud) ; sel porté par Stripe.encryption_salt / DispersalRootPointer.dispersal_root_salt. Le code V2 existant
-      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
+      Spec V3 : K_dispersal_content = KDF(K_attach, "dispersal-content") ;
+      K_dispersal_block = KDF(K_dispersal_content, "dispersal-block",
+      sel_du_nœud), sel de 16 o obligatoire (CoreError::InvalidSaltLength).
+      Vecteurs générés par cryptography.
   crypto.k-node-self:
     kind: narrative
     status: not_started
