@@ -1,64 +1,24 @@
-//! Vecteurs de test — id `crypto.symmetric-suite` (Phase 0).
+//! Vecteurs de test — id `crypto.symmetric-suite` (Phase 0, spec V3).
 //!
-//! Règle absolue (même discipline que `rfc_vectors.rs`) : tout octet attendu
-//! ci-dessous provient d'une source externe publiée (citée ci-dessous) ou du
-//! fichier généré `vectors/symmetric_suite_expected.rs` — calculé par
-//! `tests/vectors/gen_symmetric_suite_vectors.py` avec la bibliothèque
-//! `cryptography`, indépendante du code testé. Aucune valeur attendue n'est
-//! produite par `p2p-storage-core`.
+//! Tout octet attendu provient d'une source externe publiée ou du fichier
+//! généré `vectors/symmetric_suite_expected.rs` (bibliothèque `cryptography`,
+//! indépendante du code testé). Aucune valeur attendue n'est produite par
+//! `p2p-storage-core`.
 //!
-//! Sources des vecteurs :
-//! - RFC 8439 §2.8.2 — vecteur AEAD_CHACHA20_POLY1305 (clé, nonce, AAD,
-//!   clair → chiffré + tag) : https://www.rfc-editor.org/rfc/rfc8439
-//! - RFC 5869 A.1-A.3 — vecteurs HKDF-SHA256 (A.3 : salt ∅ et info ∅) :
-//!   https://www.rfc-editor.org/rfc/rfc5869
-//! - RFC 4231 §4.2-4.5 (TC1-TC4) — vecteurs HMAC-SHA-256 :
-//!   https://www.rfc-editor.org/rfc/rfc4231
-//! - RFC 6234 §8.5 — vecteurs SHA-256 (TEST1 « abc », TEST2_1 deux blocs,
-//!   TEST3 million de « a ») : https://www.rfc-editor.org/rfc/rfc6234
-//! - Compositions de la page (K_nonce, K_wrap, K_block à étiquette brute,
-//!   nonce synthétique, trames wrap et bloc) : fichier généré, voir l'en-tête
-//!   du script Python.
-//!
-//! À vérifier aussi en WASM (`cargo test --features wasm`) avant de traiter
-//! la cible Connecteur (même remarque que `rfc_vectors.rs`).
+//! Sources : RFC 8439 §2.8.2 (AEAD), RFC 5869 A.1-A.3 (HKDF), RFC 6234 §8.5
+//! (SHA-256) ; compositions de la convention KDF V3 : script Python.
 
-use p2p_storage_core::labels::P2P_STORAGE_BLOCK_V1;
+use p2p_storage_core::labels::KDF_PREFIX;
 use p2p_storage_core::symmetric_suite::{
-    aead_open, aead_seal, canonical_encode, derive_k_nonce, derive_k_wrap, hash_sha256,
-    hkdf_sha256, hmac_sha256, synthetic_nonce, AEAD_TAG_LEN, NONCE_NUL,
+    aead_open, aead_seal, canonical_encode, derive_k_wrap, hash_sha256, hkdf_sha256, kdf,
+    AEAD_TAG_LEN, NONCE_NUL,
 };
 use p2p_storage_core::CoreError;
 
 include!("vectors/symmetric_suite_expected.rs");
 
-/// Décodage d'un vecteur hexadécimal externe.
 fn unhex(hex_str: &str) -> Vec<u8> {
     hex::decode(hex_str).expect("vecteur hexadécimal valide")
-}
-
-// --- Fixtures d'entrée (jamais des valeurs attendues) ---------------------
-// Identiques à tests/vectors/gen_symmetric_suite_vectors.py.
-
-fn fixture_master_key() -> Vec<u8> {
-    (0..32u8).collect() // 000102…1f
-}
-
-fn fixture_k_enc() -> Vec<u8> {
-    (0x20..0x40u8).collect() // 202122…3f
-}
-
-const FIXTURE_ENC_SALT: &[u8] = b"p2p-enc-salt-v1";
-const FIXTURE_BLOCK_PLAINTEXT: &[u8] = b"contenu de bloc test p2p-storage";
-
-fn fixture_wrap_plaintext() -> Vec<u8> {
-    (0x40..0x60u8).collect() // 404142…5f (clé maîtresse wrappée fictive)
-}
-
-/// En-tête de version (2 o) : u16 gros-boutiste, valeur de test 0x0001 —
-/// l'encodage réel de l'en-tête est porté par `deploiement.formats-serialisation`.
-fn fixture_protocol_header() -> Vec<u8> {
-    vec![0x00, 0x01]
 }
 
 // --- RFC 8439 §2.8.2 -------------------------------------------------------
@@ -207,42 +167,6 @@ fn hkdf_sha256_matches_rfc5869_vectors() {
     );
 }
 
-/// RFC 4231 TC1-TC4 — HMAC-SHA-256 : clé courte, clé longue, clé + données
-/// au-delà du bloc de 64 o (cas limites du HMAC).
-#[test]
-fn hmac_sha256_matches_rfc4231_vectors() {
-    // TC1 — clé 0x0b × 20, données « Hi There »
-    let mac = hmac_sha256(&[0x0bu8; 20], b"Hi There").expect("HMAC TC1");
-    assert_eq!(
-        mac.to_vec(),
-        unhex("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
-    );
-
-    // TC2 — clé « Jefe », données « what do ya want for nothing? »
-    let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?").expect("HMAC TC2");
-    assert_eq!(
-        mac.to_vec(),
-        unhex("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
-    );
-
-    // TC3 — clé 0xaa × 20, données 0xdd × 50
-    let mac = hmac_sha256(&[0xaau8; 20], &[0xddu8; 50]).expect("HMAC TC3");
-    assert_eq!(
-        mac.to_vec(),
-        unhex("773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe")
-    );
-
-    // TC4 — clé 0x0102…19 (25 o), données 0xcd × 50
-    let key = unhex("0102030405060708090a0b0c0d0e0f10111213141516171819");
-    let mac = hmac_sha256(&key, &[0xcdu8; 50]).expect("HMAC TC4");
-    assert_eq!(
-        mac.to_vec(),
-        unhex("82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b")
-    );
-}
-
-/// RFC 6234 §8.5 — SHA-256 : TEST1 (un bloc), TEST2_1 (deux blocs),
-/// TEST3 (un million de « a »).
 #[test]
 fn sha256_matches_rfc6234_vectors() {
     assert_eq!(
@@ -275,133 +199,67 @@ fn canonical_encode_matches_spec_layout() {
         canonical_encode(&[b"a", b"bc"]),
         canonical_encode(&[b"ab", b"c"])
     );
-    // Étiquette unique : même constat de forme, mais en pratique elle est
-    // passée brute en `info` (voir K_block ci-dessous) — le préfixe u32
-    // n'existe que pour les entrées multiples.
-    assert_eq!(
-        canonical_encode(&[b"lab"]),
-        vec![0, 0, 0, 3, b'l', b'a', b'b']
-    );
 }
 
-// --- Compositions (fichier généré par gen_symmetric_suite_vectors.py) ------
+// --- Convention KDF V3 (fichier généré) ------------------------------------
 
-/// `K_nonce = HKDF-SHA256(K_enc, "p2p-storage/synthetic-nonce/v1")` sans
-/// sel (§ Nonce synthétique).
+/// § KDF — `info = "p2p-storage/kdf/v1" ‖ L(label) ‖ L(entrées…)`, IKM =
+/// secret seul, sel séparé : valeur exacte contre `cryptography`.
 #[test]
-fn k_nonce_matches_generated_composition_vector() {
-    let k_nonce = derive_k_nonce(&fixture_k_enc()).expect("K_nonce");
-    assert_eq!(k_nonce.to_vec(), unhex(K_NONCE_HEX));
+fn kdf_convention_matches_generated_vector() {
+    let k = kdf(&unhex(FX_SECRET_HEX), "test-label", b"salt", &[b"a", b"bc"]).expect("kdf");
+    assert_eq!(k.to_vec(), unhex(KDF_GENERIC_HEX));
+    assert_eq!(KDF_PREFIX, "p2p-storage/kdf/v1");
 }
 
-/// `K_wrap` — étiquette + deux versions en encodage canonique, salt ∅
-/// (§ Clé de wrap). Les deux versions sont dans l'`info` : les versions
-/// inversées ne partagent jamais de clé (invariant de la page).
+/// § KDF — `L(·)` rend les frontières non ambiguës : `("a","bc")` et
+/// `("ab","c")` donnent deux clés distinctes.
 #[test]
-fn k_wrap_matches_generated_composition_vector() {
-    let master = fixture_master_key();
+fn kdf_public_input_boundaries_are_unambiguous() {
+    let secret = unhex(FX_SECRET_HEX);
+    let swapped = kdf(&secret, "test-label", b"salt", &[b"ab", b"c"]).expect("kdf");
+    assert_eq!(swapped.to_vec(), unhex(KDF_GENERIC_SWAPPED_HEX));
+    assert_ne!(swapped.to_vec(), unhex(KDF_GENERIC_HEX));
+}
+
+/// § KDF — les entrées publiques ne vont jamais dans l'IKM : mettre le
+/// secret seul ou concaténé à l'entrée change la clé.
+#[test]
+fn kdf_secret_is_the_only_ikm() {
+    let secret = unhex(FX_SECRET_HEX);
+    let mut mixed = secret.clone();
+    mixed.extend_from_slice(b"a");
+    let a = kdf(&secret, "test-label", b"", &[b"a"]).expect("kdf");
+    let b = kdf(&mixed, "test-label", b"", &[]).expect("kdf");
+    assert_ne!(a, b);
+}
+
+/// § Clé de wrap — `K_wrap = KDF(master_key[vc], "master-key-wrap", —,
+/// u16(vw), u16(vc))` ; versions inversées → autre clé.
+#[test]
+fn k_wrap_matches_generated_vector() {
+    let master = unhex(FX_MASTER_KEY_HEX);
     let k_wrap = derive_k_wrap(&master, 1, 2).expect("K_wrap");
     assert_eq!(k_wrap.to_vec(), unhex(K_WRAP_HEX));
-
-    let other = derive_k_wrap(&master, 2, 1).expect("K_wrap, versions inversées");
-    assert_ne!(other.to_vec(), unhex(K_WRAP_HEX));
+    assert_ne!(derive_k_wrap(&master, 2, 1).expect("K_wrap").to_vec(), unhex(K_WRAP_HEX));
 }
 
-/// `K_block` — étiquette **unique passée brute** en `info` (une seule
-/// composante : pas d'encodage canonique — arbitrage de la passe code,
-/// cf. note dans `symmetric_suite.rs`), salt `encryption_salt` fixé ici.
-#[test]
-fn k_block_single_label_info_matches_generated_composition_vector() {
-    let k_block = hkdf_sha256(
-        &fixture_master_key(),
-        FIXTURE_ENC_SALT,
-        P2P_STORAGE_BLOCK_V1.as_bytes(),
-        32,
-    )
-    .expect("K_block");
-    assert_eq!(k_block, unhex(K_BLOCK_HEX));
-}
-
-/// § Nonce synthétique — nonce = 12 premiers octets de
-/// `HMAC-SHA256(K_nonce, u32(len(AAD)) ‖ AAD ‖ clair)` : valeur exacte et
-/// déterminisme (même message → même nonce).
-#[test]
-fn synthetic_nonce_matches_generated_composition_vector() {
-    let k_nonce = derive_k_nonce(&fixture_k_enc()).expect("K_nonce");
-    let mut aad = fixture_protocol_header(); // en-tête de version (2 o) — valeur de test
-    aad.extend_from_slice(b"block"); // contexte d'AAD (labels::AAD_CONTEXT_BLOCK)
-
-    let nonce =
-        synthetic_nonce(&k_nonce, &aad, FIXTURE_BLOCK_PLAINTEXT).expect("nonce synthétique");
-    assert_eq!(nonce.to_vec(), unhex(SYNTH_NONCE_HEX));
-
-    let replayed =
-        synthetic_nonce(&k_nonce, &aad, FIXTURE_BLOCK_PLAINTEXT).expect("nonce rejoué");
-    assert_eq!(nonce, replayed);
-}
-
-/// Composition wrap complète (§ Clé de wrap) : K_wrap + nonce nul + AAD
-/// `en-tête ‖ "master-key-wrap" ‖ u16(vw) ‖ u16(vc)` → `wrapped_key` de
-/// **48 o sans en-tête** (précision de spec : l'AAD authentifie la version,
-/// l'en-tête n'est pas préfixé à la valeur stockée) ; une transplantation
-/// de versions échoue au tag.
+/// § Clé de wrap — nonce nul, `wrapped_key` de 48 o sans en-tête ;
+/// transplantation de versions → tag rejeté.
 #[test]
 fn wrap_composition_is_48_octets_without_header() {
-    let master = fixture_master_key();
-    let k_wrap = derive_k_wrap(&master, 1, 2).expect("K_wrap");
-
-    let mut aad = fixture_protocol_header(); // en-tête de version (2 o) — valeur de test
-    aad.extend_from_slice(b"master-key-wrap"); // labels::AAD_CONTEXT_MASTER_KEY_WRAP
-    aad.extend_from_slice(&1u16.to_be_bytes()); // u16(version_wrappée)
-    aad.extend_from_slice(&2u16.to_be_bytes()); // u16(version_courante)
-
-    let plaintext = fixture_wrap_plaintext();
+    let k_wrap = derive_k_wrap(&unhex(FX_MASTER_KEY_HEX), 1, 2).expect("K_wrap");
+    let header = unhex(FX_PROTO_HEADER_HEX);
+    let aad = [&header[..], b"master-key-wrap", &1u16.to_be_bytes(), &2u16.to_be_bytes()].concat();
+    let plaintext = unhex(FX_WRAP_PLAINTEXT_HEX);
     let sealed = aead_seal(&k_wrap, &NONCE_NUL, &aad, &plaintext).expect("wrap");
-    assert_eq!(sealed.len(), 32 + AEAD_TAG_LEN); // 48 o, SANS en-tête
+    assert_eq!(sealed.len(), 32 + AEAD_TAG_LEN);
     assert_eq!(sealed, unhex(WRAP_CT_HEX));
-
-    let opened = aead_open(&k_wrap, &NONCE_NUL, &aad, &sealed).expect("unwrap");
-    assert_eq!(opened, plaintext);
-
-    // Transplantation : AAD portant d'autres versions sous la même clé et le
-    // même nonce → tag rejeté (« échoue à la vérification du tag »).
-    let mut transplanted = fixture_protocol_header();
-    transplanted.extend_from_slice(b"master-key-wrap");
-    transplanted.extend_from_slice(&1u16.to_be_bytes());
-    transplanted.extend_from_slice(&3u16.to_be_bytes()); // version courante altérée
+    assert_eq!(aead_open(&k_wrap, &NONCE_NUL, &aad, &sealed).expect("unwrap"), plaintext);
+    let transplanted =
+        [&header[..], b"master-key-wrap", &1u16.to_be_bytes(), &3u16.to_be_bytes()].concat();
     assert!(matches!(
         aead_open(&k_wrap, &NONCE_NUL, &transplanted, &sealed),
         Err(CoreError::AeadFailure)
     ));
 }
-
-/// Composition bloc complète (§ Politique de nonce) : trame
-/// `nonce synthétique ‖ chiffré ‖ tag` — le nonce est transmis en tête de
-/// trame, l'AAD porte le contexte « block », le chiffrement est
-/// déterministe.
-#[test]
-fn block_frame_matches_generated_composition_vector() {
-    let k_nonce = derive_k_nonce(&fixture_k_enc()).expect("K_nonce");
-    let mut aad = fixture_protocol_header();
-    aad.extend_from_slice(b"block");
-    let nonce = synthetic_nonce(&k_nonce, &aad, FIXTURE_BLOCK_PLAINTEXT).expect("nonce");
-
-    let k_block = hkdf_sha256(
-        &fixture_master_key(),
-        FIXTURE_ENC_SALT,
-        P2P_STORAGE_BLOCK_V1.as_bytes(),
-        32,
-    )
-    .expect("K_block");
-    let sealed = aead_seal(&k_block, &nonce, &aad, FIXTURE_BLOCK_PLAINTEXT).expect("bloc");
-
-    let mut frame = nonce.to_vec();
-    frame.extend_from_slice(&sealed);
-    assert_eq!(frame, unhex(BLOCK_FRAME_HEX));
-    // Le nonce synthétique est bien le préfixe transmis de la trame.
-    assert_eq!(&frame[..12], unhex(SYNTH_NONCE_HEX).as_slice());
-
-    let opened = aead_open(&k_block, &nonce, &aad, &sealed).expect("ouverture");
-    assert_eq!(opened, FIXTURE_BLOCK_PLAINTEXT);
-}
-

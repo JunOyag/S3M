@@ -120,12 +120,31 @@ entries:
       dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.symmetric-suite:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - labels::kdf_labels_are_globally_unique
+      - labels::aad_contexts_are_unique
+      - labels::retired_labels_are_never_reused
+      - labels::labels_match_the_spec_registry
+      - symmetric_suite_vectors::aead_seal_matches_rfc8439_section_2_8_2
+      - symmetric_suite_vectors::aead_open_rejects_forgery
+      - symmetric_suite_vectors::hkdf_sha256_matches_rfc5869_vectors
+      - symmetric_suite_vectors::sha256_matches_rfc6234_vectors
+      - symmetric_suite_vectors::canonical_encode_matches_spec_layout
+      - symmetric_suite_vectors::kdf_convention_matches_generated_vector
+      - symmetric_suite_vectors::kdf_public_input_boundaries_are_unambiguous
+      - symmetric_suite_vectors::kdf_secret_is_the_only_ikm
+      - symmetric_suite_vectors::k_wrap_matches_generated_vector
+      - symmetric_suite_vectors::wrap_composition_is_48_octets_without_header
     notes: >-
-      Rouvert par la spec V3 (2026-11-19). Convention KDF unique (préfixe p2p-storage/kdf/v1, L sur 4 o BE, IKM = secret seul) ; retrait du nonce synthétique et des étiquettes p2p-storage/block/v1, p2p-storage/synthetic-nonce/v1, p2p-storage/master-key-wrap/v1 ; K_wrap dans la convention ; nouveaux vecteurs. Le code V2 existant
-      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
+      Spec V3 : convention KDF unique symmetric_suite::kdf (préfixe
+      p2p-storage/kdf/v1, L sur 4 o BE, IKM = secret seul, sortie 32 o),
+      K_wrap dans la convention, nonce synthétique et HMAC retirés, registre
+      de 12 étiquettes + étiquettes retirées. Vecteurs : RFC 8439, RFC 5869,
+      RFC 6234 + compositions générées par gen_symmetric_suite_vectors.py
+      (cryptography). Transitoire : labels::P2P_STORAGE_BLOCK_V1 subsiste
+      jusqu'à la tâche crypto.k-block.
   deploiement.disaster-recovery:
     kind: narrative
     status: not_started

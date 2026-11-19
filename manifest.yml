@@ -487,7 +487,21 @@ pages:
     title: "Suite cryptographique symétrique (AEAD, KDF, hash)"
     section: "§3.8"
     refs: [crypto.key-hierarchy, crypto.master-key-chain, crypto.k-block, crypto.k-attach, crypto.k-dispersal, crypto.k-self, crypto.k-node-self, crypto.identity-derivation, deploiement.formats-serialisation, agilite.kem-vs-nike, overview.architecture]
-    verified_by: []
+    verified_by:
+      - labels::kdf_labels_are_globally_unique
+      - labels::aad_contexts_are_unique
+      - labels::retired_labels_are_never_reused
+      - labels::labels_match_the_spec_registry
+      - symmetric_suite_vectors::aead_seal_matches_rfc8439_section_2_8_2
+      - symmetric_suite_vectors::aead_open_rejects_forgery
+      - symmetric_suite_vectors::hkdf_sha256_matches_rfc5869_vectors
+      - symmetric_suite_vectors::sha256_matches_rfc6234_vectors
+      - symmetric_suite_vectors::canonical_encode_matches_spec_layout
+      - symmetric_suite_vectors::kdf_convention_matches_generated_vector
+      - symmetric_suite_vectors::kdf_public_input_boundaries_are_unambiguous
+      - symmetric_suite_vectors::kdf_secret_is_the_only_ikm
+      - symmetric_suite_vectors::k_wrap_matches_generated_vector
+      - symmetric_suite_vectors::wrap_composition_is_48_octets_without_header
 
   # ---------------------------------------------------------------- protocols
   - id: protocols.index-adaptatif
