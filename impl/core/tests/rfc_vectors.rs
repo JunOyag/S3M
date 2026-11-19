@@ -24,11 +24,13 @@
 //! la cible Connecteur : mêmes vecteurs, autre chaîne de compilation.
 
 use p2p_storage_core::k_attach::{
-    derive_k_attach_as_node, derive_k_attach_as_user, derive_sig_priv_dispersal,
+    derive_k_attach_as_node, derive_k_attach_from_shared_secret, derive_k_attach_as_user, derive_sig_priv_dispersal,
 };
 use p2p_storage_core::keys::{ed25519_priv_to_x25519, ed25519_pub_to_x25519};
 use p2p_storage_core::CoreError;
 use x25519_dalek::{x25519, PublicKey, StaticSecret, X25519_BASEPOINT_BYTES};
+
+include!("vectors/symmetric_suite_expected.rs");
 
 /// Décodage d'un vecteur hexadécimal externe (les sources citées publient
 /// leurs vecteurs en hexadécimal).
@@ -201,4 +203,21 @@ fn sig_priv_dispersal_is_deterministic_and_domain_separated() {
     assert_eq!(s1, s2);
     assert_ne!(s1, k_attach);
     assert_ne!(s1, s3);
+}
+/// Spec V3 — `K_attach = KDF(X25519(…), "attach", salt)` : valeur exacte
+/// contre `cryptography` (secret DH de RFC 7748 §6.1).
+#[test]
+fn k_attach_matches_generated_vector() {
+    let shared = x25519(unhex32(FX_X25519_PRIV_HEX), unhex32(FX_X25519_PUB_HEX));
+    assert_eq!(shared, unhex32(X25519_SHARED_HEX));
+    let salt = hex::decode(FX_ATTACH_SALT_HEX).expect("hex");
+    let k = derive_k_attach_from_shared_secret(&shared, &salt).expect("K_attach");
+    assert_eq!(k, unhex32(K_ATTACH_HEX));
+}
+
+/// Spec V3 — `sig_priv_dispersal = KDF(K_attach, "dispersal-signing")`.
+#[test]
+fn sig_priv_dispersal_matches_generated_vector() {
+    let s = derive_sig_priv_dispersal(&unhex32(FX_K_ATTACH_HEX)).expect("KDF");
+    assert_eq!(s, unhex32(SIG_PRIV_DISPERSAL_HEX));
 }

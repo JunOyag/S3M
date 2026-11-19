@@ -36,12 +36,25 @@ entries:
     notes: ''
   crypto.k-attach:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - rfc_vectors::x25519_dh_matches_rfc7748_vectors
+      - rfc_vectors::ed25519_key_derivation_matches_rfc8032_vectors
+      - rfc_vectors::ed25519_to_x25519_matches_libsodium_conversion_vectors
+      - rfc_vectors::pub_conversion_rejects_small_order_points
+      - rfc_vectors::k_attach_is_symmetric_between_user_and_node
+      - rfc_vectors::k_attach_derivation_is_deterministic_and_salt_dependent
+      - rfc_vectors::sig_priv_dispersal_is_deterministic_and_domain_separated
+      - rfc_vectors::k_attach_matches_generated_vector
+      - rfc_vectors::sig_priv_dispersal_matches_generated_vector
     notes: >-
-      Rouvert par la spec V3 (2026-11-19). Étiquette "attach" (fin de l'info vide) ; derive_sig_priv_user reste à faire dans la tâche dht-directory (convention KDF, pub_user en entrée publique). Le code V2 existant
-      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
+      Spec V3 : K_attach = KDF(secret X25519, "attach", salt) via
+      symmetric_suite::kdf ; nouvelle fonction
+      derive_k_attach_from_shared_secret ; sig_priv_dispersal = KDF(K_attach,
+      "dispersal-signing"). Vecteurs : RFC 7748, RFC 8032, libsodium + valeurs
+      générées par cryptography. derive_sig_priv_user (keys.rs) reste à la
+      tâche network.dht-directory.
   crypto.k-block:
     kind: narrative
     status: not_started
