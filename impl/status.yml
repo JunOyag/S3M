@@ -150,12 +150,20 @@ entries:
       error.rs : IdentityDerivation, InvalidDerivationIndex.
   crypto.master-key-chain:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - master_key_chain_vectors::flat_rewrap_then_resolve_recovers_historical_keys
+      - master_key_chain_vectors::resolve_stays_single_unwrap_after_many_rotations
+      - master_key_chain_vectors::transplanted_version_fails_tag_verification
+      - master_key_chain_vectors::unknown_version_is_rejected_explicitly
+      - master_key_chain_vectors::chain_entries_carry_their_wrapped_version
+      - master_key_chain_vectors::wrapped_key_matches_generated_vector
     notes: >-
-      Rouvert par la spec V3 (2026-11-19). K_wrap = KDF(master_key[vc], "master-key-wrap", —, u16(vw), u16(vc)) ; trame 48 o et AAD inchangées. Le code V2 existant
-      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
+      Spec V3 : K_wrap = KDF(master_key[vc], "master-key-wrap", —, u16(vw),
+      u16(vc)) (symmetric_suite::derive_k_wrap) ; re-wrap plat, trame 48 o
+      sans en-tête et AAD inchangés. wrapped_key vérifié octet pour octet
+      contre cryptography.
   crypto.symmetric-suite:
     kind: narrative
     status: done

@@ -8,7 +8,8 @@
 //! après N rotations simulées, `resolve_master_key(version=0)` reste en O(1)
 //! (une seule opération d'unwrap), pas O(N).
 //!
-//! Wrap (règle de `crypto.symmetric-suite`, § Clé de wrap) : `K_wrap`
+//! Wrap (règle de `crypto.symmetric-suite`, § Clé de wrap ; spec V3 :
+//! `K_wrap = KDF(master_key[vc], "master-key-wrap", —, u16(vw), u16(vc))`) : `K_wrap`
 //! dérivée via `symmetric_suite::derive_k_wrap` (**réutilisée, jamais
 //! redérivée ici**), ChaCha20-Poly1305 sous nonce nul, trame
 //! `chiffré ‖ tag` de **48 o sans en-tête** (l'en-tête de version de

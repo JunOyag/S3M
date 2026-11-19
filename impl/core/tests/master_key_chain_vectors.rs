@@ -31,6 +31,8 @@ const MASTER_KEY_V0: [u8; 32] = [0x10u8; 32];
 const MASTER_KEY_V1: [u8; 32] = [0x31u8; 32];
 const MASTER_KEY_V2: [u8; 32] = [0x52u8; 32];
 
+include!("vectors/symmetric_suite_expected.rs");
+
 fn historical_keys_v0_v1() -> HashMap<u16, [u8; 32]> {
     HashMap::from([(0u16, MASTER_KEY_V0), (1u16, MASTER_KEY_V1)])
 }
@@ -133,4 +135,17 @@ fn chain_entries_carry_their_wrapped_version() {
     .expect("re-wrap");
     let versions: Vec<u16> = chain.iter().map(|e: &MasterKeyEntry| e.version).collect();
     assert_eq!(versions, vec![0u16, 1u16]);
+}
+/// Spec V3 — `wrapped_key` exact contre `cryptography` : K_wrap de la
+/// convention KDF (vw = 1, vc = 2), nonce nul, 48 o sans en-tête.
+#[test]
+fn wrapped_key_matches_generated_vector() {
+    let mut historical = HashMap::new();
+    let wrapped_plain: [u8; 32] = hex::decode(FX_WRAP_PLAINTEXT_HEX).unwrap().try_into().unwrap();
+    historical.insert(1u16, wrapped_plain);
+    let current: [u8; 32] = hex::decode(FX_MASTER_KEY_HEX).unwrap().try_into().unwrap();
+    let header: [u8; 2] = hex::decode(FX_PROTO_HEADER_HEX).unwrap().try_into().unwrap();
+    let chain = rewrap_chain_on_rotation(&header, &historical, &current, 2).expect("rewrap");
+    assert_eq!(chain.len(), 1);
+    assert_eq!(hex::encode(&chain[0].wrapped_key), WRAP_CT_HEX);
 }
