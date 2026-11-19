@@ -702,10 +702,20 @@ entries:
     notes: ''
   protocols.quota-sync:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - quota_sync::writes_are_integrated_by_timestamp_across_connectors_until_quota
+      - quota_sync::duplicate_blocks_do_not_consume_quota
+      - write_queue::rejected_blocks_map_back_to_affected_files
+    notes: >-
+      node : impl/node/src/quota_sync.rs, intégration des écritures de tous
+      les Connecteurs par timestamp croissant jusqu'à saturation du quota,
+      rejets renvoyés par Connecteur d'origine, doublons sans coût. connector
+      : WriteQueue::paths_affected_by rapporte les blocs rejetés aux fichiers
+      (acceptation partielle possible). La proposition à l'utilisateur
+      (libérer, supprimer, conserver) relève du dashboard
+      (deploiement.packaging).
   protocols.stockage-physique:
     kind: narrative
     status: done

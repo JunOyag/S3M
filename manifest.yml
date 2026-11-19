@@ -771,6 +771,10 @@ pages:
     title: "Gestion du Quota à la Synchronisation"
     section: "§3.12.3"
     refs: [protocols.write-queue, node.UserQuota]
+    verified_by:
+      - quota_sync::writes_are_integrated_by_timestamp_across_connectors_until_quota
+      - quota_sync::duplicate_blocks_do_not_consume_quota
+      - write_queue::rejected_blocks_map_back_to_affected_files
 
   - id: protocols.espace-secours
     kind: narrative

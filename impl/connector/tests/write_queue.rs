@@ -137,3 +137,22 @@ fn merged_view_and_persistence_roundtrip() {
     let back = WriteQueue::decode(&q.encode(), DEFAULT_Q_MAX).unwrap();
     assert_eq!(back, q);
 }
+
+/// `protocols.quota-sync`, partie connector : blocs rejetés par le Nœud
+/// rapportés aux fichiers concernés (acceptation partielle possible).
+#[test]
+fn rejected_blocks_map_back_to_affected_files() {
+    let mut q = WriteQueue::new([0; 32], DEFAULT_Q_MAX);
+    for m in [
+        wb(1, "/a", 1),
+        wb(2, "/a", 2),
+        wb(3, "/b", 3),
+        wb(4, "/c", 4),
+    ] {
+        q.enqueue(m).unwrap();
+    }
+    assert_eq!(
+        q.paths_affected_by(&[[2; 32], [4; 32], [9; 32]]),
+        vec!["/a".to_string(), "/c".to_string()]
+    );
+}
