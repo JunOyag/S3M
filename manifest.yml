@@ -782,6 +782,14 @@ pages:
     title: "Espace de Secours — Écriture d'Urgence"
     section: "§3.12.4"
     refs: [emergency.EmergencyManifest, protocols.write-queue, crypto.k-attach]
+    verified_by:
+      - emergency::partners_are_the_closest_to_the_user_identity_excluding_host
+      - emergency::blocks_are_split_evenly_within_per_partner_cap
+      - emergency::merge_keeps_everything_and_increments_seq
+      - emergency::reconciliation_is_idempotent_and_never_references_missing_blocks
+      - emergency::emergency_capacity_defaults_to_20_gib
+      - emergency::reserve_caps_users_and_bytes
+      - emergency::return_integration_uses_emergency_keys_and_timestamp_order_until_quota
 
   - id: protocols.ecriture-differee
     kind: narrative

@@ -639,10 +639,25 @@ entries:
       protocols.dispersion-transactionnelle.
   protocols.espace-secours:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - emergency::partners_are_the_closest_to_the_user_identity_excluding_host
+      - emergency::blocks_are_split_evenly_within_per_partner_cap
+      - emergency::merge_keeps_everything_and_increments_seq
+      - emergency::reconciliation_is_idempotent_and_never_references_missing_blocks
+      - emergency::emergency_capacity_defaults_to_20_gib
+      - emergency::reserve_caps_users_and_bytes
+      - emergency::return_integration_uses_emergency_keys_and_timestamp_order_until_quota
+    notes: >-
+      connector : impl/connector/src/emergency.rs (partenaires les plus
+      proches de l'identité Utilisateur au sens XOR hors Nœud hébergeur, parts
+      égales plafonnées à Q_max/n_secours, fusion sans perte avec seq+1,
+      réconciliation idempotente refusant tout bloc absent, E_secours). node :
+      impl/node/src/emergency.rs (réserve d'accueil U_backup et octets
+      réservés, clés emergency_dht_key des Utilisateurs rattachés, intégration
+      au retour par timestamp jusqu'au quota). Enveloppe DHT et séquence :
+      network.dht-directory. Transport des blocs : SPEC_GAPS.
   protocols.fs-structure:
     kind: narrative
     status: done
