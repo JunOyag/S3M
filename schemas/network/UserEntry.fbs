@@ -1,0 +1,39 @@
+// ---- UserEntry.fbs ----
+// Entrée DHT d'un User, indexée par user_dht_key. Payload d'une DhtEnvelope
+// signée par sig_priv_user.
+// Source: ST-P2P-STORAGE-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
+include "DhtEnvelope.fbs";
+include "../dispersal/DispersalManifest.fbs";
+namespace P2PStorage.Dht;
+
+/// Un attachement (courant ou passé) du User à un Nœud (§3.8, §8.2).
+table AttachmentRecord {
+  node_id: [ubyte];
+  salt: [ubyte];                  /// sel d'attachement de K_attach
+  timestamp: uint64;
+  inactivity_detected_at: uint64; /// 0 si sans objet (§3.8)
+  key_algorithm: uint8;           /// 0 par défaut (§8.4)
+  kem_ciphertext: [ubyte];        /// vide si key_algorithm = 0 (§8.2)
+  wrapped_shared_secret: [ubyte]; /// vide si key_algorithm = 0 (§8.2)
+}
+
+/// Clair chiffré sous K_self (§3.9).
+table UserEntryPlaintext {
+  fs_root_hash: [ubyte];
+  encryption_salt: [ubyte];       /// sel du répertoire racine, neuf à chaque réémission (§3.13)
+  key_version: uint16;
+  attachments: [AttachmentRecord];
+  master_key_chain: [P2PStorage.Dispersal.MasterKeyEntry];
+  schema_version: uint16;
+}
+
+/// Entrée DHT User (§3.9). TTL 315 360 000 s ; republication réactive, ou de secours après 31 536 000 s.
+table UserEntry {
+  sig_pub_user: [ubyte];          /// auto-certifiant ; clé de vérification de l'enveloppe
+  timestamp: uint64;
+  vdf_proof: VdfProof;            /// identité 0x00 ‖ sig_pub_user (§2.1)
+  ciphertext: [ubyte];            /// nonce ‖ chiffré ‖ tag de UserEntryPlaintext sous K_self
+}
+
+root_type UserEntry;
+file_identifier "USER";

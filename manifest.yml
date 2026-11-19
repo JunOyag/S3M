@@ -45,40 +45,23 @@ pages:
     path: 01-network-dht/vdf-identity.md
     title: "VDF de Wesolowski — Identités anti-Sybil"
     section: "§2.1"
-    refs: [securite.blacklist-fraude]
-    verified_by:
-      - vdf_smoke::roundtrip_verifies_with_protocol_constants
-      - vdf_smoke::roundtrip_verifies_with_fast_t
-      - vdf_smoke::proof_is_rejected_for_another_identity
-      - vdf_smoke::proof_is_rejected_when_a_byte_is_altered
-      - vdf_smoke::proof_is_rejected_with_wrong_t
-      - vdf_smoke::proof_is_rejected_with_nonzero_recursion
-      - vdf_smoke::verification_with_t_max_is_bounded_and_rejected
-      - vdf_smoke::empty_and_truncated_proofs_are_rejected
-      - vdf_smoke::random_bytes_proof_is_rejected
-      - vdf_smoke::t_zero_is_rejected_before_any_ffi_call
+    refs: [securite.blacklist-fraude, agilite.tag-hybride, network.dht-directory, network.VdfProof, network.vdf-verifier-pure]
+    verified_by: []
 
   - id: network.vdf-verifier-pure
     kind: narrative
     path: 01-network-dht/vdf-verifier-pure.md
-    title: "Vérificateur VDF pur — conformité native et WASM"
+    title: "Instrumentation et fixtures VDF"
     section: "§2.1"
     refs: [network.vdf-identity]
-    verified_by:
-      - vdf_pure::tests::accepts_chia_reference_vector_and_rejects_altered_bytes
-      - vdf_pure::tests::rejects_wrong_challenge_wrong_iterations_and_malformed_forms
-      - vdf_pure::tests::identity_api_enforces_lengths_and_tagged_identity_shape
-      - vdf_pure::tests::mpir_cross_check::verifies_chia_reference_vector_with_mpir
-      - vdf_pure::tests::mpir_cross_check::tagged_identity_mpir_fixture_matches_and_mutations_are_rejected
-      - vdf_pure::tests::wasm_mpir_fixture::verifies_mpir_fixture_and_rejects_y_and_public_key_mutations
-      - vdf_pure_wasm::executes_pure_verifier_on_embedded_chia_vector_for_wrong_identity
+    verified_by: []
 
   - id: network.dht-directory
     kind: narrative
     path: 01-network-dht/dht-directory.md
     title: "Annuaire DHT & Entrées Publiées"
     section: "§2.1, §3.9"
-    refs: [dispersal.DispersalManifest, node.NodeManifest, crypto.k-self, crypto.k-node-self]
+    refs: [network.vdf-identity, network.DhtEnvelope, network.VdfProof, network.NodeEntry, network.NodeSnapshotPointer, network.SignedMigrationPointer, network.MigrationPointerPayload, network.UserEntry, network.UserEntryPlaintext, network.AttachmentRecord, network.DispersalEntry, network.DispersalRootPointer, network.EmergencyEntry, dispersal.DispersalManifest, node.NodeManifest, crypto.k-attach, crypto.k-self, crypto.k-node-self, crypto.k-dispersal, crypto.symmetric-suite, protocols.espace-secours, securite.incidents-compromissions, agilite.tag-hybride, deploiement.formats-serialisation]
 
   - id: network.bootstrap
     kind: narrative
@@ -86,6 +69,103 @@ pages:
     title: "Amorçage (Bootstrapping) & Résolution"
     section: "§2.2"
     refs: [network.dht-directory, protocols.write-queue, crypto.identity-derivation]
+
+  # ------------------------------------------------------ schemas: network.*
+  - id: network.DhtEnvelope
+    kind: schema
+    path: 02-schemas/network/DhtEnvelope.md
+    title: "DhtEnvelope"
+    section: "§3.9"
+    fbs: "schemas/network/DhtEnvelope.fbs#DhtEnvelope"
+    refs: [network.dht-directory, network.vdf-identity, agilite.tag-hybride]
+
+  - id: network.VdfProof
+    kind: schema
+    path: 02-schemas/network/VdfProof.md
+    title: "VdfProof"
+    section: "§2.1, §3.11"
+    fbs: "schemas/network/DhtEnvelope.fbs#VdfProof"
+    refs: [network.vdf-identity, network.dht-directory]
+
+  - id: network.MigrationPointerPayload
+    kind: schema
+    path: 02-schemas/network/MigrationPointerPayload.md
+    title: "MigrationPointerPayload"
+    section: "§5.2, §3.11"
+    fbs: "schemas/network/DhtEnvelope.fbs#MigrationPointerPayload"
+    refs: [network.SignedMigrationPointer, securite.incidents-compromissions]
+
+  - id: network.SignedMigrationPointer
+    kind: schema
+    path: 02-schemas/network/SignedMigrationPointer.md
+    title: "SignedMigrationPointer"
+    section: "§5.2, §3.11"
+    fbs: "schemas/network/DhtEnvelope.fbs#SignedMigrationPointer"
+    refs: [network.MigrationPointerPayload, network.NodeEntry, securite.incidents-compromissions]
+
+  - id: network.NodeSnapshotPointer
+    kind: schema
+    path: 02-schemas/network/NodeSnapshotPointer.md
+    title: "NodeSnapshotPointer"
+    section: "§3.9, §3.11"
+    fbs: "schemas/network/NodeEntry.fbs#NodeSnapshotPointer"
+    refs: [crypto.k-node-self, dispersal.Partner, network.NodeEntry]
+
+  - id: network.NodeEntry
+    kind: schema
+    path: 02-schemas/network/NodeEntry.md
+    title: "NodeEntry"
+    section: "§3.9, §3.11"
+    fbs: "schemas/network/NodeEntry.fbs#NodeEntry"
+    refs: [network.dht-directory, network.VdfProof, network.SignedMigrationPointer, network.NodeSnapshotPointer]
+
+  - id: network.AttachmentRecord
+    kind: schema
+    path: 02-schemas/network/AttachmentRecord.md
+    title: "AttachmentRecord"
+    section: "§3.8, §3.11"
+    fbs: "schemas/network/UserEntry.fbs#AttachmentRecord"
+    refs: [crypto.k-attach, network.UserEntryPlaintext, agilite.k-attach-kem]
+
+  - id: network.UserEntryPlaintext
+    kind: schema
+    path: 02-schemas/network/UserEntryPlaintext.md
+    title: "UserEntryPlaintext"
+    section: "§3.9, §3.11"
+    fbs: "schemas/network/UserEntry.fbs#UserEntryPlaintext"
+    refs: [crypto.k-self, network.AttachmentRecord, dispersal.MasterKeyEntry, crypto.master-key-chain, network.UserEntry]
+
+  - id: network.UserEntry
+    kind: schema
+    path: 02-schemas/network/UserEntry.md
+    title: "UserEntry"
+    section: "§3.9, §3.11"
+    fbs: "schemas/network/UserEntry.fbs#UserEntry"
+    refs: [network.dht-directory, network.VdfProof, network.UserEntryPlaintext]
+
+  - id: network.DispersalRootPointer
+    kind: schema
+    path: 02-schemas/network/DispersalRootPointer.md
+    title: "DispersalRootPointer"
+    section: "§3.9, §3.11"
+    fbs: "schemas/network/DispersalEntry.fbs#DispersalRootPointer"
+    refs: [crypto.k-attach, crypto.k-dispersal, dispersal.Partner, network.DispersalEntry]
+
+  - id: network.DispersalEntry
+    kind: schema
+    path: 02-schemas/network/DispersalEntry.md
+    title: "DispersalEntry"
+    section: "§3.9, §3.11"
+    fbs: "schemas/network/DispersalEntry.fbs#DispersalEntry"
+    refs: [network.dht-directory, network.DispersalRootPointer, crypto.k-attach]
+
+  - id: network.EmergencyEntry
+    kind: schema
+    path: 02-schemas/network/EmergencyEntry.md
+    title: "EmergencyEntry"
+    section: "§3.12.4, §3.11"
+    fbs: "schemas/network/EmergencyEntry.fbs#EmergencyEntry"
+    refs: [network.dht-directory, protocols.espace-secours, emergency.EmergencyManifest]
 
   # -------------------------------------------------------- schemas: node.*
   - id: node.VolumeConfig
@@ -338,14 +418,7 @@ pages:
     title: "K_attach — Métadonnées de Dispersion"
     section: "§3.8"
     refs: [dispersal.DispersalManifest, node.AttachedUser, network.dht-directory]
-    verified_by:
-      - rfc_vectors::ed25519_to_x25519_matches_libsodium_conversion_vectors
-      - rfc_vectors::pub_conversion_rejects_small_order_points
-      - rfc_vectors::x25519_dh_matches_rfc7748_vectors
-      - rfc_vectors::ed25519_key_derivation_matches_rfc8032_vectors
-      - rfc_vectors::k_attach_is_symmetric_between_user_and_node
-      - rfc_vectors::k_attach_derivation_is_deterministic_and_salt_dependent
-      - rfc_vectors::sig_priv_dispersal_is_deterministic_and_domain_separated
+    verified_by: []
 
   - id: crypto.k-dispersal
     kind: narrative
@@ -353,9 +426,7 @@ pages:
     title: "K_dispersal_content / K_dispersal_block"
     section: "§3.8"
     refs: [dispersal.IndexNode, crypto.k-attach, protocols.migration-noeud]
-    verified_by:
-      - k_dispersal_vectors::k_dispersal_derivation_is_deterministic
-      - k_dispersal_vectors::k_dispersal_content_is_domain_separated_from_k_attach_and_signing_key
+    verified_by: []
 
   - id: crypto.k-block
     kind: narrative
@@ -363,10 +434,7 @@ pages:
     title: "K_block — Contenu Réel des Blocs"
     section: "§3.8"
     refs: [fs.DirectoryEntry, crypto.master-key-chain]
-    verified_by:
-      - k_block_vectors::k_block_derivation_is_deterministic
-      - k_block_vectors::k_block_differs_per_encryption_salt
-      - k_block_vectors::k_block_differs_per_master_key_version
+    verified_by: []
 
   - id: crypto.k-node-self
     kind: narrative
@@ -374,10 +442,7 @@ pages:
     title: "K_node_self — Confidentialité de la Cartographie Nœud"
     section: "§3.8"
     refs: [node.NodeManifest, crypto.identity-derivation]
-    verified_by:
-      - k_node_self_vectors::k_node_self_derivation_is_deterministic
-      - k_node_self_vectors::k_node_self_differs_per_priv_node
-      - k_node_self_vectors::k_node_self_is_domain_separated_from_k_self
+    verified_by: []
 
   - id: crypto.k-self
     kind: narrative
@@ -385,9 +450,7 @@ pages:
     title: "K_self — Récupération depuis la Seed"
     section: "§3.8"
     refs: [network.dht-directory, deploiement.disaster-recovery, crypto.identity-derivation]
-    verified_by:
-      - k_self_vectors::k_self_derivation_is_deterministic
-      - k_self_vectors::k_self_differs_per_priv_user
+    verified_by: []
 
   - id: crypto.master-key-chain
     kind: narrative
@@ -395,12 +458,7 @@ pages:
     title: "Continuité de Chiffrement — master_key_chain"
     section: "§3.8"
     refs: [crypto.k-block, securite.incidents-compromissions, crypto.identity-derivation]
-    verified_by:
-      - master_key_chain_vectors::flat_rewrap_then_resolve_recovers_historical_keys
-      - master_key_chain_vectors::resolve_stays_single_unwrap_after_many_rotations
-      - master_key_chain_vectors::transplanted_version_fails_tag_verification
-      - master_key_chain_vectors::unknown_version_is_rejected_explicitly
-      - master_key_chain_vectors::chain_entries_carry_their_wrapped_version
+    verified_by: []
 
   - id: crypto.identity-derivation
     kind: narrative
@@ -429,22 +487,7 @@ pages:
     title: "Suite cryptographique symétrique (AEAD, KDF, hash)"
     section: "§3.8"
     refs: [crypto.key-hierarchy, crypto.master-key-chain, crypto.k-block, crypto.k-attach, crypto.k-dispersal, crypto.k-self, crypto.k-node-self, crypto.identity-derivation, deploiement.formats-serialisation, agilite.kem-vs-nike, overview.architecture]
-    verified_by:
-      - labels::info_labels_are_globally_unique
-      - labels::aad_contexts_are_unique
-      - labels::labels_match_the_spec_registry
-      - symmetric_suite_vectors::aead_seal_matches_rfc8439_section_2_8_2
-      - symmetric_suite_vectors::aead_open_rejects_forgery
-      - symmetric_suite_vectors::hkdf_sha256_matches_rfc5869_vectors
-      - symmetric_suite_vectors::hmac_sha256_matches_rfc4231_vectors
-      - symmetric_suite_vectors::sha256_matches_rfc6234_vectors
-      - symmetric_suite_vectors::canonical_encode_matches_spec_layout
-      - symmetric_suite_vectors::k_nonce_matches_generated_composition_vector
-      - symmetric_suite_vectors::k_wrap_matches_generated_composition_vector
-      - symmetric_suite_vectors::k_block_single_label_info_matches_generated_composition_vector
-      - symmetric_suite_vectors::synthetic_nonce_matches_generated_composition_vector
-      - symmetric_suite_vectors::wrap_composition_is_48_octets_without_header
-      - symmetric_suite_vectors::block_frame_matches_generated_composition_vector
+    verified_by: []
 
   # ---------------------------------------------------------------- protocols
   - id: protocols.index-adaptatif

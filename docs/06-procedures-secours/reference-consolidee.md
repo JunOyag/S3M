@@ -18,7 +18,7 @@ en plus de sa page d'origine.
 | Scénario déclencheur | Procédure | Réversible ? |
 |---|---|---|
 | Nœud temporairement indisponible | [`protocols.write-queue`](../04-protocols/write-queue.md) | Oui, au retour du Nœud |
-| Nœud seul injoignable, réseau disponible | [`protocols.espace-secours`](../04-protocols/espace-secours.md) | Oui, réintégration automatique |
+| Nœud seul injoignable, réseau disponible | [`protocols.espace-secours`](../04-protocols/espace-secours.md) | Oui, réintégration automatique ; entrée DHT expirant à 6 mois (15 552 000 s), jamais supprimée |
 | Bloc corrompu détecté | [`protocols.integrite-lecture`](../04-protocols/integrite-lecture.md) | Oui si reconstruction possible |
 | Partenaire hors-ligne (timeout) | [`protocols.volatilite-reparation`](../04-protocols/volatilite-reparation.md) | Oui, automatique |
 | Partenaire fraudeur (PoS incorrect) | [`securite.blacklist-fraude`](../05-securite/blacklist-fraude.md) | Non — blacklist permanente |

@@ -1,0 +1,27 @@
+// ---- NodeEntry.fbs ----
+// Entrée DHT d'un Nœud, indexée par pub_node. Payload d'une DhtEnvelope
+// signée par priv_node.
+// Source: ST-P2P-STORAGE-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
+include "DhtEnvelope.fbs";
+include "../dispersal/DispersalManifest.fbs";
+namespace P2PStorage.Dht;
+
+/// Clair chiffré sous K_node_self (§3.9) : point d'entrée de la cartographie de dispersion du Nœud.
+table NodeSnapshotPointer {
+  node_snapshot_root_hash: [ubyte];
+  node_snapshot_root_partners: [P2PStorage.Dispersal.Partner];
+}
+
+/// Entrée DHT Node (§3.9). TTL 15 552 000 s, republiée toutes les 2 592 000 s.
+table NodeEntry {
+  ip: string;
+  port: uint16;
+  timestamp: uint64;              /// signé via l'enveloppe ; rafraîchi à chaque republication
+  vdf_proof: VdfProof;            /// identité 0x00 ‖ pub_node
+  pub_node_recovery: [ubyte];     /// immuable (§5.2)
+  migration_pointer: SignedMigrationPointer;  /// optionnel (§5.2)
+  snapshot_ciphertext: [ubyte];   /// nonce ‖ chiffré ‖ tag de NodeSnapshotPointer sous K_node_self
+}
+
+root_type NodeEntry;
+file_identifier "NODE";

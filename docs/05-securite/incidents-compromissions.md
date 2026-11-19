@@ -36,14 +36,33 @@ invalide leur attachement simultanément, nécessitant une réattache complète.
    `pub_node_recovery` est publiée dès l'origine, en clair, dans
    l'entrée DHT Node ([`network.dht-directory`](../01-network-dht/dht-directory.md))
    — un champ immuable.
-2. En cas de compromission de `priv_node` (mais pas la seed), l'opérateur
-   signe avec `priv_node_recovery` un `migration_pointer`
-   `{old_node_id, new_node_id, timestamp}`, vérifiable par tout pair DHT via
-   `pub_node_recovery`.
-3. Le Connecteur vérifie périodiquement la présence d'un `migration_pointer`
-   valide ; s'il en trouve un, il déclenche automatiquement une réattache —
-   même flux que [`protocols.migration-noeud`](../04-protocols/migration-noeud.md),
-   initié par le pointeur plutôt qu'un choix explicite.
+2. **Publication du pointeur.** En cas de compromission de `priv_node`
+   (mais pas de la seed), l'opérateur signe avec `priv_node_recovery` une
+   [`network.SignedMigrationPointer`](../02-schemas/network/SignedMigrationPointer.md)
+   portant `{old_node_id, new_node_id, seq, timestamp}` et la publie dans
+   le champ `migration_pointer` de l'entrée DHT **de l'ancien** `node_id`.
+    - **Signature** : Ed25519 par `priv_node_recovery` sur
+      `L("p2p-storage/sig/migration-pointer/v1") ‖ payload` — règle de
+      séparation de contexte commune à toutes les signatures DHT
+      ([`network.dht-directory`](../01-network-dht/dht-directory.md)).
+    - **Vérification** : par tout pair, via le `pub_node_recovery` déjà
+      publié dans l'entrée Node, sans dépendre de la clé compromise.
+      `old_node_id` doit être celui de l'entrée qui porte le pointeur.
+    - **Séquence et rejeu** : `seq` est monotone (premier pointeur : 1).
+      Les pairs rejettent un pointeur dont `seq` est inférieur ou égal à
+      celui déjà publié, ce qui empêche le rejeu d'un ancien pointeur et
+      départage deux pointeurs concurrents.
+3. **Côté Connecteur.** Lors de la résolution périodique de son Nœud (ou
+   dès l'échec d'une opération), le Connecteur vérifie la présence d'un
+   `migration_pointer` valide sur l'entrée de son `node_id` connu. Avant de
+   le suivre, il vérifie que **l'entrée Node de `new_node_id` existe et est
+   valide** (preuve VDF et signature vérifiées) : un pointeur vers une
+   identité inexistante ou non vérifiable est ignoré. Le suivi automatique
+   se limite à **un seul saut** : si l'entrée de `new_node_id` porte
+   elle-même un `migration_pointer`, le Connecteur ne le suit pas et
+   demande une confirmation explicite à l'utilisateur. Un suivi valide
+   déclenche la réattache, selon le même flux que
+   [`protocols.migration-noeud`](../04-protocols/migration-noeud.md).
 4. **Continuité réseau** : si la même machine/IP/port est conservée, le
    nouveau Nœud peut être joignable à la même adresse sous sa nouvelle
    identité.
@@ -53,7 +72,9 @@ invalide leur attachement simultanément, nécessitant une réattache complète.
 Si c'est la **seed elle-même** qui est exfiltrée, `priv_node_recovery` est
 également compromise — aucun mécanisme cryptographique ne peut garantir
 l'authenticité d'un pointeur de migration. Nécessite une communication
-hors-bande, hors du périmètre cryptographique de ce protocole.
+hors-bande, hors du périmètre cryptographique de ce protocole. La limite
+d'un seul saut automatique réduit toutefois l'impact d'une redirection en
+chaîne par un attaquant qui aurait obtenu la seed.
 
 ### Variante — perte sans compromission (panne matérielle) {: #variante-perte-sans-compromission }
 

@@ -65,7 +65,7 @@ L'AAD relie le chiffré à son contexte ; elle n'est **jamais** chiffrée.
 | Chiffré | AAD |
 |---|---|
 | Bloc de données ou bloc d'index | en-tête de version (2 o, [`deploiement.formats-serialisation`](../07-deploiement/formats-serialisation.md)) |
-| Blob DHT | libellé du type d'entrée ‖ `u16be(schema_version)` — voir [`network.dht-directory`](../01-network-dht/dht-directory.md) |
+| Blob DHT | `L(libellé AAD du type)` ‖ `u16be(schema_version)` — libellés listés sur [`network.dht-directory`](../01-network-dht/dht-directory.md) |
 | `wrapped_key` | en-tête de version (2 o) ‖ `"master-key-wrap"` ‖ `u16(version_wrappée)` ‖ `u16(version_courante)` |
 
 Pour les blocs, l'en-tête suffit : la clé ne sert qu'à un message et porte

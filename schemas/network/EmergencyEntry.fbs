@@ -1,0 +1,18 @@
+// ---- EmergencyEntry.fbs ----
+// Entrée DHT de l'EmergencyManifest d'un user_id, indexée par
+// SHA-256(K_attach ‖ "emergency"). Payload d'une DhtEnvelope signée par
+// sig_priv_emergency.
+// Source: ST-P2P-STORAGE-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
+include "../emergency/EmergencyManifest.fbs";
+namespace P2PStorage.Dht;
+
+/// Entrée DHT EmergencyManifest (§3.12.4). TTL 15 552 000 s, ni republication ni suppression.
+table EmergencyEntry {
+  sig_pub_emergency: [ubyte];     /// en clair, pour que les pairs vérifient les mises à jour
+  seq: uint64;                    /// monotone, en clair : contrôlé par les pairs sans déchiffrement
+  timestamp: uint64;
+  ciphertext: [ubyte];            /// nonce ‖ chiffré ‖ tag de EmergencyManifest sous K_emergency_content
+}
+
+root_type EmergencyEntry;
+file_identifier "EMRG";

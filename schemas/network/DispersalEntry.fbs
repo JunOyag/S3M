@@ -1,0 +1,23 @@
+// ---- DispersalEntry.fbs ----
+// Entrée DHT du DispersalManifest d'un couple (User, Node), indexée par
+// SHA-256(K_attach). Payload d'une DhtEnvelope signée par sig_priv_dispersal.
+// Source: ST-P2P-STORAGE-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
+include "../dispersal/DispersalManifest.fbs";
+namespace P2PStorage.Dht;
+
+/// Clair chiffré sous K_attach (§3.9) : amorçage de la lecture de l'arbre d'index.
+table DispersalRootPointer {
+  dispersal_root_hash: [ubyte];
+  dispersal_root_partners: [P2PStorage.Dispersal.Partner];
+  dispersal_root_salt: [ubyte];   /// 16 o, sel du nœud racine de l'arbre d'index (K_dispersal_block, §3.8)
+}
+
+/// Entrée DHT DispersalManifest (§3.9). TTL 15 552 000 s, republiée toutes les 2 592 000 s.
+table DispersalEntry {
+  sig_pub_dispersal: [ubyte];     /// en clair ; clé de vérification de l'enveloppe
+  timestamp: uint64;
+  ciphertext: [ubyte];            /// nonce ‖ chiffré ‖ tag de DispersalRootPointer sous K_attach
+}
+
+root_type DispersalEntry;
+file_identifier "DISP";

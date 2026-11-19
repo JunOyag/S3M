@@ -24,7 +24,8 @@ Référence [`emergency.EmergencyPartner`](EmergencyPartner.md),
 [`emergency.EmergencyMutation`](EmergencyMutation.md). Chiffrée avec
 `K_emergency_content` (dérivée de
 [`crypto.k-attach`](../../03-crypto/k-attach.md)), publiée en DHT sous
-`emergency_dht_key = H(K_attach || "emergency")` — **jamais** le
+`emergency_dht_key = SHA-256(K_attach ‖ "emergency")`, dans une
+[`network.EmergencyEntry`](../network/EmergencyEntry.md) — **jamais** le
 `DispersalManifest`, conformément à la règle « seul le Nœud écrit et signe
 le DispersalManifest » (voir
 [`protocols.suppression-dispersal`](../../04-protocols/suppression-dispersal.md)).

@@ -32,12 +32,37 @@ nouvelle version de la spécification.
 | Taille du discriminant sérialisé | 128 octets | `λ / 8` |
 | Taille de la forme de départ | 100 octets | Sérialisation BQFC, voir [Calcul séquentiel](#calcul-sequentiel-et-preuve) |
 
+## Identité marquée {: #identite-marquee }
+
+L'« identité » hachée par la VDF est la séquence d'octets :
+
+```
+identité = key_algorithm (1 octet) ‖ clé publique brute
+```
+
+- Pour l'algorithme 0 (Ed25519), c'est `0x00 ‖ pub_key`, soit **33 octets**.
+  Le tag fait partie de l'identité : deux tags différents sur la même clé
+  donnent deux discriminants, donc deux preuves sans rapport.
+- **Seul le tag 0 est accepté en V3.** Les tags 1 (ML-DSA/ML-KEM) et 2
+  (hybride) sont reconnus et rejetés par une erreur dédiée « algorithme non
+  supporté », distincte de « preuve invalide » ; tout autre tag (ex. 255)
+  est rejeté. Voir [`agilite.tag-hybride`](../08-agilite-crypto/tag-hybride.md).
+- Le même tag est porté par l'enveloppe DHT qui transporte la preuve
+  ([`network.dht-directory`](dht-directory.md)) : un tag différent entre
+  l'identité et l'enveloppe est rejeté comme incohérent.
+- **Clé publique prouvée, par type d'entrée** :
+
+| Entrée DHT | Identité prouvée |
+|---|---|
+| Node | `0x00 ‖ pub_node` |
+| User | `0x00 ‖ sig_pub_user` — `pub_user` n'est jamais publiée ; la preuve porte donc sur la clé de signature dérivée, qui est aussi la clé de vérification de l'entrée (arbitrage du 2026-11-19, point ❓2 de la V3) |
+
 ## Setup — un discriminant `Δ` par identité
 
 Le groupe utilisé est la classe de formes quadratiques imaginaires `Cl(Δ)`
 pour un discriminant `Δ` **négatif, dérivé du challenge de l'identité** :
 `Δ` n'est donc pas un paramètre global, mais il n'est pas non plus choisi
-par le prouveur — il découle d'un hash public de `pub_key`. Contrairement à
+par le prouveur — il découle d'un hash public de l'identité marquée. Contrairement à
 un groupe RSA (module `N = p·q` nécessitant une cérémonie MPC pour garantir
 que sa factorisation reste inconnue), l'ordre de `Cl(Δ)` est
 structurellement inconnu de quiconque dès lors que `Δ` est dérivé de façon
@@ -45,9 +70,9 @@ vérifiable et non malléable — **pas de cérémonie de confiance requise**.
 
 La dérivation, identique pour le prouveur et le vérificateur :
 
-1. `challenge = SHA-256(pub_key)`, où `pub_key` inclut son tag
-   `key_algorithm` (voir l'agilité cryptographique, §8.4 de la
-   spécification).
+1. `challenge = SHA-256(identité)`, où `identité` est l'**identité
+   marquée** `key_algorithm ‖ clé publique brute` (voir
+   [Identité marquée](#identite-marquee)).
 2. `p = HashPrime(challenge, 1024)` : on parcourt la chaîne de hashes
    SHA-256 du seed `challenge` incrémenté, et `p` est le **premier candidat
    qui passe le test de primalité**, après application d'un masque de bits
@@ -58,11 +83,11 @@ La dérivation, identique pour le prouveur et le vérificateur :
 
 Cette procédure est celle implémentée par `create_discriminant` de
 `chiavdf` ; son résultat est validé contre le vecteur de référence Python de
-la bibliothèque. N'importe qui peut la rejouer à partir de `pub_key` et
+la bibliothèque. N'importe qui peut la rejouer à partir de l'identité et
 vérifier qu'aucun choix arbitraire n'a permis d'introduire une trappe. Son
 coût est de l'ordre de 10 ms pour 1024 bits.
 
-**Le vérificateur recalcule toujours `Δ` lui-même à partir de `pub_key`** et
+**Le vérificateur recalcule toujours `Δ` lui-même à partir de l'identité** et
 n'accepte jamais un `Δ` fourni par le prouveur : sinon, une preuve calculée
 une seule fois pour un discriminant choisi serait réutilisable pour toutes
 les identités.
@@ -93,7 +118,9 @@ les identités.
   négligeable (de l'ordre de 20 ms mesurés, recalcul de `Δ` compris).
 - La génération `prove(challenge, x_s, 1024, T)` renvoie `y ‖ π`, soit
   **200 octets**. Le tuple joint à toute nouvelle entrée DHT Node ou User est
-  `(pub_key, y ‖ π)` : `T`, `recursion`, `λ` et la dérivation de `Δ` sont
+  `(identité, y ‖ π)` (table `VdfProof`, voir
+  [`network.VdfProof`](../02-schemas/network/VdfProof.md)) ; il ne porte
+  **pas** `Δ` : `T`, `recursion`, `λ` et la dérivation de `Δ` sont
   fixés une fois par la spécification, implicites pour tout vérificateur.
 
 ### Entrées non fiables
@@ -130,6 +157,9 @@ machine unique n'est désignée comme référence. Limites de ces mesures :
 
 La valeur de `T` sera réexaminée si une mesure sur Raspberry Pi, une
 explication de l'écart Windows ou des mesures ultérieures le justifient.
+
+Tests rapides, fixtures et mesures par phase :
+[`network.vdf-verifier-pure`](vdf-verifier-pure.md).
 
 ## Limite connue
 
