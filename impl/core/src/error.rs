@@ -75,6 +75,9 @@ pub enum CoreError {
     #[error("deux fragments de parité chez le même partenaire")]
     ErasureDuplicatePartner,
 
+    #[error("en-tête de version invalide ou non implémenté : {version}")]
+    InvalidVersionHeader { version: u16 },
+
     #[error("chiavdf : dérivation du discriminant échouée (create_discriminant)")]
     VdfDiscriminantFailure,
 

@@ -973,6 +973,10 @@ pages:
     title: "Formats de Sérialisation et Performance"
     section: "§7.2"
     refs: [crypto.symmetric-suite, crypto.master-key-chain]
+    verified_by:
+      - version_header::header_is_u16_big_endian_with_current_value_1
+      - version_header::reserved_zero_and_unknown_versions_are_rejected
+      - version_header::version_is_authenticated_and_changes_the_ciphertext
 
   - id: deploiement.packaging
     kind: narrative

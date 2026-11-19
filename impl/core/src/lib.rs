@@ -21,5 +21,6 @@ pub mod labels;
 pub mod master_key_chain;
 pub mod symmetric_suite;
 pub mod vdf;
+pub mod version;
 
 pub use error::CoreError;

@@ -18,7 +18,7 @@ use p2p_storage_protocol::fb::fs;
 use p2p_storage_protocol::layout::FILE_BLOCK_DATA_BYTES;
 
 /// En-tête de version des blocs (version de protocole 1).
-pub const BLOCK_HEADER: [u8; 2] = [0, 1];
+pub const BLOCK_HEADER: [u8; 2] = p2p_storage_core::version::CURRENT_HEADER;
 
 /// Hash d'un bloc chiffré.
 pub type BlockHash = [u8; 32];

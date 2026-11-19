@@ -205,10 +205,18 @@ entries:
     notes: ''
   deploiement.formats-serialisation:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - version_header::header_is_u16_big_endian_with_current_value_1
+      - version_header::reserved_zero_and_unknown_versions_are_rejected
+      - version_header::version_is_authenticated_and_changes_the_ciphertext
+    notes: >-
+      impl/core/src/version.rs : en-tête u16 gros-boutiste, 0x0000 interdit,
+      version courante 1, liste des versions implémentées (coexistence,
+      version inconnue rejetée explicitement) ; le Connecteur l'utilise pour
+      ses blocs. FlatBuffers (Phase 1) et SQLite WAL (protocols.stockage-
+      physique) couvrent le reste de la page.
   deploiement.packaging:
     kind: narrative
     status: not_started
