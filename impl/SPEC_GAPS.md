@@ -18,6 +18,68 @@ référence du commit qui met à jour docs/ en conséquence)*
 
 ---
 
+## Spec V3 — Intégration de `ST-P2P-STORAGE-2026-V3-modifications.md` et arbitrages
+
+**Constat** : un document de modifications V2 → V3 (20/10/2026) était resté
+hors dépôt, non intégré, en contradiction avec `impl/TECH_STACK.md`
+(Connecteur TypeScript/Bun), avec l'arbitrage « vérification VDF native,
+sans WASM » du 17/10 (contourné par `network.vdf-verifier-pure`) et avec
+plusieurs pages Phase 0 marquées `done` (convention KDF, `K_block`, nonce
+synthétique). Plusieurs points y étaient marqués ⚠ (précision à confirmer)
+ou ❓ (ouvert).
+
+**Question** : adopter la V3, et sous quelle forme figer ses points ⚠ et ❓ ?
+
+**Impact si non résolu** : bloquant pour la Phase 2 (`network.dht-directory`)
+et pour toute écriture de bloc.
+
+**Résolution** (orchestrateur, validée par l'utilisateur le 2026-11-19) :
+
+1. **Stack** : Connecteur en **Rust natif** ; dashboards en TypeScript
+   statique ; plus aucune cible WASM ; nouveau crate `impl/protocol`
+   (component `protocol`). `impl/TECH_STACK.md` réécrit.
+2. **VDF** : `chiavdf` seul prouveur et vérificateur ; le vérificateur
+   Wesolowski maison (`vdf_pure.rs`) et le harnais WASM sont retirés
+   (règle « ne pas réimplémenter le VDF ») ; `network.vdf-verifier-pure`
+   devient « Instrumentation et fixtures VDF ». λ = 1024 maintenu (la V3
+   §2.1 citait 2048 par erreur).
+3. **Convention KDF** : `info = "p2p-storage/kdf/v1" ‖ L(label) ‖
+   L(entrées publiques…)`, `L` = longueur sur 4 o big-endian, IKM = secret
+   seul, sortie 32 o. `K_attach` reçoit l'étiquette `"attach"`. `K_wrap`
+   entre dans la convention (`"master-key-wrap"`, versions en entrées
+   publiques) — la V3 l'avait omis.
+4. **`K_block`** = `KDF(master_key[version], "block", encryption_salt,
+   u32(index))`, sel neuf à chaque réémission, trame de 65 536 o, nonce
+   aléatoire, AAD = en-tête de version. **Le nonce synthétique est retiré**,
+   ce qui lève aussi la revue cryptographique qu'il exigeait (entrée
+   « Circularité » ci-dessous).
+5. **❓1 `K_dispersal_block`** = `KDF(K_dispersal_content,
+   "dispersal-block", sel_du_nœud)` : sel de 16 o neuf par émission d'un
+   `IndexNode`, porté par le `Stripe` parent (`encryption_salt`, champ
+   additif) et, pour la racine, par `DispersalRootPointer.dispersal_root_salt`.
+6. **❓2** : la preuve VDF d'une entrée User porte sur `0x00 ‖ sig_pub_user`.
+7. **❓3** : séparation de contexte uniforme — toute signature DHT porte sur
+   `L("p2p-storage/sig/<type>/v1") ‖ payload`, `migration_pointer` compris.
+8. **❓4** (neutralisation d'un `EmergencyManifest` réconcilié) : reporté ;
+   la réconciliation idempotente suffit.
+9. **⚠ confirmés** : `file_identifier` par type d'entrée (`NODE`, `USER`,
+   `DISP`, `EMRG`, d'où un `.fbs` par entrée), AAD des blobs DHT =
+   `L(libellé) ‖ u16be(schema_version)`, lissage ancré sur l'époque Unix,
+   jeton d'API locale de 256 bits remis par fragment d'URL, jeton WebSocket
+   dans le premier message, **mêmes protections pour le dashboard Nœud**.
+10. **Écarté** : la ligne « graine de `priv_node_recovery` =
+    `KDF(seed, "node-recovery-signing")` » de la table V3 §3.1 —
+    `priv_node_recovery` reste un chemin SLIP-0010 durci, comme arbitré pour
+    `crypto.identity-derivation` (id `done`, non rouvert).
+
+Ids rouverts : `crypto.symmetric-suite`, `crypto.k-attach`,
+`crypto.k-block`, `crypto.k-dispersal`, `crypto.k-self`,
+`crypto.k-node-self`, `crypto.master-key-chain`, `network.vdf-identity`,
+`network.vdf-verifier-pure`. Nouveaux ids : 12 schémas `network.*`,
+`protocols.ecriture-differee`. Commits doc : branche `docs/spec-v3`.
+
+---
+
 ## crypto.k-attach — Chemin de dérivation BIP-39 → graine Ed25519 (32 octets)
 
 **Constat** : `docs/03-crypto/k-attach.md` (et la note « seed BIP-39 » de sa
@@ -113,7 +175,8 @@ bloc). Non détecté par les tests existants : `k_block_vectors` et
 entrée opaque, la circularité n'apparaît qu'à
 l'intégration écriture→lecture.
 
-**Résolution** : tranché par l'orchestrateur le 2026-11-10 — *doc d'abord,
+**Résolution** : tranché par l'orchestrateur le 2026-10-11 (date corrigée : la
+version précédente indiquait 2026-11-10) — *doc d'abord,
 code ensuite*.
 
 1. **Blocs adressés par contenu → chiffrement déterministe.** Le nonce est
@@ -155,8 +218,10 @@ code ensuite*.
 code `impl/core` et cette entrée SPEC_GAPS traités séparément, règle
 « une branche, un id »).
 
-**Résolution** : *(rempli par l'orchestrateur une fois tranché, avec la
-référence du commit qui met à jour docs/ en conséquence)*
+**Clôture** (2026-11-19) : la résolution ci-dessus (commit doc `e13b2e7`)
+est **remplacée par la spec V3** — `K_block` par sel et par position, nonce
+aléatoire, plus de nonce synthétique ni de revue cryptographique associée.
+Voir l'entrée « Spec V3 » en tête de fichier.
 
 ## crypto.identity-derivation — Découverte de l'index courant après perte totale
 

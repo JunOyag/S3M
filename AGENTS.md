@@ -15,23 +15,23 @@ stack technique est tranchée** (`impl/TECH_STACK.md`) :
 
 | Composant | Langage | Répertoire |
 |---|---|---|
-| Noyau partagé (crypto, Reed-Solomon, VDF) | Rust → natif + WASM | `impl/core` |
-| Nœud (démon hébergeur) | Rust, lie `impl/core` natif | `impl/node` |
-| Connecteur (client) | TypeScript / Bun, importe `impl/core` en WASM | `impl/connector` |
+| Noyau (crypto, VDF, Reed-Solomon) | Rust, natif uniquement | `impl/core` |
+| Protocole partagé (schémas, enveloppes DHT, règles communes) | Rust, lie `impl/core` | `impl/protocol` |
+| Nœud (démon hébergeur) | Rust, lie `impl/core` + `impl/protocol` | `impl/node` |
+| Connecteur (client, lecteur monté) | Rust natif, lie `impl/core` + `impl/protocol` ; dashboard en TypeScript statique | `impl/connector` |
 
-Voir `impl/TECH_STACK.md` pour la justification complète (pourquoi Rust,
-pourquoi un noyau partagé plutôt que deux implémentations crypto, pourquoi
-lier `chiavdf` plutôt que réimplémenter le VDF, bibliothèques précises par
-composant). `impl/layers.yml` porte désormais un champ `component` par id,
-directement exploitable pour assigner une tâche au bon sous-répertoire.
+Voir `impl/TECH_STACK.md` pour la justification complète (spec V3 : plus de
+TypeScript/Bun côté moteur, plus de WASM, `chiavdf` seul vérificateur VDF).
+`impl/layers.yml` porte un champ `component` par id, directement
+exploitable pour assigner une tâche au bon sous-répertoire.
 
-**Décisions encore ouvertes**, plus mineures :
+**Décisions encore ouvertes**, mineures, à trancher au démarrage de la
+tâche concernée : crate WinFsp du lecteur monté, crate HTTP/WebSocket de
+l'API locale (`impl/TECH_STACK.md`).
 
-- Bibliothèque WebDAV précise côté Connecteur (`impl/TECH_STACK.md` propose
-  deux options, à trancher à l'usage).
-- Suite de tests : `verified_by: []` (frontmatter de chaque page) est une
-  convention prête à l'emploi, encore vide — c'est cette équipe qui va la
-  peupler (voir §3).
+**Orchestration** : depuis le 2026-11-19, une seule IA (Claude Code) tient
+le rôle d'orchestrateur et d'agent de travail ; les consignes destinées à
+d'autres outils (`.github/agents/`, `.clinerules/`) ne font plus foi.
 
 ## 1. Trois graphes, trois usages — ne pas les confondre
 
@@ -116,15 +116,19 @@ impl/
 ├── status.yml                # suivi d'implémentation
 ├── TECH_STACK.md               # décision de stack + bibliothèques retenues
 ├── SPEC_GAPS.md                  # remontées d'ambiguïté (voir §5)
-├── core/                           # Rust, natif + WASM — phases 0, 3 (partie erasure-coding), 6 (partie sérialisation), 7
+├── core/                           # Rust natif — phases 0, 3 (erasure-coding), 6 (sérialisation), 7
 │   ├── src/
 │   └── Cargo.toml
-├── node/                            # Rust natif, lie impl/core — phases 2-6, ids `component: node`
+├── protocol/                        # Rust, lie impl/core — schémas générés, enveloppes DHT, règles communes
 │   ├── src/
 │   └── Cargo.toml
-└── connector/                        # TypeScript/Bun, importe impl/core en WASM — ids `component: connector`
+├── node/                            # Rust natif, lie core + protocol — ids `component: node`
+│   ├── src/
+│   └── Cargo.toml
+└── connector/                        # Rust natif, lie core + protocol — ids `component: connector`
     ├── src/
-    └── package.json
+    ├── dashboard/                     # TypeScript statique (interface uniquement)
+    └── Cargo.toml
 ```
 
 Pour un id marqué `component: node+connector` dans `impl/layers.yml`
@@ -135,8 +139,8 @@ différents si besoin, chacun ne touchant que son propre répertoire.
 **Règle stricte** : un agent ne modifie que le sous-répertoire
 correspondant à son id/cluster assigné, plus son entrée dans
 `impl/status.yml` et le champ `verified_by` de sa page dans `manifest.yml`.
-Toute modification d'un `.fbs` ou de `impl/core` (contrats partagés entre
-composants) doit être signalée à l'orchestrateur avant d'être faite — un
+Toute modification d'un `.fbs`, de `impl/core` ou de `impl/protocol`
+(contrats partagés entre composants) doit être signalée à l'orchestrateur avant d'être faite — un
 changement de schéma ou de primitive partagée peut invalider le travail
 d'un autre agent en cours sur un composant qui en dépend (voir le DAG de
 schéma, §1).

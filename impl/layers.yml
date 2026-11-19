@@ -10,13 +10,15 @@
 # dépendance réelle entre composants, pas une relation textuelle entre pages.
 #
 # `component` (ajouté après la décision de stack, voir impl/TECH_STACK.md) :
-#   - core      : impl/core (Rust natif + WASM) — logique pure partagée
+#   - core      : impl/core (Rust natif) — primitives pures partagées
+#   - protocol  : impl/protocol (Rust) — logique protocolaire commune au Nœud
+#                 et au Connecteur, sans I/O (schémas générés, enveloppes DHT,
+#                 règles de vérification, TTL, séquences) — ajouté en V3
 #   - node      : impl/node (Rust natif) — démon hébergeur uniquement
-#   - connector : impl/connector (TypeScript/Bun) — client uniquement
-#   - node+connector : logique existant des deux côtés, chacun dans son
-#                       propre langage (pas de code partagé au-delà du
-#                       "core" commun — ex. chaque camp gère sa propre
-#                       moitié d'un protocole à deux acteurs)
+#   - connector : impl/connector (Rust natif) — client uniquement
+#   - node+connector : logique existant des deux côtés, chaque camp gérant sa
+#                       propre moitié d'un protocole à deux acteurs ; ce qui
+#                       est commun aux deux moitiés va dans `protocol`
 #
 # À curer/ajuster par l'équipe (humaine ou agent orchestrateur) avant de
 # lancer un chantier — ce premier jet reflète la lecture de la spec telle
@@ -36,11 +38,13 @@ phases:
     note: >
       Fonctions quasi pures (KDF, conversions de clés, VDF) — dépendent de
       primitives crypto standard, de rien d'autre dans ce projet. Base de
-      tout le reste. Entièrement dans impl/core (Rust), compilé natif pour
-      le Nœud et en WASM pour le Connecteur — voir impl/TECH_STACK.md.
+      tout le reste. Entièrement dans impl/core (Rust natif, lié par le Nœud
+      et par le Connecteur) — voir impl/TECH_STACK.md. Rouverte par la V3
+      (2026-11-19) : convention KDF unique, K_block par position, identité
+      VDF marquée, retrait du WASM et du vérificateur VDF maison.
     ids:
       - { id: network.vdf-identity,     component: core }
-      - { id: network.vdf-verifier-pure, component: core, depends_on: [network.vdf-identity-tagged] }
+      - { id: network.vdf-verifier-pure, component: core, depends_on: [network.vdf-identity] }
       - { id: crypto.k-attach,          component: core }
       - { id: crypto.k-block,           component: core }
       - { id: crypto.k-self,            component: core }
@@ -52,6 +56,9 @@ phases:
       # primitive de base, aucune dépendance interne ; devient la dépendance
       # de crypto.master-key-chain (wrap) et de tout chiffrement de bloc.
       - { id: crypto.symmetric-suite,   component: core }
+      # crypto.key-hierarchy : page de synthèse (aucun code propre) — close
+      # quand toutes les clés qu'elle référence sont livrées.
+      - { id: crypto.key-hierarchy,     component: core, depends_on: [crypto.symmetric-suite, crypto.k-attach, crypto.k-block, crypto.k-dispersal, crypto.k-self, crypto.k-node-self, crypto.master-key-chain] }
 
   - phase: 1
     name: "Schémas de données (codegen)"
@@ -59,9 +66,8 @@ phases:
       Ne pas curer manuellement — utiliser `scripts/plan.py --graph schema`
       pour l'ordre exact de génération de code (flatc), qui est un vrai DAG
       mécaniquement fiable, contrairement à ce fichier. flatc émet les
-      types nativement pour Rust (impl/core, impl/node) ET TypeScript
-      (impl/connector) — pas besoin de passer ces types par le pont WASM,
-      voir impl/TECH_STACK.md.
+      types Rust une seule fois, dans impl/protocol (component: protocol),
+      lié par le Nœud et le Connecteur — voir impl/TECH_STACK.md.
     ids: []  # volontairement vide, voir la note
 
   - phase: 2
@@ -71,7 +77,12 @@ phases:
       Phase 1 (structures sérialisées) disponibles.
     ids:
       - { id: protocols.stockage-physique, component: node }
-      - { id: network.dht-directory,       component: node+connector }
+      # network.dht-directory : trois tâches distinctes. `protocol` d'abord
+      # (enveloppes, règles de vérification, TTL/lissage, séquences) ; les
+      # adaptateurs node et connector ensuite.
+      - { id: network.dht-directory,       component: protocol, depends_on: [network.vdf-identity, crypto.symmetric-suite] }
+      - { id: network.dht-directory,       component: node, depends_on: [network.vdf-identity, crypto.symmetric-suite] }      # après la tâche protocol
+      - { id: network.dht-directory,       component: connector, depends_on: [network.vdf-identity, crypto.symmetric-suite] } # après la tâche protocol
       - { id: network.bootstrap,            component: connector }
 
   - phase: 3
@@ -95,6 +106,7 @@ phases:
       - { id: protocols.acces-applicatif,   component: connector }
       - { id: protocols.integrite-lecture,   component: connector }
       - { id: protocols.write-queue,          component: connector }
+      - { id: protocols.ecriture-differee,    component: connector, depends_on: [protocols.acces-applicatif, protocols.write-queue] }
       - { id: protocols.quota-sync,            component: node+connector }
       - { id: protocols.espace-secours,         component: node+connector }
       - { id: protocols.volatilite-reparation,   component: node }

@@ -1,9 +1,12 @@
-# impl/connector — placeholder
+# impl/connector — Connecteur (Rust natif)
 
-Ne pas implémenter avant Phase 0 (core) ET Phase 1 (node, protocole réseau
-minimal) terminées — le Connecteur dépend du Nœud pour toute écriture
-confirmée (§3.12).
+Binaire client de l'Utilisateur : moteur DHT, système de fichiers, lecteur monté
+(WinFsp puis FUSE), écriture différée, API locale et dashboard statique
+(TypeScript, interface uniquement). Lie `impl/core` et `impl/protocol`.
 
-Quand la phase démarre : `bun init`, consommer `impl/core` compilé en WASM
-(`wasm-pack build --features wasm --target bundler`), libp2p-js pour la
-couche réseau si nécessaire côté Connecteur (§7.3 — exécutable Bun portable).
+Décision de stack : `impl/TECH_STACK.md` (spec V3, 2026-11-19). Le prototype
+TypeScript/Bun d'octobre 2026 est archivé sur la branche locale
+`archive/dht-directory-v1`.
+
+Ne pas implémenter avant que les ids `component: connector` de la phase en cours
+soient ouverts dans `impl/layers.yml`.

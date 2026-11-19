@@ -9,8 +9,10 @@ verified_by: []
 
 # Packaging & Interface
 
-Deux applications Web locales distinctes (`http://localhost:xxxx`) — l'une
-pour le **Nœud**, l'autre pour le **Connecteur**.
+Deux applications Web locales distinctes (`http://127.0.0.1:<port>`) — l'une
+pour le **Nœud**, l'autre pour le **Connecteur**. Chacune est un ensemble de
+fichiers web statiques **servis par le binaire lui-même**, qui dialogue avec
+le moteur par l'[API locale](#api-locale) ci-dessous.
 
 ## Dashboard Nœud
 
@@ -40,14 +42,49 @@ partenaires utilisés, estimation du quota consommé par les autres
 Connecteurs), historique des incidents d'intégrité
 ([`protocols.integrite-lecture`](../04-protocols/integrite-lecture.md)),
 configuration de `Q_max` (4 GiO par défaut) et de l'intervalle de
-surveillance (5 minutes par défaut).
+surveillance (5 minutes par défaut). État de l'**espace de travail** de
+l'[écriture différée](../04-protocols/ecriture-differee.md) (occupation,
+réserve `workspace_reserve_bytes`), paramètres du délai de synchronisation
+différée, indicateur des synchronisations en attente et action
+« synchroniser maintenant ».
 
 ## Déploiement
 
 - **Nœud** : image conteneurisée officielle Docker (et binaire autonome),
   NAS/serveurs domestiques/Raspberry Pi.
-- **Connecteur** : exécutable portable, indépendant du Nœud, généré avec
-  Bun.
+- **Connecteur** : **binaire Rust natif**, indépendant du Nœud (peut
+  tourner sur une machine distincte). Le moteur (cryptographie, système de
+  fichiers, DHT) est entièrement en Rust. **TypeScript ne concerne que
+  l'interface** : le dashboard est un ensemble de fichiers statiques servis
+  par le binaire ; aucun runtime JavaScript n'est requis à l'exécution. Le
+  lecteur monté ([`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md))
+  nécessite WinFsp ou FUSE.
+
+## API locale {: #api-locale }
+
+Chaque dashboard dialogue avec son moteur par une **API locale** (HTTP et
+WebSocket). Les mêmes protections s'appliquent au Nœud et au Connecteur
+(arbitrage du 2026-11-19) :
+
+- **Liaison** : uniquement `127.0.0.1`, sur un port connu du processus.
+- **Jeton** : un secret aléatoire de **256 bits**, propre à **chaque
+  démarrage**, jamais écrit dans l'URL de requête, transmis dans l'en-tête
+  `Authorization: Bearer`. Comparaison à temps constant.
+- **Remise du jeton au dashboard** : à l'ouverture du navigateur, le jeton
+  est placé dans le **fragment d'URL** (`#…`), qui n'est jamais envoyé au
+  serveur, ni journalisé, ni transmis dans `Referer`. La page le garde en
+  mémoire et le retire de la barre d'adresse.
+- **`Origin`** : toute requête qui en porte un est rejetée si elle ne
+  correspond pas exactement à l'origine du dashboard servi par le binaire.
+  Aucun en-tête CORS permissif.
+- **`Host`** : limité à l'adresse et au port effectivement liés (protection
+  contre le rebond DNS).
+- **WebSocket** : les navigateurs ne permettent pas d'ajouter un en-tête
+  `Authorization` à l'ouverture d'un WebSocket ; le jeton est envoyé dans le
+  **premier message**, la connexion étant fermée sans lui. `Origin` et
+  `Host` sont vérifiés dès la poignée de main.
+- Côté Connecteur, cette API ne sert **pas** les fichiers de l'utilisateur :
+  l'accès aux données passe uniquement par le lecteur monté.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 

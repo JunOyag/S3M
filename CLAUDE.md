@@ -3,8 +3,8 @@
 Ce dépôt combine deux sous-projets qui doivent être fusionnés côte à côte :
 - `p2p-storage-docs/` (spec pilotée par le code : `docs/`, `schemas/`, `manifest.yml`,
   `impl/layers.yml`, `impl/status.yml`, `impl/TECH_STACK.md`, `AGENTS.md`) — déjà fourni.
-- `impl/core/`, `impl/node/`, `impl/connector/` (ce scaffold) — squelette de code à faire
-  croître phase par phase.
+- `impl/core/`, `impl/protocol/`, `impl/node/`, `impl/connector/` — code Rust à faire
+  croître phase par phase (`impl/protocol` est à créer, voir `impl/TECH_STACK.md`).
 
 **Avant toute action, lis `AGENTS.md` en entier.** Ce fichier CLAUDE.md ne le duplique pas
 (principe du projet : aucun fait à deux endroits) — il ne fait que rappeler les points sur
@@ -13,7 +13,7 @@ lesquels une session Claude Code se trompe le plus souvent.
 ## Règles non négociables (résumé — la source de vérité reste `AGENTS.md`)
 
 1. **Périmètre** : une session ne touche que le sous-répertoire correspondant au
-   `component` de l'id assigné (`core` / `node` / `connector`), plus sa propre entrée dans
+   `component` de l'id assigné (`core` / `protocol` / `node` / `connector`), plus sa propre entrée dans
    `impl/status.yml` et le champ `verified_by` de sa page dans `manifest.yml`. Jamais autre
    chose. Un id `node+connector` = deux tâches séparées, pas une session qui touche les deux
    répertoires.
@@ -34,15 +34,24 @@ lesquels une session Claude Code se trompe le plus souvent.
    tests des invariants explicites + `impl/status.yml` à `done` + `verified_by` renseigné +
    `mkdocs build --strict` toujours vert). Ne jamais marquer `done` sans ces 5 conditions.
 
-## État actuel
+## État actuel (2026-11-19)
 
-- Phase en cours : **Phase 0 — Fondations cryptographiques** (`impl/layers.yml`), tout en
-  `component: core`. Voir `impl/status.yml` pour la liste exacte des ids et leur statut
-  (`not_started` pour tous au démarrage de ce scaffold).
-- `impl/core` contient des stubs annotés (`todo!()`) — un id de la Phase 0 = une fonction à
-  compléter, jamais une réécriture du fichier entier.
-- `impl/node` et `impl/connector` sont des placeholders vides (Phase 2+) — ne pas y toucher
-  avant que la Phase 0 soit `done` pour tous ses ids.
+- **Orchestration** : Claude Code est la seule IA du projet, orchestrateur compris. Les
+  consignes de `.github/agents/` et `.clinerules/` (Copilot, Cline) ne font plus foi.
+- **Spec V3 intégrée** (branche `docs/spec-v3`, entrée « Spec V3 » de `impl/SPEC_GAPS.md`) :
+  Connecteur en Rust natif, plus de WASM, convention KDF unique, `K_block` par position,
+  identité VDF marquée, enveloppe DHT signée.
+- **Phase 0 rouverte** : 9 ids repassent à `not_started` (voir leurs `notes` dans
+  `impl/status.yml`) ; le code V2 existant dans `impl/core` est à mettre à niveau, pas à
+  réécrire. `crypto.identity-derivation` reste `done`.
+- `protocols.stockage-physique` (node) est `done` alors que la Phase 0 ne l'est pas :
+  écart d'ordre hérité, accepté tel quel.
+- `network.dht-directory` reprend de zéro ; l'essai V1 est archivé sur la branche locale
+  `archive/dht-directory-v1` (référence uniquement, jamais fusionnée).
+- `impl/connector` est vide (le TypeScript a été archivé) ; `impl/protocol` n'existe pas
+  encore.
+- **Aucune compilation Rust sans feu vert explicite de l'utilisateur** (Docker prévu pour
+  les builds locaux, voir `impl/TECH_STACK.md`).
 
 ## Commandes utiles
 

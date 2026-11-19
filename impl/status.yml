@@ -36,79 +36,44 @@ entries:
     notes: ''
   crypto.k-attach:
     kind: narrative
-    status: done
-    owner: cline-agent
-    tests:
-      - rfc_vectors::ed25519_to_x25519_matches_libsodium_conversion_vectors
-      - rfc_vectors::pub_conversion_rejects_small_order_points
-      - rfc_vectors::x25519_dh_matches_rfc7748_vectors
-      - rfc_vectors::ed25519_key_derivation_matches_rfc8032_vectors
-      - rfc_vectors::k_attach_is_symmetric_between_user_and_node
-      - rfc_vectors::k_attach_derivation_is_deterministic_and_salt_dependent
-      - rfc_vectors::sig_priv_dispersal_is_deterministic_and_domain_separated
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      Conversion Ed25519->X25519 (graine 32B, clamp(SHA-512(graine)[0..32]),
-      équivalent crypto_sign_ed25519_sk/pk_to_curve25519) + dérivation K_attach
-      (HKDF-SHA256, salt fixé par le Connecteur, info vide) + sig_priv_dispersal
-      (info "dispersal-signing"). Vecteurs externes cités : RFC 7748 §5.2,
-      RFC 8032 §7.1, libsodium test/default/ed25519_convert. derive_sig_priv_user
-      (§3.9) volontairement laissée en todo!() — spec vivant sur
-      network.dht-directory (Phase 2). Voir SPEC_GAPS.md pour le chemin
-      BIP-39 -> graine 32B (non bloquant).
+      Rouvert par la spec V3 (2026-11-19). Étiquette "attach" (fin de l'info vide) ; derive_sig_priv_user reste à faire dans la tâche dht-directory (convention KDF, pub_user en entrée publique). Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.k-block:
     kind: narrative
-    status: done
-    owner: cline-agent
-    tests:
-      - k_block_vectors::k_block_derivation_is_deterministic
-      - k_block_vectors::k_block_differs_per_encryption_salt
-      - k_block_vectors::k_block_differs_per_master_key_version
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      Refonte info=block_hash -> info="p2p-storage/block/v1" (étiquette
-      unique brute, sans block_hash — arbitrage SPEC_GAPS circularité,
-      commit doc e13b2e7, spec k-block.md). Le test
-      k_block_differs_per_block_hash est supprimé (invariant abandonné :
-      clé par élément, révocabilité au niveau de l'élément). Revue
-      cryptographique validée.
+      Rouvert par la spec V3 (2026-11-19). K_block = KDF(master_key, "block", encryption_salt, u32(index)) ; trame 65 536 o, nonce aléatoire, AAD = en-tête de version ; test de mesure de FILE_BLOCK_DATA_BYTES. Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.k-dispersal:
     kind: narrative
-    status: done
-    owner: cline-agent
-    tests:
-      - k_dispersal_vectors::k_dispersal_derivation_is_deterministic
-      - k_dispersal_vectors::k_dispersal_content_is_domain_separated_from_k_attach_and_signing_key
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      Second étage ramené à info="dispersal-block" (retour à la formule ST
-      d'origine — arbitrage SPEC_GAPS circularité, doc e13b2e7) :
-      K_dispersal_block indépendante de block_hash. Le test
-      k_dispersal_block_differs_per_block_hash est supprimé (invariant
-      abandonné). Revue cryptographique validée.
+      Rouvert par la spec V3 (2026-11-19). K_dispersal_block = KDF(K_dispersal_content, "dispersal-block", sel_du_nœud) ; sel porté par Stripe.encryption_salt / DispersalRootPointer.dispersal_root_salt. Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.k-node-self:
     kind: narrative
-    status: done
-    owner: cline-agent
-    tests:
-      - k_node_self_vectors::k_node_self_derivation_is_deterministic
-      - k_node_self_vectors::k_node_self_differs_per_priv_node
-      - k_node_self_vectors::k_node_self_is_domain_separated_from_k_self
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      K_node_self = HKDF-SHA256(priv_node, info="node-recovery"), salt
-      interne par défaut, sortie 32 octets. Symétrique de K_self côté Nœud,
-      dérivable de la seed seule (restauration). Domaine séparé de
-      "attachment-recovery" testé. Dérivation propre au protocole :
-      invariants structurels seuls, graines RFC 8032 en entrée seulement.
+      Rouvert par la spec V3 (2026-11-19). Passage à la convention KDF unique (valeurs de clé modifiées) ; nouveaux vecteurs. Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.k-self:
     kind: narrative
-    status: done
-    owner: cline-agent
-    tests:
-      - k_self_vectors::k_self_derivation_is_deterministic
-      - k_self_vectors::k_self_differs_per_priv_user
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      K_self = HKDF-SHA256(priv_user, info="attachment-recovery"), salt
-      interne par défaut, sortie 32 octets. Ne dépend d'aucune info externe
-      (reconstruction depuis la seed seule). Dérivation propre au protocole :
-      invariants structurels seuls, graines RFC 8032 en entrée seulement.
+      Rouvert par la spec V3 (2026-11-19). Passage à la convention KDF unique (valeurs de clé modifiées) ; nouveaux vecteurs. Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.key-hierarchy:
     kind: narrative
     status: not_started
@@ -147,58 +112,20 @@ entries:
       error.rs : IdentityDerivation, InvalidDerivationIndex.
   crypto.master-key-chain:
     kind: narrative
-    status: done
-    owner: cline-agent
-    tests:
-      - master_key_chain_vectors::flat_rewrap_then_resolve_recovers_historical_keys
-      - master_key_chain_vectors::resolve_stays_single_unwrap_after_many_rotations
-      - master_key_chain_vectors::transplanted_version_fails_tag_verification
-      - master_key_chain_vectors::unknown_version_is_rejected_explicitly
-      - master_key_chain_vectors::chain_entries_carry_their_wrapped_version
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      Passe code effectuée : rewrap_chain_on_rotation (re-wrap plat,
-      maillons triés, 48 o sans en-tête) + resolve_master_key (recherche
-      par version, 1 unwrap, UnknownKeyVersion/UnwrapFailure) — K_wrap
-      réutilisé de symmetric_suite (jamais redérivé), en-tête u16 BE v1 en
-      paramètre (formats-serialisation). Revue cryptographique validée.
+      Rouvert par la spec V3 (2026-11-19). K_wrap = KDF(master_key[vc], "master-key-wrap", —, u16(vw), u16(vc)) ; trame 48 o et AAD inchangées. Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.symmetric-suite:
     kind: narrative
-    status: done
-    owner: cline-agent
-    tests:
-      - labels::info_labels_are_globally_unique
-      - labels::aad_contexts_are_unique
-      - labels::labels_match_the_spec_registry
-      - symmetric_suite_vectors::aead_seal_matches_rfc8439_section_2_8_2
-      - symmetric_suite_vectors::aead_open_rejects_forgery
-      - symmetric_suite_vectors::hkdf_sha256_matches_rfc5869_vectors
-      - symmetric_suite_vectors::hmac_sha256_matches_rfc4231_vectors
-      - symmetric_suite_vectors::sha256_matches_rfc6234_vectors
-      - symmetric_suite_vectors::canonical_encode_matches_spec_layout
-      - symmetric_suite_vectors::k_nonce_matches_generated_composition_vector
-      - symmetric_suite_vectors::k_wrap_matches_generated_composition_vector
-      - symmetric_suite_vectors::k_block_single_label_info_matches_generated_composition_vector
-      - symmetric_suite_vectors::synthetic_nonce_matches_generated_composition_vector
-      - symmetric_suite_vectors::wrap_composition_is_48_octets_without_header
-      - symmetric_suite_vectors::block_frame_matches_generated_composition_vector
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      Revue cryptographique validée (régimes AEAD/HKDF/hash,
-      politique de nonce et nonce synthétique arbitrés, SPEC_GAPS
-      crypto.k-block/k-dispersal résolu). Registre des étiquettes KDF
-      (unicité globale, 13 étiquettes dont la nouvelle
-      p2p-storage/master-key-wrap/v1, exception K_attach réservée à la v1
-      X25519) et registre distinct des contextes d'AAD (master-key-wrap,
-      block, contextes par clé) intégrés à la page ; clé de wrap K_wrap
-      (HKDF sans sel, ChaCha20-Poly1305 nonce nul, wrapped_key 48 o sans
-      en-tête, l'en-tête de version n'entrant que dans l'AAD) spécifiée.
-      Passe code effectuée : primitives liées (crates chacha20poly1305,
-      hkdf, hmac, sha2 — jamais réimplémentées), registres dans
-      src/labels.rs, nonce synthétique et K_wrap dans
-      src/symmetric_suite.rs ; vecteurs RFC 8439 §2.8.2, RFC 5869 A.1-A.3,
-      RFC 4231 TC1-TC4, RFC 6234 §8.5 + compositions générées par
-      tests/vectors/gen_symmetric_suite_vectors.py (cryptography,
-      indépendante du code testé) — 15 tests verts (cargo test).
-      verified_by renseigné dans manifest.yml (15 identifiants de test).
+      Rouvert par la spec V3 (2026-11-19). Convention KDF unique (préfixe p2p-storage/kdf/v1, L sur 4 o BE, IKM = secret seul) ; retrait du nonce synthétique et des étiquettes p2p-storage/block/v1, p2p-storage/synthetic-nonce/v1, p2p-storage/master-key-wrap/v1 ; K_wrap dans la convention ; nouveaux vecteurs. Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   deploiement.disaster-recovery:
     kind: narrative
     status: not_started
@@ -330,68 +257,27 @@ entries:
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Trois tâches (impl/layers.yml) : protocol (enveloppes, vérification,
+      TTL/lissage, séquences), puis node, puis connector. Reprise de zéro
+      décidée le 2026-11-19 ; essai V1 archivé sur la branche locale
+      archive/dht-directory-v1 (référence uniquement).
   network.vdf-identity:
     kind: narrative
-    status: done
-    owner: cline-agent
-    tests:
-      - vdf_smoke::roundtrip_verifies_with_protocol_constants
-      - vdf_smoke::roundtrip_verifies_with_fast_t
-      - vdf_smoke::proof_is_rejected_for_another_identity
-      - vdf_smoke::proof_is_rejected_when_a_byte_is_altered
-      - vdf_smoke::proof_is_rejected_with_wrong_t
-      - vdf_smoke::proof_is_rejected_with_nonzero_recursion
-      - vdf_smoke::verification_with_t_max_is_bounded_and_rejected
-      - vdf_smoke::empty_and_truncated_proofs_are_rejected
-      - vdf_smoke::random_bytes_proof_is_rejected
-      - vdf_smoke::t_zero_is_rejected_before_any_ffi_call
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      Arbitrage SPEC_GAPS du 17/10/2026 appliqué intégralement : binding FFI
-      vers chiavdf 1.1.14 (create_discriminant / prove / verify_n_wesolowski),
-      AUCUNE réimplémentation (CLAUDE.md règle 5). Constantes de protocole
-      dans vdf.rs : DISCRIMINANT_BITS=1024, T=5_400_000, RECURSION=0. Delta
-      recalcule par le verificateur (SHA-256(pub_key) -> HashPrime 1024, Δ non
-      transmis) ; forme de départ BQFC 0x08 = generateur (2,1,c), designation
-      confirmee dans cpp/bqfc.c (BQFC_IS_GEN = 1<<3) et note "a confirmer"
-      levee dans la page. Garde-fous avant tout appel FFI : y=100 o, pi=100 o
-      (blob 200 o), x_s=100 o et discriminant=128 o fixes par le type, T=0
-      rejete. Feature cargo `vdf` (optionnelle, hors wasm32, non active par
-      defaut) : sans elle (dev local) ou en WASM, CoreError::VdfUnavailable ;
-      cargo test/clippy locaux restent verts sans outillage C++. Builds et
-      tests `--features vdf` en CI, matrix .github/workflows/vdf-identity.yml
-      (windows-latest MSVC+LLVM+DLL MPIR, ubuntu x86/ARM, macos-latest gmp),
-      conformement a l'arbitrage. Validation locale : suite complete verte
-      contre un stub temporaire de la crate (memes signatures, semantique
-      falsifiee) + cargo test par defaut + clippy -D warnings + build
-      wasm32-unknown-unknown --features wasm,vdf (chiavdf jamais compile en
-      WASM) ; la semantique reelle chiavdf est validee par la CI.
+      Rouvert par la spec V3 (2026-11-19). Identité marquée key_algorithm || clé (seul tag 0 accepté, 1/2 rejetés « algorithme non supporté ») ; preuve User sur 0x00 || sig_pub_user ; nouveaux vecteurs. Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   network.vdf-verifier-pure:
     kind: narrative
-    status: done
-    owner: codex-agent
-    tests:
-      - vdf_pure::tests::accepts_chia_reference_vector_and_rejects_altered_bytes
-      - vdf_pure::tests::rejects_wrong_challenge_wrong_iterations_and_malformed_forms
-      - vdf_pure::tests::identity_api_enforces_lengths_and_tagged_identity_shape
-      - vdf_pure::tests::mpir_cross_check::verifies_chia_reference_vector_with_mpir
-      - vdf_pure::tests::mpir_cross_check::tagged_identity_mpir_fixture_matches_and_mutations_are_rejected
-      - vdf_pure::tests::wasm_mpir_fixture::verifies_mpir_fixture_and_rejects_y_and_public_key_mutations
-      - vdf_pure_wasm::executes_pure_verifier_on_embedded_chia_vector_for_wrong_identity
+    status: not_started
+    owner: null
+    tests: []
     notes: >-
-      Vecteur Chia et fixture MPIR taguée T=100 vérifiés. Le test MPIR
-      compare la fixture versionnée
-      tests/fixtures/vdf_tagged_identity_t100.hex à la sortie chiavdf::prove,
-      puis confirme l'acceptation commune et le rejet par MPIR et Rust des
-      mutations d'un octet de y et de la clé publique. Le rejet d'un
-      encodage non canonique toléré par MPIR est vérifié séparément. Le test
-      wasm-bindgen-test accepte la même fixture et rejette ces mutations sous
-      WASM/Node. Run GitHub Actions 39279840705 : 3 tests MPIR réussis
-      (0 échec, 3,83 s) et 1 test WASM réussi (14,81 s). Vérifications
-      locales : mêmes tests MPIR et WASM réussis, tests unitaires VDF purs
-      réussis, cargo clippy --features vdf --all-targets -- -D warnings et
-      mkdocs build --strict réussis. L'id et verified_by sont renseignés
-      après confirmation des résultats CI.
+      Rouvert par la spec V3 (2026-11-19). Réduit à « Instrumentation et fixtures VDF » : retirer src/vdf_pure.rs, la feature wasm et tests/vdf_pure_wasm.rs ; fixtures T=100 en tag 0 avec provenance ; mesures par phase. Le code V2 existant
+      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   node.AttachedUser:
     kind: schema
     status: not_started
@@ -581,6 +467,84 @@ entries:
     tests: []
     notes: ''
   securite.pos-challenges:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.AttachmentRecord:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.DhtEnvelope:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.DispersalEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.DispersalRootPointer:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.EmergencyEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.MigrationPointerPayload:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.NodeEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.NodeSnapshotPointer:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.SignedMigrationPointer:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.UserEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.UserEntryPlaintext:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  network.VdfProof:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ''
+  protocols.ecriture-differee:
     kind: narrative
     status: not_started
     owner: null
