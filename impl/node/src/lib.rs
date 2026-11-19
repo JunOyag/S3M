@@ -8,6 +8,7 @@
 pub mod dht_directory;
 pub mod dispersion;
 pub mod emergency;
+pub mod migration;
 pub mod quota_sync;
 pub mod tombstones;
 pub mod volatility;

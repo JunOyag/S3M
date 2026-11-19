@@ -8,5 +8,6 @@ pub mod dht_directory;
 pub mod emergency;
 pub mod fs;
 pub mod integrity;
+pub mod migration;
 pub mod write_back;
 pub mod write_queue;

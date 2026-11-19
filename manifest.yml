@@ -725,6 +725,9 @@ pages:
     title: "Migration vers un Nouveau Nœud"
     section: "§3.7.1"
     refs: [crypto.k-attach, crypto.k-dispersal, protocols.dispersion-transactionnelle, securite.incidents-compromissions]
+    verified_by:
+      - migration::connector_hands_off_root_and_content_key_but_never_k_attach
+      - migration::new_node_rebuilds_from_parity_and_signs_with_its_own_key
 
   - id: protocols.suppression-dispersal
     kind: narrative
