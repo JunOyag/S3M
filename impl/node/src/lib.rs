@@ -9,6 +9,7 @@ pub mod blacklist;
 pub mod dht_directory;
 pub mod dispersion;
 pub mod emergency;
+pub mod incidents;
 pub mod migration;
 pub mod pos;
 pub mod quota_sync;

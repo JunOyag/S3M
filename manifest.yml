@@ -916,6 +916,11 @@ pages:
     title: "Gestion des Incidents & Compromissions"
     section: "§5.2"
     refs: [crypto.master-key-chain, protocols.migration-noeud, protocols.espace-secours, crypto.identity-derivation]
+    verified_by:
+      - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
+      - incidents::node_rotation_publishes_a_pointer_signed_by_the_old_recovery_key
+      - dht::migration_pointer_rules
+      - bootstrap::migration_pointer_is_followed_one_hop_only
 
   - id: securite.blacklist-fraude
     kind: narrative

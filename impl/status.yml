@@ -852,10 +852,22 @@ entries:
       (node.BlacklistedPartner). Testé sur un stockage physique réel.
   securite.incidents-compromissions:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
+      - incidents::node_rotation_publishes_a_pointer_signed_by_the_old_recovery_key
+      - dht::migration_pointer_rules
+      - bootstrap::migration_pointer_is_followed_one_hop_only
+    notes: >-
+      connector : impl/connector/src/incidents.rs, rotation User (index
+      suivant ou nouvelle mnémonique, nouvelle master_key, re-wrap plat de la
+      chaîne, anciens blocs lisibles sans rechiffrement). node :
+      impl/node/src/incidents.rs, identité suivante et clé de secours miroir
+      de la même seed, migration_pointer signé par l'ancienne clé de secours
+      (vérification, séquence et suivi d'un seul saut déjà couverts par
+      network.dht-directory et network.bootstrap). Purge des absents à 6 mois
+      : protocols.volatilite-reparation.
   securite.integrite-autoreparation:
     kind: narrative
     status: done
