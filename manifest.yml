@@ -521,7 +521,7 @@ pages:
   - id: protocols.acces-applicatif
     kind: narrative
     path: 04-protocols/acces-applicatif.md
-    title: "Accès Applicatif — Lecteur Monté WebDAV"
+    title: "Accès Applicatif — Lecteur Monté natif"
     section: "§3.12"
     refs: [fs.DirectoryEntry, protocols.write-queue, protocols.espace-secours]
 
@@ -552,6 +552,13 @@ pages:
     title: "Espace de Secours — Écriture d'Urgence"
     section: "§3.12.4"
     refs: [emergency.EmergencyManifest, protocols.write-queue, crypto.k-attach]
+
+  - id: protocols.ecriture-differee
+    kind: narrative
+    path: 04-protocols/ecriture-differee.md
+    title: "Écriture par plages et synchronisation différée"
+    section: "§3.12.5 (V3)"
+    refs: [protocols.acces-applicatif, protocols.write-queue, protocols.fs-structure, crypto.k-block, protocols.tombstones, deploiement.packaging]
 
   - id: protocols.fs-structure
     kind: narrative

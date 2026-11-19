@@ -42,12 +42,18 @@ appareil a écrit entre-temps. Résolution par **dernier écrit gagne**
 élément concerné — le fichier perdant est conservé hors arborescence
 (suffixe de conflit) plutôt que silencieusement écrasé.
 
-## Taille limite
+## Taille limite {: #taille-limite }
 
 `Q_max = 4 GiO` par défaut, paramétrable via le dashboard Connecteur. Ce
 budget est **partagé** avec
 [`protocols.espace-secours`](espace-secours.md) — seule la stratégie de
 dispersion diffère selon la connectivité disponible.
+
+Le budget `Q_max` et l'**espace de travail** de reconstitution des fichiers
+([`protocols.ecriture-differee`](ecriture-differee.md)) sont **deux budgets
+indépendants** : le second est plafonné par l'espace disque local libre
+moins une réserve réglable (`workspace_reserve_bytes`), et non par
+`Q_max`.
 
 ## Gestion du quota multi-Connecteurs
 

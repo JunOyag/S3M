@@ -1,17 +1,32 @@
 ---
 id: protocols.acces-applicatif
 kind: narrative
-title: "Accès Applicatif — Lecteur Monté WebDAV"
+title: "Accès Applicatif — Lecteur Monté natif"
 section: "§3.12"
 status: draft
 verified_by: []
 ---
 
-# Accès Applicatif — Lecteur Monté (WebDAV) & Récupération Paresseuse
+# Accès Applicatif — Lecteur Monté & Récupération Paresseuse
 
-Le Connecteur expose les données de l'utilisateur sous forme d'un lecteur
-réseau mappé/monté via WebDAV, permettant une navigation standard dans un
-explorateur de fichiers.
+Le Connecteur expose les données de l'utilisateur sous forme d'un **lecteur
+monté natif**, via un pilote de système de fichiers en espace utilisateur,
+derrière un **trait de système de fichiers commun** dans le moteur :
+
+- **WinFsp** sous Windows — cible de la première version ;
+- **FUSE** sous Linux, puis macOS (macFUSE ou FUSE-T, choix à trancher à ce
+  moment) — ajoutés ensuite sans modifier le moteur.
+
+Le moteur n'a qu'une implémentation de la logique de fichiers ; chaque
+système fournit son backend. **Aucun service réseau n'est exposé pour
+l'accès aux fichiers** (la V2 prévoyait WebDAV, retiré en V3). Prérequis
+d'installation : WinFsp ou FUSE — le Connecteur n'est donc plus un
+exécutable entièrement autonome
+([`deploiement.packaging`](../07-deploiement/packaging.md)).
+
+Les écritures du lecteur se font par plages d'octets sur une copie locale
+reconstituée, synchronisée de façon différée — voir
+[`protocols.ecriture-differee`](ecriture-differee.md).
 
 ## Chemin normal (direct, lecture et écriture)
 

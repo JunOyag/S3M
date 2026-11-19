@@ -14,7 +14,7 @@ verified_by: []
 | **Bloc** | Unité de stockage fixe, 64 KiO | [`overview.architecture`](architecture.md) |
 | **Stripe** | k blocs de données + coef×k blocs de parité | [`dispersal.Stripe`](../02-schemas/dispersal/Stripe.md) |
 | **Nœud / Node** | Hébergeur — conserve la copie locale intégrale des données | [`node.NodeManifest`](../02-schemas/node/NodeManifest.md) |
-| **Connecteur** | Client utilisateur, expose un lecteur WebDAV | [`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md) |
+| **Connecteur** | Client utilisateur (binaire Rust natif), expose un lecteur monté (WinFsp / FUSE) | [`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md) |
 | **Partenaire (troc)** | Nœud tiers hébergeant des fragments de parité | [`dispersal.Partner`](../02-schemas/dispersal/Partner.md) |
 | **DHT** | Annuaire Kademlia, indexé par Identité | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
 | **VDF** | Preuve de délai vérifiable, anti-Sybil | [`network.vdf-identity`](../01-network-dht/vdf-identity.md) |
