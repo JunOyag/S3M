@@ -36,21 +36,21 @@ lesquels une session Claude Code se trompe le plus souvent.
 
 ## État actuel (2026-11-19)
 
-- **Orchestration** : Claude Code est la seule IA du projet, orchestrateur compris. Les
-  consignes de `.github/agents/` et `.clinerules/` (Copilot, Cline) ne font plus foi.
-- **Spec V3 intégrée** (branche `docs/spec-v3`, entrée « Spec V3 » de `impl/SPEC_GAPS.md`) :
-  Connecteur en Rust natif, plus de WASM, convention KDF unique, `K_block` par position,
-  identité VDF marquée, enveloppe DHT signée.
-- **Phase 0 terminée** (11 ids `done`, spec V3) et **Phase 1 terminée** : 41 types
-  FlatBuffers générés dans `impl/protocol` (`bash impl/protocol/gen.sh`, flatc 23.5.26
-  sous Docker). **Phase 2 terminée** (dht-directory, bootstrap, stockage-physique).
-  Prochaine phase : Phase 3 (`impl/layers.yml`).
-- `protocols.stockage-physique` (node) était `done` avant la Phase 0 : écart d'ordre hérité,
-  accepté tel quel.
-- L'essai V1 de `network.dht-directory` reste archivé sur la branche locale
-  `archive/dht-directory-v1` (référence uniquement, jamais fusionnée).
-- Builds : `cargo test` en local (Windows) ; tests `--features vdf` et clippy associé via
-  `bash impl/docker-test.sh` (Docker).
+- **Orchestration** : Claude Code est la seule IA du projet, orchestrateur compris.
+- **Spec V3 intégrée** (entrée « Spec V3 » de `impl/SPEC_GAPS.md`).
+- **Phases 0 à 6 implémentées** (logique testée) ; voir `impl/status.yml` pour le détail.
+  Restent `in_progress` : `protocols.acces-applicatif` (backends WinFsp/FUSE, protocole
+  d'échange de blocs) et `deploiement.packaging` (binaires, serveur HTTP, dashboards,
+  image Docker).
+- **Manque transverse** : le protocole réseau d'échange de blocs Connecteur ↔ Nœud ↔
+  partenaires n'est pas spécifié (`impl/SPEC_GAPS.md`) ; les ids qui en dépendent livrent
+  leur logique derrière des interfaces (`BlockSource`, `ReplaySink`…), testée sans réseau.
+  Seule la DHT (libp2p Kademlia) circule réellement sur le réseau.
+- **Phase 7 (post-quantique) reportée** : optionnelle pour un MVP et contraire à la V3
+  (seul le tag 0 est accepté).
+- L'essai V1 de `network.dht-directory` reste archivé sur `archive/dht-directory-v1`.
+- Builds : `cargo test` en local (Windows) ; tests `--features vdf` via
+  `bash impl/docker-test.sh` ; types FlatBuffers via `bash impl/protocol/gen.sh`.
 
 ## Commandes utiles
 

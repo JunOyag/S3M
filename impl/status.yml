@@ -9,31 +9,51 @@ entries:
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Reporté (2026-11-19) : Phase 7 optionnelle pour un MVP, et la spec V3
+      n'accepte que le tag key_algorithm 0 (tags 1 et 2 rejetés « algorithme
+      non supporté »). À ouvrir avec une révision de protocole, en liant des
+      bibliothèques ML-KEM / ML-DSA auditées (jamais réimplémentées).
   agilite.kem-vs-nike:
     kind: narrative
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Reporté (2026-11-19) : Phase 7 optionnelle pour un MVP, et la spec V3
+      n'accepte que le tag key_algorithm 0 (tags 1 et 2 rejetés « algorithme
+      non supporté »). À ouvrir avec une révision de protocole, en liant des
+      bibliothèques ML-KEM / ML-DSA auditées (jamais réimplémentées).
   agilite.migration-vehicule:
     kind: narrative
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Reporté (2026-11-19) : Phase 7 optionnelle pour un MVP, et la spec V3
+      n'accepte que le tag key_algorithm 0 (tags 1 et 2 rejetés « algorithme
+      non supporté »). À ouvrir avec une révision de protocole, en liant des
+      bibliothèques ML-KEM / ML-DSA auditées (jamais réimplémentées).
   agilite.signature-mldsa:
     kind: narrative
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Reporté (2026-11-19) : Phase 7 optionnelle pour un MVP, et la spec V3
+      n'accepte que le tag key_algorithm 0 (tags 1 et 2 rejetés « algorithme
+      non supporté »). À ouvrir avec une révision de protocole, en liant des
+      bibliothèques ML-KEM / ML-DSA auditées (jamais réimplémentées).
   agilite.tag-hybride:
     kind: narrative
     status: not_started
     owner: null
     tests: []
-    notes: ''
+    notes: >-
+      Reporté (2026-11-19) : Phase 7 optionnelle pour un MVP, et la spec V3
+      n'accepte que le tag key_algorithm 0 (tags 1 et 2 rejetés « algorithme
+      non supporté »). À ouvrir avec une révision de protocole, en liant des
+      bibliothèques ML-KEM / ML-DSA auditées (jamais réimplémentées).
   crypto.k-attach:
     kind: narrative
     status: done
