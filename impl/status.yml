@@ -87,12 +87,15 @@ entries:
       dans impl/ est à mettre à niveau, pas à réécrire de zéro.
   crypto.k-self:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - k_self_vectors::k_self_derivation_is_deterministic
+      - k_self_vectors::k_self_differs_per_priv_user
+      - k_self_vectors::k_self_matches_generated_vector
     notes: >-
-      Rouvert par la spec V3 (2026-11-19). Passage à la convention KDF unique (valeurs de clé modifiées) ; nouveaux vecteurs. Le code V2 existant
-      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
+      Spec V3 : K_self = KDF(priv_user, "attachment-recovery") via
+      symmetric_suite::kdf. Vecteur généré par cryptography.
   crypto.key-hierarchy:
     kind: narrative
     status: not_started

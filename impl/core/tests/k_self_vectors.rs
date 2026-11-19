@@ -16,6 +16,8 @@
 
 use p2p_storage_core::k_self::derive_k_self;
 
+include!("vectors/symmetric_suite_expected.rs");
+
 /// RFC 8032 §7.1 TEST 1 — graine d'entrée seulement.
 const USER_SEED_A: [u8; 32] = [
     0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
@@ -45,4 +47,11 @@ fn k_self_differs_per_priv_user() {
     let k_a = derive_k_self(&USER_SEED_A).expect("HKDF");
     let k_b = derive_k_self(&USER_SEED_B).expect("HKDF");
     assert_ne!(k_a, k_b);
+}
+
+/// Spec V3 — valeur exacte contre `cryptography` (convention KDF unique).
+#[test]
+fn k_self_matches_generated_vector() {
+    let input: [u8; 32] = hex::decode(FX_PRIV_USER_HEX).unwrap().try_into().unwrap();
+    assert_eq!(hex::encode(derive_k_self(&input).expect("KDF")), K_SELF_HEX);
 }
