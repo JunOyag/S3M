@@ -756,10 +756,23 @@ entries:
     notes: ''
   protocols.write-queue:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - write_queue::q_max_budget_is_enforced
+      - write_queue::update_entry_without_prior_block_write_is_refused
+      - write_queue::replay_is_strictly_ordered_and_stops_at_first_failure
+      - write_queue::conflict_is_detected_and_resolved_last_writer_wins_keeping_loser
+      - write_queue::merged_view_and_persistence_roundtrip
+    notes: >-
+      impl/connector/src/write_queue.rs : budget Q_max, mise en file sans
+      toucher fs_root_hash, update_entry refusé sans écriture préalable de son
+      premier bloc, rejeu strictement par horodatage arrêté à la première
+      mutation non confirmée, conflit détecté par base_fs_root_hash et résolu
+      dernier-écrit-gagne avec perdant conservé sous suffixe
+      .conflit-<modified_at>, vue fusionnée par chemin, persistance au format
+      fs.WriteQueue. Envoi au Nœud derrière ReplaySink (protocole d'échange,
+      SPEC_GAPS).
   securite.blacklist-fraude:
     kind: narrative
     status: not_started

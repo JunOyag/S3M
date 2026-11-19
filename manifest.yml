@@ -758,6 +758,12 @@ pages:
     title: "Écriture Hors-Ligne — WriteQueue"
     section: "§3.12.2"
     refs: [fs.WriteQueue, protocols.quota-sync]
+    verified_by:
+      - write_queue::q_max_budget_is_enforced
+      - write_queue::update_entry_without_prior_block_write_is_refused
+      - write_queue::replay_is_strictly_ordered_and_stops_at_first_failure
+      - write_queue::conflict_is_detected_and_resolved_last_writer_wins_keeping_loser
+      - write_queue::merged_view_and_persistence_roundtrip
 
   - id: protocols.quota-sync
     kind: narrative
