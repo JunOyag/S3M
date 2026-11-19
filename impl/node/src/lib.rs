@@ -10,6 +10,7 @@ pub mod dispersion;
 pub mod emergency;
 pub mod quota_sync;
 pub mod tombstones;
+pub mod volatility;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};

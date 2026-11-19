@@ -775,10 +775,20 @@ entries:
       (SPEC_GAPS).
   protocols.volatilite-reparation:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - volatility::repair_triggers_when_available_parity_drops_below_k_plus_2
+      - volatility::partners_offline_more_than_six_months_are_purged
+      - volatility::regenerated_fragments_match_originals_and_go_to_new_distinct_partners
+      - volatility::surplus_is_resolved_when_the_original_partner_returns
+    notes: >-
+      impl/node/src/volatility.rs : analyse de disponibilité des fragments de
+      parité, réparation dès moins de k+2 fragments disponibles (seuil retenu,
+      page précisée), régénération depuis la copie locale des k blocs,
+      nouveaux partenaires distincts, purge après 6 mois hors ligne,
+      suppression des copies temporaires au retour du partenaire d'origine.
+      Envoi réel des fragments : protocole d'échange (SPEC_GAPS).
   protocols.write-queue:
     kind: narrative
     status: done

@@ -22,6 +22,12 @@ minimal k, le nœud reconstruit le stripe localement (à partir de sa copie
 des k blocs de données, voir
 [`securite.pos-challenges`](../05-securite/pos-challenges.md#calcul-du-challenge))
 et réémet les fragments manquants vers de nouveaux partenaires.
+Seuil retenu à l'implémentation (2026-11-19) : réparation dès que moins de
+**k + 2** fragments de parité sont disponibles — même valeur que le seuil de
+confirmation de
+[`protocols.dispersion-transactionnelle`](dispersion-transactionnelle.md).
+Les nouveaux partenaires sont distincts de tous ceux qui hébergent déjà un
+fragment de la stripe.
 
 ## Résolution du surplus
 

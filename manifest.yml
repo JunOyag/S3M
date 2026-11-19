@@ -840,6 +840,11 @@ pages:
     title: "Gestion de la Volatilité & Sur-redondance"
     section: "§4.2"
     refs: [protocols.erasure-coding]
+    verified_by:
+      - volatility::repair_triggers_when_available_parity_drops_below_k_plus_2
+      - volatility::partners_offline_more_than_six_months_are_purged
+      - volatility::regenerated_fragments_match_originals_and_go_to_new_distinct_partners
+      - volatility::surplus_is_resolved_when_the_original_partner_returns
 
   - id: protocols.tombstones
     kind: narrative
