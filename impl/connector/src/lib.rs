@@ -3,6 +3,7 @@
 //!
 //! Un module = un id `component: connector` de `impl/layers.yml`.
 
+pub mod access;
 pub mod bootstrap;
 pub mod dht_directory;
 pub mod emergency;

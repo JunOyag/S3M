@@ -595,10 +595,20 @@ entries:
       (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   protocols.acces-applicatif:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: in_progress
+    owner: claude-code
+    tests:
+      - access::paths_resolve_through_directories
+      - access::reading_one_file_fetches_only_the_blocks_on_its_path
+      - access::missing_node_block_is_served_by_the_rescue_path
+    notes: >-
+      Moteur livré (impl/connector/src/access.rs) : résolution de chemins depuis
+      fs_root_hash, récupération paresseuse, chemin normal / chemin de secours
+      avec vérification d'intégrité, convention mime inode/directory. Restent
+      pour clore : backends du lecteur monté (WinFsp puis FUSE) et protocole
+      d'échange de blocs Connecteur <-> Nœud <-> partenaires (SPEC_GAPS), dont
+      dépendent aussi l'étape 4 de network.bootstrap et l'envoi réel de
+      plusieurs ids de Phase 3-4.
   protocols.dispersion-transactionnelle:
     kind: narrative
     status: done

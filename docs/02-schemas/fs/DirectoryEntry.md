@@ -40,6 +40,13 @@ noms, tailles, chaînage.
   [`protocols.fs-structure`](../../04-protocols/fs-structure.md) pour la
   vue d'ensemble complète de l'encodage FS.
 
+## Fichier ou sous-répertoire
+
+Le schéma ne porte pas de champ de type : un sous-répertoire est une entrée
+de `mime_type = "inode/directory"` dont `first_block_hash` pointe vers un
+[`fs.DirectoryBlock`](DirectoryBlock.md) (convention retenue le 2026-11-19,
+`protocols.acces-applicatif`).
+
 ## Capacité
 
 Mesure (Phase 1, `impl/protocol`, test `layout::directory_block_reference_capacity_is_measured`) :
