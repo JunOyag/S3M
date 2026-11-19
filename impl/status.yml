@@ -838,10 +838,18 @@ entries:
       SPEC_GAPS).
   securite.blacklist-fraude:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - blacklist::fraud_destroys_all_data_of_the_partner_and_blacklists_it
+      - blacklist::blacklist_is_permanent_and_survives_manifest_roundtrip
+    notes: >-
+      impl/node/src/blacklist.rs : sur fraude PoS, effacement en bloc des
+      conteneurs du partenaire (PhysicalStore::remove_owner, données des
+      autres intactes), compte de troc remis à zéro, aucun avis ni tombstone,
+      liste des fragments à réparer immédiatement, inscription permanente et
+      idempotente dans la liste noire, sérialisée dans le NodeManifest
+      (node.BlacklistedPartner). Testé sur un stockage physique réel.
   securite.incidents-compromissions:
     kind: narrative
     status: not_started

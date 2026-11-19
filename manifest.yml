@@ -923,6 +923,9 @@ pages:
     title: "Rupture de Confiance & Liste Noire"
     section: "§5.3"
     refs: [node.BlacklistedPartner, network.vdf-identity, protocols.dispersion-transactionnelle, protocols.stockage-physique]
+    verified_by:
+      - blacklist::fraud_destroys_all_data_of_the_partner_and_blacklists_it
+      - blacklist::blacklist_is_permanent_and_survives_manifest_roundtrip
 
   - id: securite.integrite-autoreparation
     kind: narrative

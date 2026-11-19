@@ -5,6 +5,7 @@
 //! append-only mutation log is compacted into a SQLite snapshot at the same
 //! thresholds used by the NodeManifest mutation cycle.
 
+pub mod blacklist;
 pub mod dht_directory;
 pub mod dispersion;
 pub mod emergency;
