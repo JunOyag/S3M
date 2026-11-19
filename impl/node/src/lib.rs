@@ -5,6 +5,8 @@
 //! append-only mutation log is compacted into a SQLite snapshot at the same
 //! thresholds used by the NodeManifest mutation cycle.
 
+pub mod dht_directory;
+
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
