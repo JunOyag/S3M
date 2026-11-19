@@ -402,3 +402,19 @@ fn migration_pointer_rules() {
         Err(DhtError::BadSignature)
     ));
 }
+
+/// L'adaptateur déduit le type d'entrée du `file_identifier` et l'expiration
+/// du `timestamp` ; un payload sans identifiant connu est rejeté.
+#[test]
+fn inspect_envelope_reports_kind_timestamp_seq_and_expiry() {
+    let pk = pub_of(&SEED);
+    let s = inspect_envelope(&signed_user(&user_payload(&pk, 0, &pk, GOOD_Y, NOW))).unwrap();
+    assert_eq!((s.kind, s.timestamp, s.seq), (EntryKind::User, NOW, None));
+    assert_eq!(s.expires_at(), NOW + TTL_TEN_YEARS_S);
+    let e = inspect_envelope(&signed_user(&emergency_payload(&pk, 9))).unwrap();
+    assert_eq!((e.kind, e.seq), (EntryKind::Emergency, Some(9)));
+    assert!(matches!(
+        inspect_envelope(&build_envelope(b"pas un flatbuffer", &[0; 64])),
+        Err(DhtError::WrongFileIdentifier) | Err(DhtError::Format(_))
+    ));
+}

@@ -344,6 +344,57 @@ pub fn verify_envelope(
     Ok(payload.to_vec())
 }
 
+/// Résumé d'une enveloppe **non vérifiée** : type (déduit du
+/// `file_identifier` du payload), `timestamp` et `seq` éventuel. Sert à
+/// l'adaptateur DHT pour choisir la règle de vérification et la date
+/// d'expiration ; ne remplace jamais [`verify_envelope`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnvelopeSummary {
+    pub kind: EntryKind,
+    pub timestamp: u64,
+    pub seq: Option<u64>,
+}
+
+impl EnvelopeSummary {
+    /// Instant Unix d'expiration : `timestamp + TTL du type`.
+    pub fn expires_at(&self) -> u64 {
+        self.timestamp.saturating_add(self.kind.ttl_seconds())
+    }
+}
+
+/// Lit le type, le `timestamp` et le `seq` d'une enveloppe.
+pub fn inspect_envelope(envelope: &[u8]) -> Result<EnvelopeSummary, DhtError> {
+    let env = flatbuffers::root::<dht::DhtEnvelope>(envelope)
+        .map_err(|_| DhtError::Format("DhtEnvelope"))?;
+    let payload = env
+        .payload()
+        .ok_or(DhtError::Format("payload absent"))?
+        .bytes();
+    let has =
+        |k: EntryKind| flatbuffers::buffer_has_identifier(payload, k.file_identifier(), false);
+    let bad = |what| move |_| DhtError::Format(what);
+    let summary = if has(EntryKind::Node) {
+        let e = dht::root_as_node_entry(payload).map_err(bad("NodeEntry"))?;
+        (EntryKind::Node, e.timestamp(), None)
+    } else if has(EntryKind::User) {
+        let e = dht::root_as_user_entry(payload).map_err(bad("UserEntry"))?;
+        (EntryKind::User, e.timestamp(), None)
+    } else if has(EntryKind::Dispersal) {
+        let e = dht::root_as_dispersal_entry(payload).map_err(bad("DispersalEntry"))?;
+        (EntryKind::Dispersal, e.timestamp(), None)
+    } else if has(EntryKind::Emergency) {
+        let e = dht::root_as_emergency_entry(payload).map_err(bad("EmergencyEntry"))?;
+        (EntryKind::Emergency, e.timestamp(), Some(e.seq()))
+    } else {
+        return Err(DhtError::WrongFileIdentifier);
+    };
+    Ok(EnvelopeSummary {
+        kind: summary.0,
+        timestamp: summary.1,
+        seq: summary.2,
+    })
+}
+
 /// Vérifie le `migration_pointer` d'une entrée Node : signature par
 /// `pub_node_recovery` sous [`SIG_LABEL_MIGRATION_POINTER`], `old_node_id`
 /// égal au `node_id` de l'entrée porteuse, `seq` strictement croissant.
