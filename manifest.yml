@@ -746,6 +746,11 @@ pages:
     title: "Vérification d'Intégrité & Gestion des Incohérences"
     section: "§3.12.1"
     refs: [protocols.acces-applicatif, securite.integrite-autoreparation]
+    verified_by:
+      - integrity::correct_block_is_served_without_reconstruction
+      - integrity::transient_mismatch_is_resolved_by_retrying_the_node
+      - integrity::persistent_mismatch_is_repaired_from_parity_and_reported
+      - integrity::unrecoverable_block_is_marked_corrupted
 
   - id: protocols.write-queue
     kind: narrative

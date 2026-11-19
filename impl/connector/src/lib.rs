@@ -6,3 +6,4 @@
 pub mod bootstrap;
 pub mod dht_directory;
 pub mod fs;
+pub mod integrity;

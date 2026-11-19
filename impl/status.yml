@@ -680,10 +680,20 @@ entries:
       SPEC_GAPS (protocole d'échange).
   protocols.integrite-lecture:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - integrity::correct_block_is_served_without_reconstruction
+      - integrity::transient_mismatch_is_resolved_by_retrying_the_node
+      - integrity::persistent_mismatch_is_repaired_from_parity_and_reported
+      - integrity::unrecoverable_block_is_marked_corrupted
+    notes: >-
+      impl/connector/src/integrity.rs : vérification SHA-256 de chaque bloc
+      reçu, nouvelles tentatives auprès du Nœud, puis reconstruction par la
+      parité ; copie du Nœud corrompue -> version reconstruite servie et
+      incident journalisé pour le Nœud ; sinon bloc irrécupérable marqué
+      corrompu localement. Accès aux blocs derrière le trait BlockSource
+      (transport : protocole d'échange, SPEC_GAPS).
   protocols.migration-noeud:
     kind: narrative
     status: not_started
