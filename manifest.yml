@@ -789,6 +789,13 @@ pages:
     title: "Écriture par plages et synchronisation différée"
     section: "§3.12.5 (V3)"
     refs: [protocols.acces-applicatif, protocols.write-queue, protocols.fs-structure, crypto.k-block, protocols.tombstones, deploiement.packaging]
+    verified_by:
+      - write_back::debounce_delay_follows_the_spec_formula
+      - write_back::timer_restarts_on_each_write_and_fsync_does_not_trigger
+      - write_back::continuous_writes_are_bounded_by_the_15_minute_max_wait
+      - write_back::sync_now_flushes_everything_immediately
+      - write_back::workspace_budget_is_disk_minus_reserve
+      - write_back::old_chain_is_tombstoned_only_after_new_chain_is_confirmed
 
   - id: protocols.fs-structure
     kind: narrative

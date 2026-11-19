@@ -927,7 +927,21 @@ entries:
       (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   protocols.ecriture-differee:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - write_back::debounce_delay_follows_the_spec_formula
+      - write_back::timer_restarts_on_each_write_and_fsync_does_not_trigger
+      - write_back::continuous_writes_are_bounded_by_the_15_minute_max_wait
+      - write_back::sync_now_flushes_everything_immediately
+      - write_back::workspace_budget_is_disk_minus_reserve
+      - write_back::old_chain_is_tombstoned_only_after_new_chain_is_confirmed
+    notes: >-
+      impl/connector/src/write_back.rs : délai de silence D = clamp(60 s + 0,5
+      s/MiO, 60, 300) relancé à chaque écriture, attente maximale 15 min,
+      fsync sans effet, synchronisation immédiate sur démontage / arrêt /
+      action utilisateur, budget d'espace de travail (disque libre moins
+      réserve, indépendant de Q_max, sinon disque plein), ancienne chaîne
+      tombstonée seulement après confirmation de la nouvelle. La copie locale
+      reconstituée et sa journalisation sur disque se branchent sur le lecteur
+      monté (protocols.acces-applicatif).
