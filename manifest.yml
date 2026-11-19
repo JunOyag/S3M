@@ -79,6 +79,30 @@ pages:
     title: "Annuaire DHT & Entrées Publiées"
     section: "§2.1, §3.9"
     refs: [network.vdf-identity, network.DhtEnvelope, network.VdfProof, network.NodeEntry, network.NodeSnapshotPointer, network.SignedMigrationPointer, network.MigrationPointerPayload, network.UserEntry, network.UserEntryPlaintext, network.AttachmentRecord, network.DispersalEntry, network.DispersalRootPointer, network.EmergencyEntry, dispersal.DispersalManifest, node.NodeManifest, crypto.k-attach, crypto.k-self, crypto.k-node-self, crypto.k-dispersal, crypto.symmetric-suite, protocols.espace-secours, securite.incidents-compromissions, agilite.tag-hybride, deploiement.formats-serialisation]
+    verified_by:
+      - dht::signature_over_labelled_payload_matches_generated_vector
+      - dht::blob_matches_generated_vector_and_is_bound_to_its_label
+      - dht::lookup_keys_match_generated_vectors
+      - dht::republish_smoothing_matches_generated_offset_and_unix_anchor
+      - dht::ttl_constants_are_exact_seconds
+      - dht::valid_user_entry_verifies_and_returns_exact_payload_bytes
+      - dht::altered_payload_byte_is_rejected_as_bad_signature
+      - dht::signature_under_another_type_label_is_rejected
+      - dht::payload_of_another_type_is_rejected_by_file_identifier
+      - dht::key_algorithm_tags_1_2_and_255_are_rejected_with_dedicated_errors
+      - dht::user_vdf_must_prove_sig_pub_user_and_be_valid
+      - dht::expired_entry_is_rejected
+      - dht::emergency_sequence_must_strictly_increase
+      - dht::node_entry_is_verified_with_its_lookup_key
+      - dht::migration_pointer_rules
+      - rfc_vectors::dht_user_derivations_match_generated_vectors
+      - dht::inspect_envelope_reports_kind_timestamp_seq_and_expiry
+      - dht_network::entry_published_on_one_node_is_read_from_another
+      - dht_network::invalid_entries_are_refused_before_storage
+      - dht_network::node_never_returns_an_entry_it_cannot_verify
+      - dht_client::connector_is_client_only_with_ephemeral_identity
+      - dht_client::connector_and_nodes_exchange_entries
+      - dht_client::connector_refuses_entries_it_cannot_verify
 
   - id: network.bootstrap
     kind: narrative

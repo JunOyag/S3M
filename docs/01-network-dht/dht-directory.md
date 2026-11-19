@@ -171,6 +171,20 @@ offset_s = entier_big-endian( SHA-256( identifiant ) ) mod 2 592 000
 - La republication a lieu aux instants Unix `t` tels que
   `t ≡ offset_s (mod 2 592 000)` — ancrage sur l'époque Unix.
 
+## Rôles réseau et identité libp2p
+
+- **Nœud** : pair Kademlia complet (mode serveur), joignable en TCP (Noise
+  + Yamux). Son `PeerId` libp2p dérive de `pub_node`. Il vérifie **tout**
+  enregistrement avant de le stocker, qu'il vienne d'un pair ou de lui-même,
+  et à nouveau avant de le rendre.
+- **Connecteur** : client Kademlia uniquement — aucune adresse d'écoute,
+  conformément à l'absence de connexion entrante. Son identité libp2p est
+  **éphémère**, tirée au hasard à chaque démarrage, pour que le `PeerId` ne
+  relie jamais une session réseau à `pub_user` (décision d'implémentation du
+  2026-11-19, `impl/SPEC_GAPS.md`).
+- Amorçage provisoire : liste d'adresses de Nœuds en configuration ; le
+  mécanisme complet relève de [`network.bootstrap`](bootstrap.md).
+
 ## Règles de vérification à la lecture
 
 Avant de rendre une entrée à l'appelant, `get` vérifie dans l'ordre :

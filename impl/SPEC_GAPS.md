@@ -18,6 +18,25 @@ référence du commit qui met à jour docs/ en conséquence)*
 
 ---
 
+## network.dht-directory — Identité libp2p du Connecteur
+
+**Constat** (2026-11-19, en implémentant) : la page ne dit pas sous quelle
+identité réseau le Connecteur se connecte à la DHT. Réutiliser `priv_user`
+ou `sig_priv_user` comme clé libp2p publierait un `PeerId` reliant chaque
+session à l'identité User, ce que la page cherche justement à éviter
+(`pub_user` jamais publiée).
+
+**Question** : quelle identité libp2p pour le Connecteur ?
+
+**Impact si non résolu** : bloquant pour l'adaptateur Connecteur.
+
+**Résolution** (orchestrateur, 2026-11-19) : identité **éphémère**, tirée
+au hasard à chaque démarrage ; mode Kademlia client, aucune adresse
+d'écoute. Page `network.dht-directory` mise à jour (« Rôles réseau et
+identité libp2p »).
+
+---
+
 ## network.vdf-verifier-pure — Fixture à `T = 100` : `π` non vérifiable
 
 **Constat** (2026-11-19, en implémentant) : à `T = 100`, `chiavdf` accepte la

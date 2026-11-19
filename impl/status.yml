@@ -392,7 +392,7 @@ entries:
     notes: ''
   network.dht-directory:
     kind: narrative
-    status: in_progress
+    status: done
     owner: claude-code
     tests:
       - dht::signature_over_labelled_payload_matches_generated_vector
@@ -415,16 +415,20 @@ entries:
       - dht_network::entry_published_on_one_node_is_read_from_another
       - dht_network::invalid_entries_are_refused_before_storage
       - dht_network::node_never_returns_an_entry_it_cannot_verify
+      - dht_client::connector_is_client_only_with_ephemeral_identity
+      - dht_client::connector_and_nodes_exchange_entries
+      - dht_client::connector_refuses_entries_it_cannot_verify
     notes: >-
-      Tâche protocol livrée (impl/protocol/src/dht.rs) : enveloppe signée sur
-      L(libellé) || payload, file_identifier, tags, VDF injectée (Node :
-      0x00||pub_node, User : 0x00||sig_pub_user), TTL, lissage, séquences,
-      migration_pointer, blobs AEAD ; impl/core : derive_sig_priv_user,
-      derive_sig_pub_user, derive_user_dht_key. Tâche node livrée
-      (impl/node/src/dht_directory.rs) : libp2p 0.54 Kademlia, TCP + Noise +
-      Yamux, PeerId = pub_node, amorçage par configuration, vérification
-      avant stockage (StoreInserts::FilterBoth) et à la lecture, expiration
-      au TTL, pas de republication automatique. Reste la tâche connector.
+      Trois tâches livrées. protocol : impl/protocol/src/dht.rs (enveloppe
+      signée sur L(libellé) || payload, file_identifier, tags, VDF injectée,
+      TTL, lissage, séquences, migration_pointer, blobs AEAD, accept_record).
+      node : impl/node/src/dht_directory.rs (libp2p 0.54 Kademlia serveur, TCP
+      + Noise + Yamux, PeerId = pub_node, vérification avant stockage et à la
+      lecture). connector : impl/connector/src/dht_directory.rs (client
+      Kademlia, aucune écoute, identité libp2p éphémère). impl/core :
+      derive_sig_priv_user, derive_sig_pub_user, derive_user_dht_key. Amorçage
+      provisoire par configuration (network.bootstrap à venir). VDF :
+      vérificateur injecté, chiavdf en production.
   network.vdf-identity:
     kind: narrative
     status: done
