@@ -23,9 +23,7 @@ use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{identity, noise, tcp, yamux, Multiaddr, PeerId, StreamProtocol, Swarm};
 use p2p_storage_core::vdf::VdfProof;
 use p2p_storage_core::CoreError;
-use p2p_storage_protocol::dht::{
-    inspect_envelope, verify_envelope, DhtError, EntryKind, VerifyContext,
-};
+use p2p_storage_protocol::dht::{accept_record, DhtError};
 use tokio::sync::{mpsc, oneshot};
 
 /// Protocole Kademlia propre au réseau P2P-Storage.
@@ -178,8 +176,7 @@ impl DhtNode {
     }
 }
 
-/// Règle d'acceptation commune : vérifie l'enveloppe pour `key` et rend la
-/// date d'expiration. `previous` : enregistrement déjà détenu sous la clé.
+/// Règle d'acceptation : `p2p_storage_protocol::dht::accept_record`.
 fn accept(
     key: &[u8],
     envelope: &[u8],
@@ -187,22 +184,7 @@ fn accept(
     vdf: &SharedVdfVerifier,
     now: u64,
 ) -> Result<u64, DhtError> {
-    let summary = inspect_envelope(envelope)?;
-    let node_key: Option<[u8; 32]> = match summary.kind {
-        EntryKind::Node => Some(key.try_into().map_err(|_| DhtError::Format("clé Node"))?),
-        _ => None,
-    };
-    let previous_seq = previous
-        .and_then(|p| inspect_envelope(p).ok())
-        .filter(|p| p.kind == summary.kind)
-        .and_then(|p| p.seq);
-    let ctx = VerifyContext {
-        now,
-        node_lookup_key: node_key.as_ref(),
-        previous_seq,
-    };
-    verify_envelope(envelope, summary.kind, &ctx, &|id, p| vdf(id, p))?;
-    Ok(summary.expires_at())
+    accept_record(key, envelope, previous, now, &|id, p| vdf(id, p))
 }
 
 fn expiry_instant(expires_at: u64, now: u64) -> Instant {

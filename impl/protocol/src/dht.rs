@@ -395,6 +395,36 @@ pub fn inspect_envelope(envelope: &[u8]) -> Result<EnvelopeSummary, DhtError> {
     })
 }
 
+/// Règle d'acceptation d'un enregistrement DHT, commune aux adaptateurs
+/// Kademlia du Nœud et du Connecteur : déduit le type, vérifie l'enveloppe
+/// pour la clé `key` (clé de recherche `pub_node` pour une entrée Node) et,
+/// si `previous` est l'enregistrement déjà détenu, impose un `seq`
+/// strictement croissant. Rend l'instant Unix d'expiration.
+pub fn accept_record(
+    key: &[u8],
+    envelope: &[u8],
+    previous: Option<&[u8]>,
+    now: u64,
+    vdf: VdfVerifier<'_>,
+) -> Result<u64, DhtError> {
+    let summary = inspect_envelope(envelope)?;
+    let node_key: Option<[u8; 32]> = match summary.kind {
+        EntryKind::Node => Some(key.try_into().map_err(|_| DhtError::Format("clé Node"))?),
+        _ => None,
+    };
+    let previous_seq = previous
+        .and_then(|p| inspect_envelope(p).ok())
+        .filter(|p| p.kind == summary.kind)
+        .and_then(|p| p.seq);
+    let ctx = VerifyContext {
+        now,
+        node_lookup_key: node_key.as_ref(),
+        previous_seq,
+    };
+    verify_envelope(envelope, summary.kind, &ctx, vdf)?;
+    Ok(summary.expires_at())
+}
+
 /// Vérifie le `migration_pointer` d'une entrée Node : signature par
 /// `pub_node_recovery` sous [`SIG_LABEL_MIGRATION_POINTER`], `old_node_id`
 /// égal au `node_id` de l'entrée porteuse, `seq` strictement croissant.
