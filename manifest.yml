@@ -817,6 +817,11 @@ pages:
     title: "Suppression Bilatérale (Tombstones 1:1)"
     section: "§4.3"
     refs: [node.PartnerAccount, protocols.stockage-physique]
+    verified_by:
+      - tombstones::bilateral_release_keeps_both_accounts_equivalent
+      - tombstones::forged_or_altered_notices_free_nothing
+      - tombstones::replayed_notices_are_refused
+      - tombstones::tombstone_label_is_distinct_from_dht_labels
 
   # ------------------------------------------------- stockage physique (ajout post-V2)
   - id: protocols.stockage-physique

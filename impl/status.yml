@@ -724,10 +724,20 @@ entries:
     notes: ''
   protocols.tombstones:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - tombstones::bilateral_release_keeps_both_accounts_equivalent
+      - tombstones::forged_or_altered_notices_free_nothing
+      - tombstones::replayed_notices_are_refused
+      - tombstones::tombstone_label_is_distinct_from_dht_labels
+    notes: >-
+      impl/node/src/tombstones.rs : avis signé (priv_node, libellé
+      p2p-storage/sig/tombstone/v1, timestamp), anti-rejeu par timestamp
+      strictement croissant, libération des seuls blocs effectivement
+      hébergés, décrément équivalent des deux comptes PartnerAccount. Format
+      précisé dans la page. Transport de l'avis : protocole d'échange
+      (SPEC_GAPS).
   protocols.volatilite-reparation:
     kind: narrative
     status: not_started

@@ -7,6 +7,7 @@
 
 pub mod dht_directory;
 pub mod dispersion;
+pub mod tombstones;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};

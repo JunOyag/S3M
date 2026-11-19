@@ -14,6 +14,15 @@ verified_by: []
 - **Libération bilatérale équivalente** des blocs partenaires, pour
   préserver le solde de [`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md).
 
+**Format de l'avis** (précisé à l'implémentation, 2026-11-19) : signature
+Ed25519 de l'émetteur (`priv_node`) sur
+`L("p2p-storage/sig/tombstone/v1") ‖ u64be(timestamp) ‖ hash₁ ‖ … ‖ hashₙ`,
+même séparation de contexte que les entrées DHT. Le récepteur refuse un avis
+dont le timestamp n'est pas strictement supérieur au dernier avis appliqué
+pour ce partenaire (anti-rejeu), ne libère que les blocs qu'il héberge
+effectivement pour lui et décrémente son compte d'autant ; l'émetteur
+décrémente le sien du même nombre à l'accusé de réception.
+
 Déclenché notamment par :
 
 - la purge différée qui suit une dispersion (copy-on-write), voir
