@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 use p2p_storage_core::error::CoreError;
 use p2p_storage_core::master_key_chain::{
-    MasterKeyEntry, resolve_master_key, rewrap_chain_on_rotation,
+    resolve_master_key, rewrap_chain_on_rotation, MasterKeyEntry,
 };
 
 /// En-tête de version de protocole (2 o, `u16` gros-boutiste) — valeur `1`
@@ -73,12 +73,11 @@ fn resolve_stays_single_unwrap_after_many_rotations() {
     }
     let current = [0xFFu8; 32];
     let chain =
-        rewrap_chain_on_rotation(&PROTOCOL_HEADER_V1, &historical, &current, N)
-            .expect("re-wrap");
+        rewrap_chain_on_rotation(&PROTOCOL_HEADER_V1, &historical, &current, N).expect("re-wrap");
     assert_eq!(chain.len(), N as usize);
 
-    let k0 = resolve_master_key(&PROTOCOL_HEADER_V1, &chain, &current, N, 0)
-        .expect("résolution v0");
+    let k0 =
+        resolve_master_key(&PROTOCOL_HEADER_V1, &chain, &current, N, 0).expect("résolution v0");
     assert_eq!(k0, [0u8; 32]);
 }
 
@@ -141,10 +140,16 @@ fn chain_entries_carry_their_wrapped_version() {
 #[test]
 fn wrapped_key_matches_generated_vector() {
     let mut historical = HashMap::new();
-    let wrapped_plain: [u8; 32] = hex::decode(FX_WRAP_PLAINTEXT_HEX).unwrap().try_into().unwrap();
+    let wrapped_plain: [u8; 32] = hex::decode(FX_WRAP_PLAINTEXT_HEX)
+        .unwrap()
+        .try_into()
+        .unwrap();
     historical.insert(1u16, wrapped_plain);
     let current: [u8; 32] = hex::decode(FX_MASTER_KEY_HEX).unwrap().try_into().unwrap();
-    let header: [u8; 2] = hex::decode(FX_PROTO_HEADER_HEX).unwrap().try_into().unwrap();
+    let header: [u8; 2] = hex::decode(FX_PROTO_HEADER_HEX)
+        .unwrap()
+        .try_into()
+        .unwrap();
     let chain = rewrap_chain_on_rotation(&header, &historical, &current, 2).expect("rewrap");
     assert_eq!(chain.len(), 1);
     assert_eq!(hex::encode(&chain[0].wrapped_key), WRAP_CT_HEX);

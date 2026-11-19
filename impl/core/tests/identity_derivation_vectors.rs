@@ -183,8 +183,10 @@ fn identity_index_rotation_changes_the_key() {
 fn node_recovery_key_accompanies_node_index_without_reuse() {
     let seed = mnemonic_to_seed(MNEMONIC_ABANDON_ABOUT, "").expect("PBKDF2");
     let node_i = derive_identity_seed(&seed, IdentityRole::Node, 7).expect("dérivation");
-    let recovery_i = derive_identity_seed(&seed, IdentityRole::NodeRecovery, 7).expect("dérivation");
-    let recovery_j = derive_identity_seed(&seed, IdentityRole::NodeRecovery, 8).expect("dérivation");
+    let recovery_i =
+        derive_identity_seed(&seed, IdentityRole::NodeRecovery, 7).expect("dérivation");
+    let recovery_j =
+        derive_identity_seed(&seed, IdentityRole::NodeRecovery, 8).expect("dérivation");
     // Miroir : même index, mais clé distincte de la clé Node accompagnée.
     assert_ne!(recovery_i, node_i);
     // Isolation : chaque Node d'index distinct a sa propre clé de secours.

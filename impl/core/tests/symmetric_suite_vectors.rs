@@ -189,7 +189,10 @@ fn sha256_matches_rfc6234_vectors() {
 /// ambiguë. Invariant structurel de la page (pas un vecteur externe).
 #[test]
 fn canonical_encode_matches_spec_layout() {
-    assert_eq!(canonical_encode(&[b"abc"]), vec![0, 0, 0, 3, b'a', b'b', b'c']);
+    assert_eq!(
+        canonical_encode(&[b"abc"]),
+        vec![0, 0, 0, 3, b'a', b'b', b'c']
+    );
     assert_eq!(
         canonical_encode(&[b"ab", &[0u8, 1]]),
         vec![0, 0, 0, 2, b'a', b'b', 0, 0, 0, 2, 0, 1]
@@ -241,7 +244,10 @@ fn k_wrap_matches_generated_vector() {
     let master = unhex(FX_MASTER_KEY_HEX);
     let k_wrap = derive_k_wrap(&master, 1, 2).expect("K_wrap");
     assert_eq!(k_wrap.to_vec(), unhex(K_WRAP_HEX));
-    assert_ne!(derive_k_wrap(&master, 2, 1).expect("K_wrap").to_vec(), unhex(K_WRAP_HEX));
+    assert_ne!(
+        derive_k_wrap(&master, 2, 1).expect("K_wrap").to_vec(),
+        unhex(K_WRAP_HEX)
+    );
 }
 
 /// § Clé de wrap — nonce nul, `wrapped_key` de 48 o sans en-tête ;
@@ -250,14 +256,28 @@ fn k_wrap_matches_generated_vector() {
 fn wrap_composition_is_48_octets_without_header() {
     let k_wrap = derive_k_wrap(&unhex(FX_MASTER_KEY_HEX), 1, 2).expect("K_wrap");
     let header = unhex(FX_PROTO_HEADER_HEX);
-    let aad = [&header[..], b"master-key-wrap", &1u16.to_be_bytes(), &2u16.to_be_bytes()].concat();
+    let aad = [
+        &header[..],
+        b"master-key-wrap",
+        &1u16.to_be_bytes(),
+        &2u16.to_be_bytes(),
+    ]
+    .concat();
     let plaintext = unhex(FX_WRAP_PLAINTEXT_HEX);
     let sealed = aead_seal(&k_wrap, &NONCE_NUL, &aad, &plaintext).expect("wrap");
     assert_eq!(sealed.len(), 32 + AEAD_TAG_LEN);
     assert_eq!(sealed, unhex(WRAP_CT_HEX));
-    assert_eq!(aead_open(&k_wrap, &NONCE_NUL, &aad, &sealed).expect("unwrap"), plaintext);
-    let transplanted =
-        [&header[..], b"master-key-wrap", &1u16.to_be_bytes(), &3u16.to_be_bytes()].concat();
+    assert_eq!(
+        aead_open(&k_wrap, &NONCE_NUL, &aad, &sealed).expect("unwrap"),
+        plaintext
+    );
+    let transplanted = [
+        &header[..],
+        b"master-key-wrap",
+        &1u16.to_be_bytes(),
+        &3u16.to_be_bytes(),
+    ]
+    .concat();
     assert!(matches!(
         aead_open(&k_wrap, &NONCE_NUL, &transplanted, &sealed),
         Err(CoreError::AeadFailure)

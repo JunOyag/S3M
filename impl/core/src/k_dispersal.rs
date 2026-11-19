@@ -35,5 +35,10 @@ pub fn derive_k_dispersal_block(
             got: index_node_salt.len(),
         });
     }
-    kdf(k_dispersal_content, labels::DISPERSAL_BLOCK, index_node_salt, &[])
+    kdf(
+        k_dispersal_content,
+        labels::DISPERSAL_BLOCK,
+        index_node_salt,
+        &[],
+    )
 }

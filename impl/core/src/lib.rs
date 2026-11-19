@@ -10,12 +10,12 @@
 
 pub mod error;
 pub mod identity_derivation;
-pub mod keys;
 pub mod k_attach;
 pub mod k_block;
-pub mod k_self;
-pub mod k_node_self;
 pub mod k_dispersal;
+pub mod k_node_self;
+pub mod k_self;
+pub mod keys;
 pub mod labels;
 pub mod master_key_chain;
 pub mod symmetric_suite;

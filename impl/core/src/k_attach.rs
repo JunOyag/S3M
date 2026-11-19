@@ -53,7 +53,11 @@ pub fn derive_k_attach_as_node(
     dh_then_kdf(priv_node, pub_user, salt)
 }
 
-fn dh_then_kdf(own_priv: &[u8; 32], peer_pub: &[u8; 32], salt: &[u8]) -> Result<[u8; 32], CoreError> {
+fn dh_then_kdf(
+    own_priv: &[u8; 32],
+    peer_pub: &[u8; 32],
+    salt: &[u8],
+) -> Result<[u8; 32], CoreError> {
     let priv_x = ed25519_priv_to_x25519(own_priv)?;
     let pub_x = ed25519_pub_to_x25519(peer_pub)?;
     let shared = StaticSecret::from(priv_x).diffie_hellman(&PublicKey::from(pub_x));

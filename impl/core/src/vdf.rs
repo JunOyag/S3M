@@ -244,4 +244,3 @@ mod sys {
         Err(CoreError::VdfUnavailable)
     }
 }
-

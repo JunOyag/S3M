@@ -6,7 +6,9 @@
 //!     cargo run --release --features vdf --example gen_vdf_fixture
 //! Consigner la provenance dans tests/fixtures/vdf_identity_tag0_t1000.provenance.
 
-use p2p_storage_core::vdf::{generate_identity_proof_params, tagged_identity, KEY_ALGORITHM_ED25519};
+use p2p_storage_core::vdf::{
+    generate_identity_proof_params, tagged_identity, KEY_ALGORITHM_ED25519,
+};
 
 fn main() {
     let identity = tagged_identity(KEY_ALGORITHM_ED25519, &[0x31; 32]).expect("tag 0");

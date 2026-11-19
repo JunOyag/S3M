@@ -306,6 +306,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -411,8 +417,11 @@ dependencies = [
 name = "p2p-storage-protocol"
 version = "0.1.0"
 dependencies = [
+ "ed25519-dalek",
  "flatbuffers",
+ "hex",
  "p2p-storage-core",
+ "thiserror",
 ]
 
 [[package]]

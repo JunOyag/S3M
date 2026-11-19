@@ -24,7 +24,8 @@
 //! la cible Connecteur : mêmes vecteurs, autre chaîne de compilation.
 
 use p2p_storage_core::k_attach::{
-    derive_k_attach_as_node, derive_k_attach_from_shared_secret, derive_k_attach_as_user, derive_sig_priv_dispersal,
+    derive_k_attach_as_node, derive_k_attach_as_user, derive_k_attach_from_shared_secret,
+    derive_sig_priv_dispersal,
 };
 use p2p_storage_core::keys::{ed25519_priv_to_x25519, ed25519_pub_to_x25519};
 use p2p_storage_core::CoreError;
@@ -62,10 +63,17 @@ fn x25519_dh_matches_rfc7748_vectors() {
     let bob_sk = unhex32("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
     let bob_pk = unhex32("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
     // RFC 7748 §5.2 — secret partagé
-    let expected_shared = unhex32("4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742");
+    let expected_shared =
+        unhex32("4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742");
 
-    assert_eq!(PublicKey::from(&StaticSecret::from(alice_sk)).to_bytes(), alice_pk);
-    assert_eq!(PublicKey::from(&StaticSecret::from(bob_sk)).to_bytes(), bob_pk);
+    assert_eq!(
+        PublicKey::from(&StaticSecret::from(alice_sk)).to_bytes(),
+        alice_pk
+    );
+    assert_eq!(
+        PublicKey::from(&StaticSecret::from(bob_sk)).to_bytes(),
+        bob_pk
+    );
 
     let shared_a = StaticSecret::from(alice_sk).diffie_hellman(&PublicKey::from(bob_pk));
     let shared_b = StaticSecret::from(bob_sk).diffie_hellman(&PublicKey::from(alice_pk));
@@ -157,10 +165,8 @@ fn k_attach_is_symmetric_between_user_and_node() {
     let node_pk = ed25519_pk_from_seed(&node_seed);
     let salt: &[u8] = b"k-attach-test-salt";
 
-    let k_user =
-        derive_k_attach_as_user(&user_seed, &node_pk, salt).expect("dérivation côté User");
-    let k_node =
-        derive_k_attach_as_node(&node_seed, &user_pk, salt).expect("dérivation côté Node");
+    let k_user = derive_k_attach_as_user(&user_seed, &node_pk, salt).expect("dérivation côté User");
+    let k_node = derive_k_attach_as_node(&node_seed, &user_pk, salt).expect("dérivation côté Node");
 
     assert_eq!(k_user, k_node);
     assert_ne!(k_user, [0u8; 32]);
@@ -220,4 +226,20 @@ fn k_attach_matches_generated_vector() {
 fn sig_priv_dispersal_matches_generated_vector() {
     let s = derive_sig_priv_dispersal(&unhex32(FX_K_ATTACH_HEX)).expect("KDF");
     assert_eq!(s, unhex32(SIG_PRIV_DISPERSAL_HEX));
+}
+
+/// Spec V3 (network.dht-directory) — `user_dht_key` et graine de
+/// `sig_priv_user` contre `cryptography` ; `pub_user` en entrée publique.
+#[test]
+fn dht_user_derivations_match_generated_vectors() {
+    use p2p_storage_core::keys::{derive_sig_priv_user, derive_sig_pub_user, derive_user_dht_key};
+    let priv_user = unhex32(FX_PRIV_USER_HEX);
+    let pub_user = unhex32(FX_PUB_USER_HEX);
+    assert_eq!(
+        derive_user_dht_key(&priv_user, &pub_user).unwrap(),
+        unhex32(USER_DHT_KEY_HEX)
+    );
+    let seed = derive_sig_priv_user(&priv_user, &pub_user).unwrap();
+    assert_eq!(seed, unhex32(SIG_PRIV_USER_SEED_HEX));
+    assert_ne!(derive_sig_pub_user(&seed), pub_user);
 }

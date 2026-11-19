@@ -34,9 +34,7 @@ pub struct MasterKeyEntry {
 /// Construit l'AAD du wrap : `en-tête de version (2 o) ‖ "master-key-wrap"
 /// ‖ u16(version_wrappée) ‖ u16(version_courante)`.
 fn wrap_aad(protocol_header: &[u8; 2], version_wrappee: u16, version_courante: u16) -> Vec<u8> {
-    let mut aad = Vec::with_capacity(
-        2 + crate::labels::AAD_CONTEXT_MASTER_KEY_WRAP.len() + 2 + 2,
-    );
+    let mut aad = Vec::with_capacity(2 + crate::labels::AAD_CONTEXT_MASTER_KEY_WRAP.len() + 2 + 2);
     aad.extend_from_slice(protocol_header);
     aad.extend_from_slice(crate::labels::AAD_CONTEXT_MASTER_KEY_WRAP.as_bytes());
     aad.extend_from_slice(&version_wrappee.to_be_bytes());
@@ -56,8 +54,7 @@ fn wrap_one(
     let k_wrap =
         symmetric_suite::derive_k_wrap(current_master_key, version_wrappee, version_courante)?;
     let aad = wrap_aad(protocol_header, version_wrappee, version_courante);
-    let wrapped_key =
-        symmetric_suite::aead_seal(&k_wrap, &NONCE_NUL, &aad, historical_key)?;
+    let wrapped_key = symmetric_suite::aead_seal(&k_wrap, &NONCE_NUL, &aad, historical_key)?;
     debug_assert_eq!(wrapped_key.len(), 48);
     Ok(MasterKeyEntry {
         version: version_wrappee,
@@ -75,8 +72,7 @@ fn unwrap_one(
     let k_wrap =
         symmetric_suite::derive_k_wrap(current_master_key, entry.version, version_courante)?;
     let aad = wrap_aad(protocol_header, entry.version, version_courante);
-    let opened =
-        symmetric_suite::aead_open(&k_wrap, &NONCE_NUL, &aad, &entry.wrapped_key)?;
+    let opened = symmetric_suite::aead_open(&k_wrap, &NONCE_NUL, &aad, &entry.wrapped_key)?;
     let mut out = [0u8; 32];
     out.copy_from_slice(&opened);
     Ok(out)
@@ -123,12 +119,13 @@ pub fn resolve_master_key(
     current_version: u16,
     wanted_version: u16,
 ) -> Result<[u8; 32], CoreError> {
-    let entry = chain
-        .iter()
-        .find(|e| e.version == wanted_version)
-        .ok_or(CoreError::UnknownKeyVersion {
-            version: wanted_version,
-        })?;
+    let entry =
+        chain
+            .iter()
+            .find(|e| e.version == wanted_version)
+            .ok_or(CoreError::UnknownKeyVersion {
+                version: wanted_version,
+            })?;
     unwrap_one(protocol_header, entry, current_master_key, current_version)
         .map_err(|_| CoreError::UnwrapFailure)
 }

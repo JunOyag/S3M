@@ -86,8 +86,8 @@ pub fn mnemonic_to_seed(mnemonic: &str, passphrase: &str) -> Result<[u8; 64], Co
 /// Exposée publiquement : couche standard vérifiable directement contre les
 /// vecteurs officiels SLIP-0010 (voir tests).
 pub fn slip10_master_key(bip39_seed: &[u8; 64]) -> Result<([u8; 32], [u8; 32]), CoreError> {
-    let mut mac = HmacSha512::new_from_slice(b"ed25519 seed")
-        .map_err(|_| CoreError::IdentityDerivation)?;
+    let mut mac =
+        HmacSha512::new_from_slice(b"ed25519 seed").map_err(|_| CoreError::IdentityDerivation)?;
     mac.update(bip39_seed);
     let i = mac.finalize().into_bytes();
     let mut k = [0u8; 32];
@@ -117,8 +117,8 @@ pub fn slip10_hardened_child(
     if index >= HARDENED {
         return Err(CoreError::InvalidDerivationIndex { index });
     }
-    let mut mac = HmacSha512::new_from_slice(parent_chain_code)
-        .map_err(|_| CoreError::IdentityDerivation)?;
+    let mut mac =
+        HmacSha512::new_from_slice(parent_chain_code).map_err(|_| CoreError::IdentityDerivation)?;
     mac.update(&[0x00]); // préfixe ser_P des clés privées ed25519 (SLIP-0010)
     mac.update(parent_key);
     mac.update(&(index + HARDENED).to_be_bytes());
@@ -162,11 +162,7 @@ pub fn derive_master_key(bip39_seed: &[u8; 64], version: u16) -> Result<[u8; 32]
 
 /// PBKDF2-HMAC-SHA512 (RFC 8017 §5.2), sortie fixe 64 octets — le seul
 /// besoin en BIP-39 (seed de 64 o = hLen SHA-512 → exactement un bloc `T`).
-fn pbkdf2_hmac_sha512_64(
-    password: &[u8],
-    salt: &[u8],
-    rounds: u32,
-) -> Result<[u8; 64], CoreError> {
+fn pbkdf2_hmac_sha512_64(password: &[u8], salt: &[u8], rounds: u32) -> Result<[u8; 64], CoreError> {
     debug_assert!(rounds >= 1);
     // U_1 = PRF(P, S ‖ INT_32_BE(1)) ; U_j = PRF(P, U_{j-1}) ;
     // T = U_1 ⊕ U_2 ⊕ … ⊕ U_c  (un seul bloc car dkLen = hLen = 64 o).

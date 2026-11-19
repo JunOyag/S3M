@@ -392,14 +392,32 @@ entries:
     notes: ''
   network.dht-directory:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: in_progress
+    owner: claude-code
+    tests:
+      - dht::signature_over_labelled_payload_matches_generated_vector
+      - dht::blob_matches_generated_vector_and_is_bound_to_its_label
+      - dht::lookup_keys_match_generated_vectors
+      - dht::republish_smoothing_matches_generated_offset_and_unix_anchor
+      - dht::ttl_constants_are_exact_seconds
+      - dht::valid_user_entry_verifies_and_returns_exact_payload_bytes
+      - dht::altered_payload_byte_is_rejected_as_bad_signature
+      - dht::signature_under_another_type_label_is_rejected
+      - dht::payload_of_another_type_is_rejected_by_file_identifier
+      - dht::key_algorithm_tags_1_2_and_255_are_rejected_with_dedicated_errors
+      - dht::user_vdf_must_prove_sig_pub_user_and_be_valid
+      - dht::expired_entry_is_rejected
+      - dht::emergency_sequence_must_strictly_increase
+      - dht::node_entry_is_verified_with_its_lookup_key
+      - dht::migration_pointer_rules
+      - rfc_vectors::dht_user_derivations_match_generated_vectors
     notes: >-
-      Trois tâches (impl/layers.yml) : protocol (enveloppes, vérification,
-      TTL/lissage, séquences), puis node, puis connector. Reprise de zéro
-      décidée le 2026-11-19 ; essai V1 archivé sur la branche locale
-      archive/dht-directory-v1 (référence uniquement).
+      Tâche protocol livrée (impl/protocol/src/dht.rs) : enveloppe signée sur
+      L(libellé) || payload, file_identifier, tags, VDF injectée (Node :
+      0x00||pub_node, User : 0x00||sig_pub_user), TTL, lissage, séquences,
+      migration_pointer, blobs AEAD ; impl/core : derive_sig_priv_user,
+      derive_sig_pub_user, derive_user_dht_key. Restent les tâches node et
+      connector (adaptateurs Kademlia) avant done et verified_by.
   network.vdf-identity:
     kind: narrative
     status: done

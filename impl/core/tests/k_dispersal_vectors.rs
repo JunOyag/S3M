@@ -85,6 +85,9 @@ fn k_dispersal_block_differs_per_index_node_salt() {
     assert_ne!(a, b);
     assert!(matches!(
         derive_k_dispersal_block(&content, &[0u8; 15]),
-        Err(CoreError::InvalidSaltLength { expected: 16, got: 15 })
+        Err(CoreError::InvalidSaltLength {
+            expected: 16,
+            got: 15
+        })
     ));
 }

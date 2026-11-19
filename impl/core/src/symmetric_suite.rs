@@ -117,7 +117,8 @@ pub fn hkdf_sha256(
         Hkdf::<Sha256>::new(Some(salt), ikm)
     };
     let mut okm = vec![0u8; out_len];
-    hk.expand(info, &mut okm).map_err(|_| CoreError::KdfFailure)?;
+    hk.expand(info, &mut okm)
+        .map_err(|_| CoreError::KdfFailure)?;
     Ok(okm)
 }
 
@@ -178,6 +179,9 @@ pub fn derive_k_wrap(
         master_key_current,
         labels::MASTER_KEY_WRAP,
         &[],
-        &[&version_wrappee.to_be_bytes(), &version_courante.to_be_bytes()],
+        &[
+            &version_wrappee.to_be_bytes(),
+            &version_courante.to_be_bytes(),
+        ],
     )
 }

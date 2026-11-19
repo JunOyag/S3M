@@ -4,6 +4,8 @@
 //! - [`fb`] : types FlatBuffers générés par `flatc` depuis `schemas/**/*.fbs`
 //!   (Phase 1). **Ne pas éditer** `src/generated/` : régénérer avec
 //!   `bash impl/protocol/gen.sh`.
+//! - [`dht`] : enveloppes DHT signées et règles de vérification
+//!   (`network.dht-directory`, partie commune).
 //! - [`layout`] : capacités de bloc mesurées sur les types générés.
 
 #[allow(
@@ -23,4 +25,5 @@ mod generated;
 /// `.FS`, `.Node`, `.Dht`).
 pub use generated::p2_pstorage as fb;
 
+pub mod dht;
 pub mod layout;

@@ -18,16 +18,17 @@
 //! Diffie-Hellman menant à K_attach (le mélange de primitives est proscrit
 //! sans cette conversion, cf. la note de la page k-attach).
 //!
-//! `derive_sig_priv_user` (§3.9 « signature sans exposer pub_user ») reste
-//! en `todo!()` : sa spécification documentaire vit sur
-//! docs/01-network-dht/dht-directory.md (Phase 2, id `network.dht-directory`),
-//! hors périmètre de la tâche `crypto.k-attach`.
+//! `derive_sig_priv_user` / `derive_user_dht_key` : dérivations DHT User
+//! (network.dht-directory, spec V3).
 
 use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
+use ed25519_dalek::SigningKey;
 use sha2::{Digest, Sha512};
 use zeroize::Zeroize;
 
 use crate::error::CoreError;
+use crate::labels;
+use crate::symmetric_suite::kdf;
 
 /// `ed25519_priv_to_x25519(graine)` — équivalent exact de
 /// `crypto_sign_ed25519_sk_to_curve25519` (libsodium) pour une entrée de
@@ -66,13 +67,31 @@ pub fn ed25519_pub_to_x25519(ed25519_pub: &[u8; 32]) -> Result<[u8; 32], CoreErr
     Ok(point.to_montgomery().to_bytes())
 }
 
-/// `sig_priv_user = KDF(priv_user, pub_user, "dht-signing")` — §3.9.
-/// Permet de signer l'entrée DHT User sans jamais exposer `pub_user`.
-/// Spécification documentaire : docs/01-network-dht/dht-directory.md
-/// (Phase 2) — volontairement non implémenté dans la tâche `crypto.k-attach`.
+/// Graine de `sig_priv_user = KDF(priv_user, "dht-signing", —, pub_user)`
+/// (spec V3, network.dht-directory § Signature sans exposer les identités) :
+/// graine Ed25519 (RFC 8032) qui signe l'entrée DHT User sans exposer
+/// `pub_user`.
 pub fn derive_sig_priv_user(
-    _priv_user: &[u8; 32],
-    _pub_user: &[u8; 32],
+    priv_user: &[u8; 32],
+    pub_user: &[u8; 32],
 ) -> Result<[u8; 32], CoreError> {
-    todo!("Phase 0 — HKDF(priv_user || pub_user, info=\"dht-signing\") — hors périmètre crypto.k-attach, voir network.dht-directory")
+    kdf(priv_user, labels::DHT_SIGNING, &[], &[pub_user])
+}
+
+/// Clé publique Ed25519 de la graine `sig_priv_user` — clé de vérification
+/// de l'entrée User, publiée en clair et prouvée par la VDF
+/// (`0x00 ‖ sig_pub_user`).
+pub fn derive_sig_pub_user(sig_priv_user: &[u8; 32]) -> [u8; 32] {
+    SigningKey::from_bytes(sig_priv_user)
+        .verifying_key()
+        .to_bytes()
+}
+
+/// `user_dht_key = KDF(priv_user, "dht-lookup", —, pub_user)` — clé de
+/// recherche de l'entrée User, calculable par le seul User.
+pub fn derive_user_dht_key(
+    priv_user: &[u8; 32],
+    pub_user: &[u8; 32],
+) -> Result<[u8; 32], CoreError> {
+    kdf(priv_user, labels::DHT_LOOKUP, &[], &[pub_user])
 }

@@ -68,7 +68,6 @@ pub enum CoreError {
 
     #[error("chiavdf : échec de génération de la preuve VDF (prove)")]
     VdfProveFailure,
-
     // À compléter au fil de la Phase 0 — une variante par échec distinct
     // rencontré, jamais un `Other(String)` fourre-tout (perd l'info côté
     // appelant WASM/FFI).

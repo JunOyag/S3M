@@ -23,8 +23,8 @@
 use std::time::{Duration, Instant};
 
 use p2p_storage_core::vdf::{
-    generate_identity_proof, generate_identity_proof_params, verify_identity_proof,
-    tagged_identity, verify_identity_proof_params, VdfProof, FORM_SIZE, TAGGED_IDENTITY_LEN,
+    generate_identity_proof, generate_identity_proof_params, tagged_identity,
+    verify_identity_proof, verify_identity_proof_params, VdfProof, FORM_SIZE, TAGGED_IDENTITY_LEN,
 };
 use p2p_storage_core::CoreError;
 
@@ -179,10 +179,17 @@ fn proof_is_rejected_with_nonzero_recursion() {
 fn verification_with_t_max_is_bounded_and_rejected() {
     let proof = fast_proof(&PUB_KEY_A);
     let start = Instant::now();
-    let valid = verify_identity_proof_params(&PUB_KEY_A, &proof, u64::MAX, 0).expect("vérification");
+    let valid =
+        verify_identity_proof_params(&PUB_KEY_A, &proof, u64::MAX, 0).expect("vérification");
     let dur = start.elapsed();
-    assert!(dur < VERIFY_BOUND, "T = u64::MAX doit rester borné : {dur:?}");
-    assert!(!valid, "T = u64::MAX ne doit jamais valider une preuve produite à FAST_T");
+    assert!(
+        dur < VERIFY_BOUND,
+        "T = u64::MAX doit rester borné : {dur:?}"
+    );
+    assert!(
+        !valid,
+        "T = u64::MAX ne doit jamais valider une preuve produite à FAST_T"
+    );
 }
 
 /// Entrées hostiles : preuve vide et preuve tronquée (π sur 99 octets) —
@@ -280,7 +287,10 @@ fn unsupported_and_unknown_key_algorithms_are_rejected_with_dedicated_errors() {
     }
     let mut id = PUB_KEY_A;
     id[0] = 255;
-    let proof = VdfProof { y: vec![0; FORM_SIZE], pi: vec![0; FORM_SIZE] };
+    let proof = VdfProof {
+        y: vec![0; FORM_SIZE],
+        pi: vec![0; FORM_SIZE],
+    };
     assert!(matches!(
         verify_identity_proof_params(&id, &proof, FAST_T, 0),
         Err(CoreError::UnknownKeyAlgorithm { tag: 255 })

@@ -65,7 +65,12 @@ fn fixture_mutations_are_rejected() {
 
 #[test]
 fn fixture_provenance_is_recorded() {
-    for field in ["identite: 0x00 || [0x31; 32]", "T=1000", "chiavdf 1.1.14", "commande:"] {
+    for field in [
+        "identite: 0x00 || [0x31; 32]",
+        "T=1000",
+        "chiavdf 1.1.14",
+        "commande:",
+    ] {
         assert!(PROVENANCE.contains(field), "provenance sans « {field} »");
     }
 }

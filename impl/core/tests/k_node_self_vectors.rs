@@ -64,5 +64,8 @@ fn k_node_self_is_domain_separated_from_k_self() {
 #[test]
 fn k_node_self_matches_generated_vector() {
     let input: [u8; 32] = hex::decode(FX_PRIV_NODE_HEX).unwrap().try_into().unwrap();
-    assert_eq!(hex::encode(derive_k_node_self(&input).expect("KDF")), K_NODE_SELF_HEX);
+    assert_eq!(
+        hex::encode(derive_k_node_self(&input).expect("KDF")),
+        K_NODE_SELF_HEX
+    );
 }
