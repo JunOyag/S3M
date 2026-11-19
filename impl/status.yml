@@ -386,10 +386,21 @@ entries:
       (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   network.bootstrap:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ''
+    status: done
+    owner: claude-code
+    tests:
+      - bootstrap::cold_path_resolves_current_node_from_seed_alone
+      - bootstrap::fast_path_adopts_newer_dht_entry_otherwise_keeps_cache
+      - bootstrap::unknown_user_without_cache_is_an_explicit_error
+      - bootstrap::migration_pointer_is_followed_one_hop_only
+      - bootstrap::local_cache_roundtrips_and_rejects_corruption
+    notes: >-
+      impl/connector/src/bootstrap.rs : resolve() — chemin à froid (seed ->
+      user_dht_key -> entrée User vérifiée -> K_self -> attachement le plus
+      récent -> entrée Node), chemin rapide par LocalCache (l'entrée DHT plus
+      récente l'emporte), migration_pointer suivi d'un seul saut. Périmètre
+      arbitré (SPEC_GAPS) : amorçage par configuration, étape 4 rattachée à
+      protocols.acces-applicatif. Tests face à des Nœuds réels.
   network.dht-directory:
     kind: narrative
     status: done

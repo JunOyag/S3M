@@ -7,5 +7,6 @@ Moteur client de l'Utilisateur (spec V3, `impl/TECH_STACK.md`). Lie
 | Module | Id |
 |---|---|
 | `dht_directory` | `network.dht-directory` (client Kademlia, identité éphémère) |
+| `bootstrap` | `network.bootstrap` (résolution depuis la seed, cache local) |
 
 Tests : `cargo test` (démarre des Nœuds réels de `impl/node` sur 127.0.0.1).

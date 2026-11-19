@@ -110,6 +110,12 @@ pages:
     title: "Amorçage (Bootstrapping) & Résolution"
     section: "§2.2"
     refs: [network.dht-directory, protocols.write-queue, crypto.identity-derivation]
+    verified_by:
+      - bootstrap::cold_path_resolves_current_node_from_seed_alone
+      - bootstrap::fast_path_adopts_newer_dht_entry_otherwise_keeps_cache
+      - bootstrap::unknown_user_without_cache_is_an_explicit_error
+      - bootstrap::migration_pointer_is_followed_one_hop_only
+      - bootstrap::local_cache_roundtrips_and_rejects_corruption
 
   # ------------------------------------------------------ schemas: network.*
   - id: network.DhtEnvelope

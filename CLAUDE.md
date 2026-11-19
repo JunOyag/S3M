@@ -43,12 +43,12 @@ lesquels une session Claude Code se trompe le plus souvent.
   identité VDF marquée, enveloppe DHT signée.
 - **Phase 0 terminée** (11 ids `done`, spec V3) et **Phase 1 terminée** : 41 types
   FlatBuffers générés dans `impl/protocol` (`bash impl/protocol/gen.sh`, flatc 23.5.26
-  sous Docker). Prochaine phase : Phase 2 (`impl/layers.yml`).
+  sous Docker). **Phase 2 terminée** (dht-directory, bootstrap, stockage-physique).
+  Prochaine phase : Phase 3 (`impl/layers.yml`).
 - `protocols.stockage-physique` (node) était `done` avant la Phase 0 : écart d'ordre hérité,
   accepté tel quel.
-- `network.dht-directory` reprend de zéro ; l'essai V1 est archivé sur la branche locale
+- L'essai V1 de `network.dht-directory` reste archivé sur la branche locale
   `archive/dht-directory-v1` (référence uniquement, jamais fusionnée).
-- `impl/connector` est vide (le TypeScript a été archivé).
 - Builds : `cargo test` en local (Windows) ; tests `--features vdf` et clippy associé via
   `bash impl/docker-test.sh` (Docker).
 

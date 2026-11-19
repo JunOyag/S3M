@@ -9,14 +9,19 @@ verified_by: []
 
 # Amorçage (Bootstrapping) & Résolution
 
-Amorçage initial d'un nouveau nœud via les protocoles de rendez-vous
-libp2p (Rendezvous Protocol / STUN / TURN).
+Entrée dans le réseau : le Connecteur (client, voir
+[`network.dht-directory`](dht-directory.md)) se connecte à une **liste de
+Nœuds d'amorçage fournie par sa configuration**. La traversée de NAT
+(Rendezvous / STUN / TURN) est une fonctionnalité séparée, à spécifier plus
+tard (arbitrage du 2026-11-19, `impl/SPEC_GAPS.md`).
 
 ## Chemin rapide (cache local présent)
 
-Le Connecteur interroge en priorité son cache `UserManifest` local pour
-obtenir directement l'ID de son nœud hébergeur et le dernier `fs_root_hash`
-connu.
+Le Connecteur interroge en priorité son **cache local** pour obtenir
+directement l'ID de son nœud hébergeur et le dernier `fs_root_hash` connu.
+Ce cache est minimal : `node_id`, `fs_root_hash` et l'horodatage de l'entrée
+DHT User dont il provient (fichier binaire local
+`u16be(1) ‖ node_id ‖ u64be(timestamp) ‖ u32be(len) ‖ fs_root_hash`).
 
 **Avant d'utiliser ce cache**, il compare systématiquement son timestamp
 local à celui de l'entrée DHT User courante
@@ -37,14 +42,20 @@ Aucun état local préexistant n'est requis — seule la seed BIP-39 suffit
 (chemins de dérivation :
 [`crypto.identity-derivation`](../03-crypto/identity-derivation.md)) :
 
-1. Calcul de `user_dht_key = KDF(priv_user, pub_user, "dht-lookup")` depuis
+1. Calcul de `user_dht_key = KDF(priv_user, "dht-lookup", —, pub_user)`
+   ([convention KDF](../03-crypto/symmetric-suite.md#kdf-hkdf-sha256)) depuis
    la seed seule.
 2. Résolution de l'entrée DHT User.
 3. Déchiffrement avec `K_self` ([`crypto.k-self`](../03-crypto/k-self.md))
-   pour obtenir `fs_root_hash` et l'historique `attachments` (donc le
-   `node_id` du Node courant).
-4. Contact de ce Node pour récupérer le bloc racine et reconstruire un
-   `UserManifest` local à jour.
+   pour obtenir `fs_root_hash` et l'historique `attachments` ; le Node
+   courant est l'attachement au `timestamp` le plus récent. Son entrée DHT
+   donne son adresse ; un `migration_pointer` valide y est suivi d'un seul
+   saut ([`securite.incidents-compromissions`](../05-securite/incidents-compromissions.md)).
+4. Contact de ce Node pour récupérer le bloc racine et reconstruire le cache
+   local. Cette étape dépend du protocole d'échange de blocs
+   Connecteur ↔ Nœud, défini par
+   [`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md) : elle
+   est implémentée avec lui (Phase 4), pas par cet id.
 
 Cohérent avec la procédure de disaster recovery complète — voir
 [`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md).

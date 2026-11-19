@@ -18,6 +18,26 @@ référence du commit qui met à jour docs/ en conséquence)*
 
 ---
 
+## network.bootstrap — Rendezvous/STUN/TURN, `UserManifest`, récupération du bloc racine
+
+**Constat** (2026-11-19) : la page cite les protocoles de rendez-vous libp2p
+(Rendezvous / STUN / TURN) sans dire qui les opère ni où ; elle s'appuie sur
+un cache `UserManifest` qu'aucun schéma ne définit ; son étape 4 suppose un
+protocole d'échange de blocs Connecteur ↔ Nœud qui n'existe pas encore.
+
+**Question** : que livre `network.bootstrap` en Phase 2 ?
+
+**Impact si non résolu** : bloquant pour l'id.
+
+**Résolution** (validée par l'utilisateur le 2026-11-19) : (1) liste de
+Nœuds d'amorçage en configuration, traversée de NAT reportée à une
+fonctionnalité séparée ; (2) cache local minimal (`node_id`, `fs_root_hash`,
+horodatage) ; (3) étapes 1 à 3 livrées, étape 4 rattachée à
+`protocols.acces-applicatif`. Précision ajoutée : le Node courant est
+l'attachement au `timestamp` le plus récent. Page mise à jour.
+
+---
+
 ## network.dht-directory — Identité libp2p du Connecteur
 
 **Constat** (2026-11-19, en implémentant) : la page ne dit pas sous quelle
