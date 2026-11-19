@@ -66,7 +66,12 @@ pages:
     title: "Instrumentation et fixtures VDF"
     section: "§2.1"
     refs: [network.vdf-identity]
-    verified_by: []
+    verified_by:
+      - vdf_fixtures::fixture_is_accepted_natively
+      - vdf_fixtures::regenerated_proof_matches_fixture_byte_for_byte
+      - vdf_fixtures::fixture_mutations_are_rejected
+      - vdf_fixtures::fixture_provenance_is_recorded
+      - vdf_fixtures::phase_timings_are_reported
 
   - id: network.dht-directory
     kind: narrative

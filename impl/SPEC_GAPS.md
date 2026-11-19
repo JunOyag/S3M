@@ -18,6 +18,26 @@ référence du commit qui met à jour docs/ en conséquence)*
 
 ---
 
+## network.vdf-verifier-pure — Fixture à `T = 100` : `π` non vérifiable
+
+**Constat** (2026-11-19, en implémentant) : à `T = 100`, `chiavdf` accepte la
+fixture quel que soit le contenu de `π` (200 positions × 2 bits testées).
+Cause : `π = g^⌊2^T/ℓ⌋` avec `ℓ` premier d'environ 264 bits, donc `π` est
+trivial pour `T < 264`. Le critère « rejet d'un `π` altéré » de la page est
+intenable à ce `T`.
+
+**Question** : quel `T` pour les fixtures ?
+
+**Impact si non résolu** : bloquant pour clore `network.vdf-verifier-pure`.
+Aucun impact sur le `T` de protocole (5 400 000), vérifié correct dès
+`T = 1000`.
+
+**Résolution** (orchestrateur, 2026-11-19) : fixtures à `T = 1000` (vérification
+en ~6 ms). Page `network.vdf-verifier-pure` mise à jour (encadré « Pourquoi
+pas `T = 100` »).
+
+---
+
 ## Spec V3 — Intégration de `ST-P2P-STORAGE-2026-V3-modifications.md` et arbitrages
 
 **Constat** : un document de modifications V2 → V3 (20/10/2026) était resté

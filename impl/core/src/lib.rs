@@ -2,7 +2,7 @@
 //!
 //! Ce crate ne fait AUCUNE I/O (réseau, disque, DHT). Il expose uniquement les
 //! primitives cryptographiques et de sérialisation utilisées par `impl/node`
-//! (Rust natif) et `impl/connector` (via wasm-pack, feature `wasm`).
+//! et `impl/connector` (Rust natif tous deux, spec V3).
 //!
 //! Un module = un id de `docs/03-crypto/*.md`. Ne pas ajouter de fonction qui
 //! ne correspond à aucun id documenté — voir CLAUDE.md règle 4 (SPEC_GAPS.md)
@@ -20,6 +20,5 @@ pub mod labels;
 pub mod master_key_chain;
 pub mod symmetric_suite;
 pub mod vdf;
-pub mod vdf_pure;
 
 pub use error::CoreError;

@@ -1,0 +1,8 @@
+fixture: vdf_identity_tag0_t1000.hex
+contenu: hex de y || pi (200 o)
+identite: 0x00 || [0x31; 32] (tag key_algorithm 0, 33 o)
+parametres: T=1000, recursion=0, lambda=1024, forme de depart BQFC 0x08 || 99 x 0x00
+prouveur: chiavdf 1.1.14 (crate Rust, Cargo.lock de impl/core)
+plateforme: Docker rust:1-bookworm (Debian 12.15), x86_64, rustc 1.100.0
+commande: cargo run --release --features vdf --example gen_vdf_fixture
+date: 2026-11-19

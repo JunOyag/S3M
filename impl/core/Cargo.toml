@@ -2,16 +2,17 @@
 name = "p2p-storage-core"
 version = "0.1.0"
 edition = "2021"
-description = "Primitives cryptographiques et structurelles du protocole P2P (ST-P2P-STORAGE-2026-V2), sans I/O réseau ni disque."
+description = "Primitives cryptographiques et structurelles du protocole P2P (ST-P2P-STORAGE-2026, spec V3), sans I/O réseau ni disque."
 license = "MIT"
 
-# cdylib pour wasm-pack (consommé par impl/connector en WASM, §7.3 du protocole
-# — Connecteur en Bun), rlib pour impl/node (Rust natif).
+# rlib natif, lié par impl/node, impl/protocol et impl/connector (spec V3 :
+# plus de cible WASM).
 [lib]
 name = "p2p_storage_core"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
+chiavdf = { version = "1.1.14", optional = true }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 # Ré-export de la même famille de courbes que ed25519-dalek/x25519-dalek —
 # utilisé par keys.rs pour la biration Edwards->Montgomery (RFC 7748 §6.1).
@@ -28,35 +29,20 @@ chacha20poly1305 = { version = "0.10", default-features = false, features = ["al
 hmac = "0.12"
 thiserror = "1"
 zeroize = { version = "1", features = ["derive"] }
-# Pure-Rust, WASM-compatible binary quadratic class groups and Chia-compatible
-# Wesolowski verification. Kept distinct from chiavdf: that optional native
-# dependency remains solely for legacy proof generation / reference tests.
-kyn-vdf = { version = "0.1.1", default-features = false }
-
-# Activée uniquement avec `--features wasm` (build ciblant impl/connector).
-wasm-bindgen = { version = "0.2", optional = true }
-
 # VDF (network.vdf-identity, Phase 0) : la crate `chiavdf` compile du C++ par
 # CMake (MPIR sous Windows, GMP ailleurs) et génère ses bindings avec
-# bindgen/libclang — elle ne produit aucun artefact wasm32-unknown-unknown et
-# ne se compile pas sans l'outillage décrit dans impl/TECH_STACK.md,
-# section « Environnement de build et CI (chiavdf) ». Deux verrous
-# cumulatifs, conformes à l'arbitrage SPEC_GAPS du 17/10/2026 :
-#   1. dépendance déclarée uniquement hors `wasm32` (cible explicite) — le
-#      build `--features wasm` de l'impl/connector ne la voit jamais ;
-#   2. optionnelle, activée par la feature `vdf` NON active par défaut — un
-#      `cargo test` local sans cmake/C++/libclang reste vert (la VDF y
-#      renvoie CoreError::VdfUnavailable), et seuls les builds CI lancent
-#      `cargo test --features vdf`.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-chiavdf = { version = "1.1.14", optional = true }
+# bindgen/libclang (outillage : impl/TECH_STACK.md, « Environnement de build
+# et CI »). Optionnelle, feature `vdf` non active par défaut : un `cargo test`
+# local sans outillage C++ reste vert (CoreError::VdfUnavailable) ; tests
+# complets en CI ou sous Docker (impl/docker-test.sh).
 
 [features]
 default = []
-wasm = ["dep:wasm-bindgen"]
 vdf = ["dep:chiavdf"]
 
 [dev-dependencies]
 hex = "0.4"
-wasm-bindgen-test = "0.3"
-web-time = "1"
+
+[[example]]
+name = "gen_vdf_fixture"
+required-features = ["vdf"]

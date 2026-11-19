@@ -25,12 +25,12 @@ par le Connecteur (tous deux en Rust).
     embarque de toute façon `chiavdf` pour **générer** la preuve de
     l'identité User.
 
-## Fixtures à `T = 100`
+## Fixtures à `T = 1000`
 
 Les tests rapides ne peuvent pas rejouer `T = 5 400 000`. Ils s'appuient sur
 des **fixtures générées une fois** avec `chiavdf` puis versionnées :
 
-- `T = 100`, `recursion = 0`, λ = 1024 ;
+- `T = 1000`, `recursion = 0`, λ = 1024 ;
 - identité marquée **valide pour la V3** : tag `key_algorithm = 0`
   (`0x00 ‖ clé publique de 32 o`, voir
   [`network.vdf-identity`](vdf-identity.md#identite-marquee)) ;
@@ -38,8 +38,18 @@ des **fixtures générées une fois** avec `chiavdf` puis versionnées :
   `chiavdf`, plateforme et commande de génération ; une fixture sans
   provenance n'est pas acceptée.
 
-Les fixtures de la V2 (identité `0x07 ‖ [0x31; 32]`, tag désormais rejeté)
-sont à régénérer.
+!!! warning "Pourquoi pas `T = 100`"
+    La preuve vaut `π = g^⌊2^T/ℓ⌋`, où `ℓ` est un premier d'environ 264 bits
+    dérivé par `chiavdf`. Pour `T < 264`, `⌊2^T/ℓ⌋ = 0` : `π` ne porte
+    aucune information, et `chiavdf` accepte alors **n'importe quels**
+    octets de `π` (constaté le 2026-11-19 sur les 200 positions × 2 bits).
+    Une fixture à `T = 100` ne peut donc pas tester le rejet d'un `π`
+    altéré. Dès `T = 1000`, toute altération de `π` est rejetée. Le `T` de
+    protocole (5 400 000) n'est pas concerné.
+
+Fixture versionnée : `impl/core/tests/fixtures/vdf_identity_tag0_t1000.hex`
+(identité `0x00 ‖ [0x31; 32]`) et sa provenance (`.provenance`). Les
+fixtures de la V2 (`T = 100`, tag `0x07` désormais rejeté) sont retirées.
 
 ## Critères de conformité
 
@@ -67,9 +77,10 @@ l'API de `chiavdf` le permet :
 | Génération de la preuve | combinée dans `prove` |
 | Vérification (`verify_n_wesolowski`) | séparée, recalcul de `Δ` compris |
 
-Mesures de référence du run CI du 19/10/2026 (`T = 100`, avant retrait du
-vérificateur pur) : `create_discriminant` 9 à 44 ms, `prove` 15 à 35 ms,
-vérification `chiavdf` 4,6 à 6,4 ms.
+Mesures : run CI du 19/10/2026 (`T = 100`) — `create_discriminant` 9 à
+44 ms, `prove` 15 à 35 ms, vérification 4,6 à 6,4 ms ; Docker
+`rust:1-bookworm` x86_64 du 2026-11-19 (`T = 1000`) — `prove` 11 ms,
+vérification 6 ms (test `vdf_fixtures::phase_timings_are_reported`).
 
 ## Cible `wasm32`
 

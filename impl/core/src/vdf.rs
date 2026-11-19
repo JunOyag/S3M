@@ -159,8 +159,8 @@ pub fn verify_identity_proof_params(
 }
 
 /// Binding réel : la crate `chiavdf` n'est liée qu'avec la feature `vdf`,
-/// sur une cible non-`wasm32` (dépendance de cible dans Cargo.toml).
-#[cfg(all(feature = "vdf", not(target_arch = "wasm32")))]
+/// (dépendance optionnelle dans Cargo.toml).
+#[cfg(feature = "vdf")]
 mod sys {
     use super::*;
     use sha2::{Digest, Sha256};
@@ -227,7 +227,7 @@ mod sys {
 }
 
 /// Hors feature `vdf` : la VDF n'est pas liée (voir l'en-tête du module).
-#[cfg(not(all(feature = "vdf", not(target_arch = "wasm32"))))]
+#[cfg(not(feature = "vdf"))]
 mod sys {
     use super::*;
 

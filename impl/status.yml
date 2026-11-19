@@ -356,12 +356,22 @@ entries:
       test.sh, rust:1-bookworm) : 12/12, clippy -D warnings vert.
   network.vdf-verifier-pure:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - vdf_fixtures::fixture_is_accepted_natively
+      - vdf_fixtures::regenerated_proof_matches_fixture_byte_for_byte
+      - vdf_fixtures::fixture_mutations_are_rejected
+      - vdf_fixtures::fixture_provenance_is_recorded
+      - vdf_fixtures::phase_timings_are_reported
     notes: >-
-      Rouvert par la spec V3 (2026-11-19). Réduit à « Instrumentation et fixtures VDF » : retirer src/vdf_pure.rs, la feature wasm et tests/vdf_pure_wasm.rs ; fixtures T=100 en tag 0 avec provenance ; mesures par phase. Le code V2 existant
-      dans impl/ est à mettre à niveau, pas à réécrire de zéro.
+      Spec V3 : vérificateur maison vdf_pure.rs, dépendance kyn-vdf, feature
+      wasm, harnais WASM et workflow vdf-verifier-pure.yml retirés ; crate-
+      type rlib seul. Fixture chiavdf tag 0 à T=1000 (et non 100 : π trivial
+      pour T < 264, voir SPEC_GAPS) avec provenance ; générateur
+      examples/gen_vdf_fixture.rs. Tests --features vdf sous Docker : 5/5,
+      suite complète et clippy verts ; en CI, vdf-identity.yml les exécute
+      (cargo test --features vdf).
   node.AttachedUser:
     kind: schema
     status: not_started
