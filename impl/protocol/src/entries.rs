@@ -71,6 +71,9 @@ pub struct NodeEntryParams<'a> {
     pub pub_node_recovery: &'a [u8; 32],
     /// `NodeSnapshotPointer` sérialisé (chiffré ici sous `K_node_self`).
     pub snapshot_pointer: Option<&'a [u8]>,
+    /// Multiaddrs joignables, directes d'abord puis via relais
+    /// (`network.traversee-nat`).
+    pub addrs: &'a [String],
 }
 
 /// Enveloppe signée de l'entrée Node.
@@ -94,6 +97,8 @@ pub fn node_entry_envelope(
     let ip = b.create_string(p.ip);
     let rec = b.create_vector(p.pub_node_recovery);
     let ct = blob.map(|x| b.create_vector(&x));
+    let addrs: Vec<_> = p.addrs.iter().map(|a| b.create_string(a)).collect();
+    let addrs = b.create_vector(&addrs);
     let e = fb::NodeEntry::create(
         &mut b,
         &fb::NodeEntryArgs {
@@ -104,6 +109,7 @@ pub fn node_entry_envelope(
             pub_node_recovery: Some(rec),
             migration_pointer: None,
             snapshot_ciphertext: ct,
+            addrs: Some(addrs),
         },
     );
     fb::finish_node_entry_buffer(&mut b, e);
@@ -256,4 +262,22 @@ pub fn open_user_entry(priv_user: &[u8; 32], envelope: &[u8]) -> Result<UserPlai
             .transpose()?
             .unwrap_or_default(),
     })
+}
+
+/// `(multiaddrs du champ addrs, (ip, port) direct)` d'une entrée Node.
+pub type NodeAddrs = (Vec<String>, Option<(String, u16)>);
+
+/// Adresses publiées par une entrée Node (enveloppe déjà vérifiée).
+pub fn node_entry_addrs(envelope: &[u8]) -> Option<NodeAddrs> {
+    let env = flatbuffers::root::<fb::DhtEnvelope>(envelope).ok()?;
+    let e = fb::root_as_node_entry(env.payload()?.bytes()).ok()?;
+    let addrs = e
+        .addrs()
+        .map(|v| v.iter().map(str::to_string).collect())
+        .unwrap_or_default();
+    let direct = e
+        .ip()
+        .filter(|i| !i.is_empty())
+        .map(|i| (i.to_string(), e.port()));
+    Some((addrs, direct))
 }

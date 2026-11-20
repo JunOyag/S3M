@@ -39,6 +39,7 @@ fn node_entry_is_accepted_with_proof_on_tagged_pub_node() {
             proof: &proof(),
             pub_node_recovery: &pk(&[6; 32]),
             snapshot_pointer: Some(b"pointeur"),
+            addrs: &[],
         },
         &[1; 12],
     )
@@ -47,6 +48,30 @@ fn node_entry_is_accepted_with_proof_on_tagged_pub_node() {
     let ok = accept_record(&pk(&seed), &env, None, 1_000, &|id, _| Ok(*id == want));
     assert!(ok.is_ok(), "{ok:?}");
     assert!(accept_record(&pk(&seed), &env, None, 1_000, &|_, _| Ok(false)).is_err());
+    let (addrs, direct) = node_entry_addrs(&env).unwrap();
+    assert!(addrs.is_empty());
+    assert_eq!(direct, Some(("203.0.113.7".to_string(), 4002)));
+    let relayed =
+        vec!["/ip4/198.51.100.1/tcp/4002/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWMe".to_string()];
+    let env = node_entry_envelope(
+        &seed,
+        &NodeEntryParams {
+            ip: "",
+            port: 0,
+            timestamp: 1_001,
+            proof: &proof(),
+            pub_node_recovery: &pk(&[6; 32]),
+            snapshot_pointer: None,
+            addrs: &relayed,
+        },
+        &[1; 12],
+    )
+    .unwrap();
+    assert_eq!(
+        node_entry_addrs(&env).unwrap(),
+        (relayed, None),
+        "Nœud derrière un NAT"
+    );
 }
 
 #[test]

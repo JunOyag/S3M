@@ -33,6 +33,7 @@ impl<'a> NodeEntry<'a> {
   pub const VT_PUB_NODE_RECOVERY: flatbuffers::VOffsetT = 12;
   pub const VT_MIGRATION_POINTER: flatbuffers::VOffsetT = 14;
   pub const VT_SNAPSHOT_CIPHERTEXT: flatbuffers::VOffsetT = 16;
+  pub const VT_ADDRS: flatbuffers::VOffsetT = 18;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -45,6 +46,7 @@ impl<'a> NodeEntry<'a> {
   ) -> flatbuffers::WIPOffset<NodeEntry<'bldr>> {
     let mut builder = NodeEntryBuilder::new(_fbb);
     builder.add_timestamp(args.timestamp);
+    if let Some(x) = args.addrs { builder.add_addrs(x); }
     if let Some(x) = args.snapshot_ciphertext { builder.add_snapshot_ciphertext(x); }
     if let Some(x) = args.migration_pointer { builder.add_migration_pointer(x); }
     if let Some(x) = args.pub_node_recovery { builder.add_pub_node_recovery(x); }
@@ -104,6 +106,13 @@ impl<'a> NodeEntry<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(NodeEntry::VT_SNAPSHOT_CIPHERTEXT, None)}
   }
+  #[inline]
+  pub fn addrs(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>(NodeEntry::VT_ADDRS, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for NodeEntry<'_> {
@@ -120,6 +129,7 @@ impl flatbuffers::Verifiable for NodeEntry<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("pub_node_recovery", Self::VT_PUB_NODE_RECOVERY, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<SignedMigrationPointer>>("migration_pointer", Self::VT_MIGRATION_POINTER, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("snapshot_ciphertext", Self::VT_SNAPSHOT_CIPHERTEXT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("addrs", Self::VT_ADDRS, false)?
      .finish();
     Ok(())
   }
@@ -132,6 +142,7 @@ pub struct NodeEntryArgs<'a> {
     pub pub_node_recovery: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub migration_pointer: Option<flatbuffers::WIPOffset<SignedMigrationPointer<'a>>>,
     pub snapshot_ciphertext: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub addrs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
 }
 impl<'a> Default for NodeEntryArgs<'a> {
   #[inline]
@@ -144,6 +155,7 @@ impl<'a> Default for NodeEntryArgs<'a> {
       pub_node_recovery: None,
       migration_pointer: None,
       snapshot_ciphertext: None,
+      addrs: None,
     }
   }
 }
@@ -182,6 +194,10 @@ impl<'a: 'b, 'b> NodeEntryBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeEntry::VT_SNAPSHOT_CIPHERTEXT, snapshot_ciphertext);
   }
   #[inline]
+  pub fn add_addrs(&mut self, addrs: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<&'b  str>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeEntry::VT_ADDRS, addrs);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> NodeEntryBuilder<'a, 'b> {
     let start = _fbb.start_table();
     NodeEntryBuilder {
@@ -206,6 +222,7 @@ impl core::fmt::Debug for NodeEntry<'_> {
       ds.field("pub_node_recovery", &self.pub_node_recovery());
       ds.field("migration_pointer", &self.migration_pointer());
       ds.field("snapshot_ciphertext", &self.snapshot_ciphertext());
+      ds.field("addrs", &self.addrs());
       ds.finish()
   }
 }
