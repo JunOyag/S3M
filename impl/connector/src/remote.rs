@@ -10,7 +10,23 @@ use serde_json::{json, Value};
 use crate::admin_client::RemoteSession;
 use crate::local_http::{self, ActionFn, Asset, StatusFn};
 
+// La carte du monde est celle du dashboard du Nœud (mêmes fichiers).
 const ASSETS: &[Asset] = &[
+    (
+        "map.html",
+        "text/html; charset=utf-8",
+        include_bytes!("../../node/dashboard/map.html"),
+    ),
+    (
+        "map.js",
+        "text/javascript; charset=utf-8",
+        include_bytes!("../../node/dashboard/map.js"),
+    ),
+    (
+        "world.json",
+        "application/json",
+        include_bytes!("../../node/dashboard/world.json"),
+    ),
     (
         "logo.png",
         "image/png",
@@ -79,7 +95,15 @@ pub async fn serve_remote(session: RemoteSession) -> Result<String, String> {
             tokio::runtime::Handle::current().block_on(session.action(name, body))
         })
     };
-    local_http::serve(0, st_fn, act_fn, ASSETS)
+    let map_fn: StatusFn = {
+        let session = session.clone();
+        Arc::new(move || {
+            tokio::runtime::Handle::current()
+                .block_on(session.map())
+                .unwrap_or_else(|e| json!({ "points": [], "erreur": e }))
+        })
+    };
+    local_http::serve_with_map(0, st_fn, act_fn, Some(map_fn), ASSETS)
         .await
         .map_err(|e| e.to_string())
 }

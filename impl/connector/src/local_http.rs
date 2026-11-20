@@ -33,6 +33,7 @@ struct AppState {
     guard: LocalApiGuard,
     status: StatusFn,
     action: ActionFn,
+    map: Option<StatusFn>,
     assets: &'static [Asset],
 }
 
@@ -141,6 +142,31 @@ pub async fn serve(
     action_fn: ActionFn,
     assets: &'static [Asset],
 ) -> std::io::Result<String> {
+    serve_with_map(port, status_fn, action_fn, None, assets).await
+}
+
+async fn map(State(st): State<AppState>, h: HeaderMap) -> Response {
+    if let Err(r) = check(&st, &h) {
+        return r;
+    }
+    let Some(f) = st.map.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    // Fil bloquant : la carte peut venir du réseau (Nœud administré à distance).
+    match tokio::task::spawn_blocking(move || f()).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Comme [`serve`], avec la carte du monde (`GET /api/map`).
+pub async fn serve_with_map(
+    port: u16,
+    status_fn: StatusFn,
+    action_fn: ActionFn,
+    map_fn: Option<StatusFn>,
+    assets: &'static [Asset],
+) -> std::io::Result<String> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let mut token = [0u8; 32];
     getrandom::getrandom(&mut token).map_err(std::io::Error::other)?;
@@ -150,12 +176,14 @@ pub async fn serve(
         guard,
         status: status_fn,
         action: action_fn,
+        map: map_fn,
         assets,
     };
     let app = Router::new()
         .route("/", get(asset))
         .route("/api/status", get(status))
         .route("/api/action/:name", post(action))
+        .route("/api/map", get(map))
         .route("/api/ws", get(ws))
         .route("/:file", get(asset))
         .with_state(st);

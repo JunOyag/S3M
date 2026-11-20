@@ -184,6 +184,11 @@ impl RemoteSession {
         self.call("status", None, Value::Null).await
     }
 
+    /// Points de la carte du monde du Nœud.
+    pub async fn map(&self) -> Result<Value, String> {
+        self.call("map", None, Value::Null).await
+    }
+
     pub async fn action(&self, name: &str, body: Value) -> Result<Value, String> {
         self.call("action", Some(name), body).await
     }

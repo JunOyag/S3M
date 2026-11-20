@@ -99,6 +99,7 @@ async fn a_configured_node_is_administered_with_the_totp_code_only() {
         Mode::Node { secret },
         st,
         act,
+        Some(Arc::new(|| json!({ "points": [{ "type": "partenaire" }] }))),
     )
     .await
     .unwrap();
@@ -117,7 +118,11 @@ async fn a_configured_node_is_administered_with_the_totp_code_only() {
     let code = format!("{:06}", hotp(&[5u8; 20], unix / TOTP_STEP, 6));
     let session = client.login(&addr, &code).await.unwrap();
     let v = session.status().await.unwrap();
-    assert!(v.get("carte").is_none());
+    assert_eq!(v["carte"], true, "carte exposée à distance");
+    assert_eq!(
+        session.map().await.unwrap()["points"][0]["type"],
+        "partenaire"
+    );
     assert_eq!(
         session.action("set_quota", json!({})).await.unwrap()["fait"],
         "set_quota"
