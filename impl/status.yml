@@ -1278,3 +1278,26 @@ entries:
       dans la recherche locale, appairage depuis l'assistant, reprise d'une
       identité existante, administration du Nœud par code 2FA, dashboard
       distant relayé en local.
+  protocols.gestion-volumes:
+    kind: narrative
+    status: done
+    owner: claude-code
+    tests:
+      - volumes::draining_moves_every_block_and_can_be_cancelled
+      - volumes::a_lost_volume_is_forgotten_and_reports_its_blocks
+      - volumes::marker_tells_own_foreign_and_unmarked_disks_apart
+      - volumes::importing_a_volume_keeps_only_verified_blocks
+      - volumes::the_draft_is_validated_as_a_whole
+      - volumes::ownership_query_answers_only_for_fragments_placed_at_the_requester
+      - exchange::ownership_query_and_answer_round_trip
+    notes: >-
+      Livré le 2026-11-21. protocol : OwnershipQuery / OwnershipAnswer (ajout
+      aux unions de BlockExchange). node : écran Volumes avec brouillon validé
+      d'un bloc puis appliqué (2FA frais exigé seulement à distance) ;
+      marqueur signé par volume ; retrait par vidage bloc à bloc (bascule
+      transactionnelle, annulable) puis retrait automatique ; volume perdu
+      (oubli, solde des partenaires ajusté, scrubbing immédiat) ; import d'un
+      disque contenant des blocs (mise de côté, intégrité par SHA-256,
+      appartenance par registre de dispersion ou OwnershipQuery, suppression
+      des inconnus, partenaire injoignable réessayé) ; disque d'un autre Nœud
+      : effacer et réutiliser seulement ; effacement limité aux données S3m.
