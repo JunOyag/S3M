@@ -86,12 +86,19 @@ d'ensemble (`résumé` : libellé, valeur, état ok / attention / problème,
 
 - **Nœud** : vue d'ensemble, utilisateurs, partenaires, carte du monde,
   volumes ([`protocols.gestion-volumes`](../04-protocols/gestion-volumes.md) :
-  brouillon de modifications enregistré d'un coup), stockage et protection,
+  liste des actions appliquée d'un coup après confirmation), stockage et protection,
   réseau, administration à distance, configuration, diagnostic.
 - **Connecteur** : vue d'ensemble, fichiers et synchronisation, mon Nœud,
   identité et sécurité, paramètres.
 
 Les tailles s'affichent en unités lisibles, les instants en date locale ;
+chaque tableau se trie par colonne, se pagine au-delà de 25 lignes et
+s'exporte en CSV ; une action peut exiger une fenêtre de confirmation
+(`confirmer`). L'écran Réseau du Nœud affiche le **taux de
+republication DHT** : part des entrées qu'il gère (entrée Node,
+DispersalManifest de chaque Utilisateur) republiées dans la période de
+[`network.dht-directory`](../01-network-dht/dht-directory.md#expiration-et-republication)
+(30 jours, tolérance d'un jour) ;
 l'écran courant est conservé au rechargement, et `#token=…&page=<id>`
 ouvre directement un écran.
 

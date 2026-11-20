@@ -14,17 +14,15 @@ Fonctionnalité ajoutée le 2026-11-20. Elle complète
 retire, reconfigure ou efface les volumes d'un Nœud en service, sans perte
 de données ni arrêt.
 
-## Brouillon et enregistrement {: #brouillon }
+## Liste des actions {: #liste-des-actions }
 
-Les modifications (ajout, retrait, chemin, capacité, effacement, volume
-perdu) s'accumulent dans un **brouillon** puis s'appliquent d'un coup. Le
-brouillon entier est validé avant toute exécution — chemin accessible et
-inscriptible, capacité au moins égale à l'occupation, place suffisante sur
-les autres volumes pour un retrait, au moins un volume actif restant ; une
-seule erreur et rien n'est appliqué. En
-[administration à distance](../07-deploiement/appairage-admin.md#administration),
-l'enregistrement exige un code 2FA frais (même règle anti-rejeu que la
-connexion) ; depuis le dashboard local, aucun code.
+Les actions (ajout, retrait, chemin, capacité, effacement, volume perdu)
+s'accumulent dans une **liste des actions**, puis s'appliquent d'un coup
+après une fenêtre de confirmation qui les récapitule. La liste entière est
+validée avant toute exécution — chemin accessible et inscriptible,
+capacité au moins égale à l'occupation, place suffisante sur les autres
+volumes pour un retrait, au moins un volume actif restant ; une seule
+erreur et rien n'est appliqué. Le journal des volumes date chaque action.
 
 La liste des volumes et leur état vivent dans la configuration du Nœud
 (`volumes` de `node.json`, reflet local de
