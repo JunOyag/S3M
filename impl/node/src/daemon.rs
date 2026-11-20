@@ -26,7 +26,7 @@ use crate::dispersal_engine::{
 use crate::exchange::{refresh_successors, NodeService, PartnerState, UserAccount};
 use crate::exchange::{AttachPolicy, PartnerPolicy, VdfCheck};
 use crate::geo::{Geo, ATTRIBUTION, DB_FILE};
-use crate::local_http::{self, ActionFn, Asset, StatusFn};
+use crate::local_http::{ActionFn, Asset, StatusFn};
 use crate::net::{NatState, NetConfig, RelayLimits};
 use crate::partnering::{excluded, run_partnering, score, Net, PartneringConfig, PartneringReport};
 use crate::publish::{ensure_node_proof, publish_entry, NodeEntryState};
@@ -116,6 +116,15 @@ pub struct Config {
     /// ce Nœud.
     #[serde(default = "default_true")]
     pub mdns: bool,
+    /// Administration à distance par le canal `/s3m/admin/1`
+    /// (deploiement.appairage-admin).
+    #[serde(default = "default_true")]
+    pub remote_admin: bool,
+    #[serde(default = "default_admin_listen")]
+    pub admin_listen: String,
+    /// Numéro de série du secret 2FA (régénération).
+    #[serde(default)]
+    pub admin_totp_serial: u32,
     /// Fichier d'origine (modification depuis le dashboard) ; non sérialisé.
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -123,6 +132,10 @@ pub struct Config {
 
 fn default_true() -> bool {
     true
+}
+
+pub fn default_admin_listen() -> String {
+    format!("/ip4/0.0.0.0/tcp/{}", s3m_protocol::admin::DEFAULT_PORT)
 }
 
 fn default_api_port() -> u16 {
@@ -434,7 +447,7 @@ pub fn save_state(path: &Path, st: &SavedState) -> Result<(), DaemonError> {
 
 // ------------------------------------------------------------- dashboard
 
-const ASSETS: &[Asset] = &[
+pub const ASSETS: &[Asset] = &[
     (
         "logo.png",
         "image/png",
@@ -498,6 +511,12 @@ pub struct Shared {
     pub geoip: Mutex<GeoipState>,
     pub last_partnering: Mutex<Option<(u64, PartneringReport)>>,
     pub config: Config,
+    /// Administration à distance : graine `priv_node` (secret TOTP), série
+    /// courante, affichage du QR code jusqu'à, serveur.
+    pub priv_node: [u8; 32],
+    pub admin_serial: std::sync::atomic::AtomicU32,
+    pub admin_reveal_until: Mutex<Option<u64>>,
+    pub admin: Mutex<Option<crate::admin::AdminServer>>,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
     pub dht_addr: Option<String>,
@@ -513,11 +532,73 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         a.extend(forms);
     }
     v["géolocalisation"] = geoip_status(sh);
+    v["administration à distance"] = admin_status(sh);
+    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        a.push(
+            json!({ "nom": "show_totp", "titre": "Double authentification (2FA)",
+            "libellé": "Afficher le QR code 2FA (2 min)", "champs": [] }),
+        );
+        a.push(json!({ "nom": "regenerate_totp", "libellé": "Régénérer le 2FA (téléphone perdu)", "champs": [] }));
+    }
     v["configuration"] = json!({
         "fichier": sh.config.source.as_ref().map(|p| p.display().to_string()),
         "en attente de redémarrage": if pending.is_empty() { json!("rien") } else { json!(pending) },
     });
     v
+}
+
+fn admin_status(sh: &Shared) -> Value {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let listen: Vec<String> = sh
+        .admin
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|s| {
+            s.listen
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|a| a.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut v = json!({
+        "active": sh.config.remote_admin && !listen.is_empty(),
+        "écoute": listen,
+        "série du 2FA": sh.admin_serial.load(std::sync::atomic::Ordering::SeqCst),
+    });
+    let reveal = sh
+        .admin_reveal_until
+        .lock()
+        .unwrap()
+        .is_some_and(|t| now < t);
+    if let (true, Some(secret)) = (reveal, admin_secret(sh)) {
+        let node_id = ed25519_dalek::SigningKey::from_bytes(&sh.priv_node)
+            .verifying_key()
+            .to_bytes();
+        v["QR code 2FA"] = json!(crate::admin::qr_svg(&crate::admin::otpauth_uri(
+            &secret, &node_id
+        )));
+        v["clé 2FA"] = json!(s3m_core::identity_derivation::base32_encode(&secret));
+    }
+    v
+}
+
+/// Régénère le secret 2FA : série + 1, enregistrée dans `node.json`.
+fn regenerate_totp(sh: &Shared) -> Result<Value, String> {
+    let next = sh.admin_serial.load(std::sync::atomic::Ordering::SeqCst) + 1;
+    if let Some(path) = sh.config.source.as_deref() {
+        crate::settings::set_raw(path, "admin_totp_serial", json!(next))?;
+    }
+    sh.admin_serial
+        .store(next, std::sync::atomic::Ordering::SeqCst);
+    Ok(
+        json!({ "ok": true, "message": "Nouveau 2FA : scannez le nouveau QR code ; l'ancien code et les sessions à distance ne valent plus" }),
+    )
 }
 
 fn geoip_status(sh: &Shared) -> Value {
@@ -953,6 +1034,21 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
     if name == "set_config" {
         return set_config(sh, &v);
     }
+    if name == "regenerate_totp" {
+        regenerate_totp(sh)?;
+    }
+    if name == "show_totp" || name == "regenerate_totp" {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        *sh.admin_reveal_until.lock().unwrap() = Some(now + 120);
+        return Ok(json!({ "ok": true, "message": if name == "show_totp" {
+            "QR code 2FA affiché pendant 2 minutes (section « administration à distance »)"
+        } else {
+            "Nouveau 2FA : scannez le nouveau QR code ; l'ancien et les sessions à distance ne valent plus"
+        } }));
+    }
     let mut s = sh.service.lock().unwrap();
     match name {
         "attach_user" => {
@@ -1046,6 +1142,23 @@ pub fn save(sh: &Shared) -> Result<(), DaemonError> {
 
 /// Démarre le Nœud ; rend le contexte et l'URL du dashboard.
 pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError> {
+    let switch = crate::local_http::Switch::new();
+    let url = switch.serve(config.api_port, ASSETS).await?;
+    let sh = start_with(config, &switch).await?;
+    Ok((sh, url))
+}
+
+/// Secret TOTP courant du Nœud.
+pub fn admin_secret(sh: &Shared) -> Option<[u8; 20]> {
+    let serial = sh.admin_serial.load(std::sync::atomic::Ordering::SeqCst);
+    s3m_core::symmetric_suite::derive_admin_totp_secret(&sh.priv_node, serial).ok()
+}
+
+/// Démarre le Nœud derrière le dashboard `switch` (déjà servi).
+pub async fn start_with(
+    config: Config,
+    switch: &Arc<crate::local_http::Switch>,
+) -> Result<Arc<Shared>, DaemonError> {
     let start = |e: &dyn std::fmt::Display| DaemonError::Start(e.to_string());
     let mnemonic = std::fs::read_to_string(&config.seed_file)?;
     let seed = node_seed_from_mnemonic(&mnemonic, config.identity_index)?;
@@ -1166,6 +1279,10 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         blocks_addr: blocks.listen_addr().await.map(|a| a.to_string()),
         dht_addr: dht.listen_addr().await.map(|a| a.to_string()),
         config: config.clone(),
+        priv_node: seed,
+        admin_serial: std::sync::atomic::AtomicU32::new(config.admin_totp_serial),
+        admin_reveal_until: Mutex::new(None),
+        admin: Mutex::new(None),
     });
 
     let clock = system_clock();
@@ -1186,7 +1303,25 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         let sh = shared.clone();
         Arc::new(move || map_points(&sh))
     };
-    let url = local_http::serve(config.api_port, st_fn, act_fn, Some(map_fn), ASSETS).await?;
+    switch.set(st_fn, act_fn, Some(map_fn));
+    if config.remote_admin {
+        let sh = shared.clone();
+        let secret: crate::admin::SecretFn = Arc::new(move || admin_secret(&sh));
+        let key = libp2p::identity::Keypair::ed25519_from_bytes(seed).map_err(|e| start(&e))?;
+        match crate::admin::serve(
+            key,
+            &config.admin_listen,
+            false,
+            crate::admin::Mode::Node { secret },
+            switch.status_fn(),
+            switch.action_fn(),
+        )
+        .await
+        {
+            Ok(s) => *shared.admin.lock().unwrap() = Some(s),
+            Err(e) => eprintln!("administration à distance indisponible : {e}"),
+        }
+    }
 
     // Tâches périodiques : dispersion et sauvegarde (30 s), pointeurs de
     // migration (1 h), purge des Nœuds silencieux (1 j).
@@ -1312,5 +1447,5 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
             }
         }
     });
-    Ok((shared, url))
+    Ok(shared)
 }

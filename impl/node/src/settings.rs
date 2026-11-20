@@ -264,6 +264,22 @@ pub const FIELDS: &[Field] = &[
         "",
     ),
     f(
+        "Administration à distance",
+        "administration à distance",
+        "remote_admin",
+        Kind::Bool,
+        false,
+        "Depuis un Connecteur, avec le code 2FA.",
+    ),
+    f(
+        "Administration à distance",
+        "adresse d'écoute",
+        "admin_listen",
+        Kind::Text,
+        false,
+        "Par défaut /ip4/0.0.0.0/tcp/4003.",
+    ),
+    f(
         "Vie privée",
         "enregistrer l'adresse des utilisateurs",
         "record_user_ips",
@@ -441,4 +457,20 @@ pub fn apply(path: &Path, input: &Value) -> Result<Applied, String> {
         live,
         restart,
     })
+}
+
+/// Écrit une valeur de premier niveau dans le fichier (écriture atomique).
+pub fn set_raw(path: &Path, key: &str, value: Value) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut file: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    set(&mut file, key, value);
+    serde_json::from_value::<Config>(file.clone())
+        .map_err(|e| format!("configuration invalide : {e}"))?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&file).expect("sérialisable"),
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }

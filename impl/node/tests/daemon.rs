@@ -47,6 +47,9 @@ fn config(dir: &std::path::Path) -> Config {
         relays: vec![],
         force_relay: false,
         mdns: false,
+        remote_admin: false,
+        admin_listen: "/ip4/127.0.0.1/tcp/0".into(),
+        admin_totp_serial: 0,
         source: None,
     }
 }

@@ -21,7 +21,7 @@ function el(tag, text, cls) {
 
 // ---------------------------------------------------------------- messages
 
-function toast(message, kind = "ok") {
+function toast(message, kind = "ok", href) {
   let box = document.getElementById("toasts");
   if (!box) {
     box = el("div");
@@ -31,12 +31,19 @@ function toast(message, kind = "ok") {
     document.body.appendChild(box);
   }
   const t = el("div", message, "toast " + kind);
+  if (href) {
+    const a = el("a", " Ouvrir");
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener";
+    t.appendChild(a);
+  }
   box.appendChild(t);
   requestAnimationFrame(() => t.classList.add("show"));
   setTimeout(() => {
     t.classList.remove("show");
     setTimeout(() => t.remove(), 300);
-  }, kind === "error" ? 7000 : 3500);
+  }, kind === "error" || href ? 7000 : 3500);
 }
 
 // ---------------------------------------------------------------- actions
@@ -51,7 +58,9 @@ async function runAction(nom, body, button, label) {
     });
     if (r.ok) {
       const res = await r.json().catch(() => ({}));
-      toast(res.message || (label ? `${label} : c'est fait` : "C'est fait"));
+      // `ouvrir` : page à ouvrir (dashboard d'un Nœud administré à distance).
+      const w = res.ouvrir ? window.open(res.ouvrir, "_blank", "noopener") : true;
+      toast(res.message || (label ? `${label} : c'est fait` : "C'est fait"), "ok", w ? undefined : res.ouvrir);
       refresh();
     } else {
       toast(await r.text(), "error");
@@ -69,6 +78,17 @@ function cell(v) {
   if (v === false) return "non";
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+// QR code : SVG fourni par le moteur, affiché comme image (jamais inséré).
+function value(v) {
+  if (typeof v === "string" && v.startsWith("<svg")) {
+    const i = el("img", undefined, "qr");
+    i.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(v);
+    i.alt = "QR code";
+    return i;
+  }
+  return document.createTextNode(cell(v));
 }
 
 function rowActions(list) {
@@ -132,7 +152,9 @@ function render(value) {
     Object.entries(value).forEach(([k, v]) => {
       const r = t.insertRow();
       r.appendChild(el("th", k));
-      r.appendChild(el("td", cell(v)));
+      const td = el("td");
+      td.appendChild(value(v));
+      r.appendChild(td);
     });
     return t;
   }

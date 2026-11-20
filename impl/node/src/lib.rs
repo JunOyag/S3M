@@ -5,6 +5,7 @@
 //! append-only mutation log is compacted into a SQLite snapshot at the same
 //! thresholds used by the NodeManifest mutation cycle.
 
+pub mod admin;
 pub mod blacklist;
 pub mod chunk_store;
 pub mod daemon;
@@ -26,6 +27,7 @@ pub mod recovery;
 pub mod restore;
 pub mod self_repair;
 pub mod settings;
+pub mod setup;
 pub mod snapshot_engine;
 pub mod tombstones;
 pub mod upkeep;

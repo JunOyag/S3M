@@ -71,7 +71,7 @@ async fn asset(State(st): State<AppState>, h: HeaderMap, path: Option<Path<Strin
                 (header::CACHE_CONTROL, "no-store"),
                 (
                     header::CONTENT_SECURITY_POLICY,
-                    "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:*",
+                    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:*",
                 ),
                 (header::REFERRER_POLICY, "no-referrer"),
             ],
@@ -172,4 +172,67 @@ pub async fn serve(
         let _ = axum::serve(listener, app).await;
     });
     Ok(url)
+}
+
+/// Fonctions du dashboard remplaçables à chaud : l'assistant de premier
+/// lancement puis le Nœud servent la même adresse avec le même jeton
+/// (`deploiement.appairage-admin` § Identité temporaire).
+pub struct Switch {
+    inner: std::sync::RwLock<(StatusFn, ActionFn, Option<StatusFn>)>,
+}
+
+impl Switch {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: std::sync::RwLock::new((
+                Arc::new(|| serde_json::json!({ "titre": "S3m — démarrage…" })),
+                Arc::new(|_, _| Err("démarrage en cours".into())),
+                None,
+            )),
+        })
+    }
+
+    pub fn set(&self, status: StatusFn, action: ActionFn, map: Option<StatusFn>) {
+        *self.inner.write().unwrap() = (status, action, map);
+    }
+
+    pub fn status_fn(self: &Arc<Self>) -> StatusFn {
+        let me = self.clone();
+        Arc::new(move || {
+            let f = me.inner.read().unwrap().0.clone();
+            f()
+        })
+    }
+
+    pub fn action_fn(self: &Arc<Self>) -> ActionFn {
+        let me = self.clone();
+        Arc::new(move |n, v| {
+            let f = me.inner.read().unwrap().1.clone();
+            f(n, v)
+        })
+    }
+
+    pub fn map_fn(self: &Arc<Self>) -> StatusFn {
+        let me = self.clone();
+        Arc::new(move || {
+            let f = me.inner.read().unwrap().2.clone();
+            f.map(|f| f()).unwrap_or(Value::Null)
+        })
+    }
+
+    /// Sert le dashboard sur `127.0.0.1:<port>` ; rend l'URL d'ouverture.
+    pub async fn serve(
+        self: &Arc<Self>,
+        port: u16,
+        assets: &'static [Asset],
+    ) -> std::io::Result<String> {
+        serve(
+            port,
+            self.status_fn(),
+            self.action_fn(),
+            Some(self.map_fn()),
+            assets,
+        )
+        .await
+    }
 }

@@ -1,21 +1,21 @@
 //! `s3m-node` — exécutable du Nœud (`deploiement.packaging`).
 //!
 //! ```text
-//! s3m-node init <répertoire>   crée phrase de récupération + config
-//! s3m-node <config.json>       démarre le Nœud
+//! s3m-node init <répertoire>   crée la configuration
+//! s3m-node <config.json>       démarre le Nœud (premier lancement : identité
+//!                              temporaire et assistant, deploiement.appairage-admin)
 //! ```
 
 use std::path::{Path, PathBuf};
 
-use s3m_node::daemon::{generate_mnemonic, start, Config, VolumeSpec};
+use s3m_node::daemon::{start_with, Config, VolumeSpec, ASSETS};
+use s3m_node::local_http::Switch;
 
 fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dir)?;
-    let seed = dir.join("node.seed");
-    if seed.exists() {
-        return Err(format!("{} existe déjà", seed.display()).into());
+    if dir.join("node.json").exists() {
+        return Err(format!("{} existe déjà", dir.join("node.json").display()).into());
     }
-    std::fs::write(&seed, generate_mnemonic()? + "\n")?;
     let config = Config {
         seed_file: "node.seed".into(),
         identity_index: 0,
@@ -43,17 +43,35 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         relays: vec![],
         force_relay: false,
         mdns: true,
+        remote_admin: true,
+        admin_listen: s3m_node::daemon::default_admin_listen(),
+        admin_totp_serial: 0,
         source: None,
     };
     std::fs::write(
         dir.join("node.json"),
         serde_json::to_string_pretty(&config)?,
     )?;
-    println!(
-        "Phrase de récupération écrite dans {} — recopiez-la hors de cette machine.",
-        seed.display()
-    );
+    println!("Au premier démarrage, le Nœud propose une nouvelle identité ou la restauration d'une identité existante.");
     println!("Configuration : {}", dir.join("node.json").display());
+    Ok(())
+}
+
+async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let c = Config::load(path)?;
+    let switch = Switch::new();
+    let url = switch.serve(c.api_port, ASSETS).await?;
+    println!("Dashboard : {url}");
+    if !c.seed_file.exists() {
+        s3m_node::setup::run(&c, &switch).await?;
+    }
+    let shared = start_with(c, &switch).await?;
+    println!("Nœud {} démarré.", shared.peer_id);
+    if let Some(a) = &shared.blocks_addr {
+        println!("Échange de blocs : {a}");
+    }
+    let _ = tokio::signal::ctrl_c().await;
+    let _ = s3m_node::daemon::save(&shared);
     Ok(())
 }
 
@@ -75,22 +93,7 @@ async fn main() {
                 Err(e) => Err(e.into()),
             }
         }
-        [config] => match Config::load(Path::new(config)) {
-            Err(e) => Err(e.into()),
-            Ok(c) => match start(c).await {
-                Err(e) => Err(e.into()),
-                Ok((shared, url)) => {
-                    println!("Nœud {} démarré.", shared.peer_id);
-                    if let Some(a) = &shared.blocks_addr {
-                        println!("Échange de blocs : {a}");
-                    }
-                    println!("Dashboard : {url}");
-                    let _ = tokio::signal::ctrl_c().await;
-                    let _ = s3m_node::daemon::save(&shared);
-                    Ok(())
-                }
-            },
-        },
+        [config] => run(Path::new(config)).await,
         _ => Err(
             "usage : s3m-node init <répertoire> | geoip-update <répertoire de données> | <config.json>".into(),
         ),

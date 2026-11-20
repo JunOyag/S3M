@@ -1,11 +1,13 @@
 # Image officielle du Nœud S3m (deploiement.packaging).
 # Construction, depuis la racine du dépôt :
 #   docker build -f impl/node/Dockerfile -t s3m-node impl
-# Première exécution (phrase de récupération + configuration dans /data) :
+# Première exécution (configuration dans /data) :
 #   docker run --rm -v p2p-node:/data s3m-node init /data
 # Démarrage (réseau de l'hôte : l'API du dashboard n'écoute que 127.0.0.1) :
 #   docker run -d --name p2p-node --network host -v p2p-node:/data s3m-node
-# L'URL du dashboard (jeton dans le fragment) s'affiche dans `docker logs p2p-node`.
+# Premier démarrage : identité temporaire ; le code d'appairage s'affiche dans
+# `docker logs p2p-node` — configuration depuis S3m (Connecteur) du réseau
+# local (deploiement.appairage-admin). L'URL du dashboard local y figure aussi.
 
 FROM rust:1-bookworm AS build
 RUN apt-get update -qq && apt-get install -y -qq cmake libgmp-dev libclang-dev >/dev/null
@@ -22,6 +24,6 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends libgmp1
 COPY --from=build /src/node/target/release/s3m-node /usr/local/bin/s3m-node
 USER p2p
 VOLUME /data
-EXPOSE 4001 4002
+EXPOSE 4001 4002 4003
 ENTRYPOINT ["s3m-node"]
 CMD ["/data/node.json"]
