@@ -795,6 +795,13 @@ pages:
     title: "Partenariats et Rattachements Automatiques"
     section: "§3.3"
     refs: [protocols.echange-blocs, network.dht-directory, network.vdf-identity, securite.pos-challenges, securite.blacklist-fraude, protocols.volatilite-reparation, protocols.dispersion-transactionnelle, node.PartnerAccount, node.AttachedUser, crypto.k-attach, deploiement.packaging]
+    verified_by:
+      - partnering::score_combines_reliability_availability_and_speed
+      - partnering::proposals_are_accepted_within_policy_and_verified_entries_only
+      - partnering::users_attach_automatically_within_quota_budget_with_one_use_vdf_identities
+      - partnering::geolocation_skips_private_addresses_and_dates_are_civil
+      - partnering::nodes_discover_score_and_partner_then_retire_weak_partners
+      - auto_attach::unattached_connector_attaches_itself_with_the_node_policy_quota
 
   - id: protocols.echange-blocs
     kind: narrative

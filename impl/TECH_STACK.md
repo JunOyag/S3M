@@ -171,6 +171,10 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   (compilation, `LIBCLANG_PATH="C:/Program Files/LLVM/bin"`) —
   `cargo build --release --features mount`. La DLL WinFsp est cherchée dans
   `%ProgramFiles(x86)%\WinFsp\bin` (ou `WINFSP_DIR`).
+- Carte du dashboard Nœud : base de géolocalisation DB-IP « City Lite »
+  (≈ 130 Mo, CC BY 4.0) téléchargée par `p2p-storage-node geoip-update
+  <data_dir>` (mise à jour mensuelle à relancer) ; sans elle, la carte compte
+  tous les points comme non localisés.
 - Entrées DHT : le Nœud publie son entrée (preuve VDF calculée une fois,
   `data/vdf_proof.bin`, adresse `public_ip`/`public_port`) ; le Connecteur
   publie son entrée User si `dht_bootstrap` est renseigné (adresse « DHT »

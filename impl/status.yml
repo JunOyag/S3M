@@ -1204,7 +1204,22 @@ entries:
       open_grant}.
   protocols.partenariat-automatique:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - partnering::score_combines_reliability_availability_and_speed
+      - partnering::proposals_are_accepted_within_policy_and_verified_entries_only
+      - partnering::users_attach_automatically_within_quota_budget_with_one_use_vdf_identities
+      - partnering::geolocation_skips_private_addresses_and_dates_are_civil
+      - partnering::nodes_discover_score_and_partner_then_retire_weak_partners
+      - auto_attach::unattached_connector_attaches_itself_with_the_node_policy_quota
+    notes: >-
+      Livré le 2026-11-20. protocol : messages Probe, ProposePartnership,
+      Attach (exchange.rs). node : découverte DHT (entrée Node valide exigée),
+      Probe, score fiabilité/disponibilité/vitesse, recrutement, exclusion de
+      placement sous le seuil, retrait après 7 j puis fin du partenariat
+      (partnering.rs) ; acceptation des propositions et rattachement
+      automatique selon politique (exchange.rs) ; liste des partenaires
+      enrichie, carte du monde (dashboard/map.*, geo.rs, base DB-IP City Lite
+      par geoip-update). connector : rattachement automatique avec preuve VDF.
+      Essai réel : carte géolocalisée et regroupée vérifiée par capture.
