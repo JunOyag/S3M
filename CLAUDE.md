@@ -52,7 +52,7 @@ lesquels une session Claude Code se trompe le plus souvent.
 - L'essai V1 de `network.dht-directory` reste archivé sur `archive/dht-directory-v1`.
 - Builds : `cargo test` en local (Windows) ; lecteur : `--features mount` (WinFsp + LLVM) ;
   VDF natif Windows : `--features vdf` (MSVC + CMake + LLVM, DLL MPIR dans le PATH) ;
-  exécutables : `bash impl/package-windows.sh` ; tests `--features vdf` via
+  exécutables : `powershell -ExecutionPolicy Bypass -File .\impl\package-windows.ps1` ; tests `--features vdf` via
   `bash impl/docker-test.sh` ; types FlatBuffers via `bash impl/protocol/gen.sh`.
 
 ## Commandes utiles

@@ -142,8 +142,11 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   winget, LLVM 23) : `cargo test --features vdf` de `impl/core` passe
   nativement ; preuve `T = 5 400 000` en ≈ 110 s. Les tests et binaires
   ont besoin des DLL `mpir*.dll` de chiavdf (`mpir_gc_x64/`) dans le `PATH`
-  ou à côté de l'exécutable — `bash impl/package-windows.sh` produit
-  `impl/dist/windows/` (Nœud, Connecteur, DLL).
+  ou à côté de l'exécutable — `powershell -ExecutionPolicy Bypass -File
+  .\impl\package-windows.ps1` (ou `bash impl/package-windows.sh` sous Git
+  Bash ; depuis PowerShell, la commande `bash` lance WSL, pas Git Bash)
+  produit `impl/dist/windows/` (Nœud, Connecteur, S3m.exe, DLL). chiavdf est
+  figé en `=1.1.14` pour que toutes les crates lient les mêmes DLL MPIR.
 - **Builds locaux** : un conteneur Docker Linux (`cmake`, `libgmp-dev`,
   `libclang-dev`, toolchain Rust) suffit pour compiler et tester
   `impl/core` avec la feature `vdf` hors de la CI.
