@@ -160,6 +160,7 @@ fn node_envelope(seed: &[u8; 32], port: u16, to: Option<[u8; 32]>) -> Vec<u8> {
             pub_node_recovery: Some(rec),
             migration_pointer: mp,
             snapshot_ciphertext: None,
+            addrs: None,
         },
     );
     fb::finish_node_entry_buffer(&mut fbb, e);

@@ -277,6 +277,8 @@ pub struct Shared {
     pub drive_status: Mutex<DriveStatus>,
     pub user_entry: Mutex<UserEntryState>,
     pub attach: Mutex<AttachState>,
+    /// Client DHT (si `dht_bootstrap`), pour relire l'entrée du Nœud.
+    pub dht: std::sync::OnceLock<DhtClient>,
     priv_user: [u8; 32],
     pub_node: [u8; 32],
     salt: Vec<u8>,
@@ -307,7 +309,8 @@ pub fn status(sh: &Shared) -> Value {
         "titre": "Connecteur P2P-Storage",
         "nœud rattaché": {
             "node_id": sh.config.node.node_id,
-            "adresse": sh.config.node.addr,
+            "adresse configurée": sh.config.node.addr,
+            "adresse utilisée": sh.session.node_addr().to_string(),
             "joignable": h.reachable,
             "dernier contact": h.last_contact,
             "indisponible depuis (s)": h.inactivity_detected_at.map(|t| now.saturating_sub(t)),
@@ -406,6 +409,7 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
             }
         };
         sh.user_entry.lock().unwrap().dht_connected = true;
+        let _ = sh.dht.set(client.clone());
         // Nouvel appareil : racine relue dans l'entrée User publiée.
         if let Some(plain) = read_user_entry(&client, &priv_user, &sh.pub_user).await {
             if let Some(d) = &sh.drive {
@@ -514,6 +518,25 @@ async fn auto_attach(sh: &Shared) -> Result<u64, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Multiaddrs du Nœud publiées dans son entrée DHT, directe d'abord.
+pub fn node_candidates(pub_node: &[u8; 32], envelope: &[u8]) -> Vec<Multiaddr> {
+    let Some((addrs, direct)) = p2p_storage_protocol::entries::node_entry_addrs(envelope) else {
+        return Vec::new();
+    };
+    let peer = libp2p::identity::ed25519::PublicKey::try_from_bytes(pub_node)
+        .ok()
+        .map(|k| libp2p::PeerId::from(libp2p::identity::PublicKey::from(k)));
+    let mut out = Vec::new();
+    if let (Some((ip, port)), Some(peer)) = (direct, peer) {
+        let proto = if ip.contains(':') { "ip6" } else { "ip4" };
+        if let Ok(a) = format!("/{proto}/{ip}/tcp/{port}/p2p/{peer}").parse() {
+            out.push(a);
+        }
+    }
+    out.extend(addrs.iter().filter_map(|a| a.parse().ok()));
+    out
+}
+
 /// Un tour de surveillance : joignabilité du Nœud, renouvellement de
 /// l'autorisation de secours.
 pub async fn watch_once(sh: &Shared) {
@@ -547,6 +570,28 @@ pub async fn watch_once(sh: &Shared) {
             }
         }
         probe = sh.session.get_block(&[0; 32]).await;
+    }
+    // Nœud injoignable à l'adresse courante : adresses publiées dans son
+    // entrée DHT (directe, QUIC, relais — `network.traversee-nat`).
+    if matches!(probe, Err(ExchangeError::Network(_))) {
+        if let Some(client) = sh.dht.get() {
+            if let Some(env) = client.get(sh.pub_node.to_vec()).await.ok().flatten() {
+                let current = sh.session.node_addr();
+                for a in node_candidates(&sh.pub_node, &env) {
+                    if a == current {
+                        continue;
+                    }
+                    sh.session.set_node_addr(a);
+                    probe = sh.session.get_block(&[0; 32]).await;
+                    if !matches!(probe, Err(ExchangeError::Network(_))) {
+                        break;
+                    }
+                }
+                if matches!(probe, Err(ExchangeError::Network(_))) {
+                    sh.session.set_node_addr(current);
+                }
+            }
+        }
     }
     let ok = matches!(probe, Err(ExchangeError::Refused(Refusal::NotFound)));
     {
@@ -638,6 +683,7 @@ pub async fn start(
         drive_status: Mutex::new(DriveStatus::default()),
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
+        dht: std::sync::OnceLock::new(),
         priv_user,
         pub_node,
         salt: salt.clone(),

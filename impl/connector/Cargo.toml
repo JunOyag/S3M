@@ -17,7 +17,7 @@ futures = "0.3"
 flatbuffers = "=23.5.26"
 getrandom = "0.2"
 hex = "0.4"
-libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response"] }
+libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response", "identify", "relay", "dcutr", "quic"] }
 p2p-storage-core = { path = "../core" }
 p2p-storage-protocol = { path = "../protocol" }
 serde = { version = "1", features = ["derive"] }

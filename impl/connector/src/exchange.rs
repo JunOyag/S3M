@@ -120,7 +120,23 @@ impl request_response::Codec for FrameCodec {
 // ----------------------------------------------------------------- client
 
 type Reply = oneshot::Sender<Result<Response, ExchangeError>>;
-type Behaviour = request_response::Behaviour<FrameCodec>;
+/// Pile du client : échange de blocs, client de relais, perçage DCUtR et
+/// Identify (`network.traversee-nat`) — aucune écoute.
+#[derive(libp2p::swarm::NetworkBehaviour)]
+struct Behaviour {
+    rr: request_response::Behaviour<FrameCodec>,
+    relay_client: libp2p::relay::client::Behaviour,
+    dcutr: libp2p::dcutr::Behaviour,
+    identify: libp2p::identify::Behaviour,
+}
+
+/// Connexion sortante sur un port neuf (Windows : pas de réutilisation).
+fn new_port(addr: Multiaddr) -> libp2p::swarm::dial_opts::DialOpts {
+    libp2p::swarm::dial_opts::DialOpts::unknown_peer_id()
+        .address(addr)
+        .allocate_new_port()
+        .build()
+}
 
 /// Client d'échange : identité **éphémère** tirée au démarrage, mode
 /// sortant seul (le Connecteur n'accepte aucune connexion entrante).
@@ -143,12 +159,21 @@ impl BlockClient {
                 yamux::Config::default,
             )
             .map_err(|e| net(&e))?
-            .with_behaviour(|_| {
-                request_response::Behaviour::<FrameCodec>::new(
+            .with_quic()
+            .with_relay_client(noise::Config::new, yamux::Config::default)
+            .map_err(|e| net(&e))?
+            .with_behaviour(|key, relay_client| Behaviour {
+                rr: request_response::Behaviour::<FrameCodec>::new(
                     [(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
                     request_response::Config::default()
                         .with_request_timeout(Duration::from_secs(30)),
-                )
+                ),
+                relay_client,
+                dcutr: libp2p::dcutr::Behaviour::new(key.public().to_peer_id()),
+                identify: libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
+                    "/p2p-storage/id/1.0.0".into(),
+                    key.public(),
+                )),
             })
             .map_err(|e| net(&e))?
             .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
@@ -204,13 +229,13 @@ async fn run(
                     continue;
                 }
                 if swarm.is_connected(&peer) {
-                    let id = swarm.behaviour_mut().send_request(&peer, Frame::Data(bytes));
+                    let id = swarm.behaviour_mut().rr.send_request(&peer, Frame::Data(bytes));
                     inflight.insert(id, reply);
                 } else {
                     let first = !waiting.contains_key(&peer);
                     waiting.entry(peer).or_default().push((bytes, reply));
                     if first {
-                        if let Err(e) = swarm.dial(addr) {
+                        if let Err(e) = swarm.dial(new_port(addr)) {
                             for (_, r) in waiting.remove(&peer).unwrap_or_default() {
                                 let _ = r.send(Err(ExchangeError::Network(e.to_string())));
                             }
@@ -221,7 +246,7 @@ async fn run(
             event = swarm.select_next_some() => match event {
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                     for (bytes, r) in waiting.remove(&peer_id).unwrap_or_default() {
-                        let id = swarm.behaviour_mut().send_request(&peer_id, Frame::Data(bytes));
+                        let id = swarm.behaviour_mut().rr.send_request(&peer_id, Frame::Data(bytes));
                         inflight.insert(id, r);
                     }
                 }
@@ -230,10 +255,10 @@ async fn run(
                         let _ = r.send(Err(ExchangeError::Network(error.to_string())));
                     }
                 }
-                SwarmEvent::Behaviour(request_response::Event::Message {
+                SwarmEvent::Behaviour(BehaviourEvent::Rr(request_response::Event::Message {
                     message: request_response::Message::Response { request_id, response },
                     ..
-                }) => {
+                })) => {
                     if let Some(r) = inflight.remove(&request_id) {
                         let _ = r.send(match response {
                             Frame::TooLarge => Err(Refusal::TooLarge.into()),
@@ -241,7 +266,7 @@ async fn run(
                         });
                     }
                 }
-                SwarmEvent::Behaviour(request_response::Event::OutboundFailure { request_id, error, .. }) => {
+                SwarmEvent::Behaviour(BehaviourEvent::Rr(request_response::Event::OutboundFailure { request_id, error, .. })) => {
                     if let Some(r) = inflight.remove(&request_id) {
                         let _ = r.send(Err(ExchangeError::Network(error.to_string())));
                     }
@@ -258,7 +283,7 @@ async fn run(
 #[derive(Clone)]
 pub struct NodeSession {
     client: BlockClient,
-    node_addr: Multiaddr,
+    node_addr: std::sync::Arc<std::sync::Mutex<Multiaddr>>,
     credential: Credential,
 }
 
@@ -278,7 +303,7 @@ impl NodeSession {
         let proof = connector_proof(&k, &client.peer_id().to_bytes(), &node_peer.to_bytes());
         Ok(Self {
             client,
-            node_addr,
+            node_addr: std::sync::Arc::new(std::sync::Mutex::new(node_addr)),
             credential: Credential::User {
                 user_id: pub_user.to_vec(),
                 proof: proof.to_vec(),
@@ -291,7 +316,18 @@ impl NodeSession {
             credential: Some(self.credential.clone()),
             body,
         };
-        self.client.request(self.node_addr.clone(), req).await
+        let addr = self.node_addr.lock().unwrap().clone();
+        self.client.request(addr, req).await
+    }
+
+    /// Adresse courante du Nœud.
+    pub fn node_addr(&self) -> Multiaddr {
+        self.node_addr.lock().unwrap().clone()
+    }
+
+    /// Change l'adresse du Nœud (même identité : la preuve reste valable).
+    pub fn set_node_addr(&self, addr: Multiaddr) {
+        *self.node_addr.lock().unwrap() = addr;
     }
 
     pub async fn get_block(&self, hash: &BlockHash) -> Result<Vec<u8>, ExchangeError> {
