@@ -69,3 +69,15 @@ async fn list_the_box_port_mappings() {
         );
     }
 }
+
+#[test]
+fn shared_ipv4_tries_the_same_rank_in_each_quarter() {
+    assert_eq!(
+        s3m_node::upnp::shared_ipv4_candidates(4001),
+        vec![20385, 36769, 53153]
+    );
+    assert_eq!(
+        s3m_node::upnp::shared_ipv4_candidates(20001),
+        vec![3617, 36385, 52769]
+    );
+}

@@ -1428,6 +1428,7 @@ pub async fn start_with(
             crate::admin::Mode::Node { secret },
             switch.status_fn(),
             switch.action_fn(),
+            Some(switch.map_fn()),
         )
         .await
         {

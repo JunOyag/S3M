@@ -96,6 +96,8 @@ pub struct Auth {
     failures: u32,
     locked_until: Option<Instant>,
     last_step: u64,
+    /// Points de la carte du monde (opération `map`), si exposée.
+    map: Option<StatusFn>,
 }
 
 impl Auth {
@@ -108,7 +110,14 @@ impl Auth {
             failures: 0,
             locked_until: None,
             last_step: 0,
+            map: None,
         }
+    }
+
+    /// Expose la carte du monde (opération `map`).
+    pub fn with_map(mut self, map: Option<StatusFn>) -> Self {
+        self.map = map;
+        self
     }
 
     fn locked(&self, now: Instant) -> bool {
@@ -263,11 +272,17 @@ impl Auth {
                 match op.as_str() {
                     "status" => {
                         let mut v = status();
-                        if let Some(o) = v.as_object_mut() {
-                            o.remove("carte");
+                        if self.map.is_none() {
+                            if let Some(o) = v.as_object_mut() {
+                                o.remove("carte");
+                            }
                         }
                         AdminResponse::Result(v)
                     }
+                    "map" => match &self.map {
+                        Some(f) => AdminResponse::Result(f()),
+                        None => AdminResponse::Error("carte non disponible".into()),
+                    },
                     "action" => {
                         let name = name.unwrap_or_default();
                         if !setup && LOCAL_ONLY.contains(&name.as_str()) {
@@ -315,6 +330,7 @@ pub async fn serve(
     mode: Mode,
     status: StatusFn,
     action: ActionFn,
+    map: Option<StatusFn>,
 ) -> Result<AdminServer, String> {
     let listen: Multiaddr = listen.parse().map_err(|e| format!("admin_listen : {e}"))?;
     let me = key.public().to_peer_id();
@@ -351,7 +367,7 @@ pub async fn serve(
     swarm.listen_on(listen).map_err(|e| e.to_string())?;
     let addrs = Arc::new(Mutex::new(Vec::new()));
     let a2 = addrs.clone();
-    let mut auth = Auth::new(mode, me);
+    let mut auth = Auth::new(mode, me).with_map(map);
     let task = tokio::spawn(async move {
         loop {
             match swarm.select_next_some().await {

@@ -190,6 +190,7 @@ pub async fn run(config: &Config, switch: &Arc<Switch>) -> Result<(), String> {
         Mode::Setup { code: code.clone() },
         switch.status_fn(),
         switch.action_fn(),
+        None,
     )
     .await;
     println!("Nœud à configurer (identité temporaire {temp}).");

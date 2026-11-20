@@ -202,6 +202,17 @@ async fn map_port(
             break;
         }
     }
+    // IPv4 partagée (ex. Free) : seule une plage de ports est attribuée à
+    // l'abonné ; le même rang est essayé dans chaque quart de l'espace.
+    for candidate in shared_ipv4_candidates(port) {
+        if gw
+            .add_port(proto, candidate, local, LEASE_S, "s3m-node")
+            .await
+            .is_ok()
+        {
+            return Ok(candidate);
+        }
+    }
     match gw.add_any_port(proto, local, LEASE_S, "s3m-node").await {
         Ok(p) => Ok(p),
         Err(e) => Err(format!(
@@ -210,4 +221,15 @@ async fn map_port(
             describe(&e.to_string())
         )),
     }
+}
+
+/// Ports externes à essayer pour `port` derrière une IPv4 partagée : même
+/// rang dans chacun des quatre quarts (plages de 16384 ports), hors `port`
+/// lui-même et hors ports réservés (< 1024).
+pub fn shared_ipv4_candidates(port: u16) -> Vec<u16> {
+    let offset = port % 16384;
+    (0..4u16)
+        .map(|k| k * 16384 + offset)
+        .filter(|p| *p != port && *p >= 1024)
+        .collect()
 }
