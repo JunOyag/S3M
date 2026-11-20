@@ -44,10 +44,30 @@ Ajout du 2026-11-20 ([`protocols.partenariat-automatique`](../04-protocols/parte
   service en ligne ;
 - localisation par adresse IP avec une base locale au format MMDB (DB-IP
   « City Lite », CC BY 4.0, attribution affichée), téléchargée à la demande
-  de l'opérateur (`s3m-node geoip-update`) ; adresse publiée dans
+  de l'opérateur (`s3m-node geoip-update`, ou bouton du dashboard :
+  téléchargement en arrière-plan et rechargement sans redémarrage) ; adresse publiée dans
   l'entrée DHT pour les Nœuds, adresse de la dernière connexion pour les
   Utilisateurs (enregistrement désactivable) ; adresses privées ou
   inconnues comptées « non localisées ».
+
+### Configuration depuis le dashboard {: #configuration }
+
+Ajout du 2026-11-20 : les réglages de `node.json` sont modifiables par
+formulaires groupés (réseau, relais, partenaires, contrôles, vie privée),
+pré-remplis avec les valeurs effectives. Seuls les champs modifiés sont
+réécrits ; la configuration complète est validée avant une écriture
+atomique. La politique d'acceptation des partenaires et l'enregistrement
+des adresses des Utilisateurs s'appliquent immédiatement ; les autres
+réglages au prochain redémarrage, que le dashboard signale. Identité,
+répertoires, volumes et paramètres d'effacement (k, coef) ne sont pas
+modifiables ainsi (risque de perte de données).
+
+## Dashboards : retours d'action {: #retours }
+
+Le résultat de chaque action s'affiche dans un message éphémère (succès ou
+erreur), le bouton étant désactivé pendant l'envoi ; les actions propres à
+un élément d'un tableau (par exemple « Se rattacher » à un Nœud trouvé)
+sont des boutons sur sa ligne.
 
 ## Dashboard Connecteur
 
@@ -107,8 +127,9 @@ synchronisation courantes :
 - **Assistant de premier lancement** (aucune configuration) : création de
   la phrase de récupération (affichée une fois, à recopier), recherche des
   Nœuds du réseau local
-  ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)), choix
-  du Nœud ou saisie manuelle de son adresse, puis démarrage normal ; le
+  ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)),
+  bouton « Se rattacher » sur chaque Nœud trouvé ou saisie manuelle de son
+  adresse, puis démarrage normal et ouverture du tableau de bord ; le
   rattachement est demandé automatiquement
   ([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md)).
 
