@@ -312,6 +312,61 @@ fn queue_status(c: &Config) -> Value {
 
 /// État présenté par le dashboard Connecteur.
 pub fn status(sh: &Shared) -> Value {
+    let mut v = status_base(sh);
+    v["résumé"] = connector_summary(&v);
+    v["pages"] = json!([
+        { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
+        { "id": "fichiers", "titre": "Fichiers et synchronisation",
+          "sections": ["lecteur", "file d'écriture"], "actions": ["sync_now"] },
+        { "id": "noeud", "titre": "Mon Nœud",
+          "sections": ["nœud rattaché", "rattachement automatique"], "actions": ["admin_node", "change_node"] },
+        { "id": "securite", "titre": "Identité et sécurité",
+          "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": [] },
+        { "id": "parametres", "titre": "Paramètres", "autres": true,
+          "sections": ["configuration", "non suivi par cet exécutable"], "actions": [] }
+    ]);
+    v
+}
+
+/// Indicateurs de la vue d'ensemble (`état` : ok, attention, probleme, neutre).
+fn connector_summary(v: &Value) -> Value {
+    let p = |path: &str| v.pointer(path).cloned().unwrap_or(Value::Null);
+    let (node, node_state) = match p("/nœud rattaché/joignable") {
+        Value::Bool(true) => ("joignable", "ok"),
+        Value::Bool(false) => ("injoignable", "probleme"),
+        _ => ("vérification…", "neutre"),
+    };
+    let pending = p("/lecteur/modifications en attente").as_u64().unwrap_or(0);
+    let (sync, sync_state) = if !p("/lecteur/erreur de synchronisation").is_null() {
+        ("erreur".to_string(), "probleme")
+    } else if p("/lecteur/conflit (racine du Nœud)").as_bool() == Some(true) {
+        ("conflit".to_string(), "probleme")
+    } else if pending > 0 {
+        (format!("{pending} en attente"), "attention")
+    } else {
+        ("à jour".to_string(), "ok")
+    };
+    let mount = p("/lecteur/point de montage");
+    let (drive, drive_state) = if p("/lecteur/monté").as_bool() == Some(true) {
+        (format!("{} monté", mount.as_str().unwrap_or("")), "ok")
+    } else if !p("/lecteur/erreur de montage").is_null() {
+        ("erreur de montage".to_string(), "probleme")
+    } else {
+        ("non monté".to_string(), "neutre")
+    };
+    let queue = p("/file d'écriture/mutations en attente")
+        .as_u64()
+        .unwrap_or(0);
+    json!([
+        { "libellé": "Mon Nœud", "valeur": node, "état": node_state, "page": "noeud" },
+        { "libellé": "Synchronisation", "valeur": sync, "état": sync_state, "page": "fichiers" },
+        { "libellé": "Lecteur", "valeur": drive, "état": drive_state, "page": "fichiers" },
+        { "libellé": "File d'écriture", "valeur": queue, "détail": "modifications hors ligne",
+          "état": if queue == 0 { "ok" } else { "attention" }, "page": "fichiers" }
+    ])
+}
+
+fn status_base(sh: &Shared) -> Value {
     let now = (sh.clock)();
     let h = sh.health.lock().unwrap().clone();
     json!({
