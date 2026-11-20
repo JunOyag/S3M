@@ -35,6 +35,8 @@ fn config(dir: &std::path::Path) -> Config {
         api_port: 0,
         dispersal: Default::default(),
         upkeep: Default::default(),
+        public_ip: None,
+        public_port: None,
     }
 }
 

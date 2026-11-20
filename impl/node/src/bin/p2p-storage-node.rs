@@ -31,6 +31,8 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         api_port: 8765,
         dispersal: Default::default(),
         upkeep: Default::default(),
+        public_ip: None,
+        public_port: None,
     };
     std::fs::write(
         dir.join("node.json"),

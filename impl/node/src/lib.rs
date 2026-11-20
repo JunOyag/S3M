@@ -17,6 +17,7 @@ pub mod incidents;
 pub mod local_http;
 pub mod migration;
 pub mod pos;
+pub mod publish;
 pub mod quota_sync;
 pub mod restore;
 pub mod self_repair;

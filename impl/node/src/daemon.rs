@@ -25,6 +25,7 @@ use crate::dispersal_engine::{
 };
 use crate::exchange::{refresh_successors, BlockServer, NodeService, PartnerState, UserAccount};
 use crate::local_http::{self, ActionFn, Asset, StatusFn};
+use crate::publish::{ensure_node_proof, publish_if_due, NodeEntryState};
 use crate::tombstones::PartnerLedger;
 use crate::upkeep::{run_upkeep, UpkeepConfig, UpkeepReport};
 use crate::{PhysicalStore, VolumeConfig};
@@ -70,6 +71,14 @@ pub struct Config {
     /// Contrôles PoS, analyse de volatilité, scrubbing.
     #[serde(default)]
     pub upkeep: UpkeepConfig,
+    /// Adresse publique annoncée dans l'entrée DHT Node (IP joignable par
+    /// les Connecteurs et partenaires). Absente : IP d'écoute de l'échange
+    /// de blocs si elle est explicite.
+    #[serde(default)]
+    pub public_ip: Option<String>,
+    /// Port public de l'échange de blocs (défaut : port d'écoute).
+    #[serde(default)]
+    pub public_port: Option<u16>,
 }
 
 fn default_api_port() -> u16 {
@@ -105,6 +114,33 @@ pub fn node_seed_from_mnemonic(mnemonic: &str, index: u32) -> Result<[u8; 32], D
     let seed = mnemonic_to_seed(&words, "").map_err(|e| DaemonError::Config(e.to_string()))?;
     derive_identity_seed(&seed, IdentityRole::Node, index)
         .map_err(|e| DaemonError::Config(e.to_string()))
+}
+
+/// `pub_node_recovery` (`m/0x703270'/2'/<index>'`) depuis la phrase.
+pub fn node_recovery_pub(mnemonic: &str, index: u32) -> Result<[u8; 32], DaemonError> {
+    let words = mnemonic.split_whitespace().collect::<Vec<_>>().join(" ");
+    let seed = mnemonic_to_seed(&words, "").map_err(|e| DaemonError::Config(e.to_string()))?;
+    let k = derive_identity_seed(&seed, IdentityRole::NodeRecovery, index)
+        .map_err(|e| DaemonError::Config(e.to_string()))?;
+    Ok(ed25519_dalek::SigningKey::from_bytes(&k)
+        .verifying_key()
+        .to_bytes())
+}
+
+/// Adresse annoncée : configuration, sinon IP et port d'écoute explicites.
+pub fn announced_addr(c: &Config) -> Option<(String, u16)> {
+    let listen: Multiaddr = c.blocks_listen.parse().ok()?;
+    let (mut ip, mut port) = (None, 0);
+    for p in listen.iter() {
+        match p {
+            libp2p::multiaddr::Protocol::Ip4(v) if !v.is_unspecified() => ip = Some(v.to_string()),
+            libp2p::multiaddr::Protocol::Tcp(v) => port = v,
+            _ => {}
+        }
+    }
+    let ip = c.public_ip.clone().or(ip)?;
+    let port = c.public_port.unwrap_or(port);
+    (port != 0).then_some((ip, port))
 }
 
 /// Nouvelle phrase de récupération de 24 mots.
@@ -305,6 +341,8 @@ pub struct Shared {
     pub last_cycle: Mutex<Option<(u64, CycleReport)>>,
     /// Dernier cycle de contrôle : `(instant, bilan)`.
     pub last_upkeep: Mutex<Option<(u64, UpkeepReport)>>,
+    /// Entrée DHT Node.
+    pub node_entry: Arc<Mutex<NodeEntryState>>,
     pub config: Config,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
@@ -360,6 +398,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "alertes d'intégrité signalées": s.incidents.iter().map(|i| hx(i)).collect::<Vec<_>>(),
         "dispersion": dispersal_status(sh),
         "contrôles et réparation": upkeep_status(sh),
+        "annuaire (entrée Node)": node_entry_status(sh),
         "migration": {
             "anciens node_id couverts": s.previous_node_ids.iter().map(|i| hx(i)).collect::<Vec<_>>(),
             "délégations reçues": s.delegations.len(),
@@ -425,6 +464,18 @@ fn upkeep_status(sh: &Shared) -> Value {
             "fragments replacés": r.repaired, "blocs locaux réparés": r.local_repaired })),
         "liste noire": blacklist,
         "événements récents": up.events.iter().rev().take(15).cloned().collect::<Vec<_>>(),
+    })
+}
+
+fn node_entry_status(sh: &Shared) -> Value {
+    let s = sh.node_entry.lock().unwrap().clone();
+    json!({
+        "preuve VDF": if s.proof_ready { json!("prête") } else {
+            json!(s.proof_error.clone().unwrap_or_else(|| "calcul en cours (≈ 1 min)".into())) },
+        "adresse annoncée": announced_addr(&sh.config).map(|(i, p)| format!("{i}:{p}")),
+        "publiée le": s.published_at,
+        "prochaine republication": if s.published_at.is_some() { json!(s.next_republish) } else { Value::Null },
+        "erreur": s.last_error,
     })
 }
 
@@ -512,6 +563,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
     let start = |e: &dyn std::fmt::Display| DaemonError::Start(e.to_string());
     let mnemonic = std::fs::read_to_string(&config.seed_file)?;
     let seed = node_seed_from_mnemonic(&mnemonic, config.identity_index)?;
+    let recovery_pub = node_recovery_pub(&mnemonic, config.identity_index)?;
     std::fs::create_dir_all(&config.data_dir)?;
     let volumes = config
         .volumes
@@ -567,6 +619,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         dispersal: tokio::sync::Mutex::new(dispersal),
         last_cycle: Mutex::new(None),
         last_upkeep: Mutex::new(None),
+        node_entry: Arc::new(Mutex::new(NodeEntryState::default())),
         peer_id: blocks.peer_id().to_string(),
         blocks_addr: blocks.listen_addr().await.map(|a| a.to_string()),
         dht_addr: dht.listen_addr().await.map(|a| a.to_string()),
@@ -592,6 +645,44 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         service: shared.service.clone(),
         addrs: shared.addrs.clone(),
     };
+    // Entrée DHT Node : preuve VDF (une fois), publication, republication.
+    {
+        let (sh, dht, clock) = (shared.clone(), fabric.dht.clone(), clock.clone());
+        let pub_node = shared.service.lock().unwrap().node_id();
+        tokio::spawn(async move {
+            let cache = sh.config.data_dir.join("vdf_proof.bin");
+            let proof = match ensure_node_proof(&cache, &pub_node).await {
+                Ok(p) => p,
+                Err(e) => {
+                    sh.node_entry.lock().unwrap().proof_error = Some(e);
+                    return;
+                }
+            };
+            sh.node_entry.lock().unwrap().proof_ready = true;
+            loop {
+                match announced_addr(&sh.config) {
+                    Some(addr) => {
+                        publish_if_due(
+                            &dht,
+                            &seed,
+                            &pub_node,
+                            &recovery_pub,
+                            addr,
+                            &proof,
+                            &sh.node_entry,
+                            clock(),
+                        )
+                        .await;
+                    }
+                    None => {
+                        sh.node_entry.lock().unwrap().last_error =
+                            Some("adresse publique non configurée (public_ip)".into());
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(60)).await;
+            }
+        });
+    }
     let sh = shared.clone();
     tokio::spawn(async move {
         let mut tick: u64 = 0;
