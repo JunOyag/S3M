@@ -21,12 +21,16 @@ use p2p_storage_protocol::exchange::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::access::Root;
+use crate::dht_directory::{chiavdf_verifier, DhtClient, DhtClientConfig};
 use crate::drive::{BlockIo, Drive, DriveError, KEY_VERSION};
 use crate::exchange::{BlockClient, ExchangeError, GrantKeeper, NodeSession};
 use crate::fs::BlockHash;
 use crate::local_http::{self, ActionFn, Asset, StatusFn};
+use crate::publish::{ensure_user_proof, publish_if_changed, read_user_entry, UserEntryState};
 use crate::write_back::{Scheduler, WriteBackConfig};
 use crate::write_queue::WriteQueue;
+use p2p_storage_protocol::entries::{Attachment, UserPlain};
 
 /// `Q_max` par défaut : 4 GiO.
 pub const DEFAULT_Q_MAX_BYTES: u64 = 4 << 30;
@@ -72,6 +76,10 @@ pub struct Config {
     /// Lettre ou répertoire du lecteur monté.
     #[serde(default)]
     pub mount_point: Option<String>,
+    /// Nœuds d'amorçage DHT (`/ip4/…/tcp/…/p2p/<PeerId>`, adresse « DHT »
+    /// du dashboard Nœud). Vide : pas de publication de l'entrée User.
+    #[serde(default)]
+    pub dht_bootstrap: Vec<String>,
 }
 
 fn default_api_port() -> u16 {
@@ -250,6 +258,7 @@ pub struct Shared {
     pub drive: Option<Arc<Mutex<Drive>>>,
     pub scheduler: Arc<Mutex<Scheduler>>,
     pub drive_status: Mutex<DriveStatus>,
+    pub user_entry: Mutex<UserEntryState>,
 }
 
 fn queue_status(c: &Config) -> Value {
@@ -288,6 +297,7 @@ pub fn status(sh: &Shared) -> Value {
         "file d'écriture": queue_status(&sh.config),
         "incidents d'intégrité": h.incidents,
         "lecteur": drive_status(sh),
+        "annuaire (entrée User)": user_entry_status(sh),
         "configuration": {
             "Q_max (octets)": sh.config.q_max_bytes,
             "intervalle de surveillance (s)": sh.config.watch_interval_s,
@@ -319,6 +329,120 @@ fn drive_status(sh: &Shared) -> Value {
         "erreur de synchronisation": st.last_sync_error,
         "conflit (racine du Nœud)": conflict,
     })
+}
+
+fn user_entry_status(sh: &Shared) -> Value {
+    if sh.config.dht_bootstrap.is_empty() {
+        return json!("désactivé (dht_bootstrap vide)");
+    }
+    let s = sh.user_entry.lock().unwrap().clone();
+    json!({
+        "connecté à la DHT": s.dht_connected,
+        "preuve VDF": if s.proof_ready { json!("prête") } else {
+            json!(s.proof_error.clone().unwrap_or_else(|| "calcul en cours (≈ 1 min)".into())) },
+        "racine publiée": s.published_root.map(hex::encode),
+        "publiée le": s.published_at,
+        "racine restaurée depuis la DHT": s.restored_from_dht,
+        "erreur": s.last_error,
+    })
+}
+
+/// Date du premier rattachement, conservée sur disque.
+fn attached_at(dir: &Path, now: u64) -> u64 {
+    let p = dir.join("attached_at");
+    if let Some(t) = std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+    {
+        return t;
+    }
+    let _ = std::fs::write(&p, now.to_string());
+    now
+}
+
+/// Entrée DHT User : restauration de la racine, preuve VDF, publication à
+/// chaque nouvelle racine.
+fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], salt: Vec<u8>) {
+    tokio::spawn(async move {
+        let bootstrap: Vec<Multiaddr> = sh
+            .config
+            .dht_bootstrap
+            .iter()
+            .filter_map(|a| a.parse().ok())
+            .collect();
+        let client = match DhtClient::start(DhtClientConfig {
+            bootstrap,
+            vdf: chiavdf_verifier(),
+            clock: sh.clock.clone(),
+        })
+        .await
+        {
+            Ok(c) => c,
+            Err(e) => {
+                sh.user_entry.lock().unwrap().last_error = Some(e.to_string());
+                return;
+            }
+        };
+        sh.user_entry.lock().unwrap().dht_connected = true;
+        // Nouvel appareil : racine relue dans l'entrée User publiée.
+        if let Some(plain) = read_user_entry(&client, &priv_user, &sh.pub_user).await {
+            if let Some(d) = &sh.drive {
+                let adopted = d.lock().unwrap().adopt_root(Root {
+                    fs_root_hash: plain.fs_root_hash,
+                    encryption_salt: plain.encryption_salt,
+                    key_version: plain.key_version,
+                });
+                if adopted.unwrap_or(false) {
+                    sh.user_entry.lock().unwrap().restored_from_dht = true;
+                }
+            }
+        }
+        let cache = sh.config.data_dir.join("vdf_proof.bin");
+        let proof = match ensure_user_proof(&cache, &priv_user, &sh.pub_user).await {
+            Ok(p) => p,
+            Err(e) => {
+                sh.user_entry.lock().unwrap().proof_error = Some(e);
+                return;
+            }
+        };
+        sh.user_entry.lock().unwrap().proof_ready = true;
+        let since = attached_at(&sh.config.data_dir, (sh.clock)());
+        loop {
+            let root = sh.drive.as_ref().map(|d| d.lock().unwrap().root());
+            let (fs_root_hash, encryption_salt, key_version) = match root {
+                Some(r) => (r.fs_root_hash, r.encryption_salt, r.key_version),
+                None => ([0; 32], [0; 16], KEY_VERSION),
+            };
+            let inactivity = sh
+                .health
+                .lock()
+                .unwrap()
+                .inactivity_detected_at
+                .unwrap_or(0);
+            let plain = UserPlain {
+                fs_root_hash,
+                encryption_salt,
+                key_version,
+                attachments: vec![Attachment {
+                    node_id: pub_node,
+                    salt: salt.clone(),
+                    timestamp: since,
+                    inactivity_detected_at: inactivity,
+                }],
+            };
+            publish_if_changed(
+                &client,
+                &priv_user,
+                &sh.pub_user,
+                &proof,
+                &plain,
+                &sh.user_entry,
+                (sh.clock)(),
+            )
+            .await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+    });
 }
 
 /// Synchronise le lecteur (appel bloquant).
@@ -434,6 +558,7 @@ pub async fn start(
         drive,
         scheduler: Arc::new(Mutex::new(Scheduler::new(WriteBackConfig::default()))),
         drive_status: Mutex::new(DriveStatus::default()),
+        user_entry: Mutex::new(UserEntryState::default()),
         session,
         keeper: tokio::sync::Mutex::new(keeper),
         grant_expiry: Mutex::new(expiry),
@@ -461,6 +586,9 @@ pub async fn start(
         })
     };
     let url = local_http::serve(config.api_port, st_fn, act_fn, ASSETS).await?;
+    if !config.dht_bootstrap.is_empty() {
+        spawn_user_entry(shared.clone(), priv_user, pub_node, salt.clone());
+    }
     if shared.drive.is_some() {
         mount_drive(&shared);
         // Écriture différée : synchronisation quand un fichier modifié

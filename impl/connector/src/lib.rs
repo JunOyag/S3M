@@ -15,6 +15,7 @@ pub mod incidents;
 pub mod integrity;
 pub mod local_http;
 pub mod migration;
+pub mod publish;
 #[cfg(all(windows, feature = "mount"))]
 pub mod winfsp_backend;
 pub mod write_back;

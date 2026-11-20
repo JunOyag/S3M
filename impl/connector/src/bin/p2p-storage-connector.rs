@@ -39,6 +39,7 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         q_max_bytes: DEFAULT_Q_MAX_BYTES,
         watch_interval_s: DEFAULT_WATCH_INTERVAL_S,
         mount_point: Some("P:".into()),
+        dht_bootstrap: vec![],
     };
     let cfg = dir.join("connector.json");
     std::fs::write(&cfg, serde_json::to_string_pretty(&config)?)?;

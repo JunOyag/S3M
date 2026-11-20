@@ -279,6 +279,25 @@ impl Drive {
         self.root.fs_root_hash
     }
 
+    /// Racine courante complète (hash, sel, version).
+    pub fn root(&self) -> Root {
+        self.root.clone()
+    }
+
+    /// Nouvel appareil : adopte la racine relue dans l'entrée DHT User si le
+    /// lecteur est vide et sans modification en attente.
+    pub fn adopt_root(&mut self, root: Root) -> Result<bool, DriveError> {
+        if self.root.fs_root_hash != NO_ROOT || self.pending() > 0 || root.fs_root_hash == NO_ROOT {
+            return Ok(false);
+        }
+        self.journal.fs_root_hash = hex::encode(root.fs_root_hash);
+        self.journal.encryption_salt = hex::encode(root.encryption_salt);
+        self.journal.key_version = root.key_version;
+        self.root = root;
+        self.persist()?;
+        Ok(true)
+    }
+
     /// Nombre de modifications en attente.
     pub fn pending(&self) -> usize {
         self.journal.changes.len()
