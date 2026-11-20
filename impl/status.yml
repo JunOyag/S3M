@@ -1250,7 +1250,31 @@ entries:
       Connecteur via son relais.
   deploiement.appairage-admin:
     kind: narrative
-    status: in_progress
+    status: done
     owner: claude-code
-    tests: []
-    notes: ""
+    tests:
+      - recovery_code::base32_matches_rfc4648_vectors
+      - recovery_code::recovery_code_round_trips_the_bip39_entropy
+      - recovery_code::recovery_code_detects_typos_and_role
+      - recovery_code::admin_totp_secret_is_deterministic_and_rotates_with_serial
+      - admin::messages_have_one_key_each
+      - admin::same_code_gives_same_key_and_wrong_code_does_not
+      - admin::hotp_matches_rfc6238_sha1_vectors
+      - admin::pairing_opens_a_session_only_with_the_right_code_and_limits_attempts
+      - admin::totp_login_refuses_replay_and_local_only_actions_and_follows_the_serial
+      - admin::recovery_input_accepts_code_or_words_of_a_node
+      - appairage::a_temporary_node_is_configured_remotely_with_its_pairing_code
+      - appairage::a_configured_node_is_administered_with_the_totp_code_only
+    notes: >-
+      Livré le 2026-11-20. core : code de récupération S3M1 (base32, contrôle
+      SHA-256, rôle), étiquette KDF admin-totp. protocol : messages
+      /s3m/admin/1, SPAKE2 et confirmations liées aux PeerId. node : identité
+      temporaire au premier lancement (nouvelle identité ou restauration,
+      phrase écrite après confirmation), code d'appairage, canal
+      d'administration (sessions liées au pair, 30 min, essais limités, TOTP
+      RFC 6238 anti-rejeu, actions 2FA réservées au local), dashboard commuté
+      sans changer d'URL, QR codes, régénération du 2FA par numéro de série.
+      connector : client d'administration à paire jetable, Nœuds à configurer
+      dans la recherche locale, appairage depuis l'assistant, reprise d'une
+      identité existante, administration du Nœud par code 2FA, dashboard
+      distant relayé en local.
