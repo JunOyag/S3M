@@ -112,6 +112,10 @@ pub struct Config {
     /// Réserver des relais même sans NAT détecté.
     #[serde(default)]
     pub force_relay: bool,
+    /// Annonce sur le réseau local (mDNS) : l'assistant du Connecteur trouve
+    /// ce Nœud.
+    #[serde(default = "default_true")]
+    pub mdns: bool,
 }
 
 fn default_true() -> bool {
@@ -428,29 +432,34 @@ pub fn save_state(path: &Path, st: &SavedState) -> Result<(), DaemonError> {
 
 const ASSETS: &[Asset] = &[
     (
+        "logo.png",
+        "image/png",
+        include_bytes!("../dashboard/logo.png"),
+    ),
+    (
         "index.html",
         "text/html; charset=utf-8",
-        include_str!("../dashboard/index.html"),
+        include_bytes!("../dashboard/index.html"),
     ),
     (
         "app.js",
         "text/javascript; charset=utf-8",
-        include_str!("../dashboard/app.js"),
+        include_bytes!("../dashboard/app.js"),
     ),
     (
         "map.html",
         "text/html; charset=utf-8",
-        include_str!("../dashboard/map.html"),
+        include_bytes!("../dashboard/map.html"),
     ),
     (
         "map.js",
         "text/javascript; charset=utf-8",
-        include_str!("../dashboard/map.js"),
+        include_bytes!("../dashboard/map.js"),
     ),
     (
         "world.json",
         "application/json",
-        include_str!("../dashboard/world.json"),
+        include_bytes!("../dashboard/world.json"),
     ),
 ];
 
@@ -974,6 +983,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         force_relay: config.force_relay,
         external: declared_external(&config),
         assume_listen_public: false,
+        mdns: config.mdns,
     })
     .await
     .map_err(|e| start(&e))?;

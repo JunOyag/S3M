@@ -46,6 +46,7 @@ fn config(dir: &std::path::Path) -> Config {
         relay_limits: Default::default(),
         relays: vec![],
         force_relay: false,
+        mdns: false,
     }
 }
 

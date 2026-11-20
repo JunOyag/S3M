@@ -19,8 +19,8 @@ use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{
-    autonat, dcutr, identify, identity, kad, noise, relay, tcp, upnp, yamux, Multiaddr, PeerId,
-    StreamProtocol, Swarm,
+    autonat, dcutr, identify, identity, kad, mdns, noise, relay, tcp, upnp, yamux, Multiaddr,
+    PeerId, StreamProtocol, Swarm,
 };
 use s3m_protocol::exchange::PROTOCOL;
 use serde::{Deserialize, Serialize};
@@ -77,6 +77,8 @@ pub struct NetConfig {
     pub external: Vec<Multiaddr>,
     /// Tenir les adresses d'écoute pour publiques (tests en boucle locale).
     pub assume_listen_public: bool,
+    /// Annonce et découverte sur le réseau local (mDNS).
+    pub mdns: bool,
 }
 
 /// État de la traversée de NAT (dashboard, entrée Node).
@@ -137,6 +139,7 @@ pub(crate) struct NodeBehaviour {
     relay_server: Toggle<relay::Behaviour>,
     relay_client: relay::client::Behaviour,
     dcutr: dcutr::Behaviour,
+    mdns: Toggle<mdns::tokio::Behaviour>,
 }
 
 impl RrHost for Swarm<NodeBehaviour> {
@@ -222,7 +225,7 @@ pub async fn start(cfg: NetConfig) -> Result<NodeNet, String> {
     let keypair = identity::Keypair::from(identity::ed25519::Keypair::from(secret));
     let peer_id = keypair.public().to_peer_id();
     let limits = cfg.relay_limits;
-    let (upnp_on, relay_on) = (cfg.upnp, cfg.relay_server);
+    let (upnp_on, relay_on, mdns_on) = (cfg.upnp, cfg.relay_server, cfg.mdns);
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
         .with_tcp(
@@ -264,6 +267,11 @@ pub async fn start(cfg: NetConfig) -> Result<NodeNet, String> {
                 relay_server: Toggle::from(relay_on.then(|| relay::Behaviour::new(id, relay_cfg))),
                 relay_client,
                 dcutr: dcutr::Behaviour::new(id),
+                mdns: Toggle::from(
+                    mdns_on
+                        .then(|| mdns::tokio::Behaviour::new(mdns::Config::default(), id).ok())
+                        .flatten(),
+                ),
             }
         })
         .map_err(|e| net(&e))?
@@ -480,6 +488,11 @@ async fn run(
                     }
                     NodeBehaviourEvent::RelayServer(relay::Event::CircuitReqAccepted { .. }) => {
                         nat.lock().unwrap().relay_circuits_served += 1;
+                    }
+                    NodeBehaviourEvent::Mdns(mdns::Event::Discovered(found)) => {
+                        for (peer, addr) in found {
+                            swarm.behaviour_mut().kad.add_address(&peer, addr);
+                        }
                     }
                     NodeBehaviourEvent::Dcutr(e) => {
                         let mut n = nat.lock().unwrap();

@@ -40,6 +40,7 @@ async fn node(
         relays,
         force_relay,
         external: vec![],
+        mdns: false,
         assume_listen_public: seed == 0x71,
     })
     .await
