@@ -6,11 +6,14 @@
 //! thresholds used by the NodeManifest mutation cycle.
 
 pub mod blacklist;
+pub mod chunk_store;
+pub mod daemon;
 pub mod dht_directory;
 pub mod dispersion;
 pub mod emergency;
 pub mod exchange;
 pub mod incidents;
+pub mod local_http;
 pub mod migration;
 pub mod pos;
 pub mod quota_sync;
@@ -541,6 +544,20 @@ impl PhysicalStore {
         let mut bytes = vec![0; BLOCK_SIZE];
         file.read_exact(&mut bytes)?;
         Ok(Some(bytes))
+    }
+
+    /// Identifiants des propriétaires d'un type donné ayant au moins un
+    /// conteneur.
+    pub fn owner_ids(&self, owner_type: OwnerType) -> Vec<Vec<u8>> {
+        let mut v: Vec<Vec<u8>> = self
+            .containers_cache
+            .values()
+            .filter(|c| c.owner_type == owner_type)
+            .map(|c| c.owner_id.clone())
+            .collect();
+        v.sort();
+        v.dedup();
+        v
     }
 
     pub fn containers(&self, owner: &Owner) -> Result<Vec<ContainerFile>, StorageError> {

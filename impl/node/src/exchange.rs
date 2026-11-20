@@ -25,6 +25,7 @@ use p2p_storage_protocol::exchange::*;
 use p2p_storage_protocol::fb::dht as fbd;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::chunk_store::{ChunkStore, MemoryStore, Space, StoreError};
 use crate::pos::challenge_response;
 use crate::tombstones::{apply_received, PartnerLedger, TombstoneError, TombstoneNotice};
 
@@ -48,13 +49,6 @@ pub struct PartnerState {
     pub last_seen: u64,
 }
 
-/// Fragment de parité hébergé pour un partenaire.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Fragment {
-    pub owner: Id,
-    pub data: Vec<u8>,
-}
-
 /// État et règles du service d'échange d'un Nœud.
 pub struct NodeService {
     priv_node: [u8; 32],
@@ -62,10 +56,9 @@ pub struct NodeService {
     /// Anciens `node_id` couverts par les autorisations émises (migration).
     pub previous_node_ids: Vec<Id>,
     pub users: HashMap<Id, UserAccount>,
-    /// k blocs de données (chiffrés) des Utilisateurs rattachés.
-    pub blocks: HashMap<Id, Vec<u8>>,
+    /// Blocs de données des Utilisateurs et fragments des partenaires.
+    pub store: Box<dyn ChunkStore>,
     pub partners: HashMap<Id, PartnerState>,
-    pub fragments: HashMap<Id, Fragment>,
     /// Pointeurs de migration valides lus dans la DHT : ancien → nouveau.
     pub successors: HashMap<Id, Id>,
     pub incidents: Vec<Id>,
@@ -74,12 +67,25 @@ pub struct NodeService {
     limiter: RescueLimiter,
 }
 
+fn store_refusal(e: StoreError) -> Refusal {
+    match e {
+        StoreError::BadSize => Refusal::Malformed,
+        StoreError::Conflict => Refusal::Unauthorized,
+        StoreError::Storage(_) => Refusal::QuotaExceeded,
+    }
+}
+
 fn id32(v: &[u8]) -> Result<Id, Refusal> {
     v.try_into().map_err(|_| Refusal::Malformed)
 }
 
 impl NodeService {
+    /// Service en mémoire (tests).
     pub fn new(priv_node: [u8; 32]) -> Self {
+        Self::with_store(priv_node, Box::<MemoryStore>::default())
+    }
+
+    pub fn with_store(priv_node: [u8; 32], store: Box<dyn ChunkStore>) -> Self {
         let node_id = ed25519_dalek::SigningKey::from_bytes(&priv_node)
             .verifying_key()
             .to_bytes();
@@ -88,9 +94,8 @@ impl NodeService {
             node_id,
             previous_node_ids: Vec::new(),
             users: HashMap::new(),
-            blocks: HashMap::new(),
+            store,
             partners: HashMap::new(),
-            fragments: HashMap::new(),
             successors: HashMap::new(),
             incidents: Vec::new(),
             delegations: Vec::new(),
@@ -148,21 +153,29 @@ impl NodeService {
         let cred = req.credential.as_ref();
         match req.body {
             Body::GetBlock { hash } => {
-                self.user(cred, from, local)?;
-                let b = self.blocks.get(&id32(&hash)?).ok_or(Refusal::NotFound)?;
-                Ok(Response::BlockData(b.clone()))
+                let u = self.user(cred, from, local)?;
+                match self.store.get(Space::UserBlock, &id32(&hash)?) {
+                    Some((o, d)) if o == u => Ok(Response::BlockData(d)),
+                    _ => Err(Refusal::NotFound),
+                }
             }
             Body::PutBlock { data } => {
                 let u = self.user(cred, from, local)?;
                 let hash = hash_sha256(&data);
-                if !self.blocks.contains_key(&hash) {
-                    let acc = self.users.get_mut(&u).ok_or(Refusal::Unauthorized)?;
+                if !self.store.contains(&hash) {
+                    let acc = self.users.get(&u).ok_or(Refusal::Unauthorized)?;
                     let used = acc.used_bytes + data.len() as u64;
                     if used > acc.quota_bytes {
                         return Err(Refusal::QuotaExceeded);
                     }
-                    acc.used_bytes = used;
-                    self.blocks.insert(hash, data);
+                    self.store
+                        .put(Space::UserBlock, &u, &hash, &data)
+                        .map_err(store_refusal)?;
+                    if let Some(acc) = self.users.get_mut(&u) {
+                        acc.used_bytes = used;
+                    }
+                } else if self.store.get(Space::UserBlock, &hash).map(|(o, _)| o) != Some(u) {
+                    return Err(Refusal::Unauthorized);
                 }
                 Ok(Response::Stored(hash.to_vec()))
             }
@@ -208,13 +221,19 @@ impl NodeService {
             Body::StoreFragment { data } => {
                 let p = self.partner(from_node, now)?;
                 let hash = hash_sha256(&data);
-                if !self.fragments.contains_key(&hash) {
-                    let st = self.partners.get_mut(&p).ok_or(Refusal::Unauthorized)?;
+                if !self.store.contains(&hash) {
+                    let st = self.partners.get(&p).ok_or(Refusal::Unauthorized)?;
                     if st.ledger.hosted_by_partner >= st.allowance {
                         return Err(Refusal::QuotaExceeded);
                     }
-                    st.ledger.hosted_by_partner += 1;
-                    self.fragments.insert(hash, Fragment { owner: p, data });
+                    self.store
+                        .put(Space::Fragment, &p, &hash, &data)
+                        .map_err(store_refusal)?;
+                    if let Some(st) = self.partners.get_mut(&p) {
+                        st.ledger.hosted_by_partner += 1;
+                    }
+                } else if self.store.get(Space::Fragment, &hash).map(|(o, _)| o) != Some(p) {
+                    return Err(Refusal::Unauthorized);
                 }
                 Ok(Response::FragmentReceipt {
                     hash: hash.to_vec(),
@@ -226,27 +245,28 @@ impl NodeService {
                 let f = self.owned_fragment(&hash, &p)?;
                 let nonce: [u8; 32] = nonce.try_into().map_err(|_| Refusal::Malformed)?;
                 Ok(Response::ChallengeResponse(
-                    challenge_response(&f.data, &nonce).to_vec(),
+                    challenge_response(&f, &nonce).to_vec(),
                 ))
             }
             Body::FetchFragment { hash } => {
                 if cred.is_none() {
                     let p = self.partner(from_node, now)?;
-                    return Ok(Response::BlockData(
-                        self.owned_fragment(&hash, &p)?.data.clone(),
-                    ));
+                    return Ok(Response::BlockData(self.owned_fragment(&hash, &p)?));
                 }
                 // Secours : identifiant contrôlé avant tout accès disque.
                 let grant = authorize_rescue(cred, from, from_node.as_ref(), local, now)?;
                 if !self.limiter.allow(&grant.grant_pub, now) {
                     return Err(Refusal::RateLimited);
                 }
-                let f = self.fragments.get(&id32(&hash)?).ok_or(Refusal::NotFound)?;
+                let (owner, data) = self
+                    .store
+                    .get(Space::Fragment, &id32(&hash)?)
+                    .ok_or(Refusal::NotFound)?;
                 let successors = &self.successors;
-                if !covers(&grant, &f.owner, &|o| successors.get(o).copied()) {
+                if !covers(&grant, &owner, &|o| successors.get(o).copied()) {
                     return Err(Refusal::Unauthorized);
                 }
-                Ok(Response::BlockData(f.data.clone()))
+                Ok(Response::BlockData(data))
             }
             Body::Tombstone {
                 timestamp,
@@ -262,15 +282,10 @@ impl NodeService {
                     block_hashes: hashes.chunks(32).map(|c| c.try_into().unwrap()).collect(),
                     signature: signature.try_into().map_err(|_| Refusal::Malformed)?,
                 };
-                let fragments = &mut self.fragments;
+                let store = &mut self.store;
                 let st = self.partners.get_mut(&p).ok_or(Refusal::Unauthorized)?;
                 let freed = apply_received(&mut st.ledger, &p, &notice, &mut |h| {
-                    if fragments.get(h).is_some_and(|f| f.owner == p) {
-                        fragments.remove(h);
-                        true
-                    } else {
-                        false
-                    }
+                    store.remove(Space::Fragment, &p, h)
                 })
                 .map_err(|e| match e {
                     TombstoneError::Replay => Refusal::Replayed,
@@ -281,15 +296,15 @@ impl NodeService {
         }
     }
 
-    fn owned_fragment(&self, hash: &[u8], owner: &Id) -> Result<&Fragment, Refusal> {
-        self.fragments
-            .get(&id32(hash)?)
-            .filter(|f| f.owner == *owner)
-            .ok_or(Refusal::NotFound)
+    fn owned_fragment(&self, hash: &[u8], owner: &Id) -> Result<Vec<u8>, Refusal> {
+        match self.store.get(Space::Fragment, &id32(hash)?) {
+            Some((o, d)) if o == *owner => Ok(d),
+            _ => Err(Refusal::NotFound),
+        }
     }
 
     /// Purge les fragments des Nœuds silencieux depuis au moins
-    /// `SILENT_NODE_RETENTION_SECONDS` ; rend le nombre de fragments libérés.
+    /// `SILENT_NODE_RETENTION_SECONDS` ; rend le nombre de Nœuds purgés.
     pub fn purge_silent_partners(&mut self, now: u64) -> usize {
         let silent: Vec<Id> = self
             .partners
@@ -297,9 +312,16 @@ impl NodeService {
             .filter(|(_, s)| s.last_seen + SILENT_NODE_RETENTION_SECONDS <= now)
             .map(|(id, _)| *id)
             .collect();
-        let before = self.fragments.len();
-        self.fragments.retain(|_, f| !silent.contains(&f.owner));
-        before - self.fragments.len()
+        let owners = self.store.owners(Space::Fragment);
+        let mut purged = 0;
+        for p in silent.iter().filter(|p| owners.contains(p)) {
+            self.store.remove_owner(Space::Fragment, p);
+            if let Some(st) = self.partners.get_mut(p) {
+                st.ledger.hosted_by_partner = 0;
+            }
+            purged += 1;
+        }
+        purged
     }
 }
 
@@ -324,10 +346,7 @@ pub async fn refresh_successors(
 ) -> Result<(), crate::dht_directory::DhtNodeError> {
     let owners: Vec<Id> = {
         let s = service.lock().unwrap();
-        let mut o: Vec<Id> = s.fragments.values().map(|f| f.owner).collect();
-        o.sort();
-        o.dedup();
-        o
+        s.store.owners(Space::Fragment)
     };
     for owner in owners {
         let next = dht
