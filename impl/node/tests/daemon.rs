@@ -29,8 +29,9 @@ fn config(dir: &std::path::Path) -> Config {
             mount_path: dir.join("vol"),
             max_capacity_bytes: 1 << 30,
         }],
-        dht_listen: "/ip4/127.0.0.1/tcp/0".into(),
-        blocks_listen: "/ip4/127.0.0.1/tcp/0".into(),
+        listen: "/ip4/127.0.0.1/tcp/0".into(),
+        dht_listen: None,
+        blocks_listen: None,
         bootstrap: vec![],
         api_port: 0,
         dispersal: Default::default(),
@@ -227,4 +228,26 @@ fn settings_apply_edits_file() {
     )
     .is_err());
     assert_eq!(Config::load(&path).unwrap().partner_policy.max_partners, 7);
+}
+
+#[test]
+fn listen_setting_is_single_and_old_files_still_load() {
+    let mut c = config(&temp_dir("listen"));
+    c.listen = "/ip4/0.0.0.0/tcp/4001".into();
+    assert_eq!(c.listen_addrs(), vec!["/ip4/0.0.0.0/tcp/4001".to_string()]);
+    let v = serde_json::to_value(&c).unwrap();
+    assert!(v.get("dht_listen").is_none() && v.get("blocks_listen").is_none());
+    // Fichier d'avant la pile unique : ses deux ports restent ceux écoutés.
+    let mut old = v.clone();
+    old["dht_listen"] = "/ip4/0.0.0.0/tcp/4001".into();
+    old["blocks_listen"] = "/ip4/0.0.0.0/tcp/4002".into();
+    old.as_object_mut().unwrap().remove("listen");
+    let old: Config = serde_json::from_value(old).unwrap();
+    assert_eq!(
+        old.listen_addrs(),
+        vec![
+            "/ip4/0.0.0.0/tcp/4002".to_string(),
+            "/ip4/0.0.0.0/tcp/4001".to_string()
+        ]
+    );
 }

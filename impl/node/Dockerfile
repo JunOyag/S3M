@@ -24,6 +24,6 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends libgmp1
 COPY --from=build /src/node/target/release/s3m-node /usr/local/bin/s3m-node
 USER p2p
 VOLUME /data
-EXPOSE 4001 4002 4003
+EXPOSE 4001 4001/udp 4003
 ENTRYPOINT ["s3m-node"]
 CMD ["/data/node.json"]

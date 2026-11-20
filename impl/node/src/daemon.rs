@@ -65,8 +65,16 @@ pub struct Config {
     /// Répertoire de la base SQLite et de l'état.
     pub data_dir: PathBuf,
     pub volumes: Vec<VolumeSpec>,
-    pub dht_listen: String,
-    pub blocks_listen: String,
+    /// Adresse d'écoute de la pile réseau unique (DHT, échange de blocs,
+    /// traversée de NAT ; QUIC sur le même port).
+    #[serde(default = "default_listen")]
+    pub listen: String,
+    /// Anciens réglages (deux ports) : s'ils sont présents, ils remplacent
+    /// `listen` — les configurations existantes restent valides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dht_listen: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocks_listen: Option<String>,
     #[serde(default)]
     pub bootstrap: Vec<String>,
     #[serde(default = "default_api_port")]
@@ -134,6 +142,10 @@ fn default_true() -> bool {
     true
 }
 
+pub fn default_listen() -> String {
+    "/ip4/0.0.0.0/tcp/4001".into()
+}
+
 pub fn default_admin_listen() -> String {
     format!("/ip4/0.0.0.0/tcp/{}", s3m_protocol::admin::DEFAULT_PORT)
 }
@@ -143,6 +155,21 @@ fn default_api_port() -> u16 {
 }
 
 impl Config {
+    /// Adresses d'écoute effectives : anciens réglages s'ils sont présents
+    /// (échange de blocs en premier), sinon `listen`.
+    pub fn listen_addrs(&self) -> Vec<String> {
+        let mut out: Vec<String> = [&self.blocks_listen, &self.dht_listen]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        out.dedup();
+        if out.is_empty() {
+            out.push(self.listen.clone());
+        }
+        out
+    }
+
     fn dht_bootstrap_is_empty(&self) -> bool {
         self.bootstrap.is_empty()
     }
@@ -217,7 +244,7 @@ pub fn declared_external(c: &Config) -> Vec<Multiaddr> {
 
 /// Adresse annoncée : configuration, sinon IP et port d'écoute explicites.
 pub fn announced_addr(c: &Config) -> Option<(String, u16)> {
-    let listen: Multiaddr = c.blocks_listen.parse().ok()?;
+    let listen: Multiaddr = c.listen_addrs().first()?.parse().ok()?;
     let (mut ip, mut port) = (None, 0);
     for p in listen.iter() {
         match p {
@@ -1198,10 +1225,11 @@ pub async fn start_with(
             .map_err(|e| DaemonError::Config(format!("{s} : {e}")))
     };
     // Pile réseau unique (DHT, échange de blocs, traversée de NAT).
-    let mut listen = vec![parse(&config.blocks_listen)?];
-    if config.dht_listen != config.blocks_listen {
-        listen.push(parse(&config.dht_listen)?);
-    }
+    let listen = config
+        .listen_addrs()
+        .iter()
+        .map(|s| parse(s))
+        .collect::<Result<Vec<_>, _>>()?;
     let node_net = crate::net::start(NetConfig {
         node_seed: seed,
         listen,
