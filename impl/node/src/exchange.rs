@@ -23,6 +23,7 @@ use p2p_storage_core::symmetric_suite::hash_sha256;
 use p2p_storage_protocol::dht::verify_migration_pointer;
 use p2p_storage_protocol::exchange::*;
 use p2p_storage_protocol::fb::dht as fbd;
+use std::net::IpAddr;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::chunk_store::{ChunkStore, MemoryStore, Space, StoreError};
@@ -49,6 +50,51 @@ pub struct PartnerState {
     pub last_seen: u64,
 }
 
+/// Politique de rattachement automatique (`protocols.partenariat-automatique`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AttachPolicy {
+    pub enabled: bool,
+    /// Quota attribué à chaque Utilisateur rattaché automatiquement.
+    pub quota_bytes: u64,
+    pub max_users: usize,
+    /// Somme maximale des quotas attribués automatiquement.
+    pub budget_bytes: u64,
+}
+
+impl Default for AttachPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            quota_bytes: 10 << 30,
+            max_users: 10,
+            budget_bytes: 100 << 30,
+        }
+    }
+}
+
+/// Politique d'acceptation des propositions de partenariat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PartnerPolicy {
+    pub accept: bool,
+    pub max_partners: usize,
+    /// Solde maximal accordé à un partenaire (fragments).
+    pub max_allowance_blocks: u64,
+}
+
+impl Default for PartnerPolicy {
+    fn default() -> Self {
+        Self {
+            accept: true,
+            max_partners: 32,
+            max_allowance_blocks: 100_000,
+        }
+    }
+}
+
+/// Vérificateur VDF synchrone (vrai si la preuve est valide).
+pub type VdfCheck =
+    std::sync::Arc<dyn Fn(&[u8; 33], &p2p_storage_core::vdf::VdfProof) -> bool + Send + Sync>;
+
 /// État et règles du service d'échange d'un Nœud.
 pub struct NodeService {
     priv_node: [u8; 32],
@@ -69,6 +115,22 @@ pub struct NodeService {
     /// Après restauration, la racine courante de ces Utilisateurs est
     /// inconnue : leur prochaine validation est adoptée telle quelle.
     pub adopt_next_root: std::collections::HashSet<Id>,
+    pub attach_policy: AttachPolicy,
+    pub partner_policy: PartnerPolicy,
+    /// Vérification des preuves VDF (rattachement et partenariat
+    /// automatiques) ; `None` : ces demandes sont refusées.
+    pub vdf: Option<VdfCheck>,
+    /// Miroir de la liste noire (`upkeep`), pour refuser les propositions.
+    pub blacklisted: std::collections::HashSet<Id>,
+    /// Utilisateurs rattachés automatiquement.
+    pub auto_attached: std::collections::HashSet<Id>,
+    /// Identités VDF déjà utilisées pour un rattachement automatique.
+    pub used_attach_identities: std::collections::HashSet<Id>,
+    /// Partenariats acceptés à traiter par le démon : `(node_id, ip, port)`.
+    pub new_partners: Vec<(Id, String, u16)>,
+    /// Dernière adresse IP vue par Utilisateur (carte du dashboard).
+    pub last_user_ip: HashMap<Id, String>,
+    pub record_user_ips: bool,
     limiter: RescueLimiter,
 }
 
@@ -106,6 +168,15 @@ impl NodeService {
             delegations: Vec::new(),
             dispersal_queue: Vec::new(),
             adopt_next_root: Default::default(),
+            attach_policy: AttachPolicy::default(),
+            partner_policy: PartnerPolicy::default(),
+            vdf: None,
+            blacklisted: Default::default(),
+            auto_attached: Default::default(),
+            used_attach_identities: Default::default(),
+            new_partners: Vec::new(),
+            last_user_ip: HashMap::new(),
+            record_user_ips: true,
             limiter: RescueLimiter::default(),
         }
     }
@@ -307,7 +378,124 @@ impl NodeService {
                 })?;
                 Ok(Response::Ack { freed })
             }
+            Body::Probe { nonce } => Ok(Response::ProbeReply {
+                nonce,
+                accepting_partners: self.partner_policy.accept
+                    && self.partners.len() < self.partner_policy.max_partners,
+            }),
+            Body::ProposePartnership {
+                allowance_blocks,
+                node_entry,
+            } => Ok(Response::PartnershipAnswer {
+                granted_blocks: self.propose(from_node, allowance_blocks, &node_entry, now),
+            }),
+            Body::Attach {
+                salt,
+                sig_pub_user,
+                vdf_y,
+                vdf_pi,
+                signature,
+            } => {
+                let Some(Credential::User { user_id, proof }) = cred else {
+                    return Err(Refusal::Unauthorized);
+                };
+                let pub_user = id32(user_id)?;
+                if self.users.contains_key(&pub_user) {
+                    // Déjà rattaché : réponse idempotente si l'identifiant est bon.
+                    self.user(cred, from, local)?;
+                    return Ok(Response::Attached {
+                        quota_bytes: self.users[&pub_user].quota_bytes,
+                    });
+                }
+                let p = self.attach_policy;
+                if !p.enabled || salt.len() != 16 {
+                    return Err(Refusal::Unauthorized);
+                }
+                let k = derive_k_attach_as_node(&self.priv_node, &pub_user, &salt)
+                    .map_err(|_| Refusal::Unauthorized)?;
+                if !verify_connector_proof(&k, from, local, proof) {
+                    return Err(Refusal::Unauthorized);
+                }
+                let sig_pub = id32(&sig_pub_user)?;
+                if self.used_attach_identities.contains(&sig_pub)
+                    || !verify_attach_signature(&sig_pub, &pub_user, &self.node_id, &signature)
+                {
+                    return Err(Refusal::Unauthorized);
+                }
+                let identity = p2p_storage_core::vdf::tagged_identity(0, &sig_pub)
+                    .map_err(|_| Refusal::Unauthorized)?;
+                let proof = p2p_storage_core::vdf::VdfProof {
+                    y: vdf_y,
+                    pi: vdf_pi,
+                };
+                if !self.vdf.as_ref().is_some_and(|v| v(&identity, &proof)) {
+                    return Err(Refusal::Unauthorized);
+                }
+                let used: u64 = self
+                    .auto_attached
+                    .iter()
+                    .filter_map(|u| self.users.get(u))
+                    .map(|u| u.quota_bytes)
+                    .sum();
+                if self.auto_attached.len() >= p.max_users || used + p.quota_bytes > p.budget_bytes
+                {
+                    return Err(Refusal::QuotaExceeded);
+                }
+                self.users.insert(
+                    pub_user,
+                    UserAccount {
+                        salt,
+                        quota_bytes: p.quota_bytes,
+                        used_bytes: 0,
+                        root: [0; 32],
+                    },
+                );
+                self.auto_attached.insert(pub_user);
+                self.used_attach_identities.insert(sig_pub);
+                Ok(Response::Attached {
+                    quota_bytes: p.quota_bytes,
+                })
+            }
         }
+    }
+
+    /// Proposition de partenariat : solde accordé (0 = refus).
+    fn propose(&mut self, from_node: Option<Id>, requested: u64, entry: &[u8], now: u64) -> u64 {
+        let Some(p) = from_node else { return 0 };
+        if self.blacklisted.contains(&p) {
+            return 0;
+        }
+        if let Some(st) = self.partners.get(&p) {
+            return st.allowance;
+        }
+        let pol = self.partner_policy;
+        if !pol.accept || self.partners.len() >= pol.max_partners {
+            return 0;
+        }
+        let Some(vdf) = self.vdf.clone() else {
+            return 0;
+        };
+        let check = |id: &[u8; 33], proof: &p2p_storage_core::vdf::VdfProof| Ok(vdf(id, proof));
+        if p2p_storage_protocol::dht::accept_record(&p, entry, None, now, &check).is_err() {
+            return 0;
+        }
+        let Some((ip, port)) = entry_addr(entry) else {
+            return 0;
+        };
+        let granted = requested.min(pol.max_allowance_blocks);
+        if granted == 0 {
+            return 0;
+        }
+        self.partners.insert(
+            p,
+            PartnerState {
+                allowance: granted,
+                last_seen: now,
+                ..Default::default()
+            },
+        );
+        self.new_partners.push((p, ip, port));
+        granted
     }
 
     fn owned_fragment(&self, hash: &[u8], owner: &Id) -> Result<Vec<u8>, Refusal> {
@@ -337,6 +525,13 @@ impl NodeService {
         }
         purged
     }
+}
+
+/// `ip/port` d'une entrée DHT Node.
+pub fn entry_addr(envelope: &[u8]) -> Option<(String, u16)> {
+    let env = flatbuffers::root::<fbd::DhtEnvelope>(envelope).ok()?;
+    let e = fbd::root_as_node_entry(env.payload()?.bytes()).ok()?;
+    Some((e.ip()?.to_string(), e.port()))
 }
 
 /// Successeur annoncé par l'entrée DHT Node (enveloppe déjà validée par
@@ -606,6 +801,7 @@ async fn run(
     let local = *swarm.local_peer_id();
     let mut waiting: HashMap<PeerId, Vec<(Vec<u8>, Reply)>> = HashMap::new();
     let mut inflight: HashMap<OutboundRequestId, Reply> = HashMap::new();
+    let mut peer_ips: HashMap<PeerId, IpAddr> = HashMap::new();
     loop {
         tokio::select! {
             cmd = rx.recv() => match cmd {
@@ -639,7 +835,14 @@ async fn run(
                 }
             },
             event = swarm.select_next_some() => match event {
-                SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+                    for p in endpoint.get_remote_address().iter() {
+                        match p {
+                            Protocol::Ip4(v) => { peer_ips.insert(peer_id, IpAddr::V4(v)); }
+                            Protocol::Ip6(v) => { peer_ips.insert(peer_id, IpAddr::V6(v)); }
+                            _ => {}
+                        }
+                    }
                     for (bytes, r) in waiting.remove(&peer_id).unwrap_or_default() {
                         let id = swarm.behaviour_mut().send_request(&peer_id, Frame::Data(bytes));
                         inflight.insert(id, r);
@@ -657,9 +860,20 @@ async fn run(
                             (Some(_), Frame::TooLarge) => Response::Failure(Refusal::TooLarge),
                             (Some(s), Frame::Data(d)) => match decode_request(&d) {
                                 Err(e) => Response::Failure(e),
-                                Ok(req) => s.lock().unwrap().handle(
-                                    &peer.to_bytes(), node_id_of(&peer), &local.to_bytes(), req, clock(),
-                                ),
+                                Ok(req) => {
+                                    let user = match &req.credential {
+                                        Some(Credential::User { user_id, .. }) => <[u8; 32]>::try_from(user_id.as_slice()).ok(),
+                                        _ => None,
+                                    };
+                                    let mut sv = s.lock().unwrap();
+                                    let r = sv.handle(&peer.to_bytes(), node_id_of(&peer), &local.to_bytes(), req, clock());
+                                    if let (Some(u), Some(ip), false) = (user, peer_ips.get(&peer), matches!(r, Response::Failure(_))) {
+                                        if sv.record_user_ips && sv.users.contains_key(&u) {
+                                            sv.last_user_ip.insert(u, ip.to_string());
+                                        }
+                                    }
+                                    r
+                                }
                             },
                         };
                         let _ = swarm.behaviour_mut().send_response(channel, Frame::Data(encode_response(&resp)));

@@ -27,6 +27,8 @@ pub struct NodeEntryState {
     pub next_republish: u64,
     pub published_addr: Option<(String, u16)>,
     pub published_snapshot: Option<Vec<u8>>,
+    /// Dernière enveloppe publiée (jointe aux propositions de partenariat).
+    pub last_envelope: Option<Vec<u8>>,
     pub last_error: Option<String>,
 }
 
@@ -91,13 +93,15 @@ pub async fn publish_if_due(
     let result = match env {
         Err(e) => Err(e.to_string()),
         Ok(env) => dht
-            .put(pub_node.to_vec(), env)
+            .put(pub_node.to_vec(), env.clone())
             .await
+            .map(|_| env)
             .map_err(|e| e.to_string()),
     };
     let mut s = state.lock().unwrap();
     match result {
-        Ok(()) => {
+        Ok(env) => {
+            s.last_envelope = Some(env);
             s.published_at = Some(now);
             s.next_republish = next_republish_at(pub_node, now + 1);
             s.published_addr = Some(addr);

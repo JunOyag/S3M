@@ -79,6 +79,14 @@ pub struct UpkeepState {
     pub events: Vec<String>,
     pub challenges_passed: u64,
     pub challenges_timeout: u64,
+    /// Challenges réussis / sans réponse, par partenaire (score de fiabilité).
+    #[serde(default)]
+    pub pos_ok: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub pos_fail: BTreeMap<String, u64>,
+    /// Partenaires en retrait (`partnering`) : fragments à replacer.
+    #[serde(default)]
+    pub retiring: BTreeSet<String>,
 }
 
 const MAX_EVENTS: usize = 50;
@@ -301,10 +309,12 @@ pub async fn run_upkeep(
                     up.latency_ms
                         .insert(partner.clone(), lat.mean_ms().unwrap_or(ms));
                     up.last_seen.insert(partner.clone(), now);
+                    *up.pos_ok.entry(partner.clone()).or_default() += 1;
                     up.challenges_passed += 1;
                     report.passed += 1;
                 }
                 Verdict::Timeout => {
+                    *up.pos_fail.entry(partner.clone()).or_default() += 1;
                     up.challenges_timeout += 1;
                     report.timeouts += 1;
                 }
@@ -333,6 +343,7 @@ pub async fn run_upkeep(
         for si in 0..d.stripes.len() {
             let available = |p: &String| {
                 !up.blacklist.contains_key(p)
+                    && !up.retiring.contains(p)
                     && up
                         .last_seen
                         .get(p)
@@ -342,7 +353,7 @@ pub async fn run_upkeep(
             let mut indices: Vec<u16> = rec
                 .parity
                 .iter()
-                .filter(|(_, _, p)| frauds.contains(&id(p)))
+                .filter(|(_, _, p)| frauds.contains(&id(p)) || up.retiring.contains(p))
                 .map(|(i, _, _)| *i)
                 .collect();
             // 3. Volatilité : réparation dès que moins de k+2 sont disponibles.

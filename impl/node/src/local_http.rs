@@ -30,6 +30,7 @@ pub type Asset = (&'static str, &'static str, &'static str);
 struct AppState {
     guard: LocalApiGuard,
     status: StatusFn,
+    map: Option<StatusFn>,
     action: ActionFn,
     assets: &'static [Asset],
 }
@@ -88,6 +89,16 @@ async fn status(State(st): State<AppState>, h: HeaderMap) -> Response {
     Json((st.status)()).into_response()
 }
 
+async fn map(State(st): State<AppState>, h: HeaderMap) -> Response {
+    if let Err(r) = check(&st, &h) {
+        return r;
+    }
+    match &st.map {
+        Some(f) => Json(f()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
 async fn action(
     State(st): State<AppState>,
     h: HeaderMap,
@@ -134,6 +145,7 @@ pub async fn serve(
     port: u16,
     status_fn: StatusFn,
     action_fn: ActionFn,
+    map_fn: Option<StatusFn>,
     assets: &'static [Asset],
 ) -> std::io::Result<String> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
@@ -144,12 +156,14 @@ pub async fn serve(
     let st = AppState {
         guard,
         status: status_fn,
+        map: map_fn,
         action: action_fn,
         assets,
     };
     let app = Router::new()
         .route("/", get(asset))
         .route("/api/status", get(status))
+        .route("/api/map", get(map))
         .route("/api/action/:name", post(action))
         .route("/api/ws", get(ws))
         .route("/:file", get(asset))

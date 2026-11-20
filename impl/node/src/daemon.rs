@@ -24,7 +24,10 @@ use crate::dispersal_engine::{
     reconcile, run_cycle, CycleReport, DispersalState, EngineConfig, NetFabric,
 };
 use crate::exchange::{refresh_successors, BlockServer, NodeService, PartnerState, UserAccount};
+use crate::exchange::{AttachPolicy, PartnerPolicy, VdfCheck};
+use crate::geo::{Geo, ATTRIBUTION, DB_FILE};
 use crate::local_http::{self, ActionFn, Asset, StatusFn};
+use crate::partnering::{excluded, run_partnering, score, Net, PartneringConfig, PartneringReport};
 use crate::publish::{ensure_node_proof, publish_if_due, NodeEntryState};
 use crate::recovery::recover;
 use crate::snapshot_engine::run_snapshot;
@@ -81,6 +84,23 @@ pub struct Config {
     /// Port public de l'échange de blocs (défaut : port d'écoute).
     #[serde(default)]
     pub public_port: Option<u16>,
+    /// Partenariats automatiques (découverte, score, recrutement, retrait).
+    #[serde(default)]
+    pub partnering: PartneringConfig,
+    /// Acceptation des propositions de partenariat.
+    #[serde(default)]
+    pub partner_policy: PartnerPolicy,
+    /// Rattachement automatique des Utilisateurs (valeur initiale ; modifiable
+    /// depuis le dashboard).
+    #[serde(default)]
+    pub attach: AttachPolicy,
+    /// Enregistrer l'adresse IP des Utilisateurs (carte du dashboard).
+    #[serde(default = "default_true")]
+    pub record_user_ips: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_api_port() -> u16 {
@@ -201,6 +221,16 @@ pub struct SavedState {
     pub incidents: Vec<String>,
     /// Délégations reçues, encodées comme requêtes `Delegate`.
     pub delegations: Vec<String>,
+    /// Politique de rattachement automatique modifiée depuis le dashboard.
+    #[serde(default)]
+    pub attach_policy: Option<AttachPolicy>,
+    #[serde(default)]
+    pub auto_attached: Vec<String>,
+    #[serde(default)]
+    pub used_attach_identities: Vec<String>,
+    /// `(user_id, ip)` de la dernière connexion.
+    #[serde(default)]
+    pub user_ips: Vec<(String, String)>,
 }
 
 impl SavedState {
@@ -246,6 +276,18 @@ impl SavedState {
                     }))
                 })
                 .collect(),
+            attach_policy: Some(s.attach_policy),
+            auto_attached: sorted(s.auto_attached.iter().map(|i| hx(i))),
+            used_attach_identities: sorted(s.used_attach_identities.iter().map(|i| hx(i))),
+            user_ips: {
+                let mut v: Vec<(String, String)> = s
+                    .last_user_ip
+                    .iter()
+                    .map(|(u, ip)| (hx(u), ip.clone()))
+                    .collect();
+                v.sort();
+                v
+            },
         }
     }
 
@@ -291,6 +333,18 @@ impl SavedState {
             .iter()
             .map(|i| unhex32(i))
             .collect::<Result<_, _>>()?;
+        if let Some(p) = self.attach_policy {
+            s.attach_policy = p;
+        }
+        for u in &self.auto_attached {
+            s.auto_attached.insert(unhex32(u)?);
+        }
+        for u in &self.used_attach_identities {
+            s.used_attach_identities.insert(unhex32(u)?);
+        }
+        for (u, ip) in &self.user_ips {
+            s.last_user_ip.insert(unhex32(u)?, ip.clone());
+        }
         s.delegations = self
             .delegations
             .iter()
@@ -304,6 +358,12 @@ impl SavedState {
             .collect::<Result<_, _>>()?;
         Ok(addrs)
     }
+}
+
+fn sorted(it: impl Iterator<Item = String>) -> Vec<String> {
+    let mut v: Vec<String> = it.collect();
+    v.sort();
+    v
 }
 
 /// Lecture de l'état (absent : état vide).
@@ -336,6 +396,21 @@ const ASSETS: &[Asset] = &[
         "text/javascript; charset=utf-8",
         include_str!("../dashboard/app.js"),
     ),
+    (
+        "map.html",
+        "text/html; charset=utf-8",
+        include_str!("../dashboard/map.html"),
+    ),
+    (
+        "map.js",
+        "text/javascript; charset=utf-8",
+        include_str!("../dashboard/map.js"),
+    ),
+    (
+        "world.json",
+        "application/json",
+        include_str!("../dashboard/world.json"),
+    ),
 ];
 
 /// Contexte partagé par le dashboard et les tâches.
@@ -353,6 +428,9 @@ pub struct Shared {
     pub snapshot_pointer: Mutex<Option<Vec<u8>>>,
     /// Résultat de la restauration au démarrage, s'il y en a eu une.
     pub recovery: Mutex<Option<Value>>,
+    pub excluded: Arc<Mutex<std::collections::HashSet<[u8; 32]>>>,
+    pub geo: Geo,
+    pub last_partnering: Mutex<Option<(u64, PartneringReport)>>,
     pub config: Config,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
@@ -363,12 +441,32 @@ pub struct Shared {
 pub fn status(sh: &Shared, now: u64) -> Value {
     let s = sh.service.lock().unwrap();
     let addrs = sh.addrs.lock().unwrap();
+    let d = sh.dispersal.try_lock().ok();
+    let peers = d
+        .as_ref()
+        .map(|d| d.partnering.peers.clone())
+        .unwrap_or_default();
+    let pos = d
+        .as_ref()
+        .map(|d| {
+            (
+                d.upkeep.pos_ok.clone(),
+                d.upkeep.pos_fail.clone(),
+                d.upkeep.last_seen.clone(),
+            )
+        })
+        .unwrap_or_default();
+    drop(d);
+    let country = |ip: Option<&String>| ip.and_then(|i| sh.geo.locate(i)).map(|p| p.country);
     let mut users: Vec<Value> = s
         .users
         .iter()
         .map(|(id, u)| {
             json!({ "utilisateur": hx(id), "quota (octets)": u.quota_bytes,
-                    "utilisé (octets)": u.used_bytes, "racine": hx(&u.root) })
+                    "utilisé (octets)": u.used_bytes,
+                    "rattachement": if s.auto_attached.contains(id) { "automatique" } else { "manuel" },
+                    "pays": country(s.last_user_ip.get(id)),
+                    "racine": hx(&u.root) })
         })
         .collect();
     users.sort_by_key(|v| v["utilisateur"].to_string());
@@ -377,16 +475,45 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         .iter()
         .map(|(id, p)| {
             let purge = p.last_seen + SILENT_NODE_RETENTION_SECONDS;
-            json!({ "nœud": hx(id), "adresse": addrs.get(id),
-                    "solde autorisé": p.allowance,
-                    "hébergés chez lui": p.ledger.hosted_for_partner,
-                    "hébergés pour lui": p.ledger.hosted_by_partner,
+            let n = hx(id);
+            let peer = peers.get(&n).cloned().unwrap_or_default();
+            let sc = score(
+                &sh.config.partnering,
+                &peer,
+                pos.0.get(&n).copied().unwrap_or(0),
+                pos.1.get(&n).copied().unwrap_or(0),
+            );
+            let r2 = |x: f64| (x * 100.0).round() / 100.0;
+            json!({ "nœud": n, "score": r2(sc.total),
+                    "fiabilité": r2(sc.reliability), "disponibilité": r2(sc.availability), "vitesse": r2(sc.speed),
+                    "état": if peer.status.is_empty() { "partenaire".to_string() } else { peer.status.clone() },
+                    "pays": country(Some(&peer.ip)),
+                    "latence (ms)": if peer.answered == 0 { Value::Null } else { json!(peer.latency_ms.round()) },
+                    "dernier challenge réussi": pos.2.get(&n),
+                    "solde accordé": p.allowance,
+                    "fragments confiés": p.ledger.hosted_for_partner,
+                    "fragments reçus": p.ledger.hosted_by_partner,
+                    "adresse": addrs.get(id),
                     "dernier échange": p.last_seen,
                     "purge à venir": if p.last_seen == 0 { Value::Null } else { json!(purge) },
                     "purge échue": p.last_seen != 0 && purge <= now })
         })
         .collect();
-    partners.sort_by_key(|v| v["nœud"].to_string());
+    partners.sort_by(|a, b| {
+        b["score"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .total_cmp(&a["score"].as_f64().unwrap_or(0.0))
+    });
+    let candidates = peers.values().filter(|p| p.status == "candidat").count();
+    let pol = s.attach_policy;
+    let auto_used: u64 = s
+        .auto_attached
+        .iter()
+        .filter_map(|u| s.users.get(u))
+        .map(|u| u.quota_bytes)
+        .sum();
+    let last_partnering = sh.last_partnering.lock().unwrap().clone();
     let volumes: Vec<Value> = sh
         .config
         .volumes
@@ -395,6 +522,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         .collect();
     json!({
         "titre": "Nœud P2P-Storage",
+        "carte": true,
         "identité": {
             "node_id": hx(&s.node_id()),
             "peer_id": sh.peer_id,
@@ -404,7 +532,22 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         },
         "volumes": volumes,
         "utilisateurs rattachés": users,
+        "rattachement automatique": {
+            "activé": pol.enabled, "quota par utilisateur (octets)": pol.quota_bytes,
+            "utilisateurs maximum": pol.max_users, "budget total (octets)": pol.budget_bytes,
+            "utilisateurs rattachés automatiquement": s.auto_attached.len(),
+            "budget utilisé (octets)": auto_used,
+        },
         "partenaires": partners,
+        "recherche de partenaires": {
+            "activée": sh.config.partnering.enabled,
+            "candidats connus": candidates,
+            "partenaires visés": if sh.config.partnering.target_partners == 0 {
+                sh.config.dispersal.k * sh.config.dispersal.coef + 4 } else { sh.config.partnering.target_partners },
+            "dernier cycle": last_partnering.map(|(t, r)| json!({ "instant": t, "découverts": r.discovered,
+                "testés": r.probed, "proposés": r.proposed, "acceptés": r.accepted,
+                "mis en retrait": r.retiring, "terminés": r.ended })),
+        },
         "alertes d'intégrité signalées": s.incidents.iter().map(|i| hx(i)).collect::<Vec<_>>(),
         "dispersion": dispersal_status(sh),
         "contrôles et réparation": upkeep_status(sh),
@@ -422,7 +565,11 @@ pub fn status(sh: &Shared, now: u64) -> Value {
             { "nom": "attach_user", "libellé": "Rattacher un utilisateur",
               "champs": ["user_id", "salt", "quota_bytes"] },
             { "nom": "add_partner", "libellé": "Ajouter un partenaire",
-              "champs": ["node_id", "addr", "allowance"] }
+              "champs": ["node_id", "addr", "allowance"] },
+            { "nom": "set_quota", "libellé": "Changer le quota d'un utilisateur",
+              "champs": ["user_id", "quota_bytes"] },
+            { "nom": "set_attach_policy", "libellé": "Rattachement automatique (enabled : oui/non)",
+              "champs": ["enabled", "quota_bytes", "max_users", "budget_bytes"] }
         ]
     })
 }
@@ -505,6 +652,92 @@ fn snapshot_status(sh: &Shared) -> Value {
     })
 }
 
+/// Points de la carte du dashboard.
+pub fn map_points(sh: &Shared) -> Value {
+    let s = sh.service.lock().unwrap();
+    let d = sh.dispersal.try_lock().ok();
+    let peers = d
+        .as_ref()
+        .map(|d| d.partnering.peers.clone())
+        .unwrap_or_default();
+    let black: std::collections::BTreeMap<String, (u64, String)> = d
+        .as_ref()
+        .map(|d| d.upkeep.blacklist.clone())
+        .unwrap_or_default();
+    drop(d);
+    let addrs = sh.addrs.lock().unwrap();
+    let mut points = Vec::new();
+    let mut unlocated: std::collections::BTreeMap<&str, u64> = Default::default();
+    let ip_of_addr = |a: &String| -> Option<String> {
+        a.parse::<Multiaddr>().ok()?.iter().find_map(|p| match p {
+            libp2p::multiaddr::Protocol::Ip4(v) => Some(v.to_string()),
+            libp2p::multiaddr::Protocol::Ip6(v) => Some(v.to_string()),
+            _ => None,
+        })
+    };
+    let mut push = |kind: &'static str, ip: Option<String>, label: String, detail: String| {
+        match ip.as_deref().and_then(|i| sh.geo.locate(i)) {
+            Some(p) => points.push(json!({ "kind": kind, "lat": p.lat, "lon": p.lon, "label": label,
+                "detail": format!("{}{}{}", [p.city.as_str(), p.country.as_str()].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(", "), if detail.is_empty() { "" } else { " — " }, detail) })),
+            None => *unlocated.entry(kind).or_default() += 1,
+        }
+    };
+    let mut seen = std::collections::HashSet::new();
+    for (n, (at, why)) in &black {
+        seen.insert(n.clone());
+        let ip = peers.get(n).map(|p| p.ip.clone()).filter(|i| !i.is_empty());
+        push(
+            "liste noire",
+            ip,
+            format!("{}…", &n[..16.min(n.len())]),
+            format!("{why} depuis {at}"),
+        );
+    }
+    for (id, p) in &s.partners {
+        let n = hx(id);
+        if !seen.insert(n.clone()) {
+            continue;
+        }
+        let ip = addrs
+            .get(id)
+            .and_then(ip_of_addr)
+            .or_else(|| peers.get(&n).map(|p| p.ip.clone()));
+        push(
+            "partenaire",
+            ip,
+            format!("{}…", &n[..16]),
+            format!(
+                "solde {} · confiés {}",
+                p.allowance, p.ledger.hosted_for_partner
+            ),
+        );
+    }
+    for (n, p) in &peers {
+        if seen.contains(n) || !(p.status == "candidat" || p.status == "terminé") {
+            continue;
+        }
+        push(
+            "candidat",
+            Some(p.ip.clone()),
+            format!("{}…", &n[..16.min(n.len())]),
+            p.status.clone(),
+        );
+    }
+    for id in s.users.keys() {
+        push(
+            "utilisateur",
+            s.last_user_ip.get(id).cloned(),
+            format!("{}…", &hx(id)[..16]),
+            if s.auto_attached.contains(id) {
+                "rattachement automatique".into()
+            } else {
+                String::new()
+            },
+        );
+    }
+    json!({ "points": points, "non_localises": unlocated, "geoip": sh.geo.available(), "attribution": ATTRIBUTION })
+}
+
 fn dispersal_path(c: &Config) -> PathBuf {
     c.data_dir.join("dispersal.json")
 }
@@ -567,6 +800,38 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             s.partners.entry(id).or_default().allowance = allowance;
             sh.addrs.lock().unwrap().insert(id, addr.to_string());
         }
+        "set_quota" => {
+            let id = unhex32(field(&v, "user_id")?)?;
+            let q = number(&v, "quota_bytes")?;
+            s.users
+                .get_mut(&id)
+                .ok_or("utilisateur inconnu")?
+                .quota_bytes = q;
+        }
+        "set_attach_policy" => {
+            let yes = |x: &str| {
+                matches!(
+                    x.trim().to_lowercase().as_str(),
+                    "oui" | "true" | "1" | "yes"
+                )
+            };
+            let mut p = s.attach_policy;
+            if let Ok(e) = field(&v, "enabled") {
+                if !e.trim().is_empty() {
+                    p.enabled = yes(e);
+                }
+            }
+            if let Ok(q) = number(&v, "quota_bytes") {
+                p.quota_bytes = q;
+            }
+            if let Ok(m) = number(&v, "max_users") {
+                p.max_users = m as usize;
+            }
+            if let Ok(b) = number(&v, "budget_bytes") {
+                p.budget_bytes = b;
+            }
+            s.attach_policy = p;
+        }
         _ => return Err(format!("action inconnue : {name}")),
     }
     drop(s);
@@ -603,6 +868,12 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
     let store = PhysicalStore::open(config.data_dir.join("store.sqlite"), volumes)
         .map_err(|e| start(&e))?;
     let mut service = NodeService::with_store(seed, Box::new(store));
+    service.attach_policy = config.attach;
+    service.partner_policy = config.partner_policy;
+    service.record_user_ips = config.record_user_ips;
+    let vdf = chiavdf_verifier();
+    let check: VdfCheck = Arc::new(move |id, proof| vdf(id, proof).unwrap_or(false));
+    service.vdf = Some(check);
     let addrs = load_state(&state_path(&config))?
         .restore(&mut service)
         .map_err(DaemonError::Config)?;
@@ -674,6 +945,9 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
     let shared = Arc::new(Shared {
         service,
         addrs: Arc::new(Mutex::new(addrs)),
+        excluded: Arc::new(Mutex::new(Default::default())),
+        geo: Geo::open(&config.data_dir.join(DB_FILE)),
+        last_partnering: Mutex::new(None),
         dispersal: tokio::sync::Mutex::new(dispersal),
         last_cycle: Mutex::new(None),
         last_upkeep: Mutex::new(None),
@@ -695,7 +969,11 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         let sh = shared.clone();
         Arc::new(move |n, v| act(&sh, n, v))
     };
-    let url = local_http::serve(config.api_port, st_fn, act_fn, ASSETS).await?;
+    let map_fn: StatusFn = {
+        let sh = shared.clone();
+        Arc::new(move || map_points(&sh))
+    };
+    let url = local_http::serve(config.api_port, st_fn, act_fn, Some(map_fn), ASSETS).await?;
 
     // Tâches périodiques : dispersion et sauvegarde (30 s), pointeurs de
     // migration (1 h), purge des Nœuds silencieux (1 j).
@@ -704,6 +982,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         dht: Arc::new(dht),
         service: shared.service.clone(),
         addrs: shared.addrs.clone(),
+        excluded: shared.excluded.clone(),
     };
     // Entrée DHT Node : preuve VDF (une fois), publication, republication.
     {
@@ -754,6 +1033,32 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
             {
                 let now = clock();
                 let mut d = sh.dispersal.lock().await;
+                // Partenariats automatiques, puis exclusions de placement.
+                sh.service.lock().unwrap().blacklisted = d
+                    .upkeep
+                    .blacklist
+                    .keys()
+                    .filter_map(|n| hex::decode(n).ok()?.try_into().ok())
+                    .collect();
+                let own_entry = sh.node_entry.lock().unwrap().last_envelope.clone();
+                let target = sh.config.dispersal.k * sh.config.dispersal.coef + 4;
+                let net = Net {
+                    server: &fabric.server,
+                    dht: &fabric.dht,
+                    addrs: &sh.addrs,
+                    own_entry,
+                };
+                let pr = run_partnering(
+                    &sh.service,
+                    &mut d,
+                    &net,
+                    &sh.config.partnering,
+                    target,
+                    now,
+                )
+                .await;
+                *sh.last_partnering.lock().unwrap() = Some((now, pr));
+                *sh.excluded.lock().unwrap() = excluded(&sh.config.partnering, &d);
                 let up = run_upkeep(
                     &sh.service,
                     &mut d,

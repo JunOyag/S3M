@@ -33,6 +33,10 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         upkeep: Default::default(),
         public_ip: None,
         public_port: None,
+        partnering: Default::default(),
+        partner_policy: Default::default(),
+        attach: Default::default(),
+        record_user_ips: true,
     };
     std::fs::write(
         dir.join("node.json"),
@@ -51,6 +55,19 @@ async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result: Result<(), Box<dyn std::error::Error>> = match args.as_slice() {
         [cmd, dir] if cmd == "init" => init(Path::new(dir)),
+        [cmd, dir] if cmd == "geoip-update" => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            match p2p_storage_node::geo::update(Path::new(dir), now) {
+                Ok(p) => {
+                    println!("Base de géolocalisation : {} ({})", p.display(), p2p_storage_node::geo::ATTRIBUTION);
+                    Ok(())
+                }
+                Err(e) => Err(e.into()),
+            }
+        }
         [config] => match Config::load(Path::new(config)) {
             Err(e) => Err(e.into()),
             Ok(c) => match start(c).await {
@@ -68,7 +85,7 @@ async fn main() {
             },
         },
         _ => Err(
-            "usage : p2p-storage-node init <répertoire> | p2p-storage-node <config.json>".into(),
+            "usage : p2p-storage-node init <répertoire> | geoip-update <répertoire de données> | <config.json>".into(),
         ),
     };
     if let Err(e) = result {

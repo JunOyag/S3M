@@ -103,6 +103,7 @@ async fn fraud_absence_and_local_corruption_are_repaired_automatically() {
         dht: Arc::new(dht),
         service: service.clone(),
         addrs: Arc::new(Mutex::new(addrs)),
+        excluded: Default::default(),
     };
     let mut state = DispersalState::default();
     let user = hex::encode(pk(&USER));

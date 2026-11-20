@@ -147,7 +147,7 @@ pub struct UserDispersal {
 }
 
 /// État de dispersion du Nœud (persisté en JSON).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DispersalState {
     pub users: BTreeMap<String, UserDispersal>,
     /// Dernier horodatage d'avis envoyé, par partenaire (anti-rejeu).
@@ -158,6 +158,9 @@ pub struct DispersalState {
     /// Snapshot du NodeManifest (`crate::snapshot_engine`).
     #[serde(default)]
     pub snapshot: SnapshotRec,
+    /// Partenariats automatiques (`crate::partnering`).
+    #[serde(default)]
+    pub partnering: crate::partnering::PartneringState,
 }
 
 /// Snapshot du NodeManifest dispersé.
@@ -660,6 +663,8 @@ pub struct NetFabric {
     pub service: std::sync::Arc<Mutex<NodeService>>,
     /// Adresses `/ip4/…/tcp/…/p2p/<PeerId>` des partenaires.
     pub addrs: std::sync::Arc<Mutex<HashMap<Id, String>>>,
+    /// Partenaires exclus des nouveaux placements (score bas, retrait).
+    pub excluded: std::sync::Arc<Mutex<std::collections::HashSet<Id>>>,
 }
 
 impl NetFabric {
@@ -677,6 +682,7 @@ impl NetFabric {
 #[async_trait::async_trait]
 impl Fabric for NetFabric {
     fn partners(&self) -> Vec<Reachable> {
+        let excluded = self.excluded.lock().unwrap().clone();
         let known: Vec<Id> = self
             .service
             .lock()
@@ -684,6 +690,7 @@ impl Fabric for NetFabric {
             .partners
             .keys()
             .copied()
+            .filter(|p| !excluded.contains(p))
             .collect();
         let addrs = self.addrs.lock().unwrap();
         known

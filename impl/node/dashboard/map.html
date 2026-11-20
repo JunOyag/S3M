@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Carte P2P-Storage</title>
+<style>
+  :root { --bg: #f2f1ec; --sea: #dfe6ea; --land: #fbfaf6; --border: #b9b8b0; --fg: #1d1d1b; --muted: #6b6b66; --card: #ffffffee;
+          --partenaire: #2e7d4f; --candidat: #2f5d8a; --noire: #b23a32; --utilisateur: #c77d16; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --sea: #1b2226; --land: #2a2a27; --border: #46463f; --fg: #ecece8; --muted: #9a9a94; --card: #1f1f1dee;
+            --partenaire: #5fc48a; --candidat: #7fb0e0; --noire: #e07a72; --utilisateur: #e8a64a; }
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+  .panel { position: absolute; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  #layers { top: 12px; left: 12px; min-width: 200px; }
+  #layers h1 { font-size: 15px; margin: 0 0 6px; }
+  #layers label { display: flex; align-items: center; gap: 8px; margin: 3px 0; cursor: pointer; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .count { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+  #unlocated { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  #detail { top: 12px; right: 12px; max-width: 360px; max-height: 70vh; overflow: auto; display: none; }
+  #detail h2 { font-size: 14px; margin: 0 0 6px; }
+  #detail ul { margin: 0; padding-left: 18px; }
+  #detail li { margin: 4px 0; word-break: break-all; }
+  #detail .close { float: right; cursor: pointer; border: 0; background: none; color: var(--muted); font-size: 16px; }
+  #foot { bottom: 8px; right: 12px; font-size: 11px; color: var(--muted); padding: 4px 8px; }
+  #help { bottom: 8px; left: 12px; font-size: 11px; color: var(--muted); padding: 4px 8px; }
+  .error { color: var(--noire); }
+</style>
+</head>
+<body>
+<canvas id="map"></canvas>
+<div class="panel" id="layers">
+  <h1>Carte du réseau</h1>
+  <div id="toggles"></div>
+  <div id="unlocated"></div>
+</div>
+<div class="panel" id="detail"><button class="close" id="close" title="Fermer">×</button><div id="detail-body"></div></div>
+<div class="panel" id="help">molette : zoom · glisser : déplacer · clic sur un point : détail</div>
+<div class="panel" id="foot"></div>
+<script src="map.js"></script>
+</body>
+</html>

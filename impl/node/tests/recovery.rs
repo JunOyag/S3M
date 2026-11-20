@@ -117,6 +117,7 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
             dht: Arc::new(dht(NODE, vec![boot_addr.clone()], &clock).await),
             service: service.clone(),
             addrs: Arc::new(Mutex::new(addrs.clone())),
+            excluded: Default::default(),
         };
         let mut state = DispersalState::default();
         run_cycle(&service, &mut state, &fabric, &cfg, 1_000).await;

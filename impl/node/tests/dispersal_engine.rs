@@ -129,6 +129,7 @@ async fn node_disperses_publishes_and_data_survives_total_node_loss() {
         dht: Arc::new(dht),
         service: service.clone(),
         addrs: Arc::new(Mutex::new(addrs)),
+        excluded: Default::default(),
     };
     let mut state = DispersalState::default();
 

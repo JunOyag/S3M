@@ -37,6 +37,10 @@ fn config(dir: &std::path::Path) -> Config {
         upkeep: Default::default(),
         public_ip: None,
         public_port: None,
+        partnering: Default::default(),
+        partner_policy: Default::default(),
+        attach: Default::default(),
+        record_user_ips: true,
     }
 }
 

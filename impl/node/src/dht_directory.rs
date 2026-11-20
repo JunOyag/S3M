@@ -82,6 +82,8 @@ enum Command {
     Put(Vec<u8>, Vec<u8>, oneshot::Sender<Result<(), DhtNodeError>>),
     Get(Vec<u8>, oneshot::Sender<Option<Vec<u8>>>),
     ListenAddr(oneshot::Sender<Option<Multiaddr>>),
+    /// Pairs les plus proches d'une clé (découverte de partenaires).
+    Closest(Vec<u8>, oneshot::Sender<Vec<PeerId>>),
 }
 
 /// Poignée sur l'adaptateur DHT (la boucle réseau tourne dans une tâche tokio).
@@ -165,6 +167,17 @@ impl DhtNode {
         rx.await.map_err(|_| DhtNodeError::Stopped)?
     }
 
+    /// Pairs serveurs les plus proches d'une clé, table de routage comprise
+    /// (`protocols.partenariat-automatique` § Découverte).
+    pub async fn closest_peers(&self, key: Vec<u8>) -> Result<Vec<PeerId>, DhtNodeError> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Command::Closest(key, tx))
+            .await
+            .map_err(|_| DhtNodeError::Stopped)?;
+        rx.await.map_err(|_| DhtNodeError::Stopped)
+    }
+
     /// Lit l'enveloppe valide publiée sous `key` (locale ou réseau).
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, DhtNodeError> {
         let (tx, rx) = oneshot::channel();
@@ -193,6 +206,7 @@ fn expiry_instant(expires_at: u64, now: u64) -> Instant {
 
 type PendingGets =
     std::collections::HashMap<kad::QueryId, (Vec<u8>, oneshot::Sender<Option<Vec<u8>>>)>;
+type PendingClosest = std::collections::HashMap<kad::QueryId, oneshot::Sender<Vec<PeerId>>>;
 type PendingPuts =
     std::collections::HashMap<kad::QueryId, oneshot::Sender<Result<(), DhtNodeError>>>;
 
@@ -204,12 +218,17 @@ async fn run(
 ) {
     let mut pending_get: PendingGets = Default::default();
     let mut pending_put: PendingPuts = Default::default();
+    let mut pending_closest: PendingClosest = Default::default();
     loop {
         tokio::select! {
             cmd = rx.recv() => match cmd {
                 None => return,
                 Some(Command::ListenAddr(reply)) => {
                     let _ = reply.send(swarm.listeners().next().cloned());
+                }
+                Some(Command::Closest(key, reply)) => {
+                    let id = swarm.behaviour_mut().kad.get_closest_peers(key);
+                    pending_closest.insert(id, reply);
                 }
                 Some(Command::Put(key, env, reply)) => {
                     let now = clock();
@@ -241,6 +260,21 @@ async fn run(
             },
             event = swarm.select_next_some() => {
                 if let SwarmEvent::Behaviour(BehaviourEvent::Kad(ev)) = event {
+                    if let kad::Event::OutboundQueryProgressed { id, result: QueryResult::GetClosestPeers(r), .. } = &ev {
+                        if let Some(reply) = pending_closest.remove(id) {
+                            let mut peers: Vec<PeerId> = match r {
+                                Ok(ok) => ok.peers.iter().map(|p| p.peer_id).collect(),
+                                Err(kad::GetClosestPeersError::Timeout { peers, .. }) => peers.iter().map(|p| p.peer_id).collect(),
+                            };
+                            for b in swarm.behaviour_mut().kad.kbuckets() {
+                                peers.extend(b.iter().map(|e| *e.node.key.preimage()));
+                            }
+                            peers.sort();
+                            peers.dedup();
+                            let _ = reply.send(peers);
+                        }
+                        continue;
+                    }
                     handle_kad(&mut swarm, ev, &vdf, &clock, &mut pending_get, &mut pending_put);
                 }
             }

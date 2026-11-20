@@ -33,12 +33,36 @@ function render(value) {
     const cols = [...new Set(value.flatMap((o) => Object.keys(o)))];
     const t = el("table");
     const head = t.createTHead().insertRow();
-    cols.forEach((c) => head.appendChild(el("th", c)));
     const body = t.createTBody();
-    value.forEach((o) => {
-      const r = body.insertRow();
-      cols.forEach((c) => r.appendChild(el("td", cell(o[c]))));
+    let sortCol = null;
+    let asc = true;
+    const fill = () => {
+      body.replaceChildren();
+      const rows = sortCol === null ? value : [...value].sort((a, b) => {
+        const x = a[sortCol], y = b[sortCol];
+        const r = typeof x === "number" && typeof y === "number" ? x - y : cell(x).localeCompare(cell(y), "fr", { numeric: true });
+        return asc ? r : -r;
+      });
+      rows.forEach((o) => {
+        const r = body.insertRow();
+        cols.forEach((c) => r.appendChild(el("td", cell(o[c]))));
+      });
+    };
+    cols.forEach((c) => {
+      const th = el("th", c);
+      th.title = "trier";
+      th.style.cursor = "pointer";
+      th.addEventListener("click", () => {
+        asc = sortCol === c ? !asc : true;
+        sortCol = c;
+        head.querySelectorAll("th").forEach((h) => (h.textContent = h.dataset.col));
+        th.textContent = c + (asc ? " ▲" : " ▼");
+        fill();
+      });
+      th.dataset.col = c;
+      head.appendChild(th);
     });
+    fill();
     return t;
   }
   if (value !== null && typeof value === "object") {
@@ -92,8 +116,15 @@ function show(status) {
   document.title = status["titre"] || "P2P-Storage";
   const keep = actionsShown ? document.getElementById("actions") : null;
   main.replaceChildren();
+  if (status["carte"]) {
+    const s = el("section");
+    const b = el("button", "Ouvrir la carte du monde");
+    b.addEventListener("click", () => window.open("map.html#token=" + encodeURIComponent(token), "_blank", "noopener"));
+    s.appendChild(b);
+    main.appendChild(s);
+  }
   Object.entries(status).forEach(([k, v]) => {
-    if (k === "titre" || k === "actions") return;
+    if (k === "titre" || k === "actions" || k === "carte") return;
     const s = el("section");
     s.appendChild(el("h2", k));
     s.appendChild(render(v));
