@@ -144,6 +144,7 @@ L'unicité fait l'objet d'un test unitaire du noyau (`impl/core`,
 | `"dht-signing"` | graine de `sig_priv_user` | `priv_user` | — | `pub_user` | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
 | `"block"` | `K_block` | `master_key[version]` | `encryption_salt` | `u32(index_du_bloc)` | [`crypto.k-block`](k-block.md) |
 | `"master-key-wrap"` | `K_wrap` | `master_key[version_courante]` | — | `u16(version_wrappée)`, `u16(version_courante)` | cette page |
+| `"connector-auth"` | preuve d'authentification Connecteur → Nœud | `K_attach` | — | `PeerId` du Connecteur, `PeerId` du Nœud | [`protocols.echange-blocs`](../04-protocols/echange-blocs.md) |
 
 - `K_attach` n'est plus une exception : la V2 lui donnait un `info` vide, la
   V3 lui attribue l'étiquette `"attach"`. Les variantes post-quantiques

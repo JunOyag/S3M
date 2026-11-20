@@ -1,0 +1,62 @@
+// ---- BlockExchangeResponse.fbs ----
+// Réponses du protocole d'échange de blocs (protocols.echange-blocs).
+// Source: protocols.echange-blocs (fonctionnalité ajoutée le 2026-11-20)
+include "BlockExchange.fbs";
+namespace P2PStorage.Exchange;
+
+enum ErrorCode : ubyte {
+  NotFound = 0,        // bloc ou fragment absent
+  Unauthorized = 1,    // identifiant absent, invalide, expiré ou révoqué
+  QuotaExceeded = 2,   // quota du compte ou solde de troc dépassé
+  TooLarge = 3,        // message au-delà de 1 048 576 o
+  Malformed = 4,       // message illisible ou version inconnue
+  RateLimited = 5,     // débit de secours dépassé
+  Replayed = 6         // avis de suppression non plus récent que le dernier appliqué
+}
+
+table Failure {
+  code: ErrorCode;
+}
+// GetBlock, FetchFragment
+table BlockData {
+  data: [ubyte];
+}
+// PutBlock
+table Stored {
+  hash: [ubyte];
+}
+// CommitRoot
+table RootState {
+  committed: bool;
+  current_root: [ubyte];
+}
+// StoreFragment
+table FragmentReceipt {
+  hash: [ubyte];
+  signature: [ubyte];
+}
+// Challenge
+table ChallengeResponse {
+  digest: [ubyte];
+}
+// ReportIncident, Delegate, Tombstone
+table Ack {
+  freed: uint64;
+}
+// RenewGrant
+table GrantIssued {
+  grant: SignedRescueGrant;
+}
+
+union ResponseBody {
+  Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
+  Ack, GrantIssued
+}
+
+table BlockResponse {
+  version: uint16 = 1;
+  body: ResponseBody;
+}
+
+root_type BlockResponse;
+file_identifier "BRSP";

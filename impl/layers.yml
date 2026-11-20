@@ -134,6 +134,11 @@ phases:
       - { id: deploiement.disaster-recovery,      component: node+connector }
       - { id: deploiement.formats-serialisation,   component: core }
       - { id: deploiement.packaging,                component: node+connector }
+      - { id: protocols.echange-blocs,              component: node+connector, depends_on: [network.dht-directory, crypto.k-attach, securite.pos-challenges, protocols.tombstones, protocols.dispersion-transactionnelle, securite.incidents-compromissions] }
+      - { id: network.BlockRequest,                 component: protocol }
+      - { id: network.BlockResponse,                component: protocol }
+      - { id: network.RescueGrant,                  component: protocol }
+      - { id: network.SignedRescueGrant,            component: protocol }
 
   - phase: 7
     name: "Agilité cryptographique (post-quantique) — optionnel pour un MVP"

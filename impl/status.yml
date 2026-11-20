@@ -1090,3 +1090,33 @@ entries:
       tombstonée seulement après confirmation de la nouvelle. La copie locale
       reconstituée et sa journalisation sur disque se branchent sur le lecteur
       monté (protocols.acces-applicatif).
+  protocols.echange-blocs:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
+  network.BlockRequest:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
+  network.BlockResponse:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
+  network.RescueGrant:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
+  network.SignedRescueGrant:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""

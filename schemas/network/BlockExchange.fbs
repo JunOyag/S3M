@@ -1,0 +1,103 @@
+// ---- BlockExchange.fbs ----
+// Requêtes du protocole d'échange de blocs (protocols.echange-blocs) :
+// Connecteur → Nœud, Nœud → partenaire, Connecteur ou nouveau Nœud →
+// partenaire (secours). Protocole libp2p "/p2p-storage/blocks/1".
+// Source: protocols.echange-blocs (fonctionnalité ajoutée le 2026-11-20)
+namespace P2PStorage.Exchange;
+
+// Autorisation de lecture de secours émise par un Nœud au profit d'une clé
+// anonyme d'appareil. Sérialisée puis signée (SignedRescueGrant).
+table RescueGrant {
+  issuer_node_id: [ubyte];    // pub_node de l'émetteur (32 o)
+  grant_pub: [ubyte];         // clé Ed25519 anonyme de l'appareil (32 o)
+  expires_at: uint64;         // secondes Unix ; au plus 15 552 000 s après émission
+  covered_node_ids: [ubyte];  // anciens node_id couverts par un pointeur de migration (n × 32 o)
+}
+
+// RescueGrant signé par priv_node de l'émetteur.
+table SignedRescueGrant {
+  grant: [ubyte];       // RescueGrant sérialisé
+  signature: [ubyte];   // Ed25519 sur L("p2p-storage/sig/rescue-grant/v1") ‖ grant
+}
+
+// Connecteur → son Nœud. Lien de session : identités Noise des deux pairs.
+table UserCredential {
+  user_id: [ubyte];     // pub_user (32 o), vu du seul Nœud sous Noise
+  proof: [ubyte];       // KDF(K_attach, "connector-auth", —, peer_connecteur, peer_noeud)
+}
+
+// Connecteur → partenaire (Nœud injoignable).
+table RescueCredential {
+  grant: SignedRescueGrant;
+  proof: [ubyte];       // Ed25519 par grant_priv sur L("p2p-storage/sig/rescue-session/v1") ‖ L(peer_demandeur) ‖ L(peer_partenaire)
+}
+
+// Nouveau Nœud → partenaire de l'ancien Nœud, sur délégation du Connecteur.
+table DelegatedCredential {
+  grant: SignedRescueGrant;
+  delegate_node_id: [ubyte];  // pub_node du nouveau Nœud (32 o)
+  expires_at: uint64;         // au plus celui de l'autorisation
+  signature: [ubyte];         // Ed25519 par grant_priv sur L("p2p-storage/sig/rescue-delegation/v1") ‖ delegate_node_id ‖ u64be(expires_at)
+}
+
+union Credential { UserCredential, RescueCredential, DelegatedCredential }
+
+// Connecteur → Nœud
+table GetBlock {
+  hash: [ubyte];
+}
+// Connecteur → Nœud (bloc chiffré)
+table PutBlock {
+  data: [ubyte];
+}
+// Connecteur → Nœud
+table CommitRoot {
+  base_root: [ubyte];
+  new_root: [ubyte];
+}
+// Connecteur → Nœud
+table ReportIncident {
+  hash: [ubyte];
+}
+// Connecteur → Nœud
+table RenewGrant {
+  grant_pub: [ubyte];
+}
+// Connecteur → nouveau Nœud
+table Delegate {
+  credential: DelegatedCredential;
+}
+// Nœud → partenaire
+table StoreFragment {
+  data: [ubyte];
+}
+// Nœud → partenaire (PoS)
+table Challenge {
+  hash: [ubyte];
+  nonce: [ubyte];
+}
+// Nœud, Connecteur ou nouveau Nœud → partenaire
+table FetchFragment {
+  hash: [ubyte];
+}
+// Nœud → partenaire
+table Tombstone {
+  timestamp: uint64;
+  hashes: [ubyte];
+  signature: [ubyte];
+}
+
+union RequestBody {
+  GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
+  StoreFragment, Challenge, FetchFragment, Tombstone
+}
+
+// Requête : une par flux libp2p request-response.
+table BlockRequest {
+  version: uint16 = 1;
+  credential: Credential;     // absent entre Nœuds partenaires (identité Noise)
+  body: RequestBody;
+}
+
+root_type BlockRequest;
+file_identifier "BREQ";

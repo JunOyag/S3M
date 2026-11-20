@@ -37,6 +37,12 @@ Connecteur, Nœud et partenaires) est une fonctionnalité à spécifier puis
 implémenter, rattachée à `protocols.acces-applicatif`. Les notes de
 `impl/status.yml` de chaque id concerné le rappellent.
 
+**Mise à jour** (validée par l'utilisateur, 2026-11-20) : protocole spécifié
+par `protocols.echange-blocs` (libp2p requête/réponse, authentification
+Connecteur par `K_attach`, autorisation de secours signée par le Nœud avec
+délégation et révocation par pointeur de migration, conservation de 6 mois
+des fragments d'un Nœud silencieux).
+
 ---
 
 ## network.bootstrap — Rendezvous/STUN/TURN, `UserManifest`, récupération du bloc racine

@@ -248,6 +248,38 @@ pages:
       - schemas::write_queue_and_emergency_roundtrip
       - schemas::every_generated_table_builds_and_verifies
 
+  - id: network.BlockRequest
+    kind: schema
+    path: 02-schemas/network/BlockRequest.md
+    title: "BlockRequest"
+    section: "protocols.echange-blocs"
+    fbs: "schemas/network/BlockExchange.fbs#BlockRequest"
+    refs: [protocols.echange-blocs, network.RescueGrant]
+
+  - id: network.BlockResponse
+    kind: schema
+    path: 02-schemas/network/BlockResponse.md
+    title: "BlockResponse"
+    section: "protocols.echange-blocs"
+    fbs: "schemas/network/BlockExchangeResponse.fbs#BlockResponse"
+    refs: [protocols.echange-blocs, network.BlockRequest]
+
+  - id: network.RescueGrant
+    kind: schema
+    path: 02-schemas/network/RescueGrant.md
+    title: "RescueGrant"
+    section: "protocols.echange-blocs"
+    fbs: "schemas/network/BlockExchange.fbs#RescueGrant"
+    refs: [protocols.echange-blocs, network.SignedRescueGrant, network.SignedMigrationPointer]
+
+  - id: network.SignedRescueGrant
+    kind: schema
+    path: 02-schemas/network/SignedRescueGrant.md
+    title: "SignedRescueGrant"
+    section: "protocols.echange-blocs"
+    fbs: "schemas/network/BlockExchange.fbs#SignedRescueGrant"
+    refs: [network.RescueGrant, protocols.echange-blocs]
+
   # -------------------------------------------------------- schemas: node.*
   - id: node.VolumeConfig
     kind: schema
@@ -738,12 +770,19 @@ pages:
     verified_by:
       - dht_network::node_deletes_dispersal_entry_and_old_entry_cannot_come_back
 
+  - id: protocols.echange-blocs
+    kind: narrative
+    path: 04-protocols/echange-blocs.md
+    title: "Protocole d'Échange de Blocs"
+    section: "§3.7, §3.12"
+    refs: [network.dht-directory, network.BlockRequest, network.BlockResponse, network.RescueGrant, crypto.k-attach, crypto.symmetric-suite, securite.pos-challenges, protocols.tombstones, protocols.dispersion-transactionnelle, protocols.migration-noeud, securite.incidents-compromissions]
+
   - id: protocols.acces-applicatif
     kind: narrative
     path: 04-protocols/acces-applicatif.md
     title: "Accès Applicatif — Lecteur Monté natif"
     section: "§3.12"
-    refs: [fs.DirectoryEntry, protocols.write-queue, protocols.espace-secours]
+    refs: [fs.DirectoryEntry, protocols.write-queue, protocols.espace-secours, protocols.echange-blocs]
 
   - id: protocols.integrite-lecture
     kind: narrative
