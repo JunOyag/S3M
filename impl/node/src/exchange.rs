@@ -126,8 +126,8 @@ pub struct NodeService {
     pub auto_attached: std::collections::HashSet<Id>,
     /// Identités VDF déjà utilisées pour un rattachement automatique.
     pub used_attach_identities: std::collections::HashSet<Id>,
-    /// Partenariats acceptés à traiter par le démon : `(node_id, ip, port)`.
-    pub new_partners: Vec<(Id, String, u16)>,
+    /// Partenariats acceptés à traiter par le démon : `(node_id, adresses)`.
+    pub new_partners: Vec<(Id, Vec<String>)>,
     /// Dernière adresse IP vue par Utilisateur (carte du dashboard).
     pub last_user_ip: HashMap<Id, String>,
     pub record_user_ips: bool,
@@ -479,9 +479,10 @@ impl NodeService {
         if p2p_storage_protocol::dht::accept_record(&p, entry, None, now, &check).is_err() {
             return 0;
         }
-        let Some((ip, port)) = entry_addr(entry) else {
+        let addrs = entry_multiaddrs(&p, entry);
+        if addrs.is_empty() {
             return 0;
-        };
+        }
         let granted = requested.min(pol.max_allowance_blocks);
         if granted == 0 {
             return 0;
@@ -494,7 +495,7 @@ impl NodeService {
                 ..Default::default()
             },
         );
-        self.new_partners.push((p, ip, port));
+        self.new_partners.push((p, addrs));
         granted
     }
 
@@ -525,6 +526,24 @@ impl NodeService {
         }
         purged
     }
+}
+
+/// Multiaddrs d'échange de blocs d'un Nœud depuis son entrée DHT : adresse
+/// TCP directe d'abord, puis les adresses publiées (QUIC, relais).
+pub fn entry_multiaddrs(node_id: &Id, envelope: &[u8]) -> Vec<String> {
+    let Some((addrs, direct)) = p2p_storage_protocol::entries::node_entry_addrs(envelope) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = direct
+        .and_then(|(ip, port)| crate::partnering::multiaddr(node_id, &ip, port))
+        .into_iter()
+        .collect();
+    for a in addrs {
+        if !out.contains(&a) {
+            out.push(a);
+        }
+    }
+    out
 }
 
 /// `ip/port` d'une entrée DHT Node.
@@ -681,9 +700,9 @@ pub enum ExchangeError {
     Stopped,
 }
 
-type Reply = oneshot::Sender<Result<Response, ExchangeError>>;
+pub(crate) type Reply = oneshot::Sender<Result<Response, ExchangeError>>;
 
-enum Cmd {
+pub(crate) enum Cmd {
     ListenAddr(oneshot::Sender<Option<Multiaddr>>),
     Request(Box<(Multiaddr, Request, Reply)>),
 }
@@ -743,6 +762,11 @@ impl BlockServer {
         self.peer_id
     }
 
+    /// Poignée sur une boucle réseau existante (`crate::net`).
+    pub(crate) fn from_parts(peer_id: PeerId, tx: mpsc::Sender<Cmd>) -> Self {
+        Self { peer_id, tx }
+    }
+
     /// Première adresse d'écoute, suffixée de `/p2p/<PeerId>`.
     pub async fn listen_addr(&self) -> Option<Multiaddr> {
         listen_addr(&self.tx, self.peer_id).await
@@ -792,103 +816,206 @@ fn decode_frame(f: Frame) -> Result<Response, ExchangeError> {
     }
 }
 
+/// Opérations du swarm nécessaires à l'échange de blocs (swarm dédié, ou
+/// swarm unique du Nœud : `crate::net`).
+pub(crate) trait RrHost {
+    fn rr(&mut self) -> &mut request_response::Behaviour<FrameCodec>;
+    fn connected(&self, peer: &PeerId) -> bool;
+    fn dial_addr(&mut self, addr: Multiaddr) -> Result<(), String>;
+    fn listen_addr(&self) -> Option<Multiaddr>;
+}
+
+impl RrHost for Swarm<Behaviour> {
+    fn rr(&mut self) -> &mut request_response::Behaviour<FrameCodec> {
+        self.behaviour_mut()
+    }
+    fn connected(&self, peer: &PeerId) -> bool {
+        self.is_connected(peer)
+    }
+    fn dial_addr(&mut self, addr: Multiaddr) -> Result<(), String> {
+        self.dial(addr).map_err(|e| e.to_string())
+    }
+    fn listen_addr(&self) -> Option<Multiaddr> {
+        self.listeners().next().cloned()
+    }
+}
+
+/// Machine d'état de l'échange de blocs, indépendante du swarm.
+pub(crate) struct ExchangeLoop {
+    local: PeerId,
+    service: Option<Arc<Mutex<NodeService>>>,
+    clock: Arc<dyn Fn() -> u64 + Send + Sync>,
+    waiting: HashMap<PeerId, Vec<(Vec<u8>, Reply)>>,
+    inflight: HashMap<OutboundRequestId, Reply>,
+    peer_ips: HashMap<PeerId, IpAddr>,
+}
+
+impl ExchangeLoop {
+    pub(crate) fn new(
+        local: PeerId,
+        service: Option<Arc<Mutex<NodeService>>>,
+        clock: Arc<dyn Fn() -> u64 + Send + Sync>,
+    ) -> Self {
+        Self {
+            local,
+            service,
+            clock,
+            waiting: HashMap::new(),
+            inflight: HashMap::new(),
+            peer_ips: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn on_cmd(&mut self, sw: &mut dyn RrHost, cmd: Cmd) {
+        match cmd {
+            Cmd::ListenAddr(r) => {
+                let _ = r.send(sw.listen_addr());
+            }
+            Cmd::Request(b) => {
+                let (addr, req, reply) = *b;
+                let Some(peer) = peer_of(&addr) else {
+                    let _ = reply.send(Err(ExchangeError::NoPeerId));
+                    return;
+                };
+                let bytes = encode_request(&req);
+                if bytes.len() > MAX_MESSAGE_BYTES {
+                    let _ = reply.send(Err(Refusal::TooLarge.into()));
+                    return;
+                }
+                if sw.connected(&peer) {
+                    let id = sw.rr().send_request(&peer, Frame::Data(bytes));
+                    self.inflight.insert(id, reply);
+                } else {
+                    let first = !self.waiting.contains_key(&peer);
+                    self.waiting.entry(peer).or_default().push((bytes, reply));
+                    if first {
+                        if let Err(e) = sw.dial_addr(addr) {
+                            for (_, r) in self.waiting.remove(&peer).unwrap_or_default() {
+                                let _ = r.send(Err(ExchangeError::Network(e.clone())));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Connexion établie : adresse IP du pair (hors relais), requêtes en attente.
+    pub(crate) fn on_connected(&mut self, sw: &mut dyn RrHost, peer: PeerId, remote: &Multiaddr) {
+        if !remote.iter().any(|p| matches!(p, Protocol::P2pCircuit)) {
+            for p in remote.iter() {
+                match p {
+                    Protocol::Ip4(v) => {
+                        self.peer_ips.insert(peer, IpAddr::V4(v));
+                    }
+                    Protocol::Ip6(v) => {
+                        self.peer_ips.insert(peer, IpAddr::V6(v));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for (bytes, r) in self.waiting.remove(&peer).unwrap_or_default() {
+            let id = sw.rr().send_request(&peer, Frame::Data(bytes));
+            self.inflight.insert(id, r);
+        }
+    }
+
+    pub(crate) fn on_dial_error(&mut self, peer: PeerId, error: String) {
+        for (_, r) in self.waiting.remove(&peer).unwrap_or_default() {
+            let _ = r.send(Err(ExchangeError::Network(error.clone())));
+        }
+    }
+
+    pub(crate) fn on_event(
+        &mut self,
+        sw: &mut dyn RrHost,
+        ev: request_response::Event<Frame, Frame>,
+    ) {
+        match ev {
+            request_response::Event::Message { peer, message, .. } => match message {
+                request_response::Message::Request {
+                    request, channel, ..
+                } => {
+                    let resp = match (&self.service, request) {
+                        (None, _) => Response::Failure(Refusal::Unauthorized),
+                        (Some(_), Frame::TooLarge) => Response::Failure(Refusal::TooLarge),
+                        (Some(s), Frame::Data(d)) => match decode_request(&d) {
+                            Err(e) => Response::Failure(e),
+                            Ok(req) => {
+                                let user = match &req.credential {
+                                    Some(Credential::User { user_id, .. }) => {
+                                        <[u8; 32]>::try_from(user_id.as_slice()).ok()
+                                    }
+                                    _ => None,
+                                };
+                                let mut sv = s.lock().unwrap();
+                                let r = sv.handle(
+                                    &peer.to_bytes(),
+                                    node_id_of(&peer),
+                                    &self.local.to_bytes(),
+                                    req,
+                                    (self.clock)(),
+                                );
+                                if let (Some(u), Some(ip), false) = (
+                                    user,
+                                    self.peer_ips.get(&peer),
+                                    matches!(r, Response::Failure(_)),
+                                ) {
+                                    if sv.record_user_ips && sv.users.contains_key(&u) {
+                                        sv.last_user_ip.insert(u, ip.to_string());
+                                    }
+                                }
+                                r
+                            }
+                        },
+                    };
+                    let _ = sw
+                        .rr()
+                        .send_response(channel, Frame::Data(encode_response(&resp)));
+                }
+                request_response::Message::Response {
+                    request_id,
+                    response,
+                } => {
+                    if let Some(r) = self.inflight.remove(&request_id) {
+                        let _ = r.send(decode_frame(response));
+                    }
+                }
+            },
+            request_response::Event::OutboundFailure {
+                request_id, error, ..
+            } => {
+                if let Some(r) = self.inflight.remove(&request_id) {
+                    let _ = r.send(Err(ExchangeError::Network(error.to_string())));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 async fn run(
     mut swarm: Swarm<Behaviour>,
     mut rx: mpsc::Receiver<Cmd>,
     service: Option<Arc<Mutex<NodeService>>>,
     clock: Arc<dyn Fn() -> u64 + Send + Sync>,
 ) {
-    let local = *swarm.local_peer_id();
-    let mut waiting: HashMap<PeerId, Vec<(Vec<u8>, Reply)>> = HashMap::new();
-    let mut inflight: HashMap<OutboundRequestId, Reply> = HashMap::new();
-    let mut peer_ips: HashMap<PeerId, IpAddr> = HashMap::new();
+    let mut el = ExchangeLoop::new(*swarm.local_peer_id(), service, clock);
     loop {
         tokio::select! {
             cmd = rx.recv() => match cmd {
                 None => return,
-                Some(Cmd::ListenAddr(r)) => { let _ = r.send(swarm.listeners().next().cloned()); }
-                Some(Cmd::Request(b)) => {
-                    let (addr, req, reply) = *b;
-                    let Some(peer) = peer_of(&addr) else {
-                        let _ = reply.send(Err(ExchangeError::NoPeerId));
-                        continue;
-                    };
-                    let bytes = encode_request(&req);
-                    if bytes.len() > MAX_MESSAGE_BYTES {
-                        let _ = reply.send(Err(Refusal::TooLarge.into()));
-                        continue;
-                    }
-                    if swarm.is_connected(&peer) {
-                        let id = swarm.behaviour_mut().send_request(&peer, Frame::Data(bytes));
-                        inflight.insert(id, reply);
-                    } else {
-                        let first = !waiting.contains_key(&peer);
-                        waiting.entry(peer).or_default().push((bytes, reply));
-                        if first {
-                            if let Err(e) = swarm.dial(addr) {
-                                for (_, r) in waiting.remove(&peer).unwrap_or_default() {
-                                    let _ = r.send(Err(ExchangeError::Network(e.to_string())));
-                                }
-                            }
-                        }
-                    }
-                }
+                Some(c) => el.on_cmd(&mut swarm, c),
             },
             event = swarm.select_next_some() => match event {
                 SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
-                    for p in endpoint.get_remote_address().iter() {
-                        match p {
-                            Protocol::Ip4(v) => { peer_ips.insert(peer_id, IpAddr::V4(v)); }
-                            Protocol::Ip6(v) => { peer_ips.insert(peer_id, IpAddr::V6(v)); }
-                            _ => {}
-                        }
-                    }
-                    for (bytes, r) in waiting.remove(&peer_id).unwrap_or_default() {
-                        let id = swarm.behaviour_mut().send_request(&peer_id, Frame::Data(bytes));
-                        inflight.insert(id, r);
-                    }
+                    el.on_connected(&mut swarm, peer_id, endpoint.get_remote_address());
                 }
                 SwarmEvent::OutgoingConnectionError { peer_id: Some(p), error, .. } => {
-                    for (_, r) in waiting.remove(&p).unwrap_or_default() {
-                        let _ = r.send(Err(ExchangeError::Network(error.to_string())));
-                    }
+                    el.on_dial_error(p, error.to_string());
                 }
-                SwarmEvent::Behaviour(request_response::Event::Message { peer, message, .. }) => match message {
-                    request_response::Message::Request { request, channel, .. } => {
-                        let resp = match (&service, request) {
-                            (None, _) => Response::Failure(Refusal::Unauthorized),
-                            (Some(_), Frame::TooLarge) => Response::Failure(Refusal::TooLarge),
-                            (Some(s), Frame::Data(d)) => match decode_request(&d) {
-                                Err(e) => Response::Failure(e),
-                                Ok(req) => {
-                                    let user = match &req.credential {
-                                        Some(Credential::User { user_id, .. }) => <[u8; 32]>::try_from(user_id.as_slice()).ok(),
-                                        _ => None,
-                                    };
-                                    let mut sv = s.lock().unwrap();
-                                    let r = sv.handle(&peer.to_bytes(), node_id_of(&peer), &local.to_bytes(), req, clock());
-                                    if let (Some(u), Some(ip), false) = (user, peer_ips.get(&peer), matches!(r, Response::Failure(_))) {
-                                        if sv.record_user_ips && sv.users.contains_key(&u) {
-                                            sv.last_user_ip.insert(u, ip.to_string());
-                                        }
-                                    }
-                                    r
-                                }
-                            },
-                        };
-                        let _ = swarm.behaviour_mut().send_response(channel, Frame::Data(encode_response(&resp)));
-                    }
-                    request_response::Message::Response { request_id, response } => {
-                        if let Some(r) = inflight.remove(&request_id) {
-                            let _ = r.send(decode_frame(response));
-                        }
-                    }
-                },
-                SwarmEvent::Behaviour(request_response::Event::OutboundFailure { request_id, error, .. }) => {
-                    if let Some(r) = inflight.remove(&request_id) {
-                        let _ = r.send(Err(ExchangeError::Network(error.to_string())));
-                    }
-                }
+                SwarmEvent::Behaviour(ev) => el.on_event(&mut swarm, ev),
                 _ => {}
             }
         }

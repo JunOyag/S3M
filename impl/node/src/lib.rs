@@ -17,6 +17,7 @@ pub mod geo;
 pub mod incidents;
 pub mod local_http;
 pub mod migration;
+pub mod net;
 pub mod partnering;
 pub mod pos;
 pub mod publish;

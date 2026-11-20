@@ -76,6 +76,14 @@ async fn resolve_addr(
     node_id: &Id,
     fallback: Option<&PartnerDesc>,
 ) -> Option<String> {
+    if let Some(env) = dht.get(node_id.to_vec()).await.ok().flatten() {
+        if let Some(a) = crate::exchange::entry_multiaddrs(node_id, &env)
+            .into_iter()
+            .next()
+        {
+            return Some(a);
+        }
+    }
     let (ip, port) = match dht
         .get(node_id.to_vec())
         .await
@@ -102,6 +110,8 @@ struct Fetcher<'a> {
     dht: &'a DhtNode,
     addrs: &'a Mutex<HashMap<Id, String>>,
     coef: usize,
+    /// Partenaires vus dans les tables des catalogues (adresses de repli).
+    seen: Mutex<HashMap<Id, PartnerDesc>>,
 }
 
 impl Fetcher<'_> {
@@ -116,6 +126,12 @@ impl Fetcher<'_> {
 
     /// k blocs de données d'un stripe, depuis la parité (hash vérifié).
     async fn data(&self, s: &StripeDesc, table: &[PartnerDesc]) -> Result<Vec<Vec<u8>>, String> {
+        {
+            let mut seen = self.seen.lock().unwrap();
+            for p in table {
+                seen.entry(p.node_id).or_insert_with(|| p.clone());
+            }
+        }
         let k = s.k as usize;
         let mut shards: Vec<Option<Vec<u8>>> = vec![None; k * (1 + self.coef)];
         let mut have = 0;
@@ -208,6 +224,7 @@ pub async fn recover(
         dht,
         addrs,
         coef: cfg.coef,
+        seen: Mutex::new(HashMap::new()),
     };
     let frames = f.data(&pointer.stripe, &pointer.partners).await?;
     let manifest = decode_snapshot(
@@ -265,6 +282,11 @@ pub async fn recover(
                 .errors
                 .push(format!("{}… : {e}", &hx(&u.user_id)[..16])),
         }
+    }
+    // Adresses de tous les partenaires connus (entrée DHT, sinon tables).
+    for p in &manifest.partners {
+        let fallback = f.seen.lock().unwrap().get(&p.node_id).cloned();
+        f.addr(&p.node_id, fallback.as_ref()).await;
     }
     // Soldes : ce qu'on héberge chez chacun, recompté depuis les catalogues.
     let mut s = service.lock().unwrap();

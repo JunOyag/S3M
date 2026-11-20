@@ -26,6 +26,8 @@ pub struct NodeEntryState {
     pub published_at: Option<u64>,
     pub next_republish: u64,
     pub published_addr: Option<(String, u16)>,
+    /// Multiaddrs publiées (`network.traversee-nat`).
+    pub published_addrs: Vec<String>,
     pub published_snapshot: Option<Vec<u8>>,
     /// Dernière enveloppe publiée (jointe aux propositions de partenariat).
     pub last_envelope: Option<Vec<u8>>,
@@ -66,11 +68,43 @@ pub async fn publish_if_due(
     state: &std::sync::Mutex<NodeEntryState>,
     now: u64,
 ) {
+    publish_entry(
+        dht,
+        priv_node,
+        pub_node,
+        pub_node_recovery,
+        Some(addr),
+        Vec::new(),
+        proof,
+        snapshot,
+        state,
+        now,
+    )
+    .await
+}
+
+/// Comme [`publish_if_due`], avec l'adresse directe facultative (Nœud
+/// derrière un NAT) et la liste des multiaddrs joignables.
+#[allow(clippy::too_many_arguments)]
+pub async fn publish_entry(
+    dht: &DhtNode,
+    priv_node: &[u8; 32],
+    pub_node: &[u8; 32],
+    pub_node_recovery: &[u8; 32],
+    direct: Option<(String, u16)>,
+    addrs: Vec<String>,
+    proof: &VdfProof,
+    snapshot: Option<Vec<u8>>,
+    state: &std::sync::Mutex<NodeEntryState>,
+    now: u64,
+) {
+    let addr = direct.unwrap_or_default();
     let due = {
         let s = state.lock().unwrap();
         s.published_at.is_none()
             || now >= s.next_republish
             || s.published_addr.as_ref() != Some(&addr)
+            || s.published_addrs != addrs
             || s.published_snapshot != snapshot
     };
     if !due {
@@ -87,6 +121,7 @@ pub async fn publish_if_due(
             proof,
             pub_node_recovery,
             snapshot_pointer: snapshot.as_deref(),
+            addrs: &addrs,
         },
         &nonce,
     );
@@ -105,6 +140,7 @@ pub async fn publish_if_due(
             s.published_at = Some(now);
             s.next_republish = next_republish_at(pub_node, now + 1);
             s.published_addr = Some(addr);
+            s.published_addrs = addrs;
             s.published_snapshot = snapshot;
             s.last_error = None;
         }

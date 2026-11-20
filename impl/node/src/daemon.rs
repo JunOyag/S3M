@@ -19,16 +19,17 @@ use p2p_storage_protocol::exchange::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::dht_directory::{chiavdf_verifier, system_clock, DhtConfig, DhtNode};
+use crate::dht_directory::{chiavdf_verifier, system_clock};
 use crate::dispersal_engine::{
     reconcile, run_cycle, CycleReport, DispersalState, EngineConfig, NetFabric,
 };
-use crate::exchange::{refresh_successors, BlockServer, NodeService, PartnerState, UserAccount};
+use crate::exchange::{refresh_successors, NodeService, PartnerState, UserAccount};
 use crate::exchange::{AttachPolicy, PartnerPolicy, VdfCheck};
 use crate::geo::{Geo, ATTRIBUTION, DB_FILE};
 use crate::local_http::{self, ActionFn, Asset, StatusFn};
+use crate::net::{NatState, NetConfig, RelayLimits};
 use crate::partnering::{excluded, run_partnering, score, Net, PartneringConfig, PartneringReport};
-use crate::publish::{ensure_node_proof, publish_if_due, NodeEntryState};
+use crate::publish::{ensure_node_proof, publish_entry, NodeEntryState};
 use crate::recovery::recover;
 use crate::snapshot_engine::run_snapshot;
 use crate::tombstones::PartnerLedger;
@@ -97,6 +98,20 @@ pub struct Config {
     /// Enregistrer l'adresse IP des Utilisateurs (carte du dashboard).
     #[serde(default = "default_true")]
     pub record_user_ips: bool,
+    /// Ouverture automatique du port sur la box (UPnP).
+    #[serde(default = "default_true")]
+    pub upnp: bool,
+    /// Service de relais rendu aux Nœuds derrière un NAT.
+    #[serde(default = "default_true")]
+    pub relay_server: bool,
+    #[serde(default)]
+    pub relay_limits: RelayLimits,
+    /// Relais imposés (`/ip4/…/tcp/…/p2p/<PeerId>`) ; sinon choix automatique.
+    #[serde(default)]
+    pub relays: Vec<String>,
+    /// Réserver des relais même sans NAT détecté.
+    #[serde(default)]
+    pub force_relay: bool,
 }
 
 fn default_true() -> bool {
@@ -151,6 +166,32 @@ pub fn node_recovery_pub(mnemonic: &str, index: u32) -> Result<[u8; 32], DaemonE
     Ok(ed25519_dalek::SigningKey::from_bytes(&k)
         .verifying_key()
         .to_bytes())
+}
+
+/// Adresse TCP directe annoncée : configuration, sinon adresse externe
+/// confirmée par la traversée de NAT, sinon IP et port d'écoute explicites.
+pub fn announced_direct(c: &Config, nat: &NatState) -> Option<(String, u16)> {
+    if c.public_ip.is_none() {
+        if let Some((ip, port)) = nat.direct_tcp() {
+            return Some((ip, c.public_port.unwrap_or(port)));
+        }
+    }
+    announced_addr(c)
+}
+
+/// Adresses externes déclarées par `public_ip` (TCP et QUIC, même port).
+pub fn declared_external(c: &Config) -> Vec<Multiaddr> {
+    let Some((ip, port)) = c.public_ip.as_ref().and_then(|_| announced_addr(c)) else {
+        return Vec::new();
+    };
+    let proto = if ip.contains(':') { "ip6" } else { "ip4" };
+    [
+        format!("/{proto}/{ip}/tcp/{port}"),
+        format!("/{proto}/{ip}/udp/{port}/quic-v1"),
+    ]
+    .iter()
+    .filter_map(|a| a.parse().ok())
+    .collect()
 }
 
 /// Adresse annoncée : configuration, sinon IP et port d'écoute explicites.
@@ -429,6 +470,8 @@ pub struct Shared {
     /// Résultat de la restauration au démarrage, s'il y en a eu une.
     pub recovery: Mutex<Option<Value>>,
     pub excluded: Arc<Mutex<std::collections::HashSet<[u8; 32]>>>,
+    /// Traversée de NAT.
+    pub nat: Arc<Mutex<NatState>>,
     pub geo: Geo,
     pub last_partnering: Mutex<Option<(u64, PartneringReport)>>,
     pub config: Config,
@@ -552,6 +595,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "dispersion": dispersal_status(sh),
         "contrôles et réparation": upkeep_status(sh),
         "annuaire (entrée Node)": node_entry_status(sh),
+        "traversée de NAT": nat_status(sh),
         "snapshot du nœud": snapshot_status(sh),
         "migration": {
             "anciens node_id couverts": s.previous_node_ids.iter().map(|i| hx(i)).collect::<Vec<_>>(),
@@ -625,12 +669,26 @@ fn upkeep_status(sh: &Shared) -> Value {
     })
 }
 
+fn nat_status(sh: &Shared) -> Value {
+    let n = sh.nat.lock().unwrap().clone();
+    json!({
+        "joignabilité": n.status,
+        "box (UPnP)": n.upnp,
+        "adresses externes confirmées": n.external,
+        "adresses via relais": n.relayed,
+        "perçages réussis": n.hole_punch_ok,
+        "perçages échoués": n.hole_punch_failed,
+        "circuits relayés pour d'autres": n.relay_circuits_served,
+    })
+}
+
 fn node_entry_status(sh: &Shared) -> Value {
     let s = sh.node_entry.lock().unwrap().clone();
     json!({
         "preuve VDF": if s.proof_ready { json!("prête") } else {
             json!(s.proof_error.clone().unwrap_or_else(|| "calcul en cours (≈ 1 min)".into())) },
-        "adresse annoncée": announced_addr(&sh.config).map(|(i, p)| format!("{i}:{p}")),
+        "adresse annoncée": announced_direct(&sh.config, &sh.nat.lock().unwrap()).map(|(i, p)| format!("{i}:{p}")),
+        "adresses publiées": s.published_addrs,
         "publiée le": s.published_at,
         "prochaine republication": if s.published_at.is_some() { json!(s.next_republish) } else { Value::Null },
         "erreur": s.last_error,
@@ -889,9 +947,14 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         s.parse::<Multiaddr>()
             .map_err(|e| DaemonError::Config(format!("{s} : {e}")))
     };
-    let dht = DhtNode::start(DhtConfig {
+    // Pile réseau unique (DHT, échange de blocs, traversée de NAT).
+    let mut listen = vec![parse(&config.blocks_listen)?];
+    if config.dht_listen != config.blocks_listen {
+        listen.push(parse(&config.dht_listen)?);
+    }
+    let node_net = crate::net::start(NetConfig {
         node_seed: seed,
-        listen: parse(&config.dht_listen)?,
+        listen,
         bootstrap: config
             .bootstrap
             .iter()
@@ -899,17 +962,22 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
             .collect::<Result<_, _>>()?,
         vdf: chiavdf_verifier(),
         clock: system_clock(),
+        service: service.clone(),
+        upnp: config.upnp,
+        relay_server: config.relay_server,
+        relay_limits: config.relay_limits,
+        relays: config
+            .relays
+            .iter()
+            .map(|r| parse(r))
+            .collect::<Result<_, _>>()?,
+        force_relay: config.force_relay,
+        external: declared_external(&config),
+        assume_listen_public: false,
     })
     .await
     .map_err(|e| start(&e))?;
-    let blocks = BlockServer::start(
-        seed,
-        parse(&config.blocks_listen)?,
-        service.clone(),
-        system_clock(),
-    )
-    .await
-    .map_err(|e| start(&e))?;
+    let (dht, blocks, nat) = (node_net.dht, node_net.blocks, node_net.nat);
 
     // Installation vide : restauration depuis le réseau (seed seule).
     let restored = Arc::new(Mutex::new(HashMap::new()));
@@ -946,6 +1014,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         service,
         addrs: Arc::new(Mutex::new(addrs)),
         excluded: Arc::new(Mutex::new(Default::default())),
+        nat: nat.clone(),
         geo: Geo::open(&config.data_dir.join(DB_FILE)),
         last_partnering: Mutex::new(None),
         dispersal: tokio::sync::Mutex::new(dispersal),
@@ -999,26 +1068,30 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
             };
             sh.node_entry.lock().unwrap().proof_ready = true;
             loop {
-                match announced_addr(&sh.config) {
-                    Some(addr) => {
-                        let snapshot = sh.snapshot_pointer.lock().unwrap().clone();
-                        publish_if_due(
-                            &dht,
-                            &seed,
-                            &pub_node,
-                            &recovery_pub,
-                            addr,
-                            &proof,
-                            snapshot,
-                            &sh.node_entry,
-                            clock(),
-                        )
-                        .await;
-                    }
-                    None => {
-                        sh.node_entry.lock().unwrap().last_error =
-                            Some("adresse publique non configurée (public_ip)".into());
-                    }
+                let (direct, addrs) = {
+                    let n = sh.nat.lock().unwrap();
+                    (announced_direct(&sh.config, &n), n.announced())
+                };
+                if direct.is_none() && addrs.is_empty() {
+                    sh.node_entry.lock().unwrap().last_error = Some(
+                        "aucune adresse joignable encore (public_ip, UPnP ou relais en attente)"
+                            .into(),
+                    );
+                } else {
+                    let snapshot = sh.snapshot_pointer.lock().unwrap().clone();
+                    publish_entry(
+                        &dht,
+                        &seed,
+                        &pub_node,
+                        &recovery_pub,
+                        direct,
+                        addrs,
+                        &proof,
+                        snapshot,
+                        &sh.node_entry,
+                        clock(),
+                    )
+                    .await;
                 }
                 tokio::time::sleep(Duration::from_secs(60)).await;
             }

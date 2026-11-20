@@ -15,7 +15,7 @@ hex = "0.4"
 ed25519-dalek = "2"
 flatbuffers = "=23.5.26"
 futures = "0.3"
-libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response"] }
+libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response", "identify", "autonat", "upnp", "relay", "dcutr", "quic"] }
 p2p-storage-core = { path = "../core" }
 p2p-storage-protocol = { path = "../protocol" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }

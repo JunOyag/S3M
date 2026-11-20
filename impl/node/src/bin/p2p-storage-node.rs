@@ -37,6 +37,11 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         partner_policy: Default::default(),
         attach: Default::default(),
         record_user_ips: true,
+        upnp: true,
+        relay_server: true,
+        relay_limits: Default::default(),
+        relays: vec![],
+        force_relay: false,
     };
     std::fs::write(
         dir.join("node.json"),

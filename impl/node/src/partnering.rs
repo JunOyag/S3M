@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dht_directory::DhtNode;
 use crate::dispersal_engine::DispersalState;
-use crate::exchange::{entry_addr, node_id_of, BlockServer, NodeService, PartnerState};
+use crate::exchange::{entry_multiaddrs, node_id_of, BlockServer, NodeService, PartnerState};
 
 /// Paramètres des partenariats automatiques.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -66,6 +66,9 @@ impl Default for PartneringConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Peer {
     pub addr: String,
+    /// Autres adresses connues (QUIC, relais), essayées si `addr` échoue.
+    #[serde(default)]
+    pub alt_addrs: Vec<String>,
     pub ip: String,
     /// Moyenne glissante des réponses aux `Probe` (0..1).
     pub availability: f64,
@@ -161,6 +164,19 @@ pub fn multiaddr(node_id: &Id, ip: &str, port: u16) -> Option<String> {
     Some(a.to_string())
 }
 
+/// IP d'une multiaddr (hors adresses via relais : IP du relais).
+pub fn ip_of(a: &str) -> Option<String> {
+    let m: Multiaddr = a.parse().ok()?;
+    if m.iter().any(|p| matches!(p, Protocol::P2pCircuit)) {
+        return None;
+    }
+    m.iter().find_map(|p| match p {
+        Protocol::Ip4(v) => Some(v.to_string()),
+        Protocol::Ip6(v) => Some(v.to_string()),
+        _ => None,
+    })
+}
+
 fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     getrandom::getrandom(&mut b).expect("CSPRNG du système");
@@ -242,12 +258,14 @@ pub async fn run_partnering(
 
     // Partenariats acceptés à la demande d'autres Nœuds.
     let inbound = std::mem::take(&mut service.lock().unwrap().new_partners);
-    for (n, ip, port) in inbound {
-        if let Some(a) = multiaddr(&n, &ip, port) {
+    for (n, mut addrs) in inbound {
+        if !addrs.is_empty() {
+            let a = addrs.remove(0);
             net.addrs.lock().unwrap().insert(n, a.clone());
             let p = st.peers.entry(hx(&n)).or_default();
+            p.ip = ip_of(&a).unwrap_or_default();
             p.addr = a;
-            p.ip = ip;
+            p.alt_addrs = addrs;
             p.status = "partenaire".into();
             p.first_seen = p.first_seen.max(1).min(now);
             st.log(
@@ -293,17 +311,17 @@ pub async fn run_partnering(
             let Some(env) = net.dht.get(n.to_vec()).await.ok().flatten() else {
                 continue;
             };
-            let Some((ip, port)) = entry_addr(&env) else {
+            let mut addrs = entry_multiaddrs(&n, &env);
+            if addrs.is_empty() {
                 continue;
-            };
-            let Some(addr) = multiaddr(&n, &ip, port) else {
-                continue;
-            };
+            }
+            let addr = addrs.remove(0);
             st.peers.insert(
                 hx(&n),
                 Peer {
+                    ip: ip_of(&addr).unwrap_or_default(),
                     addr,
-                    ip,
+                    alt_addrs: addrs,
                     status: "candidat".into(),
                     first_seen: now,
                     ..Default::default()
@@ -358,6 +376,12 @@ pub async fn run_partnering(
             }
             _ => false,
         };
+        if !ok && !p.alt_addrs.is_empty() {
+            // Adresse suivante au prochain essai (directe, QUIC, relais).
+            let next = p.alt_addrs.remove(0);
+            let old = std::mem::replace(&mut p.addr, next);
+            p.alt_addrs.push(old);
+        }
         let a = if p.probes == 1 {
             if ok {
                 1.0

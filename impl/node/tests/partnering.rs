@@ -48,6 +48,7 @@ fn entry(seed: &[u8; 32]) -> Vec<u8> {
             proof: &proof(),
             pub_node_recovery: &[0; 32],
             snapshot_pointer: None,
+            addrs: &[],
         },
         &[1; 12],
     )
@@ -115,10 +116,9 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
         "plafonné"
     );
     assert_eq!(b.partners[&pk(&A)].allowance, 300);
-    assert_eq!(
-        b.new_partners,
-        vec![(pk(&A), "203.0.113.5".to_string(), 4002)]
-    );
+    assert_eq!(b.new_partners.len(), 1);
+    assert_eq!(b.new_partners[0].0, pk(&A));
+    assert!(b.new_partners[0].1[0].starts_with("/ip4/203.0.113.5/tcp/4002/p2p/"));
     let r = b.handle(b"a", Some(pk(&A)), b"b", propose(500, entry(&A)), NOW);
     assert_eq!(
         r,

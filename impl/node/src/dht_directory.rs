@@ -78,7 +78,7 @@ struct Behaviour {
     kad: kad::Behaviour<MemoryStore>,
 }
 
-enum Command {
+pub(crate) enum Command {
     Put(Vec<u8>, Vec<u8>, oneshot::Sender<Result<(), DhtNodeError>>),
     Get(Vec<u8>, oneshot::Sender<Option<Vec<u8>>>),
     ListenAddr(oneshot::Sender<Option<Multiaddr>>),
@@ -137,6 +137,11 @@ impl DhtNode {
         let (tx, rx) = mpsc::channel(64);
         tokio::spawn(run(swarm, rx, config.vdf, config.clock));
         Ok(Self { peer_id, tx })
+    }
+
+    /// Poignée sur une boucle réseau existante (`crate::net`).
+    pub(crate) fn from_parts(peer_id: PeerId, tx: mpsc::Sender<Command>) -> Self {
+        Self { peer_id, tx }
     }
 
     /// `PeerId` libp2p (dérivé de `pub_node`).
@@ -210,148 +215,188 @@ type PendingClosest = std::collections::HashMap<kad::QueryId, oneshot::Sender<Ve
 type PendingPuts =
     std::collections::HashMap<kad::QueryId, oneshot::Sender<Result<(), DhtNodeError>>>;
 
+/// Machine d'état de l'adaptateur DHT, indépendante du swarm qui la porte
+/// (swarm dédié, ou swarm unique du Nœud : `crate::net`).
+pub(crate) struct DhtLoop {
+    vdf: SharedVdfVerifier,
+    clock: Arc<dyn Fn() -> u64 + Send + Sync>,
+    pending_get: PendingGets,
+    pending_put: PendingPuts,
+    pending_closest: PendingClosest,
+}
+
+impl DhtLoop {
+    pub(crate) fn new(vdf: SharedVdfVerifier, clock: Arc<dyn Fn() -> u64 + Send + Sync>) -> Self {
+        Self {
+            vdf,
+            clock,
+            pending_get: Default::default(),
+            pending_put: Default::default(),
+            pending_closest: Default::default(),
+        }
+    }
+
+    /// Commande d'une poignée `DhtNode` ; `listen` : adresse d'écoute.
+    pub(crate) fn on_cmd(
+        &mut self,
+        kad: &mut kad::Behaviour<MemoryStore>,
+        listen: Option<Multiaddr>,
+        cmd: Command,
+    ) {
+        match cmd {
+            Command::ListenAddr(reply) => {
+                let _ = reply.send(listen);
+            }
+            Command::Closest(key, reply) => {
+                let id = kad.get_closest_peers(key);
+                self.pending_closest.insert(id, reply);
+            }
+            Command::Put(key, env, reply) => {
+                let now = (self.clock)();
+                let rkey = RecordKey::new(&key);
+                let previous = kad.store_mut().get(&rkey).map(|r| r.value.clone());
+                match accept(&key, &env, previous.as_deref(), &self.vdf, now) {
+                    Err(e) => {
+                        let _ = reply.send(Err(e.into()));
+                    }
+                    Ok(exp) => {
+                        let mut record = Record::new(rkey, env);
+                        record.expires = Some(expiry_instant(exp, now));
+                        match kad.put_record(record, Quorum::One) {
+                            Ok(id) => {
+                                self.pending_put.insert(id, reply);
+                            }
+                            Err(e) => {
+                                let _ = reply.send(Err(DhtNodeError::Network(e.to_string())));
+                            }
+                        }
+                    }
+                }
+            }
+            Command::Get(key, reply) => {
+                let rkey = RecordKey::new(&key);
+                let now = (self.clock)();
+                let local = kad.store_mut().get(&rkey).map(|r| r.value.clone());
+                if let Some(v) = local.filter(|v| accept(&key, v, None, &self.vdf, now).is_ok()) {
+                    let _ = reply.send(Some(v));
+                } else {
+                    let id = kad.get_record(rkey);
+                    self.pending_get.insert(id, (key, reply));
+                }
+            }
+        }
+    }
+
+    /// Événement Kademlia.
+    pub(crate) fn on_event(&mut self, kad: &mut kad::Behaviour<MemoryStore>, ev: kad::Event) {
+        let (vdf, clock) = (&self.vdf, &self.clock);
+        match ev {
+            kad::Event::OutboundQueryProgressed {
+                id,
+                result: QueryResult::GetClosestPeers(r),
+                ..
+            } => {
+                if let Some(reply) = self.pending_closest.remove(&id) {
+                    let mut peers: Vec<PeerId> = match r {
+                        Ok(ok) => ok.peers.iter().map(|p| p.peer_id).collect(),
+                        Err(kad::GetClosestPeersError::Timeout { peers, .. }) => {
+                            peers.iter().map(|p| p.peer_id).collect()
+                        }
+                    };
+                    for b in kad.kbuckets() {
+                        peers.extend(b.iter().map(|e| *e.node.key.preimage()));
+                    }
+                    peers.sort();
+                    peers.dedup();
+                    let _ = reply.send(peers);
+                }
+            }
+            // Enregistrement poussé par un pair : vérifié avant stockage.
+            kad::Event::InboundRequest {
+                request:
+                    kad::InboundRequest::PutRecord {
+                        record: Some(record),
+                        ..
+                    },
+            } => {
+                let now = clock();
+                let store = kad.store_mut();
+                let previous = store.get(&record.key).map(|r| r.value.clone());
+                if let Ok(exp) = accept(
+                    record.key.as_ref(),
+                    &record.value,
+                    previous.as_deref(),
+                    vdf,
+                    now,
+                ) {
+                    let mut r = record;
+                    r.expires = Some(expiry_instant(exp, now));
+                    let _ = store.put(r);
+                }
+            }
+            kad::Event::OutboundQueryProgressed {
+                id, result, step, ..
+            } => match result {
+                QueryResult::GetRecord(Ok(GetRecordOk::FoundRecord(peer_record))) => {
+                    let valid = self.pending_get.get(&id).map(|(key, _)| {
+                        accept(key, &peer_record.record.value, None, vdf, clock()).is_ok()
+                    });
+                    if valid == Some(true) {
+                        if let Some((_, reply)) = self.pending_get.remove(&id) {
+                            let _ = reply.send(Some(peer_record.record.value));
+                        }
+                        if let Some(mut q) = kad.query_mut(&id) {
+                            q.finish();
+                        }
+                    } else if step.last {
+                        if let Some((_, reply)) = self.pending_get.remove(&id) {
+                            let _ = reply.send(None);
+                        }
+                    }
+                }
+                QueryResult::GetRecord(_) => {
+                    if step.last {
+                        if let Some((_, reply)) = self.pending_get.remove(&id) {
+                            let _ = reply.send(None);
+                        }
+                    }
+                }
+                QueryResult::PutRecord(_) => {
+                    // Stocké localement dans tous les cas ; l'échec de
+                    // réplication (aucun pair joignable) n'est pas fatal.
+                    if let Some(reply) = self.pending_put.remove(&id) {
+                        let _ = reply.send(Ok(()));
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+}
+
 async fn run(
     mut swarm: Swarm<Behaviour>,
     mut rx: mpsc::Receiver<Command>,
     vdf: SharedVdfVerifier,
     clock: Arc<dyn Fn() -> u64 + Send + Sync>,
 ) {
-    let mut pending_get: PendingGets = Default::default();
-    let mut pending_put: PendingPuts = Default::default();
-    let mut pending_closest: PendingClosest = Default::default();
+    let mut dl = DhtLoop::new(vdf, clock);
     loop {
         tokio::select! {
             cmd = rx.recv() => match cmd {
                 None => return,
-                Some(Command::ListenAddr(reply)) => {
-                    let _ = reply.send(swarm.listeners().next().cloned());
-                }
-                Some(Command::Closest(key, reply)) => {
-                    let id = swarm.behaviour_mut().kad.get_closest_peers(key);
-                    pending_closest.insert(id, reply);
-                }
-                Some(Command::Put(key, env, reply)) => {
-                    let now = clock();
-                    let rkey = RecordKey::new(&key);
-                    let previous = swarm.behaviour_mut().kad.store_mut().get(&rkey).map(|r| r.value.clone());
-                    match accept(&key, &env, previous.as_deref(), &vdf, now) {
-                        Err(e) => { let _ = reply.send(Err(e.into())); }
-                        Ok(exp) => {
-                            let mut record = Record::new(rkey, env);
-                            record.expires = Some(expiry_instant(exp, now));
-                            match swarm.behaviour_mut().kad.put_record(record, Quorum::One) {
-                                Ok(id) => { pending_put.insert(id, reply); }
-                                Err(e) => { let _ = reply.send(Err(DhtNodeError::Network(e.to_string()))); }
-                            }
-                        }
-                    }
-                }
-                Some(Command::Get(key, reply)) => {
-                    let rkey = RecordKey::new(&key);
-                    let now = clock();
-                    let local = swarm.behaviour_mut().kad.store_mut().get(&rkey).map(|r| r.value.clone());
-                    if let Some(v) = local.filter(|v| accept(&key, v, None, &vdf, now).is_ok()) {
-                        let _ = reply.send(Some(v));
-                    } else {
-                        let id = swarm.behaviour_mut().kad.get_record(rkey);
-                        pending_get.insert(id, (key, reply));
-                    }
+                Some(c) => {
+                    let listen = swarm.listeners().next().cloned();
+                    dl.on_cmd(&mut swarm.behaviour_mut().kad, listen, c);
                 }
             },
             event = swarm.select_next_some() => {
                 if let SwarmEvent::Behaviour(BehaviourEvent::Kad(ev)) = event {
-                    if let kad::Event::OutboundQueryProgressed { id, result: QueryResult::GetClosestPeers(r), .. } = &ev {
-                        if let Some(reply) = pending_closest.remove(id) {
-                            let mut peers: Vec<PeerId> = match r {
-                                Ok(ok) => ok.peers.iter().map(|p| p.peer_id).collect(),
-                                Err(kad::GetClosestPeersError::Timeout { peers, .. }) => peers.iter().map(|p| p.peer_id).collect(),
-                            };
-                            for b in swarm.behaviour_mut().kad.kbuckets() {
-                                peers.extend(b.iter().map(|e| *e.node.key.preimage()));
-                            }
-                            peers.sort();
-                            peers.dedup();
-                            let _ = reply.send(peers);
-                        }
-                        continue;
-                    }
-                    handle_kad(&mut swarm, ev, &vdf, &clock, &mut pending_get, &mut pending_put);
+                    dl.on_event(&mut swarm.behaviour_mut().kad, ev);
                 }
             }
         }
-    }
-}
-
-fn handle_kad(
-    swarm: &mut Swarm<Behaviour>,
-    ev: kad::Event,
-    vdf: &SharedVdfVerifier,
-    clock: &Arc<dyn Fn() -> u64 + Send + Sync>,
-    pending_get: &mut PendingGets,
-    pending_put: &mut PendingPuts,
-) {
-    match ev {
-        // Enregistrement poussé par un pair : vérifié avant stockage.
-        kad::Event::InboundRequest {
-            request:
-                kad::InboundRequest::PutRecord {
-                    record: Some(record),
-                    ..
-                },
-        } => {
-            let now = clock();
-            let store = swarm.behaviour_mut().kad.store_mut();
-            let previous = store.get(&record.key).map(|r| r.value.clone());
-            if let Ok(exp) = accept(
-                record.key.as_ref(),
-                &record.value,
-                previous.as_deref(),
-                vdf,
-                now,
-            ) {
-                let mut r = record;
-                r.expires = Some(expiry_instant(exp, now));
-                let _ = store.put(r);
-            }
-        }
-        kad::Event::OutboundQueryProgressed {
-            id, result, step, ..
-        } => match result {
-            QueryResult::GetRecord(Ok(GetRecordOk::FoundRecord(peer_record))) => {
-                let valid = pending_get.get(&id).map(|(key, _)| {
-                    accept(key, &peer_record.record.value, None, vdf, clock()).is_ok()
-                });
-                if valid == Some(true) {
-                    if let Some((_, reply)) = pending_get.remove(&id) {
-                        let _ = reply.send(Some(peer_record.record.value));
-                    }
-                    if let Some(mut q) = swarm.behaviour_mut().kad.query_mut(&id) {
-                        q.finish();
-                    }
-                } else if step.last {
-                    if let Some((_, reply)) = pending_get.remove(&id) {
-                        let _ = reply.send(None);
-                    }
-                }
-            }
-            QueryResult::GetRecord(_) => {
-                if step.last {
-                    if let Some((_, reply)) = pending_get.remove(&id) {
-                        let _ = reply.send(None);
-                    }
-                }
-            }
-            QueryResult::PutRecord(r) => {
-                if let Some(reply) = pending_put.remove(&id) {
-                    // Stocké localement dans tous les cas ; l'échec de
-                    // réplication (aucun pair joignable) n'est pas fatal.
-                    let _ = r;
-                    let _ = reply.send(Ok(()));
-                }
-            }
-            _ => {}
-        },
-        _ => {}
     }
 }
 

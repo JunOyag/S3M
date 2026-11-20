@@ -41,6 +41,11 @@ fn config(dir: &std::path::Path) -> Config {
         partner_policy: Default::default(),
         attach: Default::default(),
         record_user_ips: true,
+        upnp: false,
+        relay_server: true,
+        relay_limits: Default::default(),
+        relays: vec![],
+        force_relay: false,
     }
 }
 
