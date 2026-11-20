@@ -12,7 +12,7 @@ name = "s3m_core"
 crate-type = ["rlib"]
 
 [dependencies]
-chiavdf = { version = "1.1.14", optional = true }
+chiavdf = { version = "=1.1.14", optional = true }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 # Ré-export de la même famille de courbes que ed25519-dalek/x25519-dalek —
 # utilisé par keys.rs pour la biration Edwards->Montgomery (RFC 7748 §6.1).
