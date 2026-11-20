@@ -259,13 +259,19 @@ entries:
       - local_api::token_is_handed_over_in_the_url_fragment
       - local_api::http_requests_require_bearer_token_host_and_matching_origin
       - local_api::websocket_checks_handshake_then_first_message_token
+      - daemon::node_starts_serves_a_guarded_dashboard_and_persists_its_state
+      - daemon::saved_state_roundtrips_users_partners_and_addresses
+      - daemon::connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboard
     notes: >-
-      Protection de l'API locale livrée (impl/protocol/src/local_api.rs,
-      commune Nœud/Connecteur) : liaison 127.0.0.1, jeton 256 bits à temps
-      constant, Origin/Host, jeton WebSocket au premier message, remise par
-      fragment d'URL. Restent pour clore : binaires exécutables Nœud et
-      Connecteur (aucun main aujourd'hui), serveur HTTP/WebSocket (crate à
-      trancher), dashboards statiques TypeScript, image Docker du Nœud.
+      Livrés (2026-11-20) : exécutables p2p-storage-node et
+      p2p-storage-connector (init + config JSON, phrase de récupération BIP-39),
+      stockage disque du Nœud, état persistant, API locale HTTP/WebSocket
+      protégée (local_api), dashboards statiques servis par les binaires, image
+      Docker du Nœud (impl/node/Dockerfile). Restent pour clore : dashboards
+      incomplets (liste noire, taux de republication DHT, espace de secours,
+      écriture d'urgence non suivis), orchestration de la dispersion par
+      l'exécutable du Nœud, publication des entrées DHT (VDF sous Windows) —
+      voir impl/SPEC_GAPS.md.
   dispersal.BlockEntry:
     kind: schema
     status: done
@@ -646,19 +652,23 @@ entries:
       (bash impl/protocol/gen.sh), lié par le Nœud et le Connecteur.
   protocols.acces-applicatif:
     kind: narrative
-    status: in_progress
+    status: done
     owner: claude-code
     tests:
       - access::paths_resolve_through_directories
       - access::reading_one_file_fetches_only_the_blocks_on_its_path
       - access::missing_node_block_is_served_by_the_rescue_path
+      - drive::files_and_directories_survive_sync_and_are_read_back_from_the_node
+      - drive::rename_delete_and_nested_edits_are_copy_on_write
+      - drive::concurrent_root_change_is_a_conflict_and_keeps_local_changes
     notes: >-
-      Moteur livré (impl/connector/src/access.rs) : résolution de chemins depuis
-      fs_root_hash, récupération paresseuse, chemin normal / chemin de secours
-      avec vérification d'intégrité, convention mime inode/directory. Restent
-      pour clore : backends du lecteur monté (WinFsp puis FUSE). Le transport
-      est désormais livré par protocols.echange-blocs (NetBlockSource,
-      NetReplaySink) ; reste à l'assembler dans le binaire avec le moteur.
+      Moteur (access.rs, drive.rs : vue fusionnée distant + modifications
+      locales journalisées, synchronisation copy-on-write puis CommitRoot) et
+      backend WinFsp (winfsp_backend.rs, feature mount) livrés et essayés de
+      bout en bout sous Windows (écriture, déplacement, suppression, relecture
+      depuis le Nœud après redémarrage). Transport : protocols.echange-blocs.
+      FUSE (Linux, macOS) viendra ensuite sans modifier le moteur, comme le
+      prévoit la page.
   protocols.dispersion-transactionnelle:
     kind: narrative
     status: done

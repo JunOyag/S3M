@@ -534,3 +534,33 @@ restant le seul chemin autorisé (CLAUDE.md règle 5).
 - Garde-fous du wrapper Rust : `verify_n_wesolowski` transmet `x_s` sans sa longueur à la couche C++. Le wrapper doit imposer `x_s.len() == 100`, `proof.len() == 200`, `discriminant.len() == 128` avant tout appel.
 - À ajouter aux tests : preuve vide ou tronquée, octets aléatoires, `T = 0`, `T = u64::MAX`, `recursion ≠ 0`, avec borne de temps. Les négatifs actuels (octet altéré, mauvais T, autre identité) passent tous.
 - Référence commit docs : `c9f5047`.
+
+---
+
+## deploiement.packaging / protocols.acces-applicatif — Assemblage des exécutables
+
+**Constat** (2026-11-20, en implémentant) : la spec ne décrit ni la
+procédure de rattachement d'un Utilisateur à un Nœud, ni l'établissement
+d'un partenariat de troc, ni la technologie des dashboards au-delà de
+« fichiers statiques ». La publication de l'entrée DHT User (racine du
+système de fichiers, sel et version du répertoire racine) exige une preuve
+VDF, que le Connecteur Windows ne produit pas encore.
+
+**Question** : comment livrer des exécutables utilisables sans ces éléments ?
+
+**Impact si non résolu** : bloquant pour un premier déploiement.
+
+**Résolution** (orchestrateur, sur délégation de l'utilisateur, 2026-11-20) :
+(1) rattachement et partenariat **manuels** depuis le dashboard du Nœud
+(`user_id` + sel affichés par `p2p-storage-connector init` ; `node_id` +
+adresse + solde pour un partenaire) ; (2) dashboards en HTML/JavaScript
+sans étape de build (le TypeScript n'est pas exigé par la spec), un même
+fichier pour les deux binaires, état poussé par WebSocket ; (3) le
+Connecteur conserve sa racine (hash, sel, version) dans son journal local et
+valide le hash auprès du Nœud (`CommitRoot`) ; la publication de l'entrée
+User attend la production de preuves VDF sous Windows (chiavdf : MSVC +
+CMake + LLVM, voir `impl/TECH_STACK.md`) — d'ici là, la restauration du
+Connecteur depuis la seule seed n'est pas possible ; (4) lecteur WinFsp
+sensible à la casse, comme le moteur. Le Nœud ne lance pas encore de
+lui-même la dispersion de la parité vers ses partenaires (orchestration de
+`protocols.dispersion-transactionnelle` dans l'exécutable) : à faire.

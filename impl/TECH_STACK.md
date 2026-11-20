@@ -147,3 +147,15 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   distribution** — elle concerne désormais aussi le binaire Connecteur.
 - Plus de cible `wasm32` : la feature `wasm` de `impl/core` et le harnais
   `wasm-bindgen-test` sont à retirer (tâche `network.vdf-verifier-pure`).
+
+## Exécutables et lecteur monté
+
+- `p2p-storage-node` (`impl/node`, `init <dir>` puis `<config.json>`) ; image
+  Docker : `docker build -f impl/node/Dockerfile -t p2p-storage-node impl`
+  (feature `vdf`, réseau de l'hôte : l'API du dashboard n'écoute que
+  `127.0.0.1`).
+- `p2p-storage-connector` (`impl/connector`) ; lecteur WinFsp derrière la
+  feature `mount` : WinFsp installé (exécution) et LLVM pour bindgen
+  (compilation, `LIBCLANG_PATH="C:/Program Files/LLVM/bin"`) —
+  `cargo build --release --features mount`. La DLL WinFsp est cherchée dans
+  `%ProgramFiles(x86)%\WinFsp\bin` (ou `WINFSP_DIR`).

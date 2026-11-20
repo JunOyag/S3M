@@ -811,6 +811,13 @@ pages:
     title: "Accès Applicatif — Lecteur Monté natif"
     section: "§3.12"
     refs: [fs.DirectoryEntry, protocols.write-queue, protocols.espace-secours, protocols.echange-blocs]
+    verified_by:
+      - access::paths_resolve_through_directories
+      - access::reading_one_file_fetches_only_the_blocks_on_its_path
+      - access::missing_node_block_is_served_by_the_rescue_path
+      - drive::files_and_directories_survive_sync_and_are_read_back_from_the_node
+      - drive::rename_delete_and_nested_edits_are_copy_on_write
+      - drive::concurrent_root_change_is_a_conflict_and_keeps_local_changes
 
   - id: protocols.integrite-lecture
     kind: narrative
