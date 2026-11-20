@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::dht_directory::{chiavdf_verifier, system_clock, DhtConfig, DhtNode};
+use crate::dispersal_engine::{
+    reconcile, run_cycle, CycleReport, DispersalState, EngineConfig, NetFabric,
+};
 use crate::exchange::{refresh_successors, BlockServer, NodeService, PartnerState, UserAccount};
 use crate::local_http::{self, ActionFn, Asset, StatusFn};
 use crate::tombstones::PartnerLedger;
@@ -60,6 +63,9 @@ pub struct Config {
     pub bootstrap: Vec<String>,
     #[serde(default = "default_api_port")]
     pub api_port: u16,
+    /// Paramètres de dispersion (k, coef, délai de padding, délai de grâce).
+    #[serde(default)]
+    pub dispersal: EngineConfig,
 }
 
 fn default_api_port() -> u16 {
@@ -289,7 +295,10 @@ const ASSETS: &[Asset] = &[
 /// Contexte partagé par le dashboard et les tâches.
 pub struct Shared {
     pub service: Arc<Mutex<NodeService>>,
-    pub addrs: Mutex<HashMap<[u8; 32], String>>,
+    pub addrs: Arc<Mutex<HashMap<[u8; 32], String>>>,
+    pub dispersal: tokio::sync::Mutex<DispersalState>,
+    /// Dernier cycle de dispersion : `(instant, bilan)`.
+    pub last_cycle: Mutex<Option<(u64, CycleReport)>>,
     pub config: Config,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
@@ -343,6 +352,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "utilisateurs rattachés": users,
         "partenaires": partners,
         "alertes d'intégrité signalées": s.incidents.iter().map(|i| hx(i)).collect::<Vec<_>>(),
+        "dispersion": dispersal_status(sh),
         "migration": {
             "anciens node_id couverts": s.previous_node_ids.iter().map(|i| hx(i)).collect::<Vec<_>>(),
             "délégations reçues": s.delegations.len(),
@@ -358,6 +368,45 @@ pub fn status(sh: &Shared, now: u64) -> Value {
               "champs": ["node_id", "addr", "allowance"] }
         ]
     })
+}
+
+fn dispersal_status(sh: &Shared) -> Value {
+    let cycle = sh.last_cycle.lock().unwrap().clone();
+    let users: Vec<Value> = match sh.dispersal.try_lock() {
+        Err(_) => vec![json!({ "état": "cycle en cours" })],
+        Ok(d) => d
+            .users
+            .iter()
+            .map(|(u, x)| {
+                json!({ "utilisateur": u, "stripes": x.stripes.len(),
+                        "blocs en attente": x.pending.len(),
+                        "stripes d'index": x.index.len(),
+                        "publié le": if x.published_at == 0 { Value::Null } else { json!(x.published_at) },
+                        "à republier": x.dirty,
+                        "fragments à purger": x.retired.len(),
+                        "erreur": x.last_error })
+            })
+            .collect(),
+    };
+    json!({
+        "paramètres": { "k": sh.config.dispersal.k, "coef": sh.config.dispersal.coef,
+                        "partenaires requis par stripe": sh.config.dispersal.k * sh.config.dispersal.coef },
+        "dernier cycle": cycle.map(|(t, r)| json!({ "instant": t, "stripes dispersés": r.stripes_dispersed,
+                        "publications": r.published, "fragments libérés": r.purged, "erreurs": r.errors })),
+        "utilisateurs": users,
+    })
+}
+
+fn dispersal_path(c: &Config) -> PathBuf {
+    c.data_dir.join("dispersal.json")
+}
+
+/// Sauvegarde l'état de dispersion.
+pub fn save_dispersal(c: &Config, st: &DispersalState) -> Result<(), DaemonError> {
+    let tmp = dispersal_path(c).with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(st).expect("sérialisable"))?;
+    std::fs::rename(&tmp, dispersal_path(c))?;
+    Ok(())
 }
 
 fn field<'a>(v: &'a Value, k: &str) -> Result<&'a str, String> {
@@ -441,6 +490,11 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         .restore(&mut service)
         .map_err(DaemonError::Config)?;
     let service = Arc::new(Mutex::new(service));
+    let mut dispersal: DispersalState = match std::fs::read(dispersal_path(&config)) {
+        Ok(b) => serde_json::from_slice(&b).map_err(|e| DaemonError::Config(e.to_string()))?,
+        Err(_) => DispersalState::default(),
+    };
+    reconcile(&service, &mut dispersal, system_clock()());
 
     let parse = |s: &str| {
         s.parse::<Multiaddr>()
@@ -470,7 +524,9 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
 
     let shared = Arc::new(Shared {
         service,
-        addrs: Mutex::new(addrs),
+        addrs: Arc::new(Mutex::new(addrs)),
+        dispersal: tokio::sync::Mutex::new(dispersal),
+        last_cycle: Mutex::new(None),
         peer_id: blocks.peer_id().to_string(),
         blocks_addr: blocks.listen_addr().await.map(|a| a.to_string()),
         dht_addr: dht.listen_addr().await.map(|a| a.to_string()),
@@ -488,17 +544,32 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
     };
     let url = local_http::serve(config.api_port, st_fn, act_fn, ASSETS).await?;
 
-    // Tâches périodiques : sauvegarde (30 s), pointeurs de migration (1 h),
-    // purge des Nœuds silencieux (1 j). Le serveur et la DHT vivent avec elles.
+    // Tâches périodiques : dispersion et sauvegarde (30 s), pointeurs de
+    // migration (1 h), purge des Nœuds silencieux (1 j).
+    let fabric = NetFabric {
+        server: Arc::new(blocks),
+        dht: Arc::new(dht),
+        service: shared.service.clone(),
+        addrs: shared.addrs.clone(),
+    };
     let sh = shared.clone();
     tokio::spawn(async move {
-        let _keep = (dht, blocks);
         let mut tick: u64 = 0;
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
             tick += 1;
+            {
+                let now = clock();
+                let mut d = sh.dispersal.lock().await;
+                let report =
+                    run_cycle(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await;
+                if let Err(e) = save_dispersal(&sh.config, &d) {
+                    eprintln!("sauvegarde de la dispersion : {e}");
+                }
+                *sh.last_cycle.lock().unwrap() = Some((now, report));
+            }
             if tick.is_multiple_of(120) {
-                let _ = refresh_successors(&sh.service, &_keep.0).await;
+                let _ = refresh_successors(&sh.service, &fabric.dht).await;
             }
             if tick.is_multiple_of(2880) {
                 let now = clock();

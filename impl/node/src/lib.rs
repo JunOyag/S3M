@@ -9,6 +9,7 @@ pub mod blacklist;
 pub mod chunk_store;
 pub mod daemon;
 pub mod dht_directory;
+pub mod dispersal_engine;
 pub mod dispersion;
 pub mod emergency;
 pub mod exchange;
@@ -544,6 +545,18 @@ impl PhysicalStore {
         let mut bytes = vec![0; BLOCK_SIZE];
         file.read_exact(&mut bytes)?;
         Ok(Some(bytes))
+    }
+
+    /// Hashes des blocs d'un propriétaire.
+    pub fn block_hashes(&self, owner: &Owner) -> Result<Vec<Vec<u8>>, StorageError> {
+        let mut stmt = self.connection.prepare(
+            "SELECT l.block_hash FROM block_locations l JOIN containers c \
+             ON c.container_id = l.container_id WHERE c.owner_type = ?1 AND c.owner_id = ?2",
+        )?;
+        let rows = stmt.query_map(params![owner.owner_type as u8, owner.owner_id], |r| {
+            r.get::<_, Vec<u8>>(0)
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Identifiants des propriétaires d'un type donné ayant au moins un

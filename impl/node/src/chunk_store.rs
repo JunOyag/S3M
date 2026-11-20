@@ -50,6 +50,8 @@ pub trait ChunkStore: Send {
     fn remove_owner(&mut self, space: Space, owner: &Id);
     /// Propriétaires présents dans `space`.
     fn owners(&self, space: Space) -> Vec<Id>;
+    /// Hashes des blocs de `owner` dans `space`.
+    fn hashes(&self, space: Space, owner: &Id) -> Vec<Id>;
 }
 
 /// Stockage en mémoire (tests, tailles libres).
@@ -101,6 +103,14 @@ impl ChunkStore for MemoryStore {
         v.sort();
         v.dedup();
         v
+    }
+
+    fn hashes(&self, space: Space, owner: &Id) -> Vec<Id> {
+        self.0
+            .iter()
+            .filter(|(_, (s, o, _))| *s == space && o == owner)
+            .map(|(h, _)| *h)
+            .collect()
     }
 }
 
@@ -161,6 +171,14 @@ impl ChunkStore for PhysicalStore {
         self.owner_ids(space.owner_type())
             .into_iter()
             .filter_map(|o| o.as_slice().try_into().ok())
+            .collect()
+    }
+
+    fn hashes(&self, space: Space, owner_id: &Id) -> Vec<Id> {
+        self.block_hashes(&owner(space, owner_id))
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|h| h.as_slice().try_into().ok())
             .collect()
     }
 }

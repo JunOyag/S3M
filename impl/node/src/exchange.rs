@@ -64,6 +64,8 @@ pub struct NodeService {
     pub incidents: Vec<Id>,
     /// Délégations reçues (lecture chez les partenaires de l'ancien Nœud).
     pub delegations: Vec<Delegation>,
+    /// Blocs reçus à disperser : `(pub_user, hash)` (moteur de dispersion).
+    pub dispersal_queue: Vec<(Id, Id)>,
     limiter: RescueLimiter,
 }
 
@@ -99,12 +101,18 @@ impl NodeService {
             successors: HashMap::new(),
             incidents: Vec::new(),
             delegations: Vec::new(),
+            dispersal_queue: Vec::new(),
             limiter: RescueLimiter::default(),
         }
     }
 
     pub fn node_id(&self) -> Id {
         self.node_id
+    }
+
+    /// Graine `priv_node` (signatures du moteur de dispersion).
+    pub fn priv_node(&self) -> [u8; 32] {
+        self.priv_node
     }
 
     /// Traite une requête. `from` / `local` : octets des `PeerId` de la
@@ -174,6 +182,7 @@ impl NodeService {
                     if let Some(acc) = self.users.get_mut(&u) {
                         acc.used_bytes = used;
                     }
+                    self.dispersal_queue.push((u, hash));
                 } else if self.store.get(Space::UserBlock, &hash).map(|(o, _)| o) != Some(u) {
                     return Err(Refusal::Unauthorized);
                 }

@@ -33,6 +33,7 @@ fn config(dir: &std::path::Path) -> Config {
         blocks_listen: "/ip4/127.0.0.1/tcp/0".into(),
         bootstrap: vec![],
         api_port: 0,
+        dispersal: Default::default(),
     }
 }
 
