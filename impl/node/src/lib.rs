@@ -25,6 +25,7 @@ pub mod quota_sync;
 pub mod recovery;
 pub mod restore;
 pub mod self_repair;
+pub mod settings;
 pub mod snapshot_engine;
 pub mod tombstones;
 pub mod upkeep;

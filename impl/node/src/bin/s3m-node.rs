@@ -43,6 +43,7 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         relays: vec![],
         force_relay: false,
         mdns: true,
+        source: None,
     };
     std::fs::write(
         dir.join("node.json"),

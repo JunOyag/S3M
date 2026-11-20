@@ -29,6 +29,23 @@
   input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); min-width: 200px; }
   button { font: inherit; padding: 5px 12px; border: 0; border-radius: 4px; background: var(--accent); color: var(--bg); cursor: pointer; }
   .error { color: var(--bad); }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  button:disabled { opacity: .55; cursor: progress; }
+  button.small { padding: 3px 10px; font-size: 12px; }
+  .row-actions { white-space: nowrap; font-family: inherit; }
+  .form { border-top: 1px solid var(--line); padding-top: 10px; }
+  .form:first-of-type { border-top: 0; }
+  .form h3 { width: 100%; margin: 0 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .form.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 16px; }
+  .form.grid button { justify-self: start; align-self: end; }
+  label.check { display: flex; flex-direction: row; align-items: center; gap: 8px; color: var(--fg); }
+  label.check input { min-width: 0; }
+  #toasts { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 8px; z-index: 10; max-width: min(420px, calc(100vw - 40px)); }
+  .toast { padding: 10px 14px; border-radius: 6px; background: var(--card); color: var(--fg); border-left: 4px solid #2e9d5b;
+           box-shadow: 0 6px 20px rgba(0,0,0,.18); opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s; }
+  .toast.error { border-left-color: var(--bad); }
+  .toast.show { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 </style>
 </head>
 <body>

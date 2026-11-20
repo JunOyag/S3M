@@ -116,6 +116,9 @@ pub struct Config {
     /// ce Nœud.
     #[serde(default = "default_true")]
     pub mdns: bool,
+    /// Fichier d'origine (modification depuis le dashboard) ; non sérialisé.
+    #[serde(skip)]
+    pub source: Option<PathBuf>,
 }
 
 fn default_true() -> bool {
@@ -147,6 +150,7 @@ impl Config {
         for v in &mut c.volumes {
             abs(&mut v.mount_path);
         }
+        c.source = Some(path.to_path_buf());
         Ok(c)
     }
 }
@@ -463,6 +467,14 @@ const ASSETS: &[Asset] = &[
     ),
 ];
 
+/// État de la mise à jour de la base de géolocalisation.
+#[derive(Default)]
+pub struct GeoipState {
+    pub running: bool,
+    /// Dernier résultat : `None` = réussie, `Some(erreur)` sinon.
+    pub last: Option<Option<String>>,
+}
+
 /// Contexte partagé par le dashboard et les tâches.
 pub struct Shared {
     pub service: Arc<Mutex<NodeService>>,
@@ -481,7 +493,9 @@ pub struct Shared {
     pub excluded: Arc<Mutex<std::collections::HashSet<[u8; 32]>>>,
     /// Traversée de NAT.
     pub nat: Arc<Mutex<NatState>>,
-    pub geo: Geo,
+    pub geo: std::sync::RwLock<Geo>,
+    /// Mise à jour de la base de géolocalisation lancée depuis le dashboard.
+    pub geoip: Mutex<GeoipState>,
     pub last_partnering: Mutex<Option<(u64, PartneringReport)>>,
     pub config: Config,
     pub peer_id: String,
@@ -491,6 +505,102 @@ pub struct Shared {
 
 /// État présenté par le dashboard Nœud.
 pub fn status(sh: &Shared, now: u64) -> Value {
+    let mut v = status_base(sh, now);
+    let (forms, pending) = config_forms(sh);
+    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        a.push(json!({ "nom": "geoip_update", "titre": "Géolocalisation",
+            "libellé": "Mettre à jour la base de géolocalisation", "champs": [] }));
+        a.extend(forms);
+    }
+    v["géolocalisation"] = geoip_status(sh);
+    v["configuration"] = json!({
+        "fichier": sh.config.source.as_ref().map(|p| p.display().to_string()),
+        "en attente de redémarrage": if pending.is_empty() { json!("rien") } else { json!(pending) },
+    });
+    v
+}
+
+fn geoip_status(sh: &Shared) -> Value {
+    let g = sh.geoip.lock().unwrap();
+    let state = match (&g.running, &g.last) {
+        (true, _) => "téléchargement en cours…".to_string(),
+        (false, None) => "—".into(),
+        (false, Some(None)) => "réussie".into(),
+        (false, Some(Some(e))) => format!("échec : {e}"),
+    };
+    json!({
+        "base": if sh.geo.read().unwrap().available() { "présente" } else { "absente (carte sans positions)" },
+        "dernière mise à jour": state,
+        "source": ATTRIBUTION,
+    })
+}
+
+fn config_forms(sh: &Shared) -> (Vec<Value>, Vec<String>) {
+    let Some(path) = sh.config.source.as_deref() else {
+        return (vec![], vec![]);
+    };
+    let running = serde_json::to_value(&sh.config).unwrap_or_default();
+    let file = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Config>(&s).ok())
+        .and_then(|c| serde_json::to_value(c).ok());
+    crate::settings::forms(file.as_ref().unwrap_or(&running), &running)
+}
+
+/// Télécharge la base de géolocalisation en arrière-plan puis la recharge.
+pub fn geoip_update(sh: Arc<Shared>) -> Result<Value, String> {
+    {
+        let mut g = sh.geoip.lock().unwrap();
+        if g.running {
+            return Err("mise à jour déjà en cours".into());
+        }
+        g.running = true;
+    }
+    std::thread::spawn(move || {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let r = crate::geo::update(&sh.config.data_dir, now);
+        if let Ok(p) = &r {
+            *sh.geo.write().unwrap() = Geo::open(p);
+        }
+        let mut g = sh.geoip.lock().unwrap();
+        g.running = false;
+        g.last = Some(r.err());
+    });
+    Ok(json!({ "ok": true,
+        "message": "Téléchargement de la base de géolocalisation lancé (quelques dizaines de secondes)" }))
+}
+
+/// Enregistre la configuration modifiée ; applique à chaud ce qui peut l'être.
+fn set_config(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let path = sh
+        .config
+        .source
+        .as_deref()
+        .ok_or("configuration sans fichier source")?;
+    let a = crate::settings::apply(path, v)?;
+    if a.live.is_empty() && a.restart.is_empty() {
+        return Ok(json!({ "ok": true, "message": "Aucun changement" }));
+    }
+    {
+        let mut s = sh.service.lock().unwrap();
+        s.partner_policy = a.config.partner_policy;
+        s.record_user_ips = a.config.record_user_ips;
+    }
+    let message = if a.restart.is_empty() {
+        "Configuration enregistrée et appliquée".to_string()
+    } else {
+        format!(
+            "Configuration enregistrée ; redémarrez le Nœud pour appliquer : {}",
+            a.restart.join(", ")
+        )
+    };
+    Ok(json!({ "ok": true, "message": message }))
+}
+
+fn status_base(sh: &Shared, now: u64) -> Value {
     let s = sh.service.lock().unwrap();
     let addrs = sh.addrs.lock().unwrap();
     let d = sh.dispersal.try_lock().ok();
@@ -509,7 +619,10 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         })
         .unwrap_or_default();
     drop(d);
-    let country = |ip: Option<&String>| ip.and_then(|i| sh.geo.locate(i)).map(|p| p.country);
+    let country = |ip: Option<&String>| {
+        ip.and_then(|i| sh.geo.read().unwrap().locate(i))
+            .map(|p| p.country)
+    };
     let mut users: Vec<Value> = s
         .users
         .iter()
@@ -621,8 +734,12 @@ pub fn status(sh: &Shared, now: u64) -> Value {
               "champs": ["node_id", "addr", "allowance"] },
             { "nom": "set_quota", "libellé": "Changer le quota d'un utilisateur",
               "champs": ["user_id", "quota_bytes"] },
-            { "nom": "set_attach_policy", "libellé": "Rattachement automatique (enabled : oui/non)",
-              "champs": ["enabled", "quota_bytes", "max_users", "budget_bytes"] }
+            { "nom": "set_attach_policy", "titre": "Rattachement automatique des utilisateurs",
+              "libellé": "Enregistrer",
+              "champs": ["enabled", "quota_bytes", "max_users", "budget_bytes"],
+              "valeurs": { "enabled": s.attach_policy.enabled, "quota_bytes": s.attach_policy.quota_bytes,
+                           "max_users": s.attach_policy.max_users, "budget_bytes": s.attach_policy.budget_bytes },
+              "types": { "enabled": "bool", "quota_bytes": "number", "max_users": "number", "budget_bytes": "number" } }
         ]
     })
 }
@@ -743,7 +860,7 @@ pub fn map_points(sh: &Shared) -> Value {
         })
     };
     let mut push = |kind: &'static str, ip: Option<String>, label: String, detail: String| {
-        match ip.as_deref().and_then(|i| sh.geo.locate(i)) {
+        match ip.as_deref().and_then(|i| sh.geo.read().unwrap().locate(i)) {
             Some(p) => points.push(json!({ "kind": kind, "lat": p.lat, "lon": p.lon, "label": label,
                 "detail": format!("{}{}{}", [p.city.as_str(), p.country.as_str()].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(", "), if detail.is_empty() { "" } else { " — " }, detail) })),
             None => *unlocated.entry(kind).or_default() += 1,
@@ -802,7 +919,7 @@ pub fn map_points(sh: &Shared) -> Value {
             },
         );
     }
-    json!({ "points": points, "non_localises": unlocated, "geoip": sh.geo.available(), "attribution": ATTRIBUTION })
+    json!({ "points": points, "non_localises": unlocated, "geoip": sh.geo.read().unwrap().available(), "attribution": ATTRIBUTION })
 }
 
 fn dispersal_path(c: &Config) -> PathBuf {
@@ -833,6 +950,9 @@ fn number(v: &Value, k: &str) -> Result<u64, String> {
 
 /// Actions du dashboard Nœud.
 pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
+    if name == "set_config" {
+        return set_config(sh, &v);
+    }
     let mut s = sh.service.lock().unwrap();
     match name {
         "attach_user" => {
@@ -883,7 +1003,9 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
                 )
             };
             let mut p = s.attach_policy;
-            if let Ok(e) = field(&v, "enabled") {
+            if let Some(b) = v.get("enabled").and_then(|x| x.as_bool()) {
+                p.enabled = b;
+            } else if let Ok(e) = field(&v, "enabled") {
                 if !e.trim().is_empty() {
                     p.enabled = yes(e);
                 }
@@ -903,7 +1025,13 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
     }
     drop(s);
     save(sh).map_err(|e| e.to_string())?;
-    Ok(json!({ "ok": true }))
+    let message = match name {
+        "attach_user" => "Utilisateur rattaché",
+        "add_partner" => "Partenaire ajouté",
+        "set_quota" => "Quota modifié",
+        _ => "Rattachement automatique enregistré",
+    };
+    Ok(json!({ "ok": true, "message": message }))
 }
 
 fn state_path(c: &Config) -> PathBuf {
@@ -1025,7 +1153,8 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         addrs: Arc::new(Mutex::new(addrs)),
         excluded: Arc::new(Mutex::new(Default::default())),
         nat: nat.clone(),
-        geo: Geo::open(&config.data_dir.join(DB_FILE)),
+        geo: std::sync::RwLock::new(Geo::open(&config.data_dir.join(DB_FILE))),
+        geoip: Mutex::new(GeoipState::default()),
         last_partnering: Mutex::new(None),
         dispersal: tokio::sync::Mutex::new(dispersal),
         last_cycle: Mutex::new(None),
@@ -1046,7 +1175,12 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
     };
     let act_fn: ActionFn = {
         let sh = shared.clone();
-        Arc::new(move |n, v| act(&sh, n, v))
+        Arc::new(move |n, v| {
+            if n == "geoip_update" {
+                return geoip_update(sh.clone());
+            }
+            act(&sh, n, v)
+        })
     };
     let map_fn: StatusFn = {
         let sh = shared.clone();

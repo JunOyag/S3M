@@ -47,6 +47,7 @@ fn config(dir: &std::path::Path) -> Config {
         relays: vec![],
         force_relay: false,
         mdns: false,
+        source: None,
     }
 }
 
@@ -187,4 +188,40 @@ async fn node_starts_serves_a_guarded_dashboard_and_persists_its_state() {
     assert_eq!(saved.users.len(), 1);
     assert_eq!(saved.users[0].quota_bytes, 200_000);
     assert_eq!(saved.partners[0].hosted_by_partner, 1);
+}
+
+/// Configuration modifiée depuis le dashboard : seuls les champs changés sont
+/// écrits, la validation refuse une valeur invalide, les réglages non
+/// applicables à chaud sont signalés.
+#[test]
+fn settings_apply_edits_file() {
+    use s3m_node::settings::{apply, forms};
+    let dir = temp_dir("settings");
+    let path = dir.join("node.json");
+    let running = config(&dir);
+    std::fs::write(&path, serde_json::to_string_pretty(&running).unwrap()).unwrap();
+    let a = apply(
+        &path,
+        &serde_json::json!({ "partenaires au plus": "7", "ouverture de port UPnP": true,
+                             "nœuds d'amorçage": "/ip4/1.2.3.4/tcp/1, /ip4/5.6.7.8/tcp/2" }),
+    )
+    .unwrap();
+    assert_eq!(a.live, vec!["partenaires au plus"]);
+    assert_eq!(a.restart.len(), 2);
+    assert_eq!(a.config.partner_policy.max_partners, 7);
+    assert!(a.config.upnp);
+    assert_eq!(a.config.bootstrap.len(), 2);
+    // Relecture : plus rien à changer ; réglages en attente de redémarrage.
+    let again = apply(&path, &serde_json::json!({ "partenaires au plus": "7" })).unwrap();
+    assert!(again.live.is_empty() && again.restart.is_empty());
+    let file = serde_json::to_value(Config::load(&path).unwrap()).unwrap();
+    let (f, pending) = forms(&file, &serde_json::to_value(&running).unwrap());
+    assert!(!f.is_empty());
+    assert!(pending.contains(&"ouverture de port UPnP".to_string()));
+    assert!(apply(
+        &path,
+        &serde_json::json!({ "partenaires au plus": "beaucoup" })
+    )
+    .is_err());
+    assert_eq!(Config::load(&path).unwrap().partner_policy.max_partners, 7);
 }
