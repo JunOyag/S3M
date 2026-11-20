@@ -40,6 +40,20 @@ fn every_request_and_response_roundtrips() {
             hashes: vec![11; 64],
             signature: vec![12; 64],
         },
+        Body::Probe {
+            nonce: vec![13; 16],
+        },
+        Body::ProposePartnership {
+            allowance_blocks: 500,
+            node_entry: vec![14; 300],
+        },
+        Body::Attach {
+            salt: vec![15; 16],
+            sig_pub_user: vec![16; 32],
+            vdf_y: vec![17; 100],
+            vdf_pi: vec![18; 100],
+            signature: vec![19; 64],
+        },
     ];
     let creds = [
         None,
@@ -77,6 +91,14 @@ fn every_request_and_response_roundtrips() {
         Response::ChallengeResponse(vec![6; 32]),
         Response::Ack { freed: 3 },
         Response::GrantIssued(g),
+        Response::ProbeReply {
+            nonce: vec![1; 16],
+            accepting_partners: true,
+        },
+        Response::PartnershipAnswer { granted_blocks: 42 },
+        Response::Attached {
+            quota_bytes: 1 << 30,
+        },
     ] {
         assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);
     }

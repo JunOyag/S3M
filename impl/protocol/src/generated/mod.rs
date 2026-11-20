@@ -59,6 +59,10 @@ pub mod p2_pstorage {
     use super::*;
     mod ack_generated;
     pub use self::ack_generated::*;
+    mod attach_generated;
+    pub use self::attach_generated::*;
+    mod attached_generated;
+    pub use self::attached_generated::*;
     mod block_data_generated;
     pub use self::block_data_generated::*;
     mod block_request_generated;
@@ -89,6 +93,14 @@ pub mod p2_pstorage {
     pub use self::get_block_generated::*;
     mod grant_issued_generated;
     pub use self::grant_issued_generated::*;
+    mod partnership_answer_generated;
+    pub use self::partnership_answer_generated::*;
+    mod probe_generated;
+    pub use self::probe_generated::*;
+    mod probe_reply_generated;
+    pub use self::probe_reply_generated::*;
+    mod propose_partnership_generated;
+    pub use self::propose_partnership_generated::*;
     mod put_block_generated;
     pub use self::put_block_generated::*;
     mod renew_grant_generated;

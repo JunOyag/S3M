@@ -280,6 +280,51 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_probe(&self) -> Option<Probe<'a>> {
+    if self.body_type() == RequestBody::Probe {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Probe::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_propose_partnership(&self) -> Option<ProposePartnership<'a>> {
+    if self.body_type() == RequestBody::ProposePartnership {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ProposePartnership::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_attach(&self) -> Option<Attach<'a>> {
+    if self.body_type() == RequestBody::Attach {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Attach::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -310,6 +355,9 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::Challenge => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Challenge>>("RequestBody::Challenge", pos),
           RequestBody::FetchFragment => v.verify_union_variant::<flatbuffers::ForwardsUOffset<FetchFragment>>("RequestBody::FetchFragment", pos),
           RequestBody::Tombstone => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Tombstone>>("RequestBody::Tombstone", pos),
+          RequestBody::Probe => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Probe>>("RequestBody::Probe", pos),
+          RequestBody::ProposePartnership => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ProposePartnership>>("RequestBody::ProposePartnership", pos),
+          RequestBody::Attach => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Attach>>("RequestBody::Attach", pos),
           _ => Ok(()),
         }
      })?
@@ -476,6 +524,27 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::Tombstone => {
           if let Some(x) = self.body_as_tombstone() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::Probe => {
+          if let Some(x) = self.body_as_probe() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::ProposePartnership => {
+          if let Some(x) = self.body_as_propose_partnership() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::Attach => {
+          if let Some(x) = self.body_as_attach() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

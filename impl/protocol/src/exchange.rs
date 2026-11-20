@@ -39,6 +39,7 @@ pub const SIG_LABEL_RESCUE_GRANT: &str = "p2p-storage/sig/rescue-grant/v1";
 pub const SIG_LABEL_RESCUE_SESSION: &str = "p2p-storage/sig/rescue-session/v1";
 pub const SIG_LABEL_RESCUE_DELEGATION: &str = "p2p-storage/sig/rescue-delegation/v1";
 pub const SIG_LABEL_FRAGMENT_RECEIPT: &str = "p2p-storage/sig/fragment-receipt/v1";
+pub const SIG_LABEL_ATTACH: &str = "p2p-storage/sig/attach/v1";
 
 /// Identifiant de 32 o (`pub_node`, `pub_user`, `grant_pub`, hash).
 pub type Id = [u8; 32];
@@ -148,6 +149,23 @@ pub enum Body {
         hashes: Vec<u8>,
         signature: Vec<u8>,
     },
+    /// Mesure de disponibilité/vitesse (`protocols.partenariat-automatique`).
+    Probe {
+        nonce: Vec<u8>,
+    },
+    /// Proposition de partenariat, avec l'entrée DHT Node du demandeur.
+    ProposePartnership {
+        allowance_blocks: u64,
+        node_entry: Vec<u8>,
+    },
+    /// Rattachement automatique d'un Utilisateur.
+    Attach {
+        salt: Vec<u8>,
+        sig_pub_user: Vec<u8>,
+        vdf_y: Vec<u8>,
+        vdf_pi: Vec<u8>,
+        signature: Vec<u8>,
+    },
 }
 
 /// `BlockRequest`.
@@ -176,6 +194,17 @@ pub enum Response {
         freed: u64,
     },
     GrantIssued(SignedGrant),
+    ProbeReply {
+        nonce: Vec<u8>,
+        accepting_partners: bool,
+    },
+    /// 0 : refusé.
+    PartnershipAnswer {
+        granted_blocks: u64,
+    },
+    Attached {
+        quota_bytes: u64,
+    },
 }
 
 // ------------------------------------------------------------------ codage
@@ -335,6 +364,49 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             );
             (fb::RequestBody::Tombstone, o.as_union_value())
         }
+        Body::Probe { nonce } => {
+            let n = b.create_vector(nonce);
+            let o = fb::Probe::create(&mut b, &fb::ProbeArgs { nonce: Some(n) });
+            (fb::RequestBody::Probe, o.as_union_value())
+        }
+        Body::ProposePartnership {
+            allowance_blocks,
+            node_entry,
+        } => {
+            let e = b.create_vector(node_entry);
+            let o = fb::ProposePartnership::create(
+                &mut b,
+                &fb::ProposePartnershipArgs {
+                    allowance_blocks: *allowance_blocks,
+                    node_entry: Some(e),
+                },
+            );
+            (fb::RequestBody::ProposePartnership, o.as_union_value())
+        }
+        Body::Attach {
+            salt,
+            sig_pub_user,
+            vdf_y,
+            vdf_pi,
+            signature,
+        } => {
+            let s = b.create_vector(salt);
+            let k = b.create_vector(sig_pub_user);
+            let y = b.create_vector(vdf_y);
+            let pi = b.create_vector(vdf_pi);
+            let sg = b.create_vector(signature);
+            let o = fb::Attach::create(
+                &mut b,
+                &fb::AttachArgs {
+                    salt: Some(s),
+                    sig_pub_user: Some(k),
+                    vdf_y: Some(y),
+                    vdf_pi: Some(pi),
+                    signature: Some(sg),
+                },
+            );
+            (fb::RequestBody::Attach, o.as_union_value())
+        }
     };
     let root = fb::BlockRequest::create(
         &mut b,
@@ -454,6 +526,26 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
                 signature: bytes(t.signature()),
             }
         }
+        fb::RequestBody::Probe => Body::Probe {
+            nonce: bytes(r.body_as_probe().ok_or(m)?.nonce()),
+        },
+        fb::RequestBody::ProposePartnership => {
+            let x = r.body_as_propose_partnership().ok_or(m)?;
+            Body::ProposePartnership {
+                allowance_blocks: x.allowance_blocks(),
+                node_entry: bytes(x.node_entry()),
+            }
+        }
+        fb::RequestBody::Attach => {
+            let x = r.body_as_attach().ok_or(m)?;
+            Body::Attach {
+                salt: bytes(x.salt()),
+                sig_pub_user: bytes(x.sig_pub_user()),
+                vdf_y: bytes(x.vdf_y()),
+                vdf_pi: bytes(x.vdf_pi()),
+                signature: bytes(x.signature()),
+            }
+        }
         _ => return Err(m),
     };
     Ok(Request { credential, body })
@@ -520,6 +612,38 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             let o = fb::GrantIssued::create(&mut b, &fb::GrantIssuedArgs { grant: Some(g) });
             (fb::ResponseBody::GrantIssued, o.as_union_value())
         }
+        Response::ProbeReply {
+            nonce,
+            accepting_partners,
+        } => {
+            let n = b.create_vector(nonce);
+            let o = fb::ProbeReply::create(
+                &mut b,
+                &fb::ProbeReplyArgs {
+                    nonce: Some(n),
+                    accepting_partners: *accepting_partners,
+                },
+            );
+            (fb::ResponseBody::ProbeReply, o.as_union_value())
+        }
+        Response::PartnershipAnswer { granted_blocks } => {
+            let o = fb::PartnershipAnswer::create(
+                &mut b,
+                &fb::PartnershipAnswerArgs {
+                    granted_blocks: *granted_blocks,
+                },
+            );
+            (fb::ResponseBody::PartnershipAnswer, o.as_union_value())
+        }
+        Response::Attached { quota_bytes } => {
+            let o = fb::Attached::create(
+                &mut b,
+                &fb::AttachedArgs {
+                    quota_bytes: *quota_bytes,
+                },
+            );
+            (fb::ResponseBody::Attached, o.as_union_value())
+        }
     };
     let root = fb::BlockResponse::create(
         &mut b,
@@ -573,6 +697,19 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
         }
         fb::ResponseBody::Ack => Response::Ack {
             freed: r.body_as_ack().ok_or(m)?.freed(),
+        },
+        fb::ResponseBody::ProbeReply => {
+            let x = r.body_as_probe_reply().ok_or(m)?;
+            Response::ProbeReply {
+                nonce: bytes(x.nonce()),
+                accepting_partners: x.accepting_partners(),
+            }
+        }
+        fb::ResponseBody::PartnershipAnswer => Response::PartnershipAnswer {
+            granted_blocks: r.body_as_partnership_answer().ok_or(m)?.granted_blocks(),
+        },
+        fb::ResponseBody::Attached => Response::Attached {
+            quota_bytes: r.body_as_attached().ok_or(m)?.quota_bytes(),
         },
         fb::ResponseBody::GrantIssued => {
             Response::GrantIssued(signed_grant_of(r.body_as_grant_issued().ok_or(m)?.grant())?)
@@ -814,4 +951,35 @@ impl RescueLimiter {
         *tokens -= 1;
         true
     }
+}
+
+// --------------------------------------------- rattachement automatique
+
+fn attach_payload(pub_user: &Id, node_id: &Id) -> Vec<u8> {
+    [&pub_user[..], &node_id[..]].concat()
+}
+
+/// Signature de `sig_priv_user` liant l'identité VDF à `pub_user` et au Nœud.
+pub fn attach_signature(sig_priv_user: &[u8; 32], pub_user: &Id, node_id: &Id) -> Vec<u8> {
+    sign(
+        sig_priv_user,
+        SIG_LABEL_ATTACH,
+        &attach_payload(pub_user, node_id),
+    )
+    .to_vec()
+}
+
+pub fn verify_attach_signature(
+    sig_pub_user: &[u8],
+    pub_user: &Id,
+    node_id: &Id,
+    signature: &[u8],
+) -> bool {
+    verify_signature(
+        sig_pub_user,
+        SIG_LABEL_ATTACH,
+        &attach_payload(pub_user, node_id),
+        signature,
+    )
+    .is_ok()
 }

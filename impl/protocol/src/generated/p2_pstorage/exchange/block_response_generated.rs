@@ -187,6 +187,51 @@ impl<'a> BlockResponse<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_probe_reply(&self) -> Option<ProbeReply<'a>> {
+    if self.body_type() == ResponseBody::ProbeReply {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ProbeReply::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_partnership_answer(&self) -> Option<PartnershipAnswer<'a>> {
+    if self.body_type() == ResponseBody::PartnershipAnswer {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { PartnershipAnswer::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_attached(&self) -> Option<Attached<'a>> {
+    if self.body_type() == ResponseBody::Attached {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Attached::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockResponse<'_> {
@@ -207,6 +252,9 @@ impl flatbuffers::Verifiable for BlockResponse<'_> {
           ResponseBody::ChallengeResponse => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ChallengeResponse>>("ResponseBody::ChallengeResponse", pos),
           ResponseBody::Ack => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Ack>>("ResponseBody::Ack", pos),
           ResponseBody::GrantIssued => v.verify_union_variant::<flatbuffers::ForwardsUOffset<GrantIssued>>("ResponseBody::GrantIssued", pos),
+          ResponseBody::ProbeReply => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ProbeReply>>("ResponseBody::ProbeReply", pos),
+          ResponseBody::PartnershipAnswer => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PartnershipAnswer>>("ResponseBody::PartnershipAnswer", pos),
+          ResponseBody::Attached => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Attached>>("ResponseBody::Attached", pos),
           _ => Ok(()),
         }
      })?
@@ -319,6 +367,27 @@ impl core::fmt::Debug for BlockResponse<'_> {
         },
         ResponseBody::GrantIssued => {
           if let Some(x) = self.body_as_grant_issued() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResponseBody::ProbeReply => {
+          if let Some(x) = self.body_as_probe_reply() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResponseBody::PartnershipAnswer => {
+          if let Some(x) = self.body_as_partnership_answer() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResponseBody::Attached => {
+          if let Some(x) = self.body_as_attached() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

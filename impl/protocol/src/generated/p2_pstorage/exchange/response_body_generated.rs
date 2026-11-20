@@ -12,10 +12,10 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_RESPONSE_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_RESPONSE_BODY: u8 = 8;
+pub const ENUM_MAX_RESPONSE_BODY: u8 = 11;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_RESPONSE_BODY: [ResponseBody; 9] = [
+pub const ENUM_VALUES_RESPONSE_BODY: [ResponseBody; 12] = [
   ResponseBody::NONE,
   ResponseBody::Failure,
   ResponseBody::BlockData,
@@ -25,6 +25,9 @@ pub const ENUM_VALUES_RESPONSE_BODY: [ResponseBody; 9] = [
   ResponseBody::ChallengeResponse,
   ResponseBody::Ack,
   ResponseBody::GrantIssued,
+  ResponseBody::ProbeReply,
+  ResponseBody::PartnershipAnswer,
+  ResponseBody::Attached,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -41,9 +44,12 @@ impl ResponseBody {
   pub const ChallengeResponse: Self = Self(6);
   pub const Ack: Self = Self(7);
   pub const GrantIssued: Self = Self(8);
+  pub const ProbeReply: Self = Self(9);
+  pub const PartnershipAnswer: Self = Self(10);
+  pub const Attached: Self = Self(11);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 8;
+  pub const ENUM_MAX: u8 = 11;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Failure,
@@ -54,6 +60,9 @@ impl ResponseBody {
     Self::ChallengeResponse,
     Self::Ack,
     Self::GrantIssued,
+    Self::ProbeReply,
+    Self::PartnershipAnswer,
+    Self::Attached,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -67,6 +76,9 @@ impl ResponseBody {
       Self::ChallengeResponse => Some("ChallengeResponse"),
       Self::Ack => Some("Ack"),
       Self::GrantIssued => Some("GrantIssued"),
+      Self::ProbeReply => Some("ProbeReply"),
+      Self::PartnershipAnswer => Some("PartnershipAnswer"),
+      Self::Attached => Some("Attached"),
       _ => None,
     }
   }
