@@ -25,6 +25,7 @@ mod generated;
 /// `.FS`, `.Node`, `.Dht`).
 pub use generated::s3m as fb;
 
+pub mod admin;
 pub mod dht;
 pub mod dispersal;
 pub mod entries;
