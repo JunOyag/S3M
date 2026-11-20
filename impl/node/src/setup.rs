@@ -209,6 +209,8 @@ pub async fn run(config: &Config, switch: &Arc<Switch>) -> Result<(), String> {
         Err(e) => eprintln!("configuration à distance indisponible : {e}"),
     }
     let _ = rx.await;
+    // Laisse partir la réponse à « confirm » avant de fermer le canal.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     if let Ok(s) = server {
         s.stop().await;
     }
