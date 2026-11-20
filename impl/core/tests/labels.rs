@@ -9,9 +9,9 @@ use std::collections::HashSet;
 
 use p2p_storage_core::labels::{
     AAD_CONTEXT_MASTER_KEY_WRAP, ALL_AAD_CONTEXTS, ALL_KDF_LABELS, ATTACH, ATTACHMENT_RECOVERY,
-    BLOCK, DHT_LOOKUP, DHT_SIGNING, DISPERSAL_BLOCK, DISPERSAL_CONTENT, DISPERSAL_SIGNING,
-    EMERGENCY_CONTENT, EMERGENCY_SIGNING, KDF_PREFIX, MASTER_KEY_WRAP, NODE_RECOVERY,
-    RETIRED_LABELS,
+    BLOCK, CONNECTOR_AUTH, DHT_LOOKUP, DHT_SIGNING, DISPERSAL_BLOCK, DISPERSAL_CONTENT,
+    DISPERSAL_SIGNING, EMERGENCY_CONTENT, EMERGENCY_SIGNING, KDF_PREFIX, MASTER_KEY_WRAP,
+    NODE_RECOVERY, RETIRED_LABELS,
 };
 
 #[test]
@@ -51,10 +51,11 @@ fn labels_match_the_spec_registry() {
         (DHT_SIGNING, "dht-signing"),
         (BLOCK, "block"),
         (MASTER_KEY_WRAP, "master-key-wrap"),
+        (CONNECTOR_AUTH, "connector-auth"),
     ];
     for (got, want) in expected {
         assert_eq!(got, want);
     }
-    assert_eq!(ALL_KDF_LABELS.len(), 12);
+    assert_eq!(ALL_KDF_LABELS.len(), 13);
     assert_eq!(AAD_CONTEXT_MASTER_KEY_WRAP, "master-key-wrap");
 }

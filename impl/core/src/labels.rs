@@ -40,9 +40,11 @@ pub const DHT_SIGNING: &str = "dht-signing";
 pub const BLOCK: &str = "block";
 /// `K_wrap` — crypto.symmetric-suite.
 pub const MASTER_KEY_WRAP: &str = "master-key-wrap";
+/// Preuve d'authentification Connecteur → Nœud — protocols.echange-blocs.
+pub const CONNECTOR_AUTH: &str = "connector-auth";
 
-/// Les 12 étiquettes KDF du registre — source du test d'unicité.
-pub const ALL_KDF_LABELS: [&str; 12] = [
+/// Les 13 étiquettes KDF du registre — source du test d'unicité.
+pub const ALL_KDF_LABELS: [&str; 13] = [
     ATTACH,
     DISPERSAL_SIGNING,
     DISPERSAL_CONTENT,
@@ -55,6 +57,7 @@ pub const ALL_KDF_LABELS: [&str; 12] = [
     DHT_SIGNING,
     BLOCK,
     MASTER_KEY_WRAP,
+    CONNECTOR_AUTH,
 ];
 
 /// Étiquettes retirées en V3 — jamais réutilisables (test `tests/labels.rs`).
