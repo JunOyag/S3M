@@ -588,3 +588,26 @@ retenues : placement par distance XOR au `stripe_id` (SHA-256 des hashes de
 données), arbre réémis entier à chaque changement, purge des anciens stripes
 d'index après 3 600 s. Pages `network.DispersalRootPointer` et
 `protocols.dispersion-transactionnelle` mises à jour.
+
+---
+
+## Contrôles et réparation automatiques — choix d'orchestration
+
+**Constat** (2026-11-20) : les pages PoS, liste noire, volatilité et
+auto-réparation fixent les règles mais pas leur ordonnancement, ni le sort
+des fragments d'un partenaire absent une fois réparés, ni le traitement des
+stripes d'index (sans copie locale).
+
+**Question** : comment les orchestrer dans l'exécutable du Nœud ?
+
+**Impact si non résolu** : bloquant pour la fiabilité en production.
+
+**Résolution** (orchestrateur, sur délégation de l'utilisateur, 2026-11-20) :
+cycle de 30 s, 16 challenges par cycle à tour de rôle ; `NotFound` = fraude ;
+disponibilité mesurée par partenaire (fenêtre 1 j) ; analyse de volatilité et
+scrubbing quotidiens (configurables, section `upkeep` de `node.json`) ;
+réparation définitive chez le nouveau partenaire, purge de l'ancienne copie
+quand l'absent revient ; stripes d'index : réémission de l'arbre ; le Nœud
+reconstruit lui-même un bloc local altéré depuis la parité. Pages
+`securite.pos-challenges`, `protocols.volatilite-reparation`,
+`securite.integrite-autoreparation` mises à jour.

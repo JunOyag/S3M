@@ -34,6 +34,15 @@ fragment de la stripe.
 Si un nœud réapparaît avant la purge, la sur-redondance est résorbée et les
 blocs temporaires sont supprimés.
 
+**Orchestration par le Nœud** (2026-11-20, `impl/SPEC_GAPS.md`) : la
+disponibilité se mesure par partenaire (dernier challenge PoS réussi, fenêtre
+d'un jour par défaut). Le fragment réparé est **définitivement** confié au
+nouveau partenaire ; c'est la copie de l'absent qui est purgée par tombstone
+quand il redevient joignable (même redondance finale que la suppression des
+copies temporaires, sans double comptabilité). Les stripes d'index, sans
+copie locale, ne sont pas réparés fragment par fragment : l'arbre est réémis
+([`protocols.dispersion-transactionnelle`](dispersion-transactionnelle.md#orchestration)).
+
 Ce parcours s'applique aux **absences simples** (timeout/indisponibilité) —
 à distinguer du cas de fraude cryptographique avérée, traité dans
 [`securite.blacklist-fraude`](../05-securite/blacklist-fraude.md), où la

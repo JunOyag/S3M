@@ -17,6 +17,13 @@ verified_by: []
 - Priorité QoS : bridage de bande passante autorisé pour le transfert de
   blocs mais **interdiction stricte** de brider les messages PoS.
 
+**Orchestration par le Nœud** (2026-11-20) : à chaque cycle (30 s), un lot
+de fragments (16 par défaut) est challengé à tour de rôle ; un fragment
+introuvable chez le partenaire qui doit l'héberger (`NotFound`) compte comme
+réponse fausse. Fraude → [`securite.blacklist-fraude`](blacklist-fraude.md)
+immédiatement ; absence → analyse de
+[`protocols.volatilite-reparation`](../04-protocols/volatilite-reparation.md).
+
 ## Calcul du challenge (reconstruction locale) {: #calcul-du-challenge }
 
 Le nœud calcule le hash de référence attendu **intégralement en local**, par

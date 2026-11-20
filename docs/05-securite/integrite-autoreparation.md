@@ -53,6 +53,14 @@ partir de **3 anomalies** lors d'un même passage. Le Nœud vérifie que le
 bloc renvoyé par le Connecteur correspond à son `block_hash` avant de
 remplacer sa copie.
 
+## Auto-réparation par le Nœud seul
+
+Ajout du 2026-11-20 (`impl/SPEC_GAPS.md`) : lors du scrubbing (quotidien
+par défaut), un bloc local absent ou altéré est aussi reconstruit par le
+Nœud lui-même à partir de k fragments (blocs locaux sains et parité
+récupérée chez les partenaires, dont le hash est vérifié), puis réécrit —
+sans attendre qu'un Connecteur le relise.
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par
