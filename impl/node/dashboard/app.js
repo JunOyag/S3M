@@ -76,13 +76,14 @@ function cell(v) {
   if (v === null || v === undefined) return "—";
   if (v === true) return "oui";
   if (v === false) return "non";
+  if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) return v.length ? v.join("\n") : "aucun";
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
 }
 
 // QR code : SVG fourni par le moteur, affiché comme image (jamais inséré).
-function value(v) {
-  if (typeof v === "string" && v.startsWith("<svg")) {
+function valueNode(v) {
+  if (typeof v === "string" && /^\s*(<\?xml[^>]*>\s*)?<svg[\s>]/.test(v)) {
     const i = el("img", undefined, "qr");
     i.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(v);
     i.alt = "QR code";
@@ -153,7 +154,7 @@ function render(value) {
       const r = t.insertRow();
       r.appendChild(el("th", k));
       const td = el("td");
-      td.appendChild(value(v));
+      td.appendChild(valueNode(v));
       r.appendChild(td);
     });
     return t;
