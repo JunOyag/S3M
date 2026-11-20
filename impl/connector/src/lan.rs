@@ -24,6 +24,10 @@ pub struct FoundNode {
     /// Adresse d'échange de blocs retenue (TCP IPv4 de préférence).
     pub addr: String,
     pub accepting_partners: bool,
+    /// Nœud sous identité temporaire, à configurer par appairage
+    /// (`deploiement.appairage-admin`) ; `addr` est alors son adresse
+    /// d'administration.
+    pub to_configure: bool,
 }
 
 /// `pub_node` d'un `PeerId` Ed25519.
@@ -87,13 +91,15 @@ pub async fn scan(duration: Duration) -> Result<Vec<FoundNode>, String> {
     }
     drop(swarm);
     let client = BlockClient::start().map_err(|e| e.to_string())?;
+    let admin = crate::admin_client::AdminClient::start()?;
     let mut out = Vec::new();
     for (peer, mut addrs) in found {
         let Some(node_id) = node_id_of(&peer) else {
             continue;
         };
         addrs.sort_by_key(rank);
-        for a in addrs {
+        let mut probed = false;
+        for a in addrs.clone() {
             let a = a.with(Protocol::P2p(peer));
             let req = Request {
                 credential: None,
@@ -109,7 +115,28 @@ pub async fn scan(duration: Duration) -> Result<Vec<FoundNode>, String> {
                     node_id,
                     addr: a.to_string(),
                     accepting_partners,
+                    to_configure: false,
                 });
+                probed = true;
+                break;
+            }
+        }
+        if probed {
+            continue;
+        }
+        // Pas de `Probe` : Nœud sous identité temporaire ?
+        for a in addrs {
+            let a = a.with(Protocol::P2p(peer));
+            let r = tokio::time::timeout(Duration::from_secs(3), admin.hello(&a)).await;
+            if let Ok(Ok(mode)) = r {
+                if mode == s3m_protocol::admin::MODE_SETUP {
+                    out.push(FoundNode {
+                        node_id,
+                        addr: a.to_string(),
+                        accepting_partners: false,
+                        to_configure: true,
+                    });
+                }
                 break;
             }
         }

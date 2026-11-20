@@ -4,6 +4,7 @@
 //! Un module = un id `component: connector` de `impl/layers.yml`.
 
 pub mod access;
+pub mod admin_client;
 pub mod bootstrap;
 pub mod daemon;
 pub mod dht_directory;
@@ -17,6 +18,7 @@ pub mod lan;
 pub mod local_http;
 pub mod migration;
 pub mod publish;
+pub mod remote;
 pub mod setup;
 #[cfg(all(windows, feature = "mount"))]
 pub mod winfsp_backend;

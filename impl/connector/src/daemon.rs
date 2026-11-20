@@ -335,7 +335,11 @@ pub fn status(sh: &Shared) -> Value {
         },
         "non suivi par cet exécutable": ["écriture d'urgence"],
         "actions": [
-            { "nom": "sync_now", "libellé": "Synchroniser maintenant", "champs": [] }
+            { "nom": "sync_now", "libellé": "Synchroniser maintenant", "champs": [] },
+            { "nom": "admin_node", "titre": "Administrer mon Nœud à distance",
+              "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration"],
+              "aide": { "code 2FA": "Code à 6 chiffres de votre application d'authentification",
+                        "adresse d'administration": "Facultatif : par défaut, IP du Nœud et port 4003" } }
         ]
     })
 }
@@ -816,11 +820,12 @@ pub async fn start(
     };
     let act_fn: ActionFn = {
         let sh = shared.clone();
-        Arc::new(move |name, _| match name {
+        Arc::new(move |name, v| match name {
             "sync_now" => {
                 sync_now(&sh);
-                Ok(json!({ "ok": true }))
+                Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
             }
+            "admin_node" => admin_node(&sh.config.node.addr, &v),
             _ => Err(format!("action inconnue : {name}")),
         })
     };
@@ -900,4 +905,26 @@ fn mount_drive(sh: &Arc<Shared>) {
 fn mount_drive(sh: &Arc<Shared>) {
     sh.drive_status.lock().unwrap().mount_error =
         Some("exécutable compilé sans la feature `mount` (WinFsp)".into());
+}
+
+/// Ouvre le dashboard du Nœud à distance (code 2FA) —
+/// `deploiement.appairage-admin` § Administration à distance. Appelée
+/// depuis un fil bloquant (API locale).
+pub fn admin_node(node_addr: &str, v: &Value) -> Result<Value, String> {
+    let totp = v
+        .get("code 2FA")
+        .and_then(|x| x.as_str())
+        .unwrap_or_default();
+    let addr = match v.get("adresse d'administration").and_then(|x| x.as_str()) {
+        Some(a) if !a.trim().is_empty() => {
+            a.trim().parse().map_err(|e| format!("adresse : {e}"))?
+        }
+        _ => crate::admin_client::default_admin_addr(node_addr)?,
+    };
+    tokio::runtime::Handle::current().block_on(async move {
+        let client = crate::admin_client::AdminClient::start()?;
+        let session = client.login(&addr, totp).await?;
+        let url = crate::remote::serve_remote(session).await?;
+        Ok(json!({ "ok": true, "message": "Connecté au Nœud : son tableau de bord s'ouvre", "ouvrir": url }))
+    })
 }

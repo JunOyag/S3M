@@ -72,7 +72,7 @@ async fn asset(State(st): State<AppState>, h: HeaderMap, path: Option<Path<Strin
                 (header::CACHE_CONTROL, "no-store"),
                 (
                     header::CONTENT_SECURITY_POLICY,
-                    "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:*",
+                    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:*",
                 ),
                 (header::REFERRER_POLICY, "no-referrer"),
             ],
@@ -99,9 +99,12 @@ async fn action(
     if let Err(r) = check(&st, &h) {
         return r;
     }
-    match (st.action)(&name, body) {
-        Ok(v) => Json(v).into_response(),
-        Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+    // Fil bloquant : une action peut attendre une réponse du réseau.
+    let f = st.action.clone();
+    match tokio::task::spawn_blocking(move || f(&name, body)).await {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
