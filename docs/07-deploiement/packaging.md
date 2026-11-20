@@ -75,6 +75,24 @@ réglages au prochain redémarrage, que le dashboard signale. Identité,
 répertoires, volumes et paramètres d'effacement (k, coef) ne sont pas
 modifiables ainsi (risque de perte de données).
 
+## Dashboards : écrans et menu {: #ecrans }
+
+Ajout du 2026-11-20. Chaque dashboard est découpé en écrans reliés par un
+menu (latéral, en haut sur petit écran). Le moteur décrit les écrans
+(`pages` : sections et actions de chacun) et les indicateurs de la vue
+d'ensemble (`résumé` : libellé, valeur, état ok / attention / problème,
+écran de détail au clic) ; ce qu'aucun écran ne cite tombe dans le dernier
+(« Diagnostic » ou « Paramètres »).
+
+- **Nœud** : vue d'ensemble, utilisateurs, partenaires (carte), stockage et
+  protection, réseau, administration à distance, configuration, diagnostic.
+- **Connecteur** : vue d'ensemble, fichiers et synchronisation, mon Nœud,
+  identité et sécurité, paramètres.
+
+Les tailles s'affichent en unités lisibles, les instants en date locale ;
+l'écran courant est conservé au rechargement, et `#token=…&page=<id>`
+ouvre directement un écran.
+
 ## Dashboards : retours d'action {: #retours }
 
 Le résultat de chaque action s'affiche dans un message éphémère (succès ou
