@@ -138,6 +138,7 @@ fn index_node_salts_are_carried_by_parent_stripe_and_root_pointer() {
             dispersal_root_hash: None,
             dispersal_root_partners: None,
             dispersal_root_salt: Some(root_salt),
+            dispersal_root_stripe: None,
         },
     );
     fbb.finish_minimal(ptr);

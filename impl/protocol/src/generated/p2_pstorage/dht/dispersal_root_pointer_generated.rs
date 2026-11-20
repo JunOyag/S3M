@@ -28,6 +28,7 @@ impl<'a> DispersalRootPointer<'a> {
   pub const VT_DISPERSAL_ROOT_HASH: flatbuffers::VOffsetT = 4;
   pub const VT_DISPERSAL_ROOT_PARTNERS: flatbuffers::VOffsetT = 6;
   pub const VT_DISPERSAL_ROOT_SALT: flatbuffers::VOffsetT = 8;
+  pub const VT_DISPERSAL_ROOT_STRIPE: flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -39,6 +40,7 @@ impl<'a> DispersalRootPointer<'a> {
     args: &'args DispersalRootPointerArgs<'args>
   ) -> flatbuffers::WIPOffset<DispersalRootPointer<'bldr>> {
     let mut builder = DispersalRootPointerBuilder::new(_fbb);
+    if let Some(x) = args.dispersal_root_stripe { builder.add_dispersal_root_stripe(x); }
     if let Some(x) = args.dispersal_root_salt { builder.add_dispersal_root_salt(x); }
     if let Some(x) = args.dispersal_root_partners { builder.add_dispersal_root_partners(x); }
     if let Some(x) = args.dispersal_root_hash { builder.add_dispersal_root_hash(x); }
@@ -67,6 +69,13 @@ impl<'a> DispersalRootPointer<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(DispersalRootPointer::VT_DISPERSAL_ROOT_SALT, None)}
   }
+  #[inline]
+  pub fn dispersal_root_stripe(&self) -> Option<super::dispersal::Stripe<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<super::dispersal::Stripe>>(DispersalRootPointer::VT_DISPERSAL_ROOT_STRIPE, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for DispersalRootPointer<'_> {
@@ -79,6 +88,7 @@ impl flatbuffers::Verifiable for DispersalRootPointer<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("dispersal_root_hash", Self::VT_DISPERSAL_ROOT_HASH, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<super::dispersal::Partner>>>>("dispersal_root_partners", Self::VT_DISPERSAL_ROOT_PARTNERS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("dispersal_root_salt", Self::VT_DISPERSAL_ROOT_SALT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<super::dispersal::Stripe>>("dispersal_root_stripe", Self::VT_DISPERSAL_ROOT_STRIPE, false)?
      .finish();
     Ok(())
   }
@@ -87,6 +97,7 @@ pub struct DispersalRootPointerArgs<'a> {
     pub dispersal_root_hash: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub dispersal_root_partners: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<super::dispersal::Partner<'a>>>>>,
     pub dispersal_root_salt: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub dispersal_root_stripe: Option<flatbuffers::WIPOffset<super::dispersal::Stripe<'a>>>,
 }
 impl<'a> Default for DispersalRootPointerArgs<'a> {
   #[inline]
@@ -95,6 +106,7 @@ impl<'a> Default for DispersalRootPointerArgs<'a> {
       dispersal_root_hash: None,
       dispersal_root_partners: None,
       dispersal_root_salt: None,
+      dispersal_root_stripe: None,
     }
   }
 }
@@ -117,6 +129,10 @@ impl<'a: 'b, 'b> DispersalRootPointerBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(DispersalRootPointer::VT_DISPERSAL_ROOT_SALT, dispersal_root_salt);
   }
   #[inline]
+  pub fn add_dispersal_root_stripe(&mut self, dispersal_root_stripe: flatbuffers::WIPOffset<super::dispersal::Stripe<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<super::dispersal::Stripe>>(DispersalRootPointer::VT_DISPERSAL_ROOT_STRIPE, dispersal_root_stripe);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> DispersalRootPointerBuilder<'a, 'b> {
     let start = _fbb.start_table();
     DispersalRootPointerBuilder {
@@ -137,6 +153,7 @@ impl core::fmt::Debug for DispersalRootPointer<'_> {
       ds.field("dispersal_root_hash", &self.dispersal_root_hash());
       ds.field("dispersal_root_partners", &self.dispersal_root_partners());
       ds.field("dispersal_root_salt", &self.dispersal_root_salt());
+      ds.field("dispersal_root_stripe", &self.dispersal_root_stripe());
       ds.finish()
   }
 }
