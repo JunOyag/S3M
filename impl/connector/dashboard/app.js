@@ -185,27 +185,32 @@ function show(status) {
   document.getElementById("title").textContent = status["titre"] || "S3m";
   document.title = status["titre"] || "S3m";
   const actions = status["actions"] || [];
-  // Les formulaires ne sont reconstruits que s'ils changent (saisie préservée).
+  // Les formulaires ne sont reconstruits que s'ils changent, et restent dans
+  // la page entre deux rafraîchissements : saisie et focus préservés.
   const key = JSON.stringify(actions);
-  const keep = key === actionsKey ? document.getElementById("actions") : null;
-  main.replaceChildren();
+  let keep = document.getElementById("actions");
+  if (keep && key !== actionsKey) {
+    keep.remove();
+    keep = null;
+  }
+  [...main.children].forEach((c) => c !== keep && c.remove());
+  const frag = document.createDocumentFragment();
   if (status["carte"]) {
     const s = el("section");
     const b = el("button", "Ouvrir la carte du monde");
     b.addEventListener("click", () => window.open("map.html#token=" + encodeURIComponent(token), "_blank", "noopener"));
     s.appendChild(b);
-    main.appendChild(s);
+    frag.appendChild(s);
   }
   Object.entries(status).forEach(([k, v]) => {
     if (k === "titre" || k === "actions" || k === "carte") return;
     const s = el("section");
     s.appendChild(el("h2", k));
     s.appendChild(render(v));
-    main.appendChild(s);
+    frag.appendChild(s);
   });
-  if (keep) {
-    main.appendChild(keep);
-  } else if (actions.length) {
+  main.insertBefore(frag, keep);
+  if (!keep && actions.length) {
     const s = el("section");
     s.id = "actions";
     s.appendChild(el("h2", "actions"));
