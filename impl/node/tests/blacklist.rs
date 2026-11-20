@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use p2p_storage_node::blacklist::*;
-use p2p_storage_node::tombstones::PartnerLedger;
-use p2p_storage_node::volatility::Holder;
-use p2p_storage_node::{Owner, OwnerType, PhysicalStore, VolumeConfig};
+use s3m_node::blacklist::*;
+use s3m_node::tombstones::PartnerLedger;
+use s3m_node::volatility::Holder;
+use s3m_node::{Owner, OwnerType, PhysicalStore, VolumeConfig};
 
 struct Temp(PathBuf);
 impl Drop for Temp {

@@ -12,11 +12,11 @@
 //!    et clé DHT de son DispersalManifest, puis reconstruction des k blocs
 //!    de chaque stripe depuis la parité (`migration::rebuild_stripe`).
 
-use p2p_storage_core::k_attach::derive_k_attach_as_node;
-use p2p_storage_core::k_node_self::derive_k_node_self;
-use p2p_storage_core::CoreError;
-use p2p_storage_protocol::dht::{dispersal_dht_key, open_blob, DhtError, EntryKind};
-use p2p_storage_protocol::fb::dht as fb;
+use s3m_core::k_attach::derive_k_attach_as_node;
+use s3m_core::k_node_self::derive_k_node_self;
+use s3m_core::CoreError;
+use s3m_protocol::dht::{dispersal_dht_key, open_blob, DhtError, EntryKind};
+use s3m_protocol::fb::dht as fb;
 
 /// Erreurs de restauration.
 #[derive(Debug, thiserror::Error)]

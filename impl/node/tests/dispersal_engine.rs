@@ -6,18 +6,18 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_core::erasure::{padding_block, reconstruct_data};
-use p2p_storage_core::k_attach::derive_k_attach_as_node;
-use p2p_storage_core::k_dispersal::derive_k_dispersal_content;
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_core::version::CURRENT_HEADER;
-use p2p_storage_node::chunk_store::Space;
-use p2p_storage_node::dht_directory::{DhtConfig, DhtNode};
-use p2p_storage_node::dispersal_engine::*;
-use p2p_storage_node::exchange::{BlockServer, NodeService, PartnerState, UserAccount};
-use p2p_storage_protocol::dht::dispersal_dht_key;
-use p2p_storage_protocol::dispersal::*;
-use p2p_storage_protocol::index::open_index_node;
+use s3m_core::erasure::{padding_block, reconstruct_data};
+use s3m_core::k_attach::derive_k_attach_as_node;
+use s3m_core::k_dispersal::derive_k_dispersal_content;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_core::version::CURRENT_HEADER;
+use s3m_node::chunk_store::Space;
+use s3m_node::dht_directory::{DhtConfig, DhtNode};
+use s3m_node::dispersal_engine::*;
+use s3m_node::exchange::{BlockServer, NodeService, PartnerState, UserAccount};
+use s3m_protocol::dht::dispersal_dht_key;
+use s3m_protocol::dispersal::*;
+use s3m_protocol::index::open_index_node;
 
 const NODE: [u8; 32] = [0x10; 32];
 const USER: [u8; 32] = [0x40; 32];

@@ -4,11 +4,9 @@
 //! et trame de 65 536 o (docs/03-crypto/k-block.md). Valeurs attendues :
 //! fichier généré par `cryptography` (jamais par le code testé).
 
-use p2p_storage_core::k_block::{
-    derive_k_block, open_block, seal_block, BLOCK_PLAINTEXT_LEN, BLOCK_SIZE,
-};
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_core::CoreError;
+use s3m_core::k_block::{derive_k_block, open_block, seal_block, BLOCK_PLAINTEXT_LEN, BLOCK_SIZE};
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_core::CoreError;
 
 include!("vectors/symmetric_suite_expected.rs");
 

@@ -58,11 +58,11 @@ signature d'un autre type par la même clé.
 
 | Signé | Clé de vérification | Libellé de signature |
 |---|---|---|
-| `NodeEntry` | `pub_node` (clé de recherche) | `"p2p-storage/sig/node-entry/v1"` |
-| `UserEntry` | `sig_pub_user` (publiée en clair dans le payload) | `"p2p-storage/sig/user-entry/v1"` |
-| `DispersalEntry` | `sig_pub_dispersal` (en clair dans le payload) | `"p2p-storage/sig/dispersal-entry/v1"` |
-| `EmergencyEntry` | `sig_pub_emergency` (en clair dans le payload) | `"p2p-storage/sig/emergency-entry/v1"` |
-| `MigrationPointerPayload` | `pub_node_recovery` | `"p2p-storage/sig/migration-pointer/v1"` |
+| `NodeEntry` | `pub_node` (clé de recherche) | `"s3m/sig/node-entry/v1"` |
+| `UserEntry` | `sig_pub_user` (publiée en clair dans le payload) | `"s3m/sig/user-entry/v1"` |
+| `DispersalEntry` | `sig_pub_dispersal` (en clair dans le payload) | `"s3m/sig/dispersal-entry/v1"` |
+| `EmergencyEntry` | `sig_pub_emergency` (en clair dans le payload) | `"s3m/sig/emergency-entry/v1"` |
+| `MigrationPointerPayload` | `pub_node_recovery` | `"s3m/sig/migration-pointer/v1"` |
 
 ### Tags `key_algorithm`
 

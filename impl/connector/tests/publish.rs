@@ -4,14 +4,14 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_connector::access::Root;
-use p2p_storage_connector::dht_directory::{DhtClient, DhtClientConfig};
-use p2p_storage_connector::drive::{BlockIo, Drive};
-use p2p_storage_connector::fs::BlockHash;
-use p2p_storage_connector::publish::*;
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_node::dht_directory::{DhtConfig, DhtNode};
-use p2p_storage_protocol::entries::{user_identity, Attachment, UserPlain};
+use s3m_connector::access::Root;
+use s3m_connector::dht_directory::{DhtClient, DhtClientConfig};
+use s3m_connector::drive::{BlockIo, Drive};
+use s3m_connector::fs::BlockHash;
+use s3m_connector::publish::*;
+use s3m_core::vdf::VdfProof;
+use s3m_node::dht_directory::{DhtConfig, DhtNode};
+use s3m_protocol::entries::{user_identity, Attachment, UserPlain};
 
 fn pk(s: &[u8; 32]) -> [u8; 32] {
     ed25519_dalek::SigningKey::from_bytes(s)

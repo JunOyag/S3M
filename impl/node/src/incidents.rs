@@ -6,17 +6,17 @@
 //! - identité suivante dérivée de la **même seed** à l'index `+1`, avec sa
 //!   clé de secours miroir (`…/1'/<i+1>'`, `…/2'/<i+1>'`) ;
 //! - `migration_pointer` signé par l'**ancienne** clé de secours
-//!   `priv_node_recovery` sur `L("p2p-storage/sig/migration-pointer/v1") ‖
+//!   `priv_node_recovery` sur `L("s3m/sig/migration-pointer/v1") ‖
 //!   payload`, publié dans l'entrée Node de l'ancien `node_id`
 //!   (vérification et suivi : `protocol::dht::verify_migration_pointer`,
 //!   `connector::bootstrap::resolve`).
 //! - Limite fondamentale : si la seed fuit, la clé de secours aussi.
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::identity_derivation::{derive_identity_seed, IdentityRole};
-use p2p_storage_core::CoreError;
-use p2p_storage_protocol::dht::{sign, SIG_LABEL_MIGRATION_POINTER};
-use p2p_storage_protocol::fb::dht as fb;
+use s3m_core::identity_derivation::{derive_identity_seed, IdentityRole};
+use s3m_core::CoreError;
+use s3m_protocol::dht::{sign, SIG_LABEL_MIGRATION_POINTER};
+use s3m_protocol::fb::dht as fb;
 
 /// Graines Ed25519 d'une identité Nœud et de sa clé de secours miroir.
 #[derive(Debug, Clone, PartialEq, Eq)]

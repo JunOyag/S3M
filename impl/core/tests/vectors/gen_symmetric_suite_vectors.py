@@ -7,7 +7,7 @@ k-self, k-node-self, master-key-chain).
 
 RÈGLES :
 - Les valeurs attendues sont calculées par la bibliothèque `cryptography`
-  (indépendante du code Rust testé) — jamais par p2p-storage-core.
+  (indépendante du code Rust testé) — jamais par s3m-core.
 - Le fichier généré est committé ; ce script n'est JAMAIS exécuté par les
   tests Rust (régénération manuelle uniquement).
 - Les fixtures d'entrée sont exportées dans le fichier généré (`FX_*`) :
@@ -15,7 +15,7 @@ RÈGLES :
 
 Convention (docs/03-crypto/symmetric-suite.md, § KDF) :
     KDF(secret, label, salt, entrées…) = HKDF-SHA256(IKM = secret, salt,
-        info = "p2p-storage/kdf/v1" ‖ L(label) ‖ L(entrée_1) ‖ …, 32 o)
+        info = "s3m/kdf/v1" ‖ L(label) ‖ L(entrée_1) ‖ …, 32 o)
     L(x) = u32 big-endian(len(x)) ‖ x
 
 Régénérer, depuis la racine du dépôt :
@@ -51,10 +51,10 @@ FX = {
 }
 BLOCK_INDEX = 7
 VW, VC = 1, 2
-BLOCK_PREFIX = "contenu de bloc test p2p-storage".encode("ascii")
+BLOCK_PREFIX = "contenu de bloc test s3m".encode("ascii")
 BLOCK_LEN, BLOCK_CLEAR_LEN = 65536, 65506
 
-PREFIX = b"p2p-storage/kdf/v1"
+PREFIX = b"s3m/kdf/v1"
 
 
 def L(x: bytes) -> bytes:

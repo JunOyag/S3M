@@ -12,10 +12,10 @@
 
 use std::path::Path;
 
-use p2p_storage_core::k_self::derive_k_self;
-use p2p_storage_core::keys::derive_user_dht_key;
-use p2p_storage_protocol::dht::{open_blob, verify_migration_pointer, DhtError, EntryKind};
-use p2p_storage_protocol::fb::dht as fb;
+use s3m_core::k_self::derive_k_self;
+use s3m_core::keys::derive_user_dht_key;
+use s3m_protocol::dht::{open_blob, verify_migration_pointer, DhtError, EntryKind};
+use s3m_protocol::fb::dht as fb;
 
 use crate::dht_directory::{DhtClient, DhtClientError};
 
@@ -27,7 +27,7 @@ pub enum BootstrapError {
     #[error(transparent)]
     Entry(#[from] DhtError),
     #[error(transparent)]
-    Core(#[from] p2p_storage_core::CoreError),
+    Core(#[from] s3m_core::CoreError),
     #[error("aucune entrée DHT User et aucun cache local")]
     UserNotFound,
     #[error("entrée User sans attachement")]

@@ -3,17 +3,17 @@
 //! Tout octet attendu provient d'une source externe publiée ou du fichier
 //! généré `vectors/symmetric_suite_expected.rs` (bibliothèque `cryptography`,
 //! indépendante du code testé). Aucune valeur attendue n'est produite par
-//! `p2p-storage-core`.
+//! `s3m-core`.
 //!
 //! Sources : RFC 8439 §2.8.2 (AEAD), RFC 5869 A.1-A.3 (HKDF), RFC 6234 §8.5
 //! (SHA-256) ; compositions de la convention KDF V3 : script Python.
 
-use p2p_storage_core::labels::KDF_PREFIX;
-use p2p_storage_core::symmetric_suite::{
+use s3m_core::labels::KDF_PREFIX;
+use s3m_core::symmetric_suite::{
     aead_open, aead_seal, canonical_encode, derive_k_wrap, hash_sha256, hkdf_sha256, kdf,
     AEAD_TAG_LEN, NONCE_NUL,
 };
-use p2p_storage_core::CoreError;
+use s3m_core::CoreError;
 
 include!("vectors/symmetric_suite_expected.rs");
 
@@ -206,13 +206,13 @@ fn canonical_encode_matches_spec_layout() {
 
 // --- Convention KDF V3 (fichier généré) ------------------------------------
 
-/// § KDF — `info = "p2p-storage/kdf/v1" ‖ L(label) ‖ L(entrées…)`, IKM =
+/// § KDF — `info = "s3m/kdf/v1" ‖ L(label) ‖ L(entrées…)`, IKM =
 /// secret seul, sel séparé : valeur exacte contre `cryptography`.
 #[test]
 fn kdf_convention_matches_generated_vector() {
     let k = kdf(&unhex(FX_SECRET_HEX), "test-label", b"salt", &[b"a", b"bc"]).expect("kdf");
     assert_eq!(k.to_vec(), unhex(KDF_GENERIC_HEX));
-    assert_eq!(KDF_PREFIX, "p2p-storage/kdf/v1");
+    assert_eq!(KDF_PREFIX, "s3m/kdf/v1");
 }
 
 /// § KDF — `L(·)` rend les frontières non ambiguës : `("a","bc")` et

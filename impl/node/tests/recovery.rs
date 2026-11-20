@@ -5,15 +5,15 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_node::chunk_store::Space;
-use p2p_storage_node::dht_directory::{DhtConfig, DhtNode};
-use p2p_storage_node::dispersal_engine::*;
-use p2p_storage_node::exchange::{BlockServer, NodeService, PartnerState, UserAccount};
-use p2p_storage_node::publish::{publish_if_due, NodeEntryState};
-use p2p_storage_node::recovery::recover;
-use p2p_storage_node::snapshot_engine::run_snapshot;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_core::vdf::VdfProof;
+use s3m_node::chunk_store::Space;
+use s3m_node::dht_directory::{DhtConfig, DhtNode};
+use s3m_node::dispersal_engine::*;
+use s3m_node::exchange::{BlockServer, NodeService, PartnerState, UserAccount};
+use s3m_node::publish::{publish_if_due, NodeEntryState};
+use s3m_node::recovery::recover;
+use s3m_node::snapshot_engine::run_snapshot;
 
 const NODE: [u8; 32] = [0x10; 32];
 const USER: [u8; 32] = [0x40; 32];

@@ -1,4 +1,4 @@
-//! p2p-storage-protocol — logique protocolaire commune au Nœud et au
+//! s3m-protocol — logique protocolaire commune au Nœud et au
 //! Connecteur (spec V3, `impl/TECH_STACK.md`). Aucune I/O.
 //!
 //! - [`fb`] : types FlatBuffers générés par `flatc` depuis `schemas/**/*.fbs`
@@ -21,9 +21,9 @@
 #[rustfmt::skip]
 mod generated;
 
-/// Espaces de noms FlatBuffers (`P2PStorage.Dispersal`, `.Emergency`,
+/// Espaces de noms FlatBuffers (`S3m.Dispersal`, `.Emergency`,
 /// `.FS`, `.Node`, `.Dht`).
-pub use generated::p2_pstorage as fb;
+pub use generated::s3m as fb;
 
 pub mod dht;
 pub mod dispersal;

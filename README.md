@@ -1,6 +1,6 @@
-# Documentation P2P Storage — Documentation as Code
+# Documentation S3m — Documentation as Code
 
-Transformation de `ST-P2P-STORAGE-2026-V2.md` (document monolithique, 8
+Transformation de `ST-S3M-2026-V2.md` (document monolithique, 8
 sections numérotées §1–§8) en documentation **100% pilotée par le code**,
 sans aucune duplication de contenu : chaque fait technique n'existe qu'à un
 seul endroit, référencé partout ailleurs.
@@ -61,7 +61,7 @@ et protocole de remontée des ambiguïtés (`impl/SPEC_GAPS.md`).
 ## Architecture des sources
 
 ```
-p2p-storage-docs/
+s3m-docs/
 ├── manifest.yml              # ★ SOURCE DE VÉRITÉ du plan du site (id/chemin/refs)
 ├── mkdocs.yml                # config MkDocs + Material, nav auto-déduite
 ├── gen_docs.py                # hook mkdocs-gen-files (schémas + backlinks)

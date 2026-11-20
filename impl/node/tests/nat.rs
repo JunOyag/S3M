@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
-use p2p_storage_node::exchange::NodeService;
-use p2p_storage_node::net::{start, NatState, NetConfig, NodeNet, RelayLimits};
-use p2p_storage_protocol::exchange::{Body, Request, Response};
+use s3m_node::exchange::NodeService;
+use s3m_node::net::{start, NatState, NetConfig, NodeNet, RelayLimits};
+use s3m_protocol::exchange::{Body, Request, Response};
 
 const NOW: u64 = 1_000_000;
 

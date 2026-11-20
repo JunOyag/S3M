@@ -1,9 +1,9 @@
 //! Catalogue de dispersion (`protocols.dispersion-transactionnelle`,
 //! orchestration ; `protocols.index-adaptatif`).
 
-use p2p_storage_core::k_block::BLOCK_PLAINTEXT_LEN;
-use p2p_storage_protocol::dht::{accept_record, dispersal_dht_key};
-use p2p_storage_protocol::dispersal::*;
+use s3m_core::k_block::BLOCK_PLAINTEXT_LEN;
+use s3m_protocol::dht::{accept_record, dispersal_dht_key};
+use s3m_protocol::dispersal::*;
 
 fn stripe(seed: u8, n: usize, salt: Option<[u8; 16]>) -> StripeDesc {
     StripeDesc {

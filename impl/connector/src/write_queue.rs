@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_protocol::fb::fs as fb;
+use s3m_protocol::fb::fs as fb;
 
 use crate::fs::{BlockHash, Entry};
 

@@ -2,8 +2,8 @@
 
 use std::cell::Cell;
 
-use p2p_storage_connector::integrity::*;
-use p2p_storage_core::symmetric_suite::hash_sha256;
+use s3m_connector::integrity::*;
+use s3m_core::symmetric_suite::hash_sha256;
 
 /// Source de test : le Nœud rend `node_answers[i]` à la i-ième demande.
 struct Fake {

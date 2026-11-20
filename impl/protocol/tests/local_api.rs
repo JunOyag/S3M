@@ -1,6 +1,6 @@
 //! `deploiement.packaging` § API locale.
 
-use p2p_storage_protocol::local_api::*;
+use s3m_protocol::local_api::*;
 
 const TOKEN: [u8; 32] = [0xAB; 32];
 

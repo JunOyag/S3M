@@ -80,7 +80,7 @@ Le Connecteur d'un Utilisateur non rattaché envoie `Attach` à son Nœud :
   ([`crypto.k-attach`](../03-crypto/k-attach.md)) — preuve de possession
   de `priv_user`, sans nouvelle clé ;
 - preuve VDF de `0x00 ‖ sig_pub_user` et signature de `sig_priv_user` sur
-  `L("p2p-storage/sig/attach/v1") ‖ pub_user ‖ node_id`. Une identité VDF
+  `L("s3m/sig/attach/v1") ‖ pub_user ‖ node_id`. Une identité VDF
   ne sert qu'à un seul rattachement automatique (anti-Sybil).
 
 Politique du Nœud, réglable dans son dashboard

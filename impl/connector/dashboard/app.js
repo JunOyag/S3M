@@ -1,4 +1,4 @@
-// Dashboard local P2P-Storage (Nœud et Connecteur, même fichier).
+// Dashboard local S3m (Nœud et Connecteur, même fichier).
 // Jeton remis par le fragment d'URL (#token=…), gardé en mémoire et retiré
 // de la barre d'adresse (docs/07-deploiement/packaging.md § API locale).
 "use strict";
@@ -88,8 +88,8 @@ function actionForm(a) {
 let actionsShown = false;
 
 function show(status) {
-  document.getElementById("title").textContent = status["titre"] || "P2P-Storage";
-  document.title = status["titre"] || "P2P-Storage";
+  document.getElementById("title").textContent = status["titre"] || "S3m";
+  document.title = status["titre"] || "S3m";
   const keep = actionsShown ? document.getElementById("actions") : null;
   main.replaceChildren();
   Object.entries(status).forEach(([k, v]) => {

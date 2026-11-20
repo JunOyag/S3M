@@ -2,15 +2,15 @@
 
 use std::collections::HashMap;
 
-use p2p_storage_connector::incidents::rotate_user_identity;
-use p2p_storage_core::identity_derivation::{
+use s3m_connector::incidents::rotate_user_identity;
+use s3m_core::identity_derivation::{
     derive_identity_seed, derive_master_key, mnemonic_to_seed, IdentityRole,
 };
-use p2p_storage_core::k_block::{derive_k_block, open_block, seal_block};
-use p2p_storage_core::master_key_chain::resolve_master_key;
-use p2p_storage_node::incidents::{node_identity, sign_migration_pointer};
-use p2p_storage_protocol::dht::{verify_migration_pointer, DhtError};
-use p2p_storage_protocol::fb::dht::SignedMigrationPointer;
+use s3m_core::k_block::{derive_k_block, open_block, seal_block};
+use s3m_core::master_key_chain::resolve_master_key;
+use s3m_node::incidents::{node_identity, sign_migration_pointer};
+use s3m_protocol::dht::{verify_migration_pointer, DhtError};
+use s3m_protocol::fb::dht::SignedMigrationPointer;
 
 const MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";

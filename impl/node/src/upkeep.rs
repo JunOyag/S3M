@@ -25,10 +25,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use p2p_storage_core::erasure::{encode_parity, padding_block, reconstruct_data};
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_protocol::dispersal::{by_xor_distance, Id};
-use p2p_storage_protocol::exchange::{verify_receipt, Body, Refusal, Request, Response};
+use s3m_core::erasure::{encode_parity, padding_block, reconstruct_data};
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_protocol::dispersal::{by_xor_distance, Id};
+use s3m_protocol::exchange::{verify_receipt, Body, Refusal, Request, Response};
 use serde::{Deserialize, Serialize};
 
 use crate::blacklist::REASON_POS_INVALID;

@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use p2p_storage_node::dispersion::*;
+use s3m_node::dispersion::*;
 
 const K: usize = 4;
 

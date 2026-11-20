@@ -1,12 +1,12 @@
 [package]
-name = "p2p-storage-connector"
+name = "s3m-connector"
 version = "0.1.0"
 edition = "2021"
-description = "Connecteur (client) P2P-Storage — binaire Rust natif, spec V3."
+description = "Connecteur (client) S3m — binaire Rust natif, spec V3."
 license = "MIT"
 
 [lib]
-name = "p2p_storage_connector"
+name = "s3m_connector"
 
 [dependencies]
 async-trait = "0.1"
@@ -18,8 +18,8 @@ flatbuffers = "=23.5.26"
 getrandom = "0.2"
 hex = "0.4"
 libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response", "identify", "relay", "dcutr", "quic"] }
-p2p-storage-core = { path = "../core" }
-p2p-storage-protocol = { path = "../protocol" }
+s3m-core = { path = "../core" }
+s3m-protocol = { path = "../protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
@@ -33,10 +33,10 @@ widestring = { version = "1", optional = true }
 winfsp = { version = "=0.13.2", optional = true, default-features = false, features = ["delayload"] }
 
 [dev-dependencies]
-p2p-storage-node = { path = "../node" }
+s3m-node = { path = "../node" }
 
 [features]
 default = []
-vdf = ["p2p-storage-core/vdf"]
+vdf = ["s3m-core/vdf"]
 # Lecteur monté Windows (WinFsp installé ; LLVM pour la compilation).
 mount = ["dep:winfsp", "dep:widestring"]

@@ -4,9 +4,9 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use p2p_storage_connector::access::*;
-use p2p_storage_connector::fs::{write_directory, write_file, BlockHash, Entry, Sealing};
-use p2p_storage_connector::integrity::BlockSource;
+use s3m_connector::access::*;
+use s3m_connector::fs::{write_directory, write_file, BlockHash, Entry, Sealing};
+use s3m_connector::integrity::BlockSource;
 
 const MK: [u8; 32] = [0x10; 32];
 

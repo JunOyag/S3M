@@ -5,12 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_connector::dht_directory::{DhtClient, DhtClientConfig, DhtClientError};
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_core::CoreError;
-use p2p_storage_node::dht_directory::{DhtConfig, DhtNode};
-use p2p_storage_protocol::dht::{build_envelope, sign, DhtError, EntryKind};
-use p2p_storage_protocol::fb::dht as fb;
+use s3m_connector::dht_directory::{DhtClient, DhtClientConfig, DhtClientError};
+use s3m_core::vdf::VdfProof;
+use s3m_core::CoreError;
+use s3m_node::dht_directory::{DhtConfig, DhtNode};
+use s3m_protocol::dht::{build_envelope, sign, DhtError, EntryKind};
+use s3m_protocol::fb::dht as fb;
 
 const NOW: u64 = 1_800_000_000;
 

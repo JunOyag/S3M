@@ -16,7 +16,7 @@
 use std::collections::BTreeMap;
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_protocol::fb::node as fb;
+use s3m_protocol::fb::node as fb;
 
 use crate::tombstones::PartnerLedger;
 use crate::volatility::Holder;

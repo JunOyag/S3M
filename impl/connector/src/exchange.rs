@@ -12,9 +12,9 @@ use libp2p::multiaddr::Protocol;
 use libp2p::request_response::{self, OutboundRequestId, ProtocolSupport};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, noise, tcp, yamux, Multiaddr, PeerId, StreamProtocol, Swarm};
-use p2p_storage_core::k_attach::derive_k_attach_as_user;
-use p2p_storage_core::CoreError;
-use p2p_storage_protocol::exchange::*;
+use s3m_core::k_attach::derive_k_attach_as_user;
+use s3m_core::CoreError;
+use s3m_protocol::exchange::*;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::integrity::{BlockHash, BlockSource};
@@ -171,7 +171,7 @@ impl BlockClient {
                 relay_client,
                 dcutr: libp2p::dcutr::Behaviour::new(key.public().to_peer_id()),
                 identify: libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
-                    "/p2p-storage/id/1.0.0".into(),
+                    "/s3m/id/1.0.0".into(),
                     key.public(),
                 )),
             })
@@ -397,7 +397,7 @@ impl NodeSession {
         &self,
         salt: &[u8],
         sig_pub_user: &Id,
-        proof: &p2p_storage_core::vdf::VdfProof,
+        proof: &s3m_core::vdf::VdfProof,
         signature: Vec<u8>,
     ) -> Result<u64, ExchangeError> {
         let body = Body::Attach {

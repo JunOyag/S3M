@@ -3,7 +3,7 @@
 //!
 //! Règle absolue : tout octet attendu ci-dessous provient d'une source
 //! externe publiée, citée en commentaire. Aucune valeur attendue n'est
-//! produite par le code de `p2p-storage-core`. Les seuls calculs faits par
+//! produite par le code de `s3m-core`. Les seuls calculs faits par
 //! les tests sont des invariants structurels (symétrie Nœud/Connecteur,
 //! cohérence sk<->pk, déterminisme) — jamais la génération des octets de
 //! référence.
@@ -23,12 +23,12 @@
 //! À vérifier aussi en WASM (`cargo test --features wasm`) avant de traiter
 //! la cible Connecteur : mêmes vecteurs, autre chaîne de compilation.
 
-use p2p_storage_core::k_attach::{
+use s3m_core::k_attach::{
     derive_k_attach_as_node, derive_k_attach_as_user, derive_k_attach_from_shared_secret,
     derive_sig_priv_dispersal,
 };
-use p2p_storage_core::keys::{ed25519_priv_to_x25519, ed25519_pub_to_x25519};
-use p2p_storage_core::CoreError;
+use s3m_core::keys::{ed25519_priv_to_x25519, ed25519_pub_to_x25519};
+use s3m_core::CoreError;
 use x25519_dalek::{x25519, PublicKey, StaticSecret, X25519_BASEPOINT_BYTES};
 
 include!("vectors/symmetric_suite_expected.rs");
@@ -232,7 +232,7 @@ fn sig_priv_dispersal_matches_generated_vector() {
 /// `sig_priv_user` contre `cryptography` ; `pub_user` en entrée publique.
 #[test]
 fn dht_user_derivations_match_generated_vectors() {
-    use p2p_storage_core::keys::{derive_sig_priv_user, derive_sig_pub_user, derive_user_dht_key};
+    use s3m_core::keys::{derive_sig_priv_user, derive_sig_pub_user, derive_user_dht_key};
     let priv_user = unhex32(FX_PRIV_USER_HEX);
     let pub_user = unhex32(FX_PUB_USER_HEX);
     assert_eq!(

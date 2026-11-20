@@ -1,13 +1,13 @@
-//! `p2p-storage-connector` — exécutable du Connecteur (`deploiement.packaging`).
+//! `s3m-connector` — exécutable du Connecteur (`deploiement.packaging`).
 //!
 //! ```text
-//! p2p-storage-connector init <répertoire>   phrase de récupération, sel, config
-//! p2p-storage-connector <config.json>       démarre le Connecteur
+//! s3m-connector init <répertoire>   phrase de récupération, sel, config
+//! s3m-connector <config.json>       démarre le Connecteur
 //! ```
 
 use std::path::Path;
 
-use p2p_storage_connector::daemon::*;
+use s3m_connector::daemon::*;
 
 fn system_clock() -> u64 {
     std::time::SystemTime::now()
@@ -76,10 +76,7 @@ async fn main() {
                 }
             },
         },
-        _ => Err(
-            "usage : p2p-storage-connector init <répertoire> | p2p-storage-connector <config.json>"
-                .into(),
-        ),
+        _ => Err("usage : s3m-connector init <répertoire> | s3m-connector <config.json>".into()),
     };
     if let Err(e) = result {
         eprintln!("erreur : {e}");

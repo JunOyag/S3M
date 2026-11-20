@@ -20,7 +20,7 @@
 //! Règle de fixtures : phrases mnémoniques et seeds des vecteurs publiés —
 //! jamais comme valeurs attendues d'une dérivation propre au protocole.
 
-use p2p_storage_core::identity_derivation::{
+use s3m_core::identity_derivation::{
     derive_identity_seed, derive_master_key, mnemonic_to_seed, slip10_hardened_child,
     slip10_master_key, IdentityRole, HARDENED, PURPOSE,
 };

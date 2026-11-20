@@ -1,9 +1,9 @@
 //! Snapshot du NodeManifest (`deploiement.disaster-recovery` § Snapshot).
 
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_protocol::dispersal::{BlockRef, PartnerDesc, StripeDesc};
-use p2p_storage_protocol::entries::{node_entry_envelope, NodeEntryParams};
-use p2p_storage_protocol::snapshot::*;
+use s3m_core::vdf::VdfProof;
+use s3m_protocol::dispersal::{BlockRef, PartnerDesc, StripeDesc};
+use s3m_protocol::entries::{node_entry_envelope, NodeEntryParams};
+use s3m_protocol::snapshot::*;
 
 fn desc(users: usize) -> SnapshotDesc {
     SnapshotDesc {

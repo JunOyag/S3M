@@ -1,6 +1,6 @@
 //! Invariants de `protocols.ecriture-differee`.
 
-use p2p_storage_connector::write_back::*;
+use s3m_connector::write_back::*;
 
 const MIB: u64 = 1024 * 1024;
 

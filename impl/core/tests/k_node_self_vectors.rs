@@ -14,10 +14,10 @@
 //! §7.1 réutilisées comme graines d'entrée seulement — jamais comme valeurs
 //! attendues).
 
-use p2p_storage_core::k_node_self::derive_k_node_self;
+use s3m_core::k_node_self::derive_k_node_self;
 
 include!("vectors/symmetric_suite_expected.rs");
-use p2p_storage_core::k_self::derive_k_self;
+use s3m_core::k_self::derive_k_self;
 
 /// RFC 8032 §7.1 TEST 1 — graine d'entrée seulement.
 const SEED: [u8; 32] = [
@@ -72,7 +72,7 @@ fn k_node_self_matches_generated_vector() {
 
 #[test]
 fn snapshot_keys_are_separated_by_salt_index_and_from_k_node_self() {
-    use p2p_storage_core::k_node_self::{derive_k_node_self, derive_k_node_snapshot};
+    use s3m_core::k_node_self::{derive_k_node_self, derive_k_node_snapshot};
     let p = [1u8; 32];
     let a = derive_k_node_snapshot(&p, &[2; 16], 0).unwrap();
     assert_ne!(a, derive_k_node_snapshot(&p, &[2; 16], 1).unwrap());

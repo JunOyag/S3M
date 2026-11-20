@@ -10,9 +10,9 @@
 //! `sig_pub_dispersal` (dérivée du **nouveau** `K_attach`). L'ancienne
 //! entrée devient orpheline et expire (6 mois).
 
-use p2p_storage_core::erasure::{encode_parity, reconstruct_data};
-use p2p_storage_core::k_attach::{derive_k_attach_as_node, derive_sig_priv_dispersal};
-use p2p_storage_core::CoreError;
+use s3m_core::erasure::{encode_parity, reconstruct_data};
+use s3m_core::k_attach::{derive_k_attach_as_node, derive_sig_priv_dispersal};
+use s3m_core::CoreError;
 
 /// `(k blocs de données, nouvelle parité)`.
 pub type RebuiltStripe = (Vec<Vec<u8>>, Vec<Vec<u8>>);

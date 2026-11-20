@@ -1,6 +1,6 @@
 ---
 name: new-feature
-description: Cadre la discussion d'une nouvelle fonctionnalité du protocole P2P-Storage (ST-P2P-STORAGE-2026-V2) puis l'intègre proprement dans manifest.yml, schemas/*.fbs, docs/, impl/layers.yml et impl/status.yml. Utilise ce skill dès que l'utilisateur veut ajouter, étendre, ou même juste discuter d'une nouvelle fonctionnalité du protocole ou de sa doc-as-code — même si la demande ressemble à une simple question exploratoire plutôt qu'à un ordre d'intégration explicite. Ne jamais éditer schemas/, docs/, manifest.yml, impl/layers.yml ou impl/status.yml pour une nouvelle fonctionnalité sans passer par ce skill.
+description: Cadre la discussion d'une nouvelle fonctionnalité du protocole S3m (ST-S3M-2026-V2) puis l'intègre proprement dans manifest.yml, schemas/*.fbs, docs/, impl/layers.yml et impl/status.yml. Utilise ce skill dès que l'utilisateur veut ajouter, étendre, ou même juste discuter d'une nouvelle fonctionnalité du protocole ou de sa doc-as-code — même si la demande ressemble à une simple question exploratoire plutôt qu'à un ordre d'intégration explicite. Ne jamais éditer schemas/, docs/, manifest.yml, impl/layers.yml ou impl/status.yml pour une nouvelle fonctionnalité sans passer par ce skill.
 ---
 
 # New Feature — cadrage puis intégration

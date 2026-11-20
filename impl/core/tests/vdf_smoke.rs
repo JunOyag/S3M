@@ -22,11 +22,11 @@
 
 use std::time::{Duration, Instant};
 
-use p2p_storage_core::vdf::{
+use s3m_core::vdf::{
     generate_identity_proof, generate_identity_proof_params, tagged_identity,
     verify_identity_proof, verify_identity_proof_params, VdfProof, FORM_SIZE, TAGGED_IDENTITY_LEN,
 };
-use p2p_storage_core::CoreError;
+use s3m_core::CoreError;
 
 /// `T` rapide pour les tests hors aller-retour de protocole (~1 s sur les
 /// runners CI au débit mesuré de la page § « Calibration de T »). Le

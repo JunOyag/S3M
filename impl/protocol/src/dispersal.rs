@@ -9,9 +9,9 @@
 
 use ed25519_dalek::SigningKey;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
-use p2p_storage_core::k_attach::derive_sig_priv_dispersal;
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_core::CoreError;
+use s3m_core::k_attach::derive_sig_priv_dispersal;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_core::CoreError;
 
 use crate::dht::{build_envelope, open_blob, seal_blob, sign, DhtError, EntryKind};
 use crate::fb::{dht as fbd, dispersal as fbs};

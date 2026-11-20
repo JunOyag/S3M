@@ -416,7 +416,7 @@ impl FileSystemContext for DriveFs {
     fn get_volume_info(&self, out_volume_info: &mut VolumeInfo) -> winfsp::Result<()> {
         out_volume_info.total_size = 1 << 40;
         out_volume_info.free_size = 1 << 40;
-        out_volume_info.set_volume_label("P2P-Storage");
+        out_volume_info.set_volume_label("S3m");
         Ok(())
     }
 }
@@ -445,7 +445,7 @@ pub fn mount(fs: DriveFs, mount_point: &str) -> Result<FileSystemHost<DriveFs>, 
         winfsp::winfsp_init().map_err(|e| format!("WinFsp absent ou inutilisable : {e}"))?;
     let mut params = VolumeParams::new();
     params
-        .filesystem_name("P2P-Storage")
+        .filesystem_name("S3m")
         .case_sensitive_search(true)
         .case_preserved_names(true)
         .unicode_on_disk(true)

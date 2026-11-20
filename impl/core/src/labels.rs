@@ -14,7 +14,7 @@
 //! version de protocole. Unicité testée par `tests/labels.rs`.
 
 /// Préfixe brut, en tête de tout `info` HKDF du protocole.
-pub const KDF_PREFIX: &str = "p2p-storage/kdf/v1";
+pub const KDF_PREFIX: &str = "s3m/kdf/v1";
 
 /// `K_attach` — crypto.k-attach.
 pub const ATTACH: &str = "attach";
@@ -65,9 +65,9 @@ pub const ALL_KDF_LABELS: [&str; 14] = [
 
 /// Étiquettes retirées en V3 — jamais réutilisables (test `tests/labels.rs`).
 pub const RETIRED_LABELS: [&str; 3] = [
-    "p2p-storage/block/v1",
-    "p2p-storage/synthetic-nonce/v1",
-    "p2p-storage/master-key-wrap/v1",
+    "s3m/block/v1",
+    "s3m/synthetic-nonce/v1",
+    "s3m/master-key-wrap/v1",
 ];
 
 /// Contexte AAD du wrap de `master_key` — suivi de

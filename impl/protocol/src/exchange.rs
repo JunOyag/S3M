@@ -14,14 +14,14 @@
 use std::collections::HashMap;
 
 use flatbuffers::{FlatBufferBuilder, UnionWIPOffset, WIPOffset};
-use p2p_storage_core::labels::CONNECTOR_AUTH;
-use p2p_storage_core::symmetric_suite::{canonical_encode, kdf};
+use s3m_core::labels::CONNECTOR_AUTH;
+use s3m_core::symmetric_suite::{canonical_encode, kdf};
 
 use crate::dht::{sign, verify_signature};
 use crate::fb::exchange as fb;
 
 /// Nom du protocole libp2p requête/réponse.
-pub const PROTOCOL: &str = "/p2p-storage/blocks/1";
+pub const PROTOCOL: &str = "/s3m/blocks/1";
 /// Taille maximale d'un message (requête ou réponse), préfixe exclu.
 pub const MAX_MESSAGE_BYTES: usize = 1 << 20;
 /// Version courante des messages.
@@ -35,11 +35,11 @@ pub const RESCUE_RATE_PER_SECOND: u64 = 64;
 /// Débit de secours : rafale maximale.
 pub const RESCUE_BURST: u64 = 256;
 
-pub const SIG_LABEL_RESCUE_GRANT: &str = "p2p-storage/sig/rescue-grant/v1";
-pub const SIG_LABEL_RESCUE_SESSION: &str = "p2p-storage/sig/rescue-session/v1";
-pub const SIG_LABEL_RESCUE_DELEGATION: &str = "p2p-storage/sig/rescue-delegation/v1";
-pub const SIG_LABEL_FRAGMENT_RECEIPT: &str = "p2p-storage/sig/fragment-receipt/v1";
-pub const SIG_LABEL_ATTACH: &str = "p2p-storage/sig/attach/v1";
+pub const SIG_LABEL_RESCUE_GRANT: &str = "s3m/sig/rescue-grant/v1";
+pub const SIG_LABEL_RESCUE_SESSION: &str = "s3m/sig/rescue-session/v1";
+pub const SIG_LABEL_RESCUE_DELEGATION: &str = "s3m/sig/rescue-delegation/v1";
+pub const SIG_LABEL_FRAGMENT_RECEIPT: &str = "s3m/sig/fragment-receipt/v1";
+pub const SIG_LABEL_ATTACH: &str = "s3m/sig/attach/v1";
 
 /// Identifiant de 32 o (`pub_node`, `pub_user`, `grant_pub`, hash).
 pub type Id = [u8; 32];

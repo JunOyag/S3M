@@ -21,7 +21,7 @@ Table source : `schemas/network/DhtEnvelope.fbs#SignedMigrationPointer` (V3).
 Pointeur de migration signé par `priv_node_recovery`, publié dans le champ
 `migration_pointer` de l'entrée Node **de l'ancien** `node_id`. La
 signature Ed25519 porte sur
-`L("p2p-storage/sig/migration-pointer/v1") ‖ payload` et se vérifie avec le
+`L("s3m/sig/migration-pointer/v1") ‖ payload` et se vérifie avec le
 `pub_node_recovery` déjà publié dans l'entrée, sans dépendre de la clé
 compromise. Voir
 [`securite.incidents-compromissions`](../../05-securite/incidents-compromissions.md).

@@ -104,7 +104,7 @@ pas `T = 100` »).
 
 ---
 
-## Spec V3 — Intégration de `ST-P2P-STORAGE-2026-V3-modifications.md` et arbitrages
+## Spec V3 — Intégration de `ST-S3M-2026-V3-modifications.md` et arbitrages
 
 **Constat** : un document de modifications V2 → V3 (20/10/2026) était resté
 hors dépôt, non intégré, en contradiction avec `impl/TECH_STACK.md`
@@ -129,7 +129,7 @@ et pour toute écriture de bloc.
    (règle « ne pas réimplémenter le VDF ») ; `network.vdf-verifier-pure`
    devient « Instrumentation et fixtures VDF ». λ = 1024 maintenu (la V3
    §2.1 citait 2048 par erreur).
-3. **Convention KDF** : `info = "p2p-storage/kdf/v1" ‖ L(label) ‖
+3. **Convention KDF** : `info = "s3m/kdf/v1" ‖ L(label) ‖
    L(entrées publiques…)`, `L` = longueur sur 4 o big-endian, IKM = secret
    seul, sortie 32 o. `K_attach` reçoit l'étiquette `"attach"`. `K_wrap`
    entre dans la convention (`"master-key-wrap"`, versions en entrées
@@ -145,7 +145,7 @@ et pour toute écriture de bloc.
    additif) et, pour la racine, par `DispersalRootPointer.dispersal_root_salt`.
 6. **❓2** : la preuve VDF d'une entrée User porte sur `0x00 ‖ sig_pub_user`.
 7. **❓3** : séparation de contexte uniforme — toute signature DHT porte sur
-   `L("p2p-storage/sig/<type>/v1") ‖ payload`, `migration_pointer` compris.
+   `L("s3m/sig/<type>/v1") ‖ payload`, `migration_pointer` compris.
 8. **❓4** (neutralisation d'un `EmergencyManifest` réconcilié) : reporté ;
    la réconciliation idempotente suffit.
 9. **⚠ confirmés** : `file_identifier` par type d'entrée (`NODE`, `USER`,
@@ -269,7 +269,7 @@ code ensuite*.
    **synthétique** : `nonce = 12 premiers octets de HMAC-SHA256(K_nonce,
    u32(len(AAD)) ‖ AAD ‖ clair)` (encodage canonique, u32 gros-boutiste),
    **stocké en préfixe** de la trame. `K_nonce = HKDF-SHA256(K_enc,
-   info = "p2p-storage/synthetic-nonce/v1")` sans sel — règle générique de
+   info = "s3m/synthetic-nonce/v1")` sans sel — règle générique de
    `crypto.symmetric-suite`, appliquée à `K_block` et `K_dispersal_block` ;
    l'AAD porte l'étiquette de contexte de l'usage. Borne de collision du
    nonce synthétique : ~2^48 messages distincts par clé (birthday sur
@@ -369,12 +369,12 @@ au registre des étiquettes de `crypto.symmetric-suite` comme 13ᵉ étiquette :
 
 ```
 K_wrap = HKDF-SHA256(ikm = master_key[version_courante], salt = ∅,
-                      info = encodage canonique("p2p-storage/master-key-wrap/v1"
+                      info = encodage canonique("s3m/master-key-wrap/v1"
                                                 ‖ u16(version_wrappée)
                                                 ‖ u16(version_courante)))
 ```
 
-Le préfixe fixe `p2p-storage/master-key-wrap/v1` est l'**étiquette** ; les
+Le préfixe fixe `s3m/master-key-wrap/v1` est l'**étiquette** ; les
 deux `u16` (version wrappée, version courante) portés en `info` garantissent
 l'unicité par couple de versions. Chiffrement : **ChaCha20-Poly1305**, clé à
 usage unique → nonce nul, trame `chiffré ‖ tag`, `wrapped_key = 48 o` (32 o
@@ -461,7 +461,7 @@ une construction non documentée revient à improviser une primitive de groupe
 - Forme de départ `x_s` : l'élément par défaut de chiavdf, sérialisation BQFC de 100 octets `0x08 ‖ 99 × 0x00`. **À confirmer dans `bqfc.h`** : si ce codage désigne l'élément neutre et non la forme génératrice `(2, 1, c)`, la doc doit le nommer exactement ainsi (nos tests sont cohérents avec un départ non trivial : la preuve est valide et non rejouable, mais la nomenclature n'a pas été relue dans la source).
 - Génération : `prove(challenge, x_s, 1024, T)` renvoie `y ‖ π`, soit **200 octets**.
 - Vérification : le vérificateur **recalcule Δ lui-même** à partir de `pub_key` et ne reçoit jamais Δ du prouveur. Le tuple publié devient `(pub_key, y ‖ π)`.
-- `docs/…/vdf-identity.md` : retirer « Δ global, pas un module N par identité » et « Δ n'a pas besoin d'être porté par le tuple » (révision du 05 Sept). Ajouter une ligne d'addendum à l'en-tête de ST-P2P-STORAGE-2026-V2.
+- `docs/…/vdf-identity.md` : retirer « Δ global, pas un module N par identité » et « Δ n'a pas besoin d'être porté par le tuple » (révision du 05 Sept). Ajouter une ligne d'addendum à l'en-tête de ST-S3M-2026-V2.
 - Propriétés validées en CI (vdf-smoke) : preuve rejetée avec une autre identité, octet altéré, mauvais T.
 - Référence commit docs : `c9f5047`.
 
@@ -552,7 +552,7 @@ VDF, que le Connecteur Windows ne produit pas encore.
 
 **Résolution** (orchestrateur, sur délégation de l'utilisateur, 2026-11-20) :
 (1) rattachement et partenariat **manuels** depuis le dashboard du Nœud
-(`user_id` + sel affichés par `p2p-storage-connector init` ; `node_id` +
+(`user_id` + sel affichés par `s3m-connector init` ; `node_id` +
 adresse + solde pour un partenaire) ; (2) dashboards en HTML/JavaScript
 sans étape de build (le TypeScript n'est pas exigé par la spec), un même
 fichier pour les deux binaires, état poussé par WebSocket ; (3) le

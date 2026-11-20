@@ -2,16 +2,16 @@
 //! nouveau Nœud.
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_connector::migration::prepare_handoff;
-use p2p_storage_core::erasure::encode_parity;
-use p2p_storage_core::k_attach::{
+use s3m_connector::migration::prepare_handoff;
+use s3m_core::erasure::encode_parity;
+use s3m_core::k_attach::{
     derive_k_attach_as_node, derive_k_attach_as_user, derive_sig_priv_dispersal,
 };
-use p2p_storage_core::k_dispersal::derive_k_dispersal_content;
-use p2p_storage_node::migration::{new_sig_priv_dispersal, rebuild_stripe};
-use p2p_storage_protocol::dht::{build_envelope, seal_blob, sign, EntryKind};
-use p2p_storage_protocol::fb::{dht as fbd, dispersal as fbs};
-use p2p_storage_protocol::index::{open_index_node, seal_index_node};
+use s3m_core::k_dispersal::derive_k_dispersal_content;
+use s3m_node::migration::{new_sig_priv_dispersal, rebuild_stripe};
+use s3m_protocol::dht::{build_envelope, seal_blob, sign, EntryKind};
+use s3m_protocol::fb::{dht as fbd, dispersal as fbs};
+use s3m_protocol::index::{open_index_node, seal_index_node};
 
 fn pubkey(seed: &[u8; 32]) -> [u8; 32] {
     ed25519_dalek::SigningKey::from_bytes(seed)

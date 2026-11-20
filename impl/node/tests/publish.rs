@@ -2,11 +2,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_node::dht_directory::{DhtConfig, DhtNode};
-use p2p_storage_node::publish::*;
-use p2p_storage_protocol::entries::{encode_proof, node_identity};
-use p2p_storage_protocol::fb::dht as fb;
+use s3m_core::vdf::VdfProof;
+use s3m_node::dht_directory::{DhtConfig, DhtNode};
+use s3m_node::publish::*;
+use s3m_protocol::entries::{encode_proof, node_identity};
+use s3m_protocol::fb::dht as fb;
 
 fn pk(s: &[u8; 32]) -> [u8; 32] {
     ed25519_dalek::SigningKey::from_bytes(s)

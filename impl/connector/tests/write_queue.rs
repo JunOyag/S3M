@@ -1,7 +1,7 @@
 //! Invariants de `protocols.write-queue`.
 
-use p2p_storage_connector::fs::Entry;
-use p2p_storage_connector::write_queue::*;
+use s3m_connector::fs::Entry;
+use s3m_connector::write_queue::*;
 
 fn entry(name: &str, first: u8, modified_at: u64) -> Entry {
     Entry {

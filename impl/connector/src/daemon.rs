@@ -12,10 +12,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use libp2p::Multiaddr;
-use p2p_storage_core::identity_derivation::{
+use s3m_core::identity_derivation::{
     derive_identity_seed, derive_master_key, mnemonic_to_seed, IdentityRole,
 };
-use p2p_storage_protocol::exchange::{
+use s3m_protocol::exchange::{
     decode_response, encode_response, open_grant, Refusal, Response, SignedGrant,
 };
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,7 @@ use crate::local_http::{self, ActionFn, Asset, StatusFn};
 use crate::publish::{ensure_user_proof, publish_if_changed, read_user_entry, UserEntryState};
 use crate::write_back::{Scheduler, WriteBackConfig};
 use crate::write_queue::WriteQueue;
-use p2p_storage_protocol::entries::{Attachment, UserPlain};
+use s3m_protocol::entries::{Attachment, UserPlain};
 
 /// `Q_max` par défaut : 4 GiO.
 pub const DEFAULT_Q_MAX_BYTES: u64 = 4 << 30;
@@ -306,7 +306,7 @@ pub fn status(sh: &Shared) -> Value {
     let now = (sh.clock)();
     let h = sh.health.lock().unwrap().clone();
     json!({
-        "titre": "Connecteur P2P-Storage",
+        "titre": "Connecteur S3m",
         "nœud rattaché": {
             "node_id": sh.config.node.node_id,
             "adresse configurée": sh.config.node.addr,
@@ -507,11 +507,10 @@ fn attach_status(sh: &Shared) -> Value {
 async fn auto_attach(sh: &Shared) -> Result<u64, String> {
     let cache = sh.config.data_dir.join("vdf_proof.bin");
     let proof = ensure_user_proof(&cache, &sh.priv_user, &sh.pub_user).await?;
-    let sig_priv = p2p_storage_core::keys::derive_sig_priv_user(&sh.priv_user, &sh.pub_user)
+    let sig_priv = s3m_core::keys::derive_sig_priv_user(&sh.priv_user, &sh.pub_user)
         .map_err(|e| e.to_string())?;
-    let sig_pub = p2p_storage_core::keys::derive_sig_pub_user(&sig_priv);
-    let signature =
-        p2p_storage_protocol::exchange::attach_signature(&sig_priv, &sh.pub_user, &sh.pub_node);
+    let sig_pub = s3m_core::keys::derive_sig_pub_user(&sig_priv);
+    let signature = s3m_protocol::exchange::attach_signature(&sig_priv, &sh.pub_user, &sh.pub_node);
     sh.session
         .attach(&sh.salt, &sig_pub, &proof, signature)
         .await
@@ -520,7 +519,7 @@ async fn auto_attach(sh: &Shared) -> Result<u64, String> {
 
 /// Multiaddrs du Nœud publiées dans son entrée DHT, directe d'abord.
 pub fn node_candidates(pub_node: &[u8; 32], envelope: &[u8]) -> Vec<Multiaddr> {
-    let Some((addrs, direct)) = p2p_storage_protocol::entries::node_entry_addrs(envelope) else {
+    let Some((addrs, direct)) = s3m_protocol::entries::node_entry_addrs(envelope) else {
         return Vec::new();
     };
     let peer = libp2p::identity::ed25519::PublicKey::try_from_bytes(pub_node)

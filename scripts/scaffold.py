@@ -64,7 +64,7 @@ verified_by: []
 > `docs/04-protocols/dispersion-transactionnelle.md` (page protocole avec étapes).
 
 <!-- Rédiger ici le contenu narratif correspondant à {section} de la
-     spécification d'origine (ST-P2P-STORAGE-2026-V2.md). Référencer les
+     spécification d'origine (ST-S3M-2026-V2.md). Référencer les
      schémas et autres pages via leur id (voir manifest.yml, champ `refs`)
      plutôt que de recopier leur contenu. -->
 

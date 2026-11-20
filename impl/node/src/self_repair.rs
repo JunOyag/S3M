@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use p2p_storage_core::symmetric_suite::hash_sha256;
+use s3m_core::symmetric_suite::hash_sha256;
 
 use crate::{Owner, PhysicalStore, StorageError};
 

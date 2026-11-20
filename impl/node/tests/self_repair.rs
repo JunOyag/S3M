@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_node::self_repair::*;
-use p2p_storage_node::{Owner, OwnerType, PhysicalStore, VolumeConfig};
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_node::self_repair::*;
+use s3m_node::{Owner, OwnerType, PhysicalStore, VolumeConfig};
 
 struct Temp(PathBuf);
 impl Drop for Temp {

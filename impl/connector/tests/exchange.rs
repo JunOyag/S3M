@@ -3,12 +3,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_connector::exchange::*;
-use p2p_storage_connector::integrity::BlockSource;
-use p2p_storage_connector::write_queue::{Op, Queued, ReplaySink};
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_node::exchange::{BlockServer, NodeService, PartnerState, UserAccount};
-use p2p_storage_protocol::exchange::*;
+use s3m_connector::exchange::*;
+use s3m_connector::integrity::BlockSource;
+use s3m_connector::write_queue::{Op, Queued, ReplaySink};
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_node::exchange::{BlockServer, NodeService, PartnerState, UserAccount};
+use s3m_protocol::exchange::*;
 
 const NODE: [u8; 32] = [0x10; 32];
 const PARTNER: [u8; 32] = [0x20; 32];

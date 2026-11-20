@@ -2,7 +2,7 @@
 //! (Copie de `impl/node/src/local_http.rs` : les deux binaires sont
 //! indépendants ; toute modification s'applique aux deux.)
 //! Réf. spec : docs/07-deploiement/packaging.md § API locale. Les règles de
-//! protection sont celles de `p2p_storage_protocol::local_api`.
+//! protection sont celles de `s3m_protocol::local_api`.
 //!
 //! Routes : fichiers statiques du dashboard, `GET /api/status`,
 //! `POST /api/action/<nom>` (JSON), `GET /api/ws` (état poussé toutes les
@@ -17,7 +17,7 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use p2p_storage_protocol::local_api::{ApiRejection, LocalApiGuard};
+use s3m_protocol::local_api::{ApiRejection, LocalApiGuard};
 use serde_json::Value;
 
 /// État courant, sérialisé pour le dashboard.

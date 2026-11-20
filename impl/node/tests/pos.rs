@@ -1,7 +1,7 @@
 //! Invariants de `securite.pos-challenges`.
 
-use p2p_storage_core::erasure::encode_parity;
-use p2p_storage_node::pos::*;
+use s3m_core::erasure::encode_parity;
+use s3m_node::pos::*;
 
 fn data() -> Vec<Vec<u8>> {
     (0..4).map(|i| vec![i as u8 + 1; 4096]).collect()

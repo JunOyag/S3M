@@ -2,7 +2,7 @@
 //! invariants de schéma explicites des pages `docs/02-schemas/**`.
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_protocol::fb::{dht, dispersal, emergency, fs, node};
+use s3m_protocol::fb::{dht, dispersal, emergency, fs, node};
 
 /// Les quatre entrées DHT portent chacune leur `file_identifier`
 /// (`NODE`, `USER`, `DISP`, `EMRG`) : un payload n'est jamais décodé sous
@@ -217,7 +217,7 @@ fn node_mutation_log_union_and_manifest_roundtrip() {
         &node::MutationArgs {
             timestamp: 1,
             op: Some(op),
-            payload_type: node::MutationPayload::P2PStorage_Dispersal_BlockEntry,
+            payload_type: node::MutationPayload::S3m_Dispersal_BlockEntry,
             payload: Some(block.as_union_value()),
         },
     );
@@ -234,7 +234,7 @@ fn node_mutation_log_union_and_manifest_roundtrip() {
         .mutations()
         .unwrap()
         .get(0)
-        .payload_as_p2_pstorage_dispersal_block_entry()
+        .payload_as_s3m_dispersal_block_entry()
         .expect("BlockEntry");
     assert_eq!(entry.block_index(), 2);
 

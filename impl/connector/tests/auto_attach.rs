@@ -3,10 +3,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_connector::daemon::*;
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_node::exchange::{AttachPolicy, BlockServer, NodeService};
-use p2p_storage_protocol::entries::encode_proof;
+use s3m_connector::daemon::*;
+use s3m_core::vdf::VdfProof;
+use s3m_node::exchange::{AttachPolicy, BlockServer, NodeService};
+use s3m_protocol::entries::encode_proof;
 
 const MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";

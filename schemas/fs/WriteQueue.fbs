@@ -1,7 +1,7 @@
 // ---- WriteQueue.fbs (local Connecteur uniquement, jamais publiée) ----
-// Source: ST-P2P-STORAGE-2026-V2.md §3.12.2
+// Source: ST-S3M-2026-V2.md §3.12.2
 include "FileSystemEntry.fbs";
-namespace P2PStorage.FS;
+namespace S3m.FS;
 
 // Une mutation FS en attente de synchronisation avec le Nœud.
 table QueuedMutation {

@@ -2,7 +2,7 @@
 //! id `deploiement.packaging` § Liste des partenaires et carte. Base au
 //! format MMDB (DB-IP « City Lite », CC BY 4.0), lue localement ; aucune
 //! requête vers un service extérieur. Téléchargement explicite par
-//! l'opérateur : `p2p-storage-node geoip-update <répertoire>`.
+//! l'opérateur : `s3m-node geoip-update <répertoire>`.
 
 use std::io::Read;
 use std::net::IpAddr;

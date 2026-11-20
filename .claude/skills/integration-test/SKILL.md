@@ -1,6 +1,6 @@
 ---
 name: integration-test
-description: Lance des tests d'intégration en conditions réalistes pour le protocole P2P-Storage — plusieurs instances Node/Connecteur réelles via Docker Compose, scénarios de panne scriptés (tests/integration/scenarios/, un par ligne du tableau §6 "Procédures de secours"), boucle automatiquement test → anomalie → correction → retest. Utilise ce skill quand l'utilisateur demande des tests d'intégration, des tests "en conditions réelles", de tester la résilience/le comportement en cas de panne, ou de valider un scénario de secours. NE JAMAIS fusionner ou déployer automatiquement une correction issue de ce skill — voir garde-fous.
+description: Lance des tests d'intégration en conditions réalistes pour le protocole S3m — plusieurs instances Node/Connecteur réelles via Docker Compose, scénarios de panne scriptés (tests/integration/scenarios/, un par ligne du tableau §6 "Procédures de secours"), boucle automatiquement test → anomalie → correction → retest. Utilise ce skill quand l'utilisateur demande des tests d'intégration, des tests "en conditions réelles", de tester la résilience/le comportement en cas de panne, ou de valider un scénario de secours. NE JAMAIS fusionner ou déployer automatiquement une correction issue de ce skill — voir garde-fous.
 ---
 
 # Tests d'intégration — squelette Phase 2+

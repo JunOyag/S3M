@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use p2p_storage_connector::fs::*;
-use p2p_storage_protocol::layout::FILE_BLOCK_DATA_BYTES;
+use s3m_connector::fs::*;
+use s3m_protocol::layout::FILE_BLOCK_DATA_BYTES;
 
 const MK: [u8; 32] = [0x10; 32];
 
@@ -45,7 +45,7 @@ fn multi_block_file_roundtrips_and_chains_by_ciphertext_hash() {
     .unwrap();
     assert_eq!(back, data);
     for (h, f) in &chain.blocks {
-        assert_eq!(*h, p2p_storage_core::symmetric_suite::hash_sha256(f));
+        assert_eq!(*h, s3m_core::symmetric_suite::hash_sha256(f));
     }
 }
 

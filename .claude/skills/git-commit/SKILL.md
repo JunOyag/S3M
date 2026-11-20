@@ -1,6 +1,6 @@
 ---
 name: git-commit
-description: Automatise le cycle git (branche, checklist, commit, push) pour ce dépôt P2P-Storage — un commit et une branche par id de impl/status.yml, jamais un commit qui mélange plusieurs ids ou composants. Vérifie la checklist "done" d'AGENTS.md §3 avant tout commit et REFUSE de committer si elle n'est pas satisfaite. Utilise ce skill dès qu'un id vient d'être marqué terminé, ou que l'utilisateur demande de committer, pousser, ou créer une branche pour ce projet — même formulé simplement comme "committe ça" ou "c'est bon, pousse".
+description: Automatise le cycle git (branche, checklist, commit, push) pour ce dépôt S3m — un commit et une branche par id de impl/status.yml, jamais un commit qui mélange plusieurs ids ou composants. Vérifie la checklist "done" d'AGENTS.md §3 avant tout commit et REFUSE de committer si elle n'est pas satisfaite. Utilise ce skill dès qu'un id vient d'être marqué terminé, ou que l'utilisateur demande de committer, pousser, ou créer une branche pour ce projet — même formulé simplement comme "committe ça" ou "c'est bon, pousse".
 ---
 
 # Discipline git — un id, un commit, une checklist

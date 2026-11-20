@@ -2,12 +2,12 @@
 //! seule seed « Node ».
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::identity_derivation::{derive_identity_seed, mnemonic_to_seed, IdentityRole};
-use p2p_storage_core::k_attach::derive_k_attach_as_user;
-use p2p_storage_core::k_node_self::derive_k_node_self;
-use p2p_storage_node::restore::*;
-use p2p_storage_protocol::dht::{build_envelope, dispersal_dht_key, seal_blob, sign, EntryKind};
-use p2p_storage_protocol::fb::{dht as fb, dispersal as fbs};
+use s3m_core::identity_derivation::{derive_identity_seed, mnemonic_to_seed, IdentityRole};
+use s3m_core::k_attach::derive_k_attach_as_user;
+use s3m_core::k_node_self::derive_k_node_self;
+use s3m_node::restore::*;
+use s3m_protocol::dht::{build_envelope, dispersal_dht_key, seal_blob, sign, EntryKind};
+use s3m_protocol::fb::{dht as fb, dispersal as fbs};
 
 const MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";

@@ -1,8 +1,8 @@
 //! Invariants de `deploiement.formats-serialisation`.
 
-use p2p_storage_core::k_block::{derive_k_block, open_block, seal_block};
-use p2p_storage_core::version::*;
-use p2p_storage_core::CoreError;
+use s3m_core::k_block::{derive_k_block, open_block, seal_block};
+use s3m_core::version::*;
+use s3m_core::CoreError;
 
 #[test]
 fn header_is_u16_big_endian_with_current_value_1() {

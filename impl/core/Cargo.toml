@@ -1,14 +1,14 @@
 [package]
-name = "p2p-storage-core"
+name = "s3m-core"
 version = "0.1.0"
 edition = "2021"
-description = "Primitives cryptographiques et structurelles du protocole P2P (ST-P2P-STORAGE-2026, spec V3), sans I/O réseau ni disque."
+description = "Primitives cryptographiques et structurelles du protocole P2P (ST-S3M-2026, spec V3), sans I/O réseau ni disque."
 license = "MIT"
 
 # rlib natif, lié par impl/node, impl/protocol et impl/connector (spec V3 :
 # plus de cible WASM).
 [lib]
-name = "p2p_storage_core"
+name = "s3m_core"
 crate-type = ["rlib"]
 
 [dependencies]

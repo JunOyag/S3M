@@ -1,9 +1,9 @@
 // ---- BlockExchange.fbs ----
 // Requêtes du protocole d'échange de blocs (protocols.echange-blocs) :
 // Connecteur → Nœud, Nœud → partenaire, Connecteur ou nouveau Nœud →
-// partenaire (secours). Protocole libp2p "/p2p-storage/blocks/1".
+// partenaire (secours). Protocole libp2p "/s3m/blocks/1".
 // Source: protocols.echange-blocs (fonctionnalité ajoutée le 2026-11-20)
-namespace P2PStorage.Exchange;
+namespace S3m.Exchange;
 
 // Autorisation de lecture de secours émise par un Nœud au profit d'une clé
 // anonyme d'appareil. Sérialisée puis signée (SignedRescueGrant).
@@ -17,7 +17,7 @@ table RescueGrant {
 // RescueGrant signé par priv_node de l'émetteur.
 table SignedRescueGrant {
   grant: [ubyte];       // RescueGrant sérialisé
-  signature: [ubyte];   // Ed25519 sur L("p2p-storage/sig/rescue-grant/v1") ‖ grant
+  signature: [ubyte];   // Ed25519 sur L("s3m/sig/rescue-grant/v1") ‖ grant
 }
 
 // Connecteur → son Nœud. Lien de session : identités Noise des deux pairs.
@@ -29,7 +29,7 @@ table UserCredential {
 // Connecteur → partenaire (Nœud injoignable).
 table RescueCredential {
   grant: SignedRescueGrant;
-  proof: [ubyte];       // Ed25519 par grant_priv sur L("p2p-storage/sig/rescue-session/v1") ‖ L(peer_demandeur) ‖ L(peer_partenaire)
+  proof: [ubyte];       // Ed25519 par grant_priv sur L("s3m/sig/rescue-session/v1") ‖ L(peer_demandeur) ‖ L(peer_partenaire)
 }
 
 // Nouveau Nœud → partenaire de l'ancien Nœud, sur délégation du Connecteur.
@@ -37,7 +37,7 @@ table DelegatedCredential {
   grant: SignedRescueGrant;
   delegate_node_id: [ubyte];  // pub_node du nouveau Nœud (32 o)
   expires_at: uint64;         // au plus celui de l'autorisation
-  signature: [ubyte];         // Ed25519 par grant_priv sur L("p2p-storage/sig/rescue-delegation/v1") ‖ delegate_node_id ‖ u64be(expires_at)
+  signature: [ubyte];         // Ed25519 par grant_priv sur L("s3m/sig/rescue-delegation/v1") ‖ delegate_node_id ‖ u64be(expires_at)
 }
 
 union Credential { UserCredential, RescueCredential, DelegatedCredential }
@@ -104,7 +104,7 @@ table Attach {
   sig_pub_user: [ubyte];      // identité VDF du User (32 o)
   vdf_y: [ubyte];
   vdf_pi: [ubyte];
-  signature: [ubyte];         // Ed25519 par sig_priv_user sur L("p2p-storage/sig/attach/v1") ‖ pub_user ‖ node_id
+  signature: [ubyte];         // Ed25519 par sig_priv_user sur L("s3m/sig/attach/v1") ‖ pub_user ‖ node_id
 }
 
 union RequestBody {

@@ -1,7 +1,7 @@
 # CLAUDE.md — Instructions pour Claude Code sur ce dépôt
 
 Ce dépôt combine deux sous-projets qui doivent être fusionnés côte à côte :
-- `p2p-storage-docs/` (spec pilotée par le code : `docs/`, `schemas/`, `manifest.yml`,
+- `s3m-docs/` (spec pilotée par le code : `docs/`, `schemas/`, `manifest.yml`,
   `impl/layers.yml`, `impl/status.yml`, `impl/TECH_STACK.md`, `AGENTS.md`) — déjà fourni.
 - `impl/core/`, `impl/protocol/`, `impl/node/`, `impl/connector/` — code Rust à faire
   croître phase par phase (voir `impl/TECH_STACK.md`).
@@ -45,7 +45,7 @@ lesquels une session Claude Code se trompe le plus souvent.
   réseau et traversée de NAT livrés ; dashboards incomplets —
   `impl/SPEC_GAPS.md`). Lecteur Windows (WinFsp) livré ; FUSE viendra ensuite.
 - **Échange de blocs** : spécifié et livré (`protocols.echange-blocs`, 2026-11-20) —
-  libp2p requête/réponse `/p2p-storage/blocks/1`, à côté de la DHT (Kademlia). Reste à
+  libp2p requête/réponse `/s3m/blocks/1`, à côté de la DHT (Kademlia). Reste à
   l'assembler dans les binaires (`deploiement.packaging`).
 - **Phase 7 (post-quantique) reportée** : optionnelle pour un MVP et contraire à la V3
   (seul le tag 0 est accepté).

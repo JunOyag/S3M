@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use p2p_storage_core::labels::{
+use s3m_core::labels::{
     AAD_CONTEXT_MASTER_KEY_WRAP, ALL_AAD_CONTEXTS, ALL_KDF_LABELS, ATTACH, ATTACHMENT_RECOVERY,
     BLOCK, CONNECTOR_AUTH, DHT_LOOKUP, DHT_SIGNING, DISPERSAL_BLOCK, DISPERSAL_CONTENT,
     DISPERSAL_SIGNING, EMERGENCY_CONTENT, EMERGENCY_SIGNING, KDF_PREFIX, MASTER_KEY_WRAP,
@@ -37,7 +37,7 @@ fn retired_labels_are_never_reused() {
 
 #[test]
 fn labels_match_the_spec_registry() {
-    assert_eq!(KDF_PREFIX, "p2p-storage/kdf/v1");
+    assert_eq!(KDF_PREFIX, "s3m/kdf/v1");
     let expected = [
         (ATTACH, "attach"),
         (DISPERSAL_SIGNING, "dispersal-signing"),

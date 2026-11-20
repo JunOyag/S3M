@@ -22,20 +22,20 @@ use std::sync::Mutex;
 
 use libp2p::multiaddr::Protocol;
 use libp2p::{identity, Multiaddr, PeerId};
-use p2p_storage_core::erasure::{padding_block, reconstruct_data};
-use p2p_storage_core::k_attach::derive_k_attach_as_node;
-use p2p_storage_core::k_dispersal::derive_k_dispersal_content;
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_core::version::CURRENT_HEADER;
-use p2p_storage_protocol::dht::dispersal_dht_key;
-use p2p_storage_protocol::dispersal::{
+use s3m_core::erasure::{padding_block, reconstruct_data};
+use s3m_core::k_attach::derive_k_attach_as_node;
+use s3m_core::k_dispersal::derive_k_dispersal_content;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_core::version::CURRENT_HEADER;
+use s3m_protocol::dht::dispersal_dht_key;
+use s3m_protocol::dispersal::{
     decode_index_node, decode_manifest, encode_root_pointer, open_dispersal_entry, Id, PartnerDesc,
     StripeDesc,
 };
-use p2p_storage_protocol::exchange::{Body, Request, Response};
-use p2p_storage_protocol::fb::dht as fbd;
-use p2p_storage_protocol::index::open_index_node;
-use p2p_storage_protocol::snapshot::{
+use s3m_protocol::exchange::{Body, Request, Response};
+use s3m_protocol::fb::dht as fbd;
+use s3m_protocol::index::open_index_node;
+use s3m_protocol::snapshot::{
     decode_manifest as decode_snapshot, encode_pointer, open_node_entry_pointer, open_snapshot,
 };
 

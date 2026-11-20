@@ -8,11 +8,11 @@
 
 use ed25519_dalek::SigningKey;
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
-use p2p_storage_core::k_node_self::derive_k_node_self;
-use p2p_storage_core::k_self::derive_k_self;
-use p2p_storage_core::keys::{derive_sig_priv_user, derive_sig_pub_user, derive_user_dht_key};
-use p2p_storage_core::vdf::{tagged_identity, VdfProof, KEY_ALGORITHM_ED25519};
-use p2p_storage_core::CoreError;
+use s3m_core::k_node_self::derive_k_node_self;
+use s3m_core::k_self::derive_k_self;
+use s3m_core::keys::{derive_sig_priv_user, derive_sig_pub_user, derive_user_dht_key};
+use s3m_core::vdf::{tagged_identity, VdfProof, KEY_ALGORITHM_ED25519};
+use s3m_core::CoreError;
 
 use crate::dht::{build_envelope, open_blob, seal_blob, sign, DhtError, EntryKind};
 use crate::fb::dht as fb;

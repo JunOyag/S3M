@@ -22,7 +22,7 @@ use libp2p::{
     autonat, dcutr, identify, identity, kad, noise, relay, tcp, upnp, yamux, Multiaddr, PeerId,
     StreamProtocol, Swarm,
 };
-use p2p_storage_protocol::exchange::PROTOCOL;
+use s3m_protocol::exchange::PROTOCOL;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -34,7 +34,7 @@ use crate::exchange::{
 };
 
 /// Protocole Identify du réseau.
-pub const IDENTIFY_PROTOCOL: &str = "/p2p-storage/id/1.0.0";
+pub const IDENTIFY_PROTOCOL: &str = "/s3m/id/1.0.0";
 const RELAY_HOP: &str = "/libp2p/circuit/relay/0.2.0/hop";
 /// Réservations de relais visées quand le Nœud est derrière un NAT.
 pub const TARGET_RELAYS: usize = 2;
@@ -257,10 +257,7 @@ pub async fn start(cfg: NetConfig) -> Result<NodeNet, String> {
                 ),
                 identify: identify::Behaviour::new(
                     identify::Config::new(IDENTIFY_PROTOCOL.into(), key.public())
-                        .with_agent_version(format!(
-                            "p2p-storage-node/{}",
-                            env!("CARGO_PKG_VERSION")
-                        )),
+                        .with_agent_version(format!("s3m-node/{}", env!("CARGO_PKG_VERSION"))),
                 ),
                 autonat: autonat::Behaviour::new(id, autonat::Config::default()),
                 upnp: Toggle::from(upnp_on.then(upnp::tokio::Behaviour::default)),

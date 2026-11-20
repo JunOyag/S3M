@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_node::daemon::*;
-use p2p_storage_node::exchange::{NodeService, PartnerState};
-use p2p_storage_protocol::exchange::{Body, Request, Response};
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_node::daemon::*;
+use s3m_node::exchange::{NodeService, PartnerState};
+use s3m_protocol::exchange::{Body, Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const MNEMONIC: &str =
@@ -80,7 +80,7 @@ fn saved_state_roundtrips_users_partners_and_addresses() {
     let mut s = NodeService::new([1; 32]);
     s.users.insert(
         [2; 32],
-        p2p_storage_node::exchange::UserAccount {
+        s3m_node::exchange::UserAccount {
             salt: vec![3; 16],
             quota_bytes: 10,
             used_bytes: 4,

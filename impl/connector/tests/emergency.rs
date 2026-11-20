@@ -1,7 +1,7 @@
 //! Invariants de `protocols.espace-secours` (partie connector).
 
-use p2p_storage_connector::emergency::*;
-use p2p_storage_connector::write_queue::{Op, Queued, BLOCK_BYTES, DEFAULT_Q_MAX};
+use s3m_connector::emergency::*;
+use s3m_connector::write_queue::{Op, Queued, BLOCK_BYTES, DEFAULT_Q_MAX};
 
 const GIB: u64 = 1024 * 1024 * 1024;
 

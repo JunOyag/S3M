@@ -1,8 +1,8 @@
 //! Invariants de `protocols.espace-secours` (partie node).
 
-use p2p_storage_node::emergency::*;
-use p2p_storage_node::quota_sync::PendingWrite;
-use p2p_storage_protocol::dht::emergency_dht_key;
+use s3m_node::emergency::*;
+use s3m_node::quota_sync::PendingWrite;
+use s3m_protocol::dht::emergency_dht_key;
 
 #[test]
 fn reserve_caps_users_and_bytes() {

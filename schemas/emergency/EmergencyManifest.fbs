@@ -3,9 +3,9 @@
 // ancrée en DHT sous emergency_dht_key = H(K_attach || "emergency").
 // Ne référence jamais de Connecteur émetteur : n'importe quel Connecteur du
 // même user_id peut la découvrir et la réconcilier (§3.12.4).
-// Source: ST-P2P-STORAGE-2026-V2.md §3.12.4
+// Source: ST-S3M-2026-V2.md §3.12.4
 include "../fs/FileSystemEntry.fbs";
-namespace P2PStorage.Emergency;
+namespace S3m.Emergency;
 
 // Partenaire de proximité sollicité pour un dépôt d'urgence.
 table EmergencyPartner {
@@ -27,7 +27,7 @@ table EmergencyMutation {
   op: string;                     // "write_block" | "update_entry" | "delete_entry"
   fs_path: string;
   block_hash: [ubyte];
-  entry: P2PStorage.FS.DirectoryEntry;  // §3.13
+  entry: S3m.FS.DirectoryEntry;  // §3.13
   blocks_to_delete: [ubyte];      // hash SHA-256 (32 o) concaténés, longueur multiple de 32
 }
 

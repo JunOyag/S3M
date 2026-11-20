@@ -4,11 +4,11 @@
 // rattaché, Partenaire de troc, ou dépositaire d'urgence), blocs stockés
 // séquentiellement avec trous cartographiés par bitmap.
 //
-// AJOUT POST-V2 : absent de ST-P2P-STORAGE-2026-V2.md (VolumeConfig, §3.11,
+// AJOUT POST-V2 : absent de ST-S3M-2026-V2.md (VolumeConfig, §3.11,
 // ne définissait qu'un point de montage, jamais la disposition physique des
 // blocs dessus). Voir docs/04-protocols/stockage-physique.md pour la
 // justification complète et le détail des algorithmes.
-namespace P2PStorage.Node;
+namespace S3m.Node;
 
 // Un fichier de conteneur de 4 GiO (65536 slots de 64 KiO chacun),
 /// appartenant à un SEUL propriétaire logique — jamais mélangé entre

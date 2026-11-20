@@ -1,8 +1,8 @@
 //! Invariants de `protocols.erasure-coding` (Phase 3, component core).
 
-use p2p_storage_core::erasure::*;
-use p2p_storage_core::k_block::BLOCK_SIZE;
-use p2p_storage_core::CoreError;
+use s3m_core::erasure::*;
+use s3m_core::k_block::BLOCK_SIZE;
+use s3m_core::CoreError;
 
 fn data_blocks(k: usize) -> Vec<Vec<u8>> {
     (0..k)

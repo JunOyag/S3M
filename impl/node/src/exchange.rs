@@ -6,7 +6,7 @@
 //!   (blocs, racine, incidents, autorisations, délégations) et côté
 //!   partenaire (dépôt de fragments avec reçu signé, challenges PoS,
 //!   récupération, avis de suppression, lecture de secours).
-//! - [`BlockServer`] : écoute `/p2p-storage/blocks/1` et émet des requêtes
+//! - [`BlockServer`] : écoute `/s3m/blocks/1` et émet des requêtes
 //!   vers d'autres Nœuds (identité libp2p dérivée de `priv_node`).
 
 use std::collections::HashMap;
@@ -18,11 +18,11 @@ use libp2p::multiaddr::Protocol;
 use libp2p::request_response::{self, OutboundRequestId, ProtocolSupport};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, noise, tcp, yamux, Multiaddr, PeerId, StreamProtocol, Swarm};
-use p2p_storage_core::k_attach::derive_k_attach_as_node;
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_protocol::dht::verify_migration_pointer;
-use p2p_storage_protocol::exchange::*;
-use p2p_storage_protocol::fb::dht as fbd;
+use s3m_core::k_attach::derive_k_attach_as_node;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_protocol::dht::verify_migration_pointer;
+use s3m_protocol::exchange::*;
+use s3m_protocol::fb::dht as fbd;
 use std::net::IpAddr;
 use tokio::sync::{mpsc, oneshot};
 
@@ -93,7 +93,7 @@ impl Default for PartnerPolicy {
 
 /// Vérificateur VDF synchrone (vrai si la preuve est valide).
 pub type VdfCheck =
-    std::sync::Arc<dyn Fn(&[u8; 33], &p2p_storage_core::vdf::VdfProof) -> bool + Send + Sync>;
+    std::sync::Arc<dyn Fn(&[u8; 33], &s3m_core::vdf::VdfProof) -> bool + Send + Sync>;
 
 /// État et règles du service d'échange d'un Nœud.
 pub struct NodeService {
@@ -422,9 +422,9 @@ impl NodeService {
                 {
                     return Err(Refusal::Unauthorized);
                 }
-                let identity = p2p_storage_core::vdf::tagged_identity(0, &sig_pub)
+                let identity = s3m_core::vdf::tagged_identity(0, &sig_pub)
                     .map_err(|_| Refusal::Unauthorized)?;
-                let proof = p2p_storage_core::vdf::VdfProof {
+                let proof = s3m_core::vdf::VdfProof {
                     y: vdf_y,
                     pi: vdf_pi,
                 };
@@ -475,8 +475,8 @@ impl NodeService {
         let Some(vdf) = self.vdf.clone() else {
             return 0;
         };
-        let check = |id: &[u8; 33], proof: &p2p_storage_core::vdf::VdfProof| Ok(vdf(id, proof));
-        if p2p_storage_protocol::dht::accept_record(&p, entry, None, now, &check).is_err() {
+        let check = |id: &[u8; 33], proof: &s3m_core::vdf::VdfProof| Ok(vdf(id, proof));
+        if s3m_protocol::dht::accept_record(&p, entry, None, now, &check).is_err() {
             return 0;
         }
         let addrs = entry_multiaddrs(&p, entry);
@@ -531,7 +531,7 @@ impl NodeService {
 /// Multiaddrs d'échange de blocs d'un Nœud depuis son entrée DHT : adresse
 /// TCP directe d'abord, puis les adresses publiées (QUIC, relais).
 pub fn entry_multiaddrs(node_id: &Id, envelope: &[u8]) -> Vec<String> {
-    let Some((addrs, direct)) = p2p_storage_protocol::entries::node_entry_addrs(envelope) else {
+    let Some((addrs, direct)) = s3m_protocol::entries::node_entry_addrs(envelope) else {
         return Vec::new();
     };
     let mut out: Vec<String> = direct
@@ -614,7 +614,7 @@ pub enum Frame {
     TooLarge,
 }
 
-/// Codec `/p2p-storage/blocks/1`.
+/// Codec `/s3m/blocks/1`.
 #[derive(Debug, Clone, Default)]
 pub struct FrameCodec;
 

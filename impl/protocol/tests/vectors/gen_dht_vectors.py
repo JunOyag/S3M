@@ -25,7 +25,7 @@ FX = {
     "OFFSET_ID": bytes([0x44]) * 32,
     "K_ATTACH": bytes([0x55]) * 32,
 }
-SIG_LABEL = b"p2p-storage/sig/user-entry/v1"
+SIG_LABEL = b"s3m/sig/user-entry/v1"
 BLOB_LABEL = b"dht-user-plaintext"
 
 sk = Ed25519PrivateKey.from_private_bytes(FX["SIG_SEED"])

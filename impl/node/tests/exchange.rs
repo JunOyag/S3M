@@ -2,12 +2,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_core::k_attach::derive_k_attach_as_user;
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_node::exchange::*;
-use p2p_storage_node::pos::challenge_response;
-use p2p_storage_node::tombstones::TombstoneNotice;
-use p2p_storage_protocol::exchange::*;
+use s3m_core::k_attach::derive_k_attach_as_user;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_node::exchange::*;
+use s3m_node::pos::challenge_response;
+use s3m_node::tombstones::TombstoneNotice;
+use s3m_protocol::exchange::*;
 
 const NODE: [u8; 32] = [0x10; 32];
 const PARTNER: [u8; 32] = [0x20; 32];

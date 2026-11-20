@@ -1,13 +1,13 @@
-//! `p2p-storage-node` — exécutable du Nœud (`deploiement.packaging`).
+//! `s3m-node` — exécutable du Nœud (`deploiement.packaging`).
 //!
 //! ```text
-//! p2p-storage-node init <répertoire>   crée phrase de récupération + config
-//! p2p-storage-node <config.json>       démarre le Nœud
+//! s3m-node init <répertoire>   crée phrase de récupération + config
+//! s3m-node <config.json>       démarre le Nœud
 //! ```
 
 use std::path::{Path, PathBuf};
 
-use p2p_storage_node::daemon::{generate_mnemonic, start, Config, VolumeSpec};
+use s3m_node::daemon::{generate_mnemonic, start, Config, VolumeSpec};
 
 fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dir)?;
@@ -65,9 +65,9 @@ async fn main() {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            match p2p_storage_node::geo::update(Path::new(dir), now) {
+            match s3m_node::geo::update(Path::new(dir), now) {
                 Ok(p) => {
-                    println!("Base de géolocalisation : {} ({})", p.display(), p2p_storage_node::geo::ATTRIBUTION);
+                    println!("Base de géolocalisation : {} ({})", p.display(), s3m_node::geo::ATTRIBUTION);
                     Ok(())
                 }
                 Err(e) => Err(e.into()),
@@ -84,13 +84,13 @@ async fn main() {
                     }
                     println!("Dashboard : {url}");
                     let _ = tokio::signal::ctrl_c().await;
-                    let _ = p2p_storage_node::daemon::save(&shared);
+                    let _ = s3m_node::daemon::save(&shared);
                     Ok(())
                 }
             },
         },
         _ => Err(
-            "usage : p2p-storage-node init <répertoire> | geoip-update <répertoire de données> | <config.json>".into(),
+            "usage : s3m-node init <répertoire> | geoip-update <répertoire de données> | <config.json>".into(),
         ),
     };
     if let Err(e) = result {

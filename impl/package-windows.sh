@@ -12,11 +12,11 @@ if ! command -v cmake >/dev/null; then
   cm="$(ls -d "$HOME"/AppData/Local/Microsoft/WinGet/Packages/Kitware.CMake_*/cmake-*/bin 2>/dev/null | head -1)"
   [ -n "$cm" ] && export PATH="$cm:$PATH"
 fi
-(cd "$here/node" && cargo build --release --features vdf --bin p2p-storage-node)
-(cd "$here/connector" && cargo build --release --features "vdf mount" --bin p2p-storage-connector)
+(cd "$here/node" && cargo build --release --features vdf --bin s3m-node)
+(cd "$here/connector" && cargo build --release --features "vdf mount" --bin s3m-connector)
 dist="$here/dist/windows"
 rm -rf "$dist" && mkdir -p "$dist"
-cp "$here/node/target/release/p2p-storage-node.exe" "$here/connector/target/release/p2p-storage-connector.exe" "$dist/"
+cp "$here/node/target/release/s3m-node.exe" "$here/connector/target/release/s3m-connector.exe" "$dist/"
 mpir="$(cargo metadata --format-version 1 --manifest-path "$here/core/Cargo.toml" --features vdf 2>/dev/null \
   | python -c "import json,sys,os; m=json.load(sys.stdin); print(next(os.path.dirname(p['manifest_path']) for p in m['packages'] if p['name']=='chiavdf'))")/mpir_gc_x64"
 cp "$mpir"/*.dll "$dist/"

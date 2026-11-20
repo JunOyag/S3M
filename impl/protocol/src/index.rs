@@ -13,9 +13,9 @@
 //!   sel de 16 o neuf par émission, au format de bloc de `crypto.k-block`.
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::k_block::{open_block, seal_block, BLOCK_HEADER_LEN, BLOCK_PLAINTEXT_LEN};
-use p2p_storage_core::k_dispersal::derive_k_dispersal_block;
-use p2p_storage_core::CoreError;
+use s3m_core::k_block::{open_block, seal_block, BLOCK_HEADER_LEN, BLOCK_PLAINTEXT_LEN};
+use s3m_core::k_dispersal::derive_k_dispersal_block;
+use s3m_core::CoreError;
 
 use crate::fb::dispersal::{
     BlockEntry, BlockEntryArgs, IndexNode, IndexNodeArgs, Stripe, StripeArgs,

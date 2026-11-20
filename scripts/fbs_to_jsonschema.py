@@ -102,7 +102,7 @@ def fbs_type_to_jsonschema(ftype: str, table_index: dict, current_out_dir: Path)
     """Convertit un type de champ FlatBuffers en fragment JSON Schema (avec $ref relatif si type objet)."""
     is_array = ftype.startswith("[") and ftype.endswith("]")
     inner = ftype[1:-1] if is_array else ftype
-    # Type qualifié (ex. P2PStorage.Dispersal.Partner) : les noms de table
+    # Type qualifié (ex. S3m.Dispersal.Partner) : les noms de table
     # sont uniques dans tout le dépôt, on résout par le nom nu.
     if inner not in SCALAR_MAP and "." in inner:
         inner = inner.rsplit(".", 1)[1]

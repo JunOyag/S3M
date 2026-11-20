@@ -457,34 +457,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
-name = "p2p-storage-core"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "chiavdf",
- "curve25519-dalek",
- "ed25519-dalek",
- "hkdf",
- "hmac",
- "reed-solomon-erasure",
- "sha2",
- "thiserror",
- "x25519-dalek",
- "zeroize",
-]
-
-[[package]]
-name = "p2p-storage-protocol"
-version = "0.1.0"
-dependencies = [
- "ed25519-dalek",
- "flatbuffers",
- "hex",
- "p2p-storage-core",
- "thiserror",
-]
-
-[[package]]
 name = "parking_lot"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -631,6 +603,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
+]
+
+[[package]]
+name = "s3m-core"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "chiavdf",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "hkdf",
+ "hmac",
+ "reed-solomon-erasure",
+ "sha2",
+ "thiserror",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "s3m-protocol"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "flatbuffers",
+ "hex",
+ "s3m-core",
+ "thiserror",
 ]
 
 [[package]]

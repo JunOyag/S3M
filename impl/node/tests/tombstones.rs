@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use p2p_storage_node::tombstones::*;
+use s3m_node::tombstones::*;
 
 const SENDER_SEED: [u8; 32] = [0x51; 32];
 
@@ -96,7 +96,7 @@ fn replayed_notices_are_refused() {
 /// d'entrée DHT, et réciproquement.
 #[test]
 fn tombstone_label_is_distinct_from_dht_labels() {
-    use p2p_storage_protocol::dht::{EntryKind, SIG_LABEL_MIGRATION_POINTER};
+    use s3m_protocol::dht::{EntryKind, SIG_LABEL_MIGRATION_POINTER};
     for k in [
         EntryKind::Node,
         EntryKind::User,

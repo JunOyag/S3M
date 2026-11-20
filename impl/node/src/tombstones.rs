@@ -4,7 +4,7 @@
 //! - Le Nœud qui supprime ses blocs de parité chez un partenaire lui envoie
 //!   un **avis signé** (preuve d'identité + timestamp) — suppression
 //!   légitime, notifiée, pas une sanction.
-//! - Signature Ed25519 sur `L("p2p-storage/sig/tombstone/v1") ‖ u64be(ts) ‖
+//! - Signature Ed25519 sur `L("s3m/sig/tombstone/v1") ‖ u64be(ts) ‖
 //!   hash₁ ‖ … ‖ hashₙ` (même séparation de contexte que les entrées DHT).
 //! - Anti-rejeu : le timestamp d'un avis doit être strictement supérieur à
 //!   celui du dernier avis appliqué pour ce partenaire.
@@ -13,10 +13,10 @@
 //!   effectivement libérés ; côté disque, le slot est libéré
 //!   (`PhysicalStore::remove_block`).
 
-use p2p_storage_protocol::dht::{sign, verify_signature, DhtError};
+use s3m_protocol::dht::{sign, verify_signature, DhtError};
 
 /// Libellé de signature des avis de suppression.
-pub const SIG_LABEL_TOMBSTONE: &str = "p2p-storage/sig/tombstone/v1";
+pub const SIG_LABEL_TOMBSTONE: &str = "s3m/sig/tombstone/v1";
 
 /// Avis de suppression adressé à un partenaire.
 #[derive(Debug, Clone, PartialEq, Eq)]

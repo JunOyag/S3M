@@ -11,9 +11,9 @@
 //!   échec PoS (fraude), distinct d'une absence de réponse (timeout).
 //! - QoS : le bridage de bande passante ne s'applique jamais aux messages PoS.
 
-use p2p_storage_core::erasure::encode_parity;
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_core::CoreError;
+use s3m_core::erasure::encode_parity;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_core::CoreError;
 
 /// Réponse attendue à un challenge : `SHA-256(fragment ‖ nonce)`.
 pub fn challenge_response(fragment: &[u8], nonce: &[u8; 32]) -> [u8; 32] {

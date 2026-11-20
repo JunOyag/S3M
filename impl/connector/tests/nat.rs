@@ -4,10 +4,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use p2p_storage_connector::exchange::{BlockClient, ExchangeError, NodeSession};
-use p2p_storage_node::exchange::{NodeService, UserAccount};
-use p2p_storage_node::net::{start, NetConfig, NodeNet, RelayLimits};
-use p2p_storage_protocol::exchange::Refusal;
+use s3m_connector::exchange::{BlockClient, ExchangeError, NodeSession};
+use s3m_node::exchange::{NodeService, UserAccount};
+use s3m_node::net::{start, NetConfig, NodeNet, RelayLimits};
+use s3m_protocol::exchange::Refusal;
 
 const USER: [u8; 32] = [0x40; 32];
 const SALT: [u8; 16] = [7; 16];

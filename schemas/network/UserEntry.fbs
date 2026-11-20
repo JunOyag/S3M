@@ -1,10 +1,10 @@
 // ---- UserEntry.fbs ----
 // Entrée DHT d'un User, indexée par user_dht_key. Payload d'une DhtEnvelope
 // signée par sig_priv_user.
-// Source: ST-P2P-STORAGE-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
+// Source: ST-S3M-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
 include "DhtEnvelope.fbs";
 include "../dispersal/DispersalManifest.fbs";
-namespace P2PStorage.Dht;
+namespace S3m.Dht;
 
 // Un attachement (courant ou passé) du User à un Nœud (§3.8, §8.2).
 table AttachmentRecord {
@@ -23,7 +23,7 @@ table UserEntryPlaintext {
   encryption_salt: [ubyte];       // sel du répertoire racine, neuf à chaque réémission (§3.13)
   key_version: uint16;
   attachments: [AttachmentRecord];
-  master_key_chain: [P2PStorage.Dispersal.MasterKeyEntry];
+  master_key_chain: [S3m.Dispersal.MasterKeyEntry];
   schema_version: uint16;
 }
 

@@ -1,11 +1,11 @@
-# Modifications de spécification — ST-P2P-STORAGE-2026-V2 → V3 (proposition)
+# Modifications de spécification — ST-S3M-2026-V2 → V3 (proposition)
 
 > **Intégré le 2026-11-19** dans `docs/` (branche `docs/spec-v3`). Les points ⚠ et ❓
 > ont été arbitrés : voir l'entrée « Spec V3 » de `impl/SPEC_GAPS.md`, qui fait foi
 > en cas d'écart avec ce document (notamment λ = 1024, `K_wrap`, `K_dispersal_block`,
 > `priv_node_recovery`). Ce fichier est conservé comme trace de la proposition.
 
-**Document de référence :** ST-P2P-STORAGE-2026-V2 (05 Sept 2026)
+**Document de référence :** ST-S3M-2026-V2 (05 Sept 2026)
 **Objet :** texte de remplacement section par section, résultant des décisions prises en session. À intégrer tel quel dans la spécification, puis à répercuter dans les pages d'implémentation (`status.yml`, `impl/TECH_STACK.md`, `vdf-verifier-pure.md`, `deploiement.packaging`).
 
 **Légende**
@@ -83,7 +83,7 @@
 > KDF(secret, label, [salt], [entrées publiques…]) :=
 >   HKDF( IKM  = secret,
 >         salt = salt, ou chaîne vide s'il n'y en a pas,
->         info = "p2p-storage/kdf/v1" || L(label) || L(entrée_1) || L(entrée_2) || …,
+>         info = "s3m/kdf/v1" || L(label) || L(entrée_1) || L(entrée_2) || …,
 >         L    = 32 octets )
 > avec L(x) = longueur de x sur 4 octets big-endian, suivie de x
 > ```
@@ -92,7 +92,7 @@
 > - La sortie de 32 octets sert directement de clé symétrique, ou de **graine Ed25519** (forme RFC 8032) pour les clés de signature.
 > - Les libellés ci-dessous sont ceux déjà utilisés dans ce document, inchangés.
 >
-> ⚠ La largeur du préfixe de longueur (4 octets) et la chaîne `"p2p-storage/kdf/v1"` sont proposées ici ; elles doivent être figées avant la génération des vecteurs de test.
+> ⚠ La largeur du préfixe de longueur (4 octets) et la chaîne `"s3m/kdf/v1"` sont proposées ici ; elles doivent être figées avant la génération des vecteurs de test.
 
 | Clé | Secret (IKM) | Label | Sel | Entrées publiques |
 |---|---|---|---|---|
@@ -215,7 +215,7 @@
 // Entrées DHT. Chaque entrée est transportée dans une DhtEnvelope (§3.9) ;
 // la signature Ed25519 porte sur les octets exacts de `payload`.
 include "DispersalManifest.fbs";   // Partner, MasterKeyEntry
-namespace P2PStorage.Dht;
+namespace S3m.Dht;
 
 table DhtEnvelope {
   key_algorithm: uint8;           // 0 = Ed25519 (seul accepté, §3.9)
@@ -238,12 +238,12 @@ table MigrationPointerPayload {
 }
 table SignedMigrationPointer {
   payload: [ubyte];               // sérialisation de MigrationPointerPayload
-  signature: [ubyte];             // Ed25519 sur "p2p-storage/migration-pointer/v1" || payload  ⚠
+  signature: [ubyte];             // Ed25519 sur "s3m/migration-pointer/v1" || payload  ⚠
 }
 
 table NodeSnapshotPointer {       // plaintext chiffré avec K_node_self
   node_snapshot_root_hash: [ubyte];
-  node_snapshot_root_partners: [P2PStorage.Dispersal.Partner];
+  node_snapshot_root_partners: [S3m.Dispersal.Partner];
 }
 
 table NodeEntry {
@@ -271,7 +271,7 @@ table UserEntryPlaintext {        // plaintext chiffré avec K_self
   encryption_salt: [ubyte];       // du répertoire racine (§3.2, §3.13)
   key_version: uint16;
   attachments: [AttachmentRecord];
-  master_key_chain: [P2PStorage.Dispersal.MasterKeyEntry];
+  master_key_chain: [S3m.Dispersal.MasterKeyEntry];
   schema_version: uint16;
 }
 
@@ -284,7 +284,7 @@ table UserEntry {
 
 table DispersalRootPointer {      // plaintext chiffré avec K_attach
   dispersal_root_hash: [ubyte];
-  dispersal_root_partners: [P2PStorage.Dispersal.Partner];
+  dispersal_root_partners: [S3m.Dispersal.Partner];
 }
 
 table DispersalEntry {
@@ -399,7 +399,7 @@ table EmergencyEntry {
 ### 10.1 Remplacer le point 2 et compléter le point 3 de « Mécanisme proposé » par
 
 > 2. **Publication du pointeur.** En cas de compromission de `priv_node` (mais pas de la seed), l'opérateur signe avec `priv_node_recovery` une `SignedMigrationPointer` (§3.11) portant `{old_node_id, new_node_id, seq, timestamp}` et la publie dans le champ `migration_pointer` de l'entrée DHT **de l'ancien** `node_id`.
->    - **Signature.** Ed25519 par `priv_node_recovery` sur `"p2p-storage/migration-pointer/v1" || payload` (séparation de contexte : cette signature ne peut pas être confondue avec une autre signature de la même clé). ⚠ Libellé proposé.
+>    - **Signature.** Ed25519 par `priv_node_recovery` sur `"s3m/migration-pointer/v1" || payload` (séparation de contexte : cette signature ne peut pas être confondue avec une autre signature de la même clé). ⚠ Libellé proposé.
 >    - **Vérification.** Par tout pair, via le `pub_node_recovery` déjà publié dans l'entrée Node (§3.9), sans dépendre de la clé compromise. `old_node_id` doit être celui de l'entrée qui porte le pointeur.
 >    - **Séquence et rejeu.** `seq` est monotone (premier pointeur : 1). Les pairs rejettent un pointeur dont `seq` est inférieur ou égal à celui déjà publié, ce qui empêche le rejeu d'un ancien pointeur et départage deux pointeurs concurrents.
 > 3. **Côté Connecteur.** Lors de la résolution périodique de son Node (ou dès l'échec d'une opération), le Connecteur vérifie la présence d'un `migration_pointer` valide sur l'entrée de son `node_id` connu. Avant de le suivre, il vérifie que **l'entrée Node de `new_node_id` existe et est valide** (preuve VDF vérifiée, signature valide) : un pointeur vers une identité inexistante ou non vérifiable est ignoré. Le suivi automatique se limite à **un seul saut** : si l'entrée de `new_node_id` porte elle-même un `migration_pointer`, le Connecteur ne le suit pas automatiquement et demande une confirmation explicite à l'utilisateur. Un suivi valide déclenche la réattache, selon le même flux que la migration volontaire (§3.7.1).
@@ -449,12 +449,12 @@ table EmergencyEntry {
 
 | Élément | Valeur proposée |
 |---|---|
-| Préfixe de protocole KDF | `"p2p-storage/kdf/v1"` |
+| Préfixe de protocole KDF | `"s3m/kdf/v1"` |
 | Largeur du préfixe de longueur `L(x)` | 4 octets big-endian |
 | Label de `K_attach` | `"attach"` (absent de la V2) |
 | AAD d'un bloc de données | en-tête de version de 2 octets |
 | AAD des blobs DHT | libellé du type d'entrée + `schema_version` (u16 big-endian) |
-| Libellé de signature du `migration_pointer` | `"p2p-storage/migration-pointer/v1"` |
+| Libellé de signature du `migration_pointer` | `"s3m/migration-pointer/v1"` |
 | Ancrage du lissage | instants Unix `t ≡ offset_s (mod 2 592 000)` |
 | Taille du jeton d'API locale | 256 bits |
 | Jeton WebSocket | premier message |

@@ -1,4 +1,4 @@
-//! p2p-storage-core — Phase 0 (impl/layers.yml)
+//! s3m-core — Phase 0 (impl/layers.yml)
 //!
 //! Ce crate ne fait AUCUNE I/O (réseau, disque, DHT). Il expose uniquement les
 //! primitives cryptographiques et de sérialisation utilisées par `impl/node`

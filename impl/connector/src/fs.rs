@@ -11,14 +11,14 @@
 //!   déchiffrement ; `size_bytes` fait foi pour retirer le padding.
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::k_block::{derive_k_block, open_block, seal_block, BLOCK_PLAINTEXT_LEN};
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_core::CoreError;
-use p2p_storage_protocol::fb::fs;
-use p2p_storage_protocol::layout::FILE_BLOCK_DATA_BYTES;
+use s3m_core::k_block::{derive_k_block, open_block, seal_block, BLOCK_PLAINTEXT_LEN};
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_core::CoreError;
+use s3m_protocol::fb::fs;
+use s3m_protocol::layout::FILE_BLOCK_DATA_BYTES;
 
 /// En-tête de version des blocs (version de protocole 1).
-pub const BLOCK_HEADER: [u8; 2] = p2p_storage_core::version::CURRENT_HEADER;
+pub const BLOCK_HEADER: [u8; 2] = s3m_core::version::CURRENT_HEADER;
 
 /// Hash d'un bloc chiffré.
 pub type BlockHash = [u8; 32];

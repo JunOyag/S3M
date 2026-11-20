@@ -8,10 +8,10 @@
 //! `K_dispersal_content` — **jamais** l'ancien `K_attach` ni
 //! `sig_priv_dispersal`. Aucune coopération de l'ancien Nœud n'est requise.
 
-use p2p_storage_core::k_attach::derive_k_attach_as_user;
-use p2p_storage_core::k_dispersal::derive_k_dispersal_content;
-use p2p_storage_protocol::dht::{open_blob, DhtError, EntryKind};
-use p2p_storage_protocol::fb::dht as fb;
+use s3m_core::k_attach::derive_k_attach_as_user;
+use s3m_core::k_dispersal::derive_k_dispersal_content;
+use s3m_protocol::dht::{open_blob, DhtError, EntryKind};
+use s3m_protocol::fb::dht as fb;
 
 /// Ce que reçoit le nouveau Nœud. Par construction, aucun champ ne permet
 /// de signer sur l'ancienne entrée DHT.
@@ -29,7 +29,7 @@ pub struct Handoff {
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
     #[error(transparent)]
-    Core(#[from] p2p_storage_core::CoreError),
+    Core(#[from] s3m_core::CoreError),
     #[error(transparent)]
     Dht(#[from] DhtError),
     #[error("entrée DispersalManifest mal formée : {0}")]

@@ -4,17 +4,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_core::k_attach::derive_k_attach_as_user;
-use p2p_storage_core::keys::{derive_sig_priv_user, derive_sig_pub_user};
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_node::dht_directory::{DhtConfig, DhtNode};
-use p2p_storage_node::dispersal_engine::DispersalState;
-use p2p_storage_node::exchange::*;
-use p2p_storage_node::geo::{is_private, year_month, Geo};
-use p2p_storage_node::partnering::*;
-use p2p_storage_node::publish::{publish_if_due, NodeEntryState};
-use p2p_storage_protocol::entries::{node_entry_envelope, NodeEntryParams};
-use p2p_storage_protocol::exchange::*;
+use s3m_core::k_attach::derive_k_attach_as_user;
+use s3m_core::keys::{derive_sig_priv_user, derive_sig_pub_user};
+use s3m_core::vdf::VdfProof;
+use s3m_node::dht_directory::{DhtConfig, DhtNode};
+use s3m_node::dispersal_engine::DispersalState;
+use s3m_node::exchange::*;
+use s3m_node::geo::{is_private, year_month, Geo};
+use s3m_node::partnering::*;
+use s3m_node::publish::{publish_if_due, NodeEntryState};
+use s3m_protocol::entries::{node_entry_envelope, NodeEntryParams};
+use s3m_protocol::exchange::*;
 
 const A: [u8; 32] = [0x10; 32];
 const B: [u8; 32] = [0x20; 32];

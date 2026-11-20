@@ -83,7 +83,7 @@ préfixe de la valeur stockée `wrapped_key` (48 o, sans en-tête).
 KDF(secret, label, [salt], [entrées publiques…]) :=
   HKDF( IKM  = secret,
         salt = salt, ou chaîne vide s'il n'y en a pas,
-        info = "p2p-storage/kdf/v1" ‖ L(label) ‖ L(entrée_1) ‖ L(entrée_2) ‖ …,
+        info = "s3m/kdf/v1" ‖ L(label) ‖ L(entrée_1) ‖ L(entrée_2) ‖ …,
         longueur de sortie = 32 octets )
 
 L(x) = longueur de x sur 4 octets big-endian, suivie de x
@@ -92,7 +92,7 @@ L(x) = longueur de x sur 4 octets big-endian, suivie de x
 - Le **secret** est toujours l'IKM, seul ; les entrées publiques
   (`pub_user`, index de bloc, versions…) vont dans `info`, **jamais** dans
   l'IKM.
-- Le préfixe `"p2p-storage/kdf/v1"` est écrit brut (sans longueur), une
+- Le préfixe `"s3m/kdf/v1"` est écrit brut (sans longueur), une
   seule fois, en tête de chaque `info` : il sépare les dérivations de ce
   protocole de tout autre usage de HKDF sur les mêmes secrets.
 - L'encodage `L(·)` rend les frontières non ambiguës : deux dérivations aux
@@ -125,7 +125,7 @@ registre est la **source unique** des étiquettes ; deux règles :
    le secret d'entrée ou la page qui la définit.
 2. **Immuabilité** : une étiquette publiée n'est jamais détournée vers une
    autre fonction. Une révision de la convention elle-même change le préfixe
-   (`"p2p-storage/kdf/v2"`), donc la version de protocole.
+   (`"s3m/kdf/v2"`), donc la version de protocole.
 
 L'unicité fait l'objet d'un test unitaire du noyau (`impl/core`,
 `tests/labels.rs`).
@@ -161,8 +161,8 @@ L'unicité fait l'objet d'un test unitaire du noyau (`impl/core`,
   document de modifications V3 est écartée au profit de cette dérivation
   déjà arbitrée.
 - Étiquettes retirées en V3, jamais réutilisables :
-  `"p2p-storage/block/v1"`, `"p2p-storage/synthetic-nonce/v1"`,
-  `"p2p-storage/master-key-wrap/v1"`.
+  `"s3m/block/v1"`, `"s3m/synthetic-nonce/v1"`,
+  `"s3m/master-key-wrap/v1"`.
 
 ### Dérivées par simple hachage (hors KDF)
 

@@ -17,10 +17,8 @@
 
 use std::collections::HashMap;
 
-use p2p_storage_core::error::CoreError;
-use p2p_storage_core::master_key_chain::{
-    resolve_master_key, rewrap_chain_on_rotation, MasterKeyEntry,
-};
+use s3m_core::error::CoreError;
+use s3m_core::master_key_chain::{resolve_master_key, rewrap_chain_on_rotation, MasterKeyEntry};
 
 /// En-tête de version de protocole (2 o, `u16` gros-boutiste) — valeur `1`
 /// en vigueur (`deploiement.formats-serialisation`). Reprend la convention

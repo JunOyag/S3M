@@ -1,14 +1,14 @@
 ---
 id: home
 kind: narrative
-title: "Documentation P2P Storage — Accueil"
+title: "Documentation S3m — Accueil"
 section: "—"
 status: draft
 ---
 
 # Spécification Technique — Protocole P2P de Stockage Distribué
 
-Cette documentation remplace le document monolithique `ST-P2P-STORAGE-2026-V2.md`
+Cette documentation remplace le document monolithique `ST-S3M-2026-V2.md`
 par un ensemble de fichiers **interconnectés par référence** plutôt que par
 copier-coller : chaque fait technique n'existe qu'à **un seul endroit**, et
 toute autre page qui en a besoin y renvoie.

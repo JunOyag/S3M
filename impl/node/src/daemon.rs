@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use libp2p::Multiaddr;
-use p2p_storage_core::identity_derivation::{derive_identity_seed, mnemonic_to_seed, IdentityRole};
-use p2p_storage_protocol::exchange::{
+use s3m_core::identity_derivation::{derive_identity_seed, mnemonic_to_seed, IdentityRole};
+use s3m_protocol::exchange::{
     decode_request, encode_request, Body, Delegation, Request, SILENT_NODE_RETENTION_SECONDS,
 };
 use serde::{Deserialize, Serialize};
@@ -564,7 +564,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         .map(|v| json!({ "volume": v.volume_id, "chemin": v.mount_path, "capacité (octets)": v.max_capacity_bytes }))
         .collect();
     json!({
-        "titre": "Nœud P2P-Storage",
+        "titre": "Nœud S3m",
         "carte": true,
         "identité": {
             "node_id": hx(&s.node_id()),

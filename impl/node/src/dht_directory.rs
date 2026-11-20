@@ -7,7 +7,7 @@
 //!   configuration (le mécanisme complet relève de `network.bootstrap`).
 //! - **Tout enregistrement est vérifié avant stockage**, qu'il vienne d'un
 //!   pair (`StoreInserts::FilterBoth`) ou d'un `put` local, et à nouveau à la
-//!   lecture : règles de `p2p_storage_protocol::dht::verify_envelope`.
+//!   lecture : règles de `s3m_protocol::dht::verify_envelope`.
 //! - Pas de suppression ; l'expiration suit le TTL du type d'entrée ; la
 //!   republication est à la charge du propriétaire (pas de republication
 //!   automatique Kademlia).
@@ -21,13 +21,13 @@ use libp2p::kad::{self, GetRecordOk, QueryResult, Quorum, Record, RecordKey};
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{identity, noise, tcp, yamux, Multiaddr, PeerId, StreamProtocol, Swarm};
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_core::CoreError;
-use p2p_storage_protocol::dht::{accept_record, DhtError};
+use s3m_core::vdf::VdfProof;
+use s3m_core::CoreError;
+use s3m_protocol::dht::{accept_record, DhtError};
 use tokio::sync::{mpsc, oneshot};
 
-/// Protocole Kademlia propre au réseau P2P-Storage.
-pub const KAD_PROTOCOL: &str = "/p2p-storage/kad/1.0.0";
+/// Protocole Kademlia propre au réseau S3m.
+pub const KAD_PROTOCOL: &str = "/s3m/kad/1.0.0";
 
 /// Vérificateur VDF partagé entre tâches (`chiavdf` en production).
 pub type SharedVdfVerifier =
@@ -35,7 +35,7 @@ pub type SharedVdfVerifier =
 
 /// Vérificateur de production : `chiavdf` (feature `vdf` de `impl/core`).
 pub fn chiavdf_verifier() -> SharedVdfVerifier {
-    Arc::new(p2p_storage_core::vdf::verify_identity_proof)
+    Arc::new(s3m_core::vdf::verify_identity_proof)
 }
 
 /// Configuration de l'adaptateur.
@@ -194,7 +194,7 @@ impl DhtNode {
     }
 }
 
-/// Règle d'acceptation : `p2p_storage_protocol::dht::accept_record`.
+/// Règle d'acceptation : `s3m_protocol::dht::accept_record`.
 fn accept(
     key: &[u8],
     envelope: &[u8],
@@ -409,6 +409,6 @@ pub async fn delete_dispersal_entry(
     sig_priv_dispersal: &[u8; 32],
     now: u64,
 ) -> Result<(), DhtNodeError> {
-    let env = p2p_storage_protocol::dht::dispersal_deletion_envelope(sig_priv_dispersal, now);
+    let env = s3m_protocol::dht::dispersal_deletion_envelope(sig_priv_dispersal, now);
     node.put(dht_key, env).await
 }

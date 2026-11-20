@@ -10,7 +10,7 @@ verified_by: []
 # Stockage Physique des Blocs sur Volume
 
 !!! info "Ajout post-V2"
-    Ce mécanisme est absent de `ST-P2P-STORAGE-2026-V2.md`.
+    Ce mécanisme est absent de `ST-S3M-2026-V2.md`.
     [`node.VolumeConfig`](../02-schemas/node/VolumeConfig.md) (§3.11) ne
     définissait qu'un point de montage — jamais la façon dont les blocs de
     64 KiO sont réellement disposés dessus. Sans ce mécanisme, un Nœud

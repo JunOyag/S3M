@@ -10,9 +10,9 @@
 
 use std::sync::Mutex;
 
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_protocol::dispersal::Id;
-use p2p_storage_protocol::snapshot::*;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_protocol::dispersal::Id;
+use s3m_protocol::snapshot::*;
 
 use crate::dispersal_engine::{
     disperse, retire, DispersalState, EngineConfig, Fabric, PartnerTable,

@@ -14,7 +14,7 @@
 //! §7.1 TEST 1 / TEST 2 réutilisées comme graines d'entrée seulement —
 //! jamais comme valeurs attendues).
 
-use p2p_storage_core::k_self::derive_k_self;
+use s3m_core::k_self::derive_k_self;
 
 include!("vectors/symmetric_suite_expected.rs");
 

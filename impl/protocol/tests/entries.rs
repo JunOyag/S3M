@@ -1,8 +1,8 @@
 //! Construction des entrées DHT Node et User (`network.dht-directory`).
 
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_protocol::dht::accept_record;
-use p2p_storage_protocol::entries::*;
+use s3m_core::vdf::VdfProof;
+use s3m_protocol::dht::accept_record;
+use s3m_protocol::entries::*;
 
 fn pk(s: &[u8; 32]) -> [u8; 32] {
     ed25519_dalek::SigningKey::from_bytes(s)

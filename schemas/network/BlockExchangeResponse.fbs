@@ -2,7 +2,7 @@
 // Réponses du protocole d'échange de blocs (protocols.echange-blocs).
 // Source: protocols.echange-blocs (fonctionnalité ajoutée le 2026-11-20)
 include "BlockExchange.fbs";
-namespace P2PStorage.Exchange;
+namespace S3m.Exchange;
 
 enum ErrorCode : ubyte {
   NotFound = 0,        // bloc ou fragment absent

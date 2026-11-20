@@ -4,7 +4,7 @@
 //! bloc : 65 506 o de clair par bloc).
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::k_block::BLOCK_PLAINTEXT_LEN;
+use s3m_core::k_block::BLOCK_PLAINTEXT_LEN;
 
 use crate::fb::fs::{
     Attributes, AttributesArgs, DirectoryBlock, DirectoryBlockArgs, DirectoryEntry,

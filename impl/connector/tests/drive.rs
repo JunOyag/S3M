@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_connector::drive::*;
-use p2p_storage_connector::fs::BlockHash;
+use s3m_connector::drive::*;
+use s3m_connector::fs::BlockHash;
 
 #[derive(Default)]
 struct MemNode {

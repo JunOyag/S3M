@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use p2p_storage_protocol::dht::emergency_dht_key;
+use s3m_protocol::dht::emergency_dht_key;
 
 use crate::quota_sync::{integrate, Integration, PendingWrite};
 

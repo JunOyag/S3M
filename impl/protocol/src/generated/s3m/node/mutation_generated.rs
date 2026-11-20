@@ -79,8 +79,8 @@ impl<'a> Mutation<'a> {
   }
   #[inline]
   #[allow(non_snake_case)]
-  pub fn payload_as_p2_pstorage_dispersal_block_entry(&self) -> Option<super::dispersal::BlockEntry<'a>> {
-    if self.payload_type() == MutationPayload::P2PStorage_Dispersal_BlockEntry {
+  pub fn payload_as_s3m_dispersal_block_entry(&self) -> Option<super::dispersal::BlockEntry<'a>> {
+    if self.payload_type() == MutationPayload::S3m_Dispersal_BlockEntry {
       self.payload().map(|t| {
        // Safety:
        // Created from a valid Table for this object
@@ -150,7 +150,7 @@ impl flatbuffers::Verifiable for Mutation<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("op", Self::VT_OP, false)?
      .visit_union::<MutationPayload, _>("payload_type", Self::VT_PAYLOAD_TYPE, "payload", Self::VT_PAYLOAD, false, |key, v, pos| {
         match key {
-          MutationPayload::P2PStorage_Dispersal_BlockEntry => v.verify_union_variant::<flatbuffers::ForwardsUOffset<super::dispersal::BlockEntry>>("MutationPayload::P2PStorage_Dispersal_BlockEntry", pos),
+          MutationPayload::S3m_Dispersal_BlockEntry => v.verify_union_variant::<flatbuffers::ForwardsUOffset<super::dispersal::BlockEntry>>("MutationPayload::S3m_Dispersal_BlockEntry", pos),
           MutationPayload::StripeRemoval => v.verify_union_variant::<flatbuffers::ForwardsUOffset<StripeRemoval>>("MutationPayload::StripeRemoval", pos),
           MutationPayload::BlacklistedPartner => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BlacklistedPartner>>("MutationPayload::BlacklistedPartner", pos),
           MutationPayload::PartnerAccount => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PartnerAccount>>("MutationPayload::PartnerAccount", pos),
@@ -222,8 +222,8 @@ impl core::fmt::Debug for Mutation<'_> {
       ds.field("op", &self.op());
       ds.field("payload_type", &self.payload_type());
       match self.payload_type() {
-        MutationPayload::P2PStorage_Dispersal_BlockEntry => {
-          if let Some(x) = self.payload_as_p2_pstorage_dispersal_block_entry() {
+        MutationPayload::S3m_Dispersal_BlockEntry => {
+          if let Some(x) = self.payload_as_s3m_dispersal_block_entry() {
             ds.field("payload", &x)
           } else {
             ds.field("payload", &"InvalidFlatbuffer: Union discriminant does not match value.")

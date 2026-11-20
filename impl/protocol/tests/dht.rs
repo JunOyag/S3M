@@ -4,10 +4,10 @@
 //! est couverte par `impl/core`, tests `vdf_smoke` et `vdf_fixtures`).
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_core::CoreError;
-use p2p_storage_protocol::dht::*;
-use p2p_storage_protocol::fb::dht as fb;
+use s3m_core::vdf::VdfProof;
+use s3m_core::CoreError;
+use s3m_protocol::dht::*;
+use s3m_protocol::fb::dht as fb;
 
 include!("vectors/dht_expected.rs");
 
@@ -127,7 +127,7 @@ fn signed_user(payload: &[u8]) -> Vec<u8> {
 fn signature_over_labelled_payload_matches_generated_vector() {
     let sig = sign(
         &arr(FX_SIG_SEED_HEX),
-        "p2p-storage/sig/user-entry/v1",
+        "s3m/sig/user-entry/v1",
         &hex::decode(FX_SIG_PAYLOAD_HEX).unwrap(),
     );
     assert_eq!(hex::encode(sig), SIGNATURE_HEX);

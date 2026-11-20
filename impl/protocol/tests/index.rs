@@ -1,7 +1,7 @@
 //! Invariants de `protocols.index-adaptatif`.
 
-use p2p_storage_protocol::fb::dispersal::IndexNode;
-use p2p_storage_protocol::index::*;
+use s3m_protocol::fb::dispersal::IndexNode;
+use s3m_protocol::index::*;
 
 /// Facteur de branchement mesuré pour N = 16 (k = 4, coef = 3) ; la spec
 /// estimait « ≤ 75 » ; la mesure sur les types générés donne 68.
@@ -48,9 +48,9 @@ fn index_node_is_sealed_per_node_salt() {
     let header = [0, 1];
     let bytes = {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let n = p2p_storage_protocol::fb::dispersal::IndexNode::create(
+        let n = s3m_protocol::fb::dispersal::IndexNode::create(
             &mut fbb,
-            &p2p_storage_protocol::fb::dispersal::IndexNodeArgs {
+            &s3m_protocol::fb::dispersal::IndexNodeArgs {
                 is_leaf: true,
                 ..Default::default()
             },

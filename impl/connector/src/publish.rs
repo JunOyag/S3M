@@ -12,9 +12,9 @@
 
 use std::path::Path;
 
-use p2p_storage_core::keys::derive_user_dht_key;
-use p2p_storage_core::vdf::{generate_identity_proof, VdfProof};
-use p2p_storage_protocol::entries::{
+use s3m_core::keys::derive_user_dht_key;
+use s3m_core::vdf::{generate_identity_proof, VdfProof};
+use s3m_protocol::entries::{
     decode_proof, encode_proof, open_user_entry, user_entry_envelope, user_identity, UserPlain,
 };
 

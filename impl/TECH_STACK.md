@@ -5,7 +5,7 @@ développement par des agents IA, stabilité, maintenabilité, rapidité (au
 sens performance).
 
 > **Révision V3 (2026-11-19)** : le Connecteur passe de TypeScript/Bun à un
-> **binaire Rust natif** (`ST-P2P-STORAGE-2026-V3-modifications.md` §1,
+> **binaire Rust natif** (`ST-S3M-2026-V3-modifications.md` §1,
 > §11). Conséquences : plus aucune cible WASM, un crate `impl/protocol`
 > partagé par le Nœud et le Connecteur, et le vérificateur VDF maison est
 > retiré (`chiavdf` est le seul vérificateur). L'ancienne justification
@@ -156,8 +156,8 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
 
 ## Exécutables et lecteur monté
 
-- `p2p-storage-node` (`impl/node`, `init <dir>` puis `<config.json>`) ; image
-  Docker : `docker build -f impl/node/Dockerfile -t p2p-storage-node impl`
+- `s3m-node` (`impl/node`, `init <dir>` puis `<config.json>`) ; image
+  Docker : `docker build -f impl/node/Dockerfile -t s3m-node impl`
   (feature `vdf`, réseau de l'hôte : l'API du dashboard n'écoute que
   `127.0.0.1`).
   Vérifiée le 2026-11-20 : preuve VDF en ≈ 20 s dans le conteneur, entrée
@@ -166,7 +166,7 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   le conteneur au poste : le dashboard n'y est joignable que depuis un
   conteneur partageant son réseau (`--network container:<nom>`) ; sur un
   hôte Linux, il l'est depuis l'hôte.
-- `p2p-storage-connector` (`impl/connector`) ; lecteur WinFsp derrière la
+- `s3m-connector` (`impl/connector`) ; lecteur WinFsp derrière la
   feature `mount` : WinFsp installé (exécution) et LLVM pour bindgen
   (compilation, `LIBCLANG_PATH="C:/Program Files/LLVM/bin"`) —
   `cargo build --release --features mount`. La DLL WinFsp est cherchée dans
@@ -177,7 +177,7 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   possibles (`relays`). Sous Windows, les connexions sortantes prennent un
   port neuf : le perçage de NAT passe surtout par QUIC.
 - Carte du dashboard Nœud : base de géolocalisation DB-IP « City Lite »
-  (≈ 130 Mo, CC BY 4.0) téléchargée par `p2p-storage-node geoip-update
+  (≈ 130 Mo, CC BY 4.0) téléchargée par `s3m-node geoip-update
   <data_dir>` (mise à jour mensuelle à relancer) ; sans elle, la carte compte
   tous les points comme non localisés.
 - Entrées DHT : le Nœud publie son entrée (preuve VDF calculée une fois,

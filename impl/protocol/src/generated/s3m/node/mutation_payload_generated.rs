@@ -17,7 +17,7 @@ pub const ENUM_MAX_MUTATION_PAYLOAD: u8 = 4;
 #[allow(non_camel_case_types)]
 pub const ENUM_VALUES_MUTATION_PAYLOAD: [MutationPayload; 5] = [
   MutationPayload::NONE,
-  MutationPayload::P2PStorage_Dispersal_BlockEntry,
+  MutationPayload::S3m_Dispersal_BlockEntry,
   MutationPayload::StripeRemoval,
   MutationPayload::BlacklistedPartner,
   MutationPayload::PartnerAccount,
@@ -30,7 +30,7 @@ pub struct MutationPayload(pub u8);
 #[allow(non_upper_case_globals)]
 impl MutationPayload {
   pub const NONE: Self = Self(0);
-  pub const P2PStorage_Dispersal_BlockEntry: Self = Self(1);
+  pub const S3m_Dispersal_BlockEntry: Self = Self(1);
   pub const StripeRemoval: Self = Self(2);
   pub const BlacklistedPartner: Self = Self(3);
   pub const PartnerAccount: Self = Self(4);
@@ -39,7 +39,7 @@ impl MutationPayload {
   pub const ENUM_MAX: u8 = 4;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
-    Self::P2PStorage_Dispersal_BlockEntry,
+    Self::S3m_Dispersal_BlockEntry,
     Self::StripeRemoval,
     Self::BlacklistedPartner,
     Self::PartnerAccount,
@@ -48,7 +48,7 @@ impl MutationPayload {
   pub fn variant_name(self) -> Option<&'static str> {
     match self {
       Self::NONE => Some("NONE"),
-      Self::P2PStorage_Dispersal_BlockEntry => Some("P2PStorage_Dispersal_BlockEntry"),
+      Self::S3m_Dispersal_BlockEntry => Some("S3m_Dispersal_BlockEntry"),
       Self::StripeRemoval => Some("StripeRemoval"),
       Self::BlacklistedPartner => Some("BlacklistedPartner"),
       Self::PartnerAccount => Some("PartnerAccount"),

@@ -12,13 +12,11 @@
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::symmetric_suite::{
+use s3m_core::symmetric_suite::{
     aead_open, aead_seal, canonical_encode, hash_sha256, AEAD_NONCE_LEN, AEAD_TAG_LEN,
 };
-use p2p_storage_core::vdf::{
-    check_key_algorithm, VdfProof, KEY_ALGORITHM_ED25519, TAGGED_IDENTITY_LEN,
-};
-use p2p_storage_core::CoreError;
+use s3m_core::vdf::{check_key_algorithm, VdfProof, KEY_ALGORITHM_ED25519, TAGGED_IDENTITY_LEN};
+use s3m_core::CoreError;
 use thiserror::Error;
 
 use crate::fb::dht;
@@ -34,7 +32,7 @@ pub const REPUBLISH_PERIOD_S: u64 = 2_592_000;
 /// Version de protocole portée par l'AAD des blobs (`schema_version`).
 pub const SCHEMA_VERSION: u16 = 1;
 /// Libellé de signature du pointeur de migration.
-pub const SIG_LABEL_MIGRATION_POINTER: &str = "p2p-storage/sig/migration-pointer/v1";
+pub const SIG_LABEL_MIGRATION_POINTER: &str = "s3m/sig/migration-pointer/v1";
 
 /// Erreurs de vérification d'une entrée DHT — chaque cause est distincte.
 #[derive(Debug, Error)]
@@ -78,10 +76,10 @@ impl EntryKind {
     /// Libellé de signature (séparation de contexte uniforme, ❓3).
     pub fn signature_label(self) -> &'static str {
         match self {
-            Self::Node => "p2p-storage/sig/node-entry/v1",
-            Self::User => "p2p-storage/sig/user-entry/v1",
-            Self::Dispersal => "p2p-storage/sig/dispersal-entry/v1",
-            Self::Emergency => "p2p-storage/sig/emergency-entry/v1",
+            Self::Node => "s3m/sig/node-entry/v1",
+            Self::User => "s3m/sig/user-entry/v1",
+            Self::Dispersal => "s3m/sig/dispersal-entry/v1",
+            Self::Emergency => "s3m/sig/emergency-entry/v1",
         }
     }
 
@@ -235,7 +233,7 @@ pub struct VerifyContext<'a> {
 }
 
 /// Vérificateur VDF injecté : `chiavdf` en production
-/// (`p2p_storage_core::vdf::verify_identity_proof`), un double en test.
+/// (`s3m_core::vdf::verify_identity_proof`), un double en test.
 pub type VdfVerifier<'a> =
     &'a dyn Fn(&[u8; TAGGED_IDENTITY_LEN], &VdfProof) -> Result<bool, CoreError>;
 

@@ -1,6 +1,6 @@
 //! Capacités de bloc mesurées — ids `fs.FileBlock`, `fs.DirectoryBlock`.
 
-use p2p_storage_protocol::layout::{
+use s3m_protocol::layout::{
     fits_in_block, serialized_file_block_len, serialized_reference_directory_block_len,
     DIRECTORY_BLOCK_REFERENCE_ENTRIES, FILE_BLOCK_DATA_BYTES,
 };

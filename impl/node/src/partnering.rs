@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use libp2p::multiaddr::Protocol;
 use libp2p::{identity, Multiaddr, PeerId};
-use p2p_storage_protocol::dispersal::Id;
-use p2p_storage_protocol::exchange::{Body, Request, Response};
+use s3m_protocol::dispersal::Id;
+use s3m_protocol::exchange::{Body, Request, Response};
 use serde::{Deserialize, Serialize};
 
 use crate::dht_directory::DhtNode;

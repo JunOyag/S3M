@@ -1,8 +1,8 @@
 // ---- DhtEnvelope.fbs ----
 // Enveloppe signée commune à toutes les entrées DHT, preuve VDF et pointeur
 // de migration d'identité du Nœud.
-// Source: ST-P2P-STORAGE-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
-namespace P2PStorage.Dht;
+// Source: ST-S3M-2026-V3-modifications.md §5.1 (V3, intégré 2026-11-19)
+namespace S3m.Dht;
 
 // Enveloppe de toute entrée DHT (§3.9). La signature porte sur L(libellé du type) ‖ payload, octets exacts reçus — jamais réserialisés.
 table DhtEnvelope {
@@ -29,5 +29,5 @@ table MigrationPointerPayload {
 /// Pointeur de migration signé par priv_node_recovery (§5.2).
 table SignedMigrationPointer {
   payload: [ubyte];               // sérialisation de MigrationPointerPayload
-  signature: [ubyte];             // Ed25519 sur L("p2p-storage/sig/migration-pointer/v1") ‖ payload
+  signature: [ubyte];             // Ed25519 sur L("s3m/sig/migration-pointer/v1") ‖ payload
 }

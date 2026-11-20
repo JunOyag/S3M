@@ -211,11 +211,11 @@ entries:
       - symmetric_suite_vectors::wrap_composition_is_48_octets_without_header
     notes: >-
       Spec V3 : convention KDF unique symmetric_suite::kdf (préfixe
-      p2p-storage/kdf/v1, L sur 4 o BE, IKM = secret seul, sortie 32 o),
+      s3m/kdf/v1, L sur 4 o BE, IKM = secret seul, sortie 32 o),
       K_wrap dans la convention, nonce synthétique et HMAC retirés, registre
       de 12 étiquettes + étiquettes retirées. Vecteurs : RFC 8439, RFC 5869,
       RFC 6234 + compositions générées par gen_symmetric_suite_vectors.py
-      (cryptography). Transitoire : labels::P2P_STORAGE_BLOCK_V1 subsiste
+      (cryptography). Transitoire : labels::S3M_BLOCK_V1 subsiste
       jusqu'à la tâche crypto.k-block.
   deploiement.disaster-recovery:
     kind: narrative
@@ -273,8 +273,8 @@ entries:
       - daemon::saved_state_roundtrips_users_partners_and_addresses
       - daemon::connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboard
     notes: >-
-      Livrés (2026-11-20) : exécutables p2p-storage-node et
-      p2p-storage-connector (init + config JSON, phrase de récupération BIP-39),
+      Livrés (2026-11-20) : exécutables s3m-node et
+      s3m-connector (init + config JSON, phrase de récupération BIP-39),
       stockage disque du Nœud, état persistant, API locale HTTP/WebSocket
       protégée (local_api), dashboards statiques servis par les binaires, image
       Docker du Nœud (impl/node/Dockerfile). Restent pour clore : dashboards
@@ -879,7 +879,7 @@ entries:
       - tombstones::tombstone_label_is_distinct_from_dht_labels
     notes: >-
       impl/node/src/tombstones.rs : avis signé (priv_node, libellé
-      p2p-storage/sig/tombstone/v1, timestamp), anti-rejeu par timestamp
+      s3m/sig/tombstone/v1, timestamp), anti-rejeu par timestamp
       strictement croissant, libération des seuls blocs effectivement
       hébergés, décrément équivalent des deux comptes PartnerAccount. Format
       précisé dans la page. Transport de l'avis : protocole d'échange
@@ -1170,7 +1170,7 @@ entries:
       - exchange::every_request_and_response_roundtrips
       - exchange::oversize_foreign_and_unknown_version_messages_are_rejected
     notes: >-
-      Types générés (impl/protocol/src/generated/p2_pstorage/exchange), codage
+      Types générés (impl/protocol/src/generated/s3m/exchange), codage
       dans protocol::exchange.
   network.BlockResponse:
     kind: schema
@@ -1180,7 +1180,7 @@ entries:
       - exchange::every_request_and_response_roundtrips
       - exchange::oversize_foreign_and_unknown_version_messages_are_rejected
     notes: >-
-      Types générés (impl/protocol/src/generated/p2_pstorage/exchange), codage
+      Types générés (impl/protocol/src/generated/s3m/exchange), codage
       dans protocol::exchange.
   network.RescueGrant:
     kind: schema

@@ -9,7 +9,7 @@
 
 use std::time::Instant;
 
-use p2p_storage_core::vdf::{
+use s3m_core::vdf::{
     generate_identity_proof_params, tagged_identity, verify_identity_proof_params, VdfProof,
     FORM_SIZE, KEY_ALGORITHM_ED25519, TAGGED_IDENTITY_LEN,
 };

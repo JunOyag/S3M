@@ -10,9 +10,9 @@
 //!   stripe) chiffré sous `K_node_self` dans l'entrée Node.
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::k_block::{open_block, seal_block, BLOCK_PLAINTEXT_LEN};
-use p2p_storage_core::k_node_self::{derive_k_node_self, derive_k_node_snapshot};
-use p2p_storage_core::version::CURRENT_HEADER;
+use s3m_core::k_block::{open_block, seal_block, BLOCK_PLAINTEXT_LEN};
+use s3m_core::k_node_self::{derive_k_node_self, derive_k_node_snapshot};
+use s3m_core::version::CURRENT_HEADER;
 
 use crate::dht::{open_blob, EntryKind};
 use crate::dispersal::{

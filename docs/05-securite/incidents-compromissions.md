@@ -42,7 +42,7 @@ invalide leur attachement simultanément, nécessitant une réattache complète.
    portant `{old_node_id, new_node_id, seq, timestamp}` et la publie dans
    le champ `migration_pointer` de l'entrée DHT **de l'ancien** `node_id`.
     - **Signature** : Ed25519 par `priv_node_recovery` sur
-      `L("p2p-storage/sig/migration-pointer/v1") ‖ payload` — règle de
+      `L("s3m/sig/migration-pointer/v1") ‖ payload` — règle de
       séparation de contexte commune à toutes les signatures DHT
       ([`network.dht-directory`](../01-network-dht/dht-directory.md)).
     - **Vérification** : par tout pair, via le `pub_node_recovery` déjà

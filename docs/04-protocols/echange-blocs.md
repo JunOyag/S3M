@@ -24,7 +24,7 @@ la spec décrivait *ce qui* circule — voir
   ([`network.dht-directory`](../01-network-dht/dht-directory.md#roles-reseau-et-identite-libp2p)) :
   TCP + Noise + Yamux. Le `PeerId` d'un Nœud est dérivé de `pub_node`, celui
   du Connecteur est éphémère.
-- Protocole **requête/réponse** `/p2p-storage/blocks/1` : une requête
+- Protocole **requête/réponse** `/s3m/blocks/1` : une requête
   [`network.BlockRequest`](../02-schemas/network/BlockRequest.md) et une
   réponse [`network.BlockResponse`](../02-schemas/network/BlockResponse.md)
   par flux, chacune préfixée de sa longueur (`u32be`).
@@ -107,7 +107,7 @@ répond qu'aux Nœuds avec lesquels il a un compte de troc
 ou ne libère que les fragments qu'il héberge **pour ce Nœud**.
 
 - `StoreFragment` → `FragmentReceipt` : signature Ed25519 du partenaire sur
-  `L("p2p-storage/sig/fragment-receipt/v1") ‖ hash ‖ node_id_déposant`. Seul
+  `L("s3m/sig/fragment-receipt/v1") ‖ hash ‖ node_id_déposant`. Seul
   un reçu valide compte parmi les k+2 confirmations de la dispersion.
 - `Challenge` → `ChallengeResponse` : `SHA-256(fragment ‖ nonce)` ; un
   `FetchFragment` adressé à un partenaire vaut lui aussi challenge.
@@ -130,7 +130,7 @@ partenaires à n'importe qui, le Nœud lui délivre une
    connexion où il reste moins de la moitié de cette durée.
 2. Nœud injoignable : le Connecteur présente `RescueCredential` — l'autorisation et
    une signature de `grant_priv` sur
-   `L("p2p-storage/sig/rescue-session/v1") ‖ L(peer_demandeur) ‖ L(peer_partenaire)`.
+   `L("s3m/sig/rescue-session/v1") ‖ L(peer_demandeur) ‖ L(peer_partenaire)`.
 3. Le partenaire vérifie l'autorisation (signature de l'émetteur, expiration)
    puis la preuve de session ; il ne sert que les fragments qu'il héberge
    pour un Nœud que l'autorisation **couvre** (voir ci-dessous).

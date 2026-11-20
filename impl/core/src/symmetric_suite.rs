@@ -5,7 +5,7 @@
 //! ```text
 //! AEAD    ChaCha20-Poly1305 (RFC 8439) — clé 32 o, nonce 12 o, tag 16 o
 //! KDF     KDF(secret, label, salt, entrées…) = HKDF-SHA256(IKM = secret, salt,
-//!             info = "p2p-storage/kdf/v1" ‖ L(label) ‖ L(entrée_1) ‖ …), 32 o
+//!             info = "s3m/kdf/v1" ‖ L(label) ‖ L(entrée_1) ‖ …), 32 o
 //!         L(x) = u32 big-endian(len(x)) ‖ x
 //! hash    SHA-256
 //! K_wrap  KDF(master_key[vc], "master-key-wrap", —, u16(vw), u16(vc))

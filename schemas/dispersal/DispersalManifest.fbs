@@ -1,8 +1,8 @@
 // ---- DispersalManifest.fbs ----
 // Une instance par couple (User, Node). Chiffrée intégralement avec K_attach ;
 // ancrée en DHT sous dht_key = H(K_attach).
-// Source: ST-P2P-STORAGE-2026-V2.md §3.4 / §3.6 / §3.11
-namespace P2PStorage.Dispersal;
+// Source: ST-S3M-2026-V2.md §3.4 / §3.6 / §3.11
+namespace S3m.Dispersal;
 
 // Un partenaire de troc, référencé par id court depuis les BlockEntry (déduplication, §3.4).
 table Partner {

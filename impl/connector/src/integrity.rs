@@ -11,7 +11,7 @@
 
 use std::collections::BTreeSet;
 
-use p2p_storage_core::symmetric_suite::hash_sha256;
+use s3m_core::symmetric_suite::hash_sha256;
 
 /// Hash d'un bloc chiffré.
 pub type BlockHash = [u8; 32];

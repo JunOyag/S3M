@@ -8,7 +8,7 @@
 //!   le `PeerId` ne révèle jamais `pub_user`.
 //! - Connexions sortantes vers les Nœuds d'amorçage (TCP + Noise + Yamux).
 //! - Toute entrée lue ou publiée est vérifiée par
-//!   `p2p_storage_protocol::dht::accept_record`, la règle du Nœud.
+//!   `s3m_protocol::dht::accept_record`, la règle du Nœud.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,13 +20,13 @@ use libp2p::kad::{self, GetRecordOk, QueryResult, Quorum, Record, RecordKey};
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{identity, noise, tcp, yamux, Multiaddr, PeerId, StreamProtocol, Swarm};
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_core::CoreError;
-use p2p_storage_protocol::dht::{accept_record, DhtError};
+use s3m_core::vdf::VdfProof;
+use s3m_core::CoreError;
+use s3m_protocol::dht::{accept_record, DhtError};
 use tokio::sync::{mpsc, oneshot};
 
 /// Protocole Kademlia du réseau (identique au Nœud).
-pub const KAD_PROTOCOL: &str = "/p2p-storage/kad/1.0.0";
+pub const KAD_PROTOCOL: &str = "/s3m/kad/1.0.0";
 
 /// Vérificateur VDF partagé (`chiavdf` en production).
 pub type SharedVdfVerifier =
@@ -34,7 +34,7 @@ pub type SharedVdfVerifier =
 
 /// Vérificateur de production : `chiavdf` (feature `vdf` de `impl/core`).
 pub fn chiavdf_verifier() -> SharedVdfVerifier {
-    Arc::new(p2p_storage_core::vdf::verify_identity_proof)
+    Arc::new(s3m_core::vdf::verify_identity_proof)
 }
 
 /// Horloge Unix (secondes), injectable pour les tests.

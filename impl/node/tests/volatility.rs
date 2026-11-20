@@ -2,8 +2,8 @@
 
 use std::collections::BTreeSet;
 
-use p2p_storage_core::erasure::{encode_parity, reconstruct_data};
-use p2p_storage_node::volatility::*;
+use s3m_core::erasure::{encode_parity, reconstruct_data};
+use s3m_node::volatility::*;
 
 const K: usize = 4;
 const DAY: u64 = 86_400;

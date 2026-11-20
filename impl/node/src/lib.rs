@@ -1230,7 +1230,7 @@ mod tests {
             static NEXT_ID: AtomicU64 = AtomicU64::new(0);
             loop {
                 let path = std::env::temp_dir().join(format!(
-                    "p2p-storage-node-test-{}-{}",
+                    "s3m-node-test-{}-{}",
                     std::process::id(),
                     NEXT_ID.fetch_add(1, Ordering::Relaxed)
                 ));

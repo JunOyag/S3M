@@ -1,6 +1,6 @@
 //! Invariants de `protocols.quota-sync` (partie node).
 
-use p2p_storage_node::quota_sync::*;
+use s3m_node::quota_sync::*;
 
 fn w(ts: u64, c: u32, h: u8) -> PendingWrite {
     PendingWrite {

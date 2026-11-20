@@ -10,9 +10,9 @@
 
 use std::path::Path;
 
-use p2p_storage_core::vdf::{generate_identity_proof, VdfProof};
-use p2p_storage_protocol::dht::next_republish_at;
-use p2p_storage_protocol::entries::{
+use s3m_core::vdf::{generate_identity_proof, VdfProof};
+use s3m_protocol::dht::next_republish_at;
+use s3m_protocol::entries::{
     decode_proof, encode_proof, node_entry_envelope, node_identity, NodeEntryParams,
 };
 

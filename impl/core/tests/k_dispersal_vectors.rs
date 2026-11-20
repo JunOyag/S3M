@@ -20,9 +20,9 @@
 //! Règle de fixtures : constantes de test internes arbitraires, jamais des
 //! valeurs attendues produites par le code.
 
-use p2p_storage_core::k_attach::derive_sig_priv_dispersal;
-use p2p_storage_core::k_dispersal::{derive_k_dispersal_block, derive_k_dispersal_content};
-use p2p_storage_core::CoreError;
+use s3m_core::k_attach::derive_sig_priv_dispersal;
+use s3m_core::k_dispersal::{derive_k_dispersal_block, derive_k_dispersal_content};
+use s3m_core::CoreError;
 
 include!("vectors/symmetric_suite_expected.rs");
 

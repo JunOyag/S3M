@@ -1,6 +1,6 @@
 //! Invariants de `protocols.echange-blocs` (partie commune).
 
-use p2p_storage_protocol::exchange::*;
+use s3m_protocol::exchange::*;
 
 fn pk(s: &[u8; 32]) -> Id {
     ed25519_dalek::SigningKey::from_bytes(s)

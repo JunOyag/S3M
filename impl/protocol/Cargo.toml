@@ -1,23 +1,23 @@
 [package]
-name = "p2p-storage-protocol"
+name = "s3m-protocol"
 version = "0.1.0"
 edition = "2021"
 description = "Logique protocolaire partagée par le Nœud et le Connecteur (types FlatBuffers générés, enveloppes DHT, règles communes), sans I/O — spec V3."
 license = "MIT"
 
 [lib]
-name = "p2p_storage_protocol"
+name = "s3m_protocol"
 
 [dependencies]
 # Même version que flatc (paquet Debian flatbuffers-compiler), voir gen.sh.
 flatbuffers = "=23.5.26"
 ed25519-dalek = "2"
 thiserror = "1"
-p2p-storage-core = { path = "../core" }
+s3m-core = { path = "../core" }
 
 [dev-dependencies]
 hex = "0.4"
 
 [features]
 default = []
-vdf = ["p2p-storage-core/vdf"]
+vdf = ["s3m-core/vdf"]

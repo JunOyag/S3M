@@ -10,11 +10,9 @@
 
 use std::collections::HashMap;
 
-use p2p_storage_core::identity_derivation::{
-    derive_identity_seed, derive_master_key, IdentityRole,
-};
-use p2p_storage_core::master_key_chain::{rewrap_chain_on_rotation, MasterKeyEntry};
-use p2p_storage_core::CoreError;
+use s3m_core::identity_derivation::{derive_identity_seed, derive_master_key, IdentityRole};
+use s3m_core::master_key_chain::{rewrap_chain_on_rotation, MasterKeyEntry};
+use s3m_core::CoreError;
 
 /// Résultat d'une rotation d'identité User.
 pub struct UserRotation {

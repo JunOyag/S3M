@@ -1,8 +1,8 @@
 // ---- FileSystemEntry.fbs ----
 // Encodée dans le contenu EN CLAIR des blocs de données (avant chiffrement K_block).
 // Invisible au Nœud/aux partenaires — jamais transmise ni indexée telle quelle sur le réseau.
-// Source: ST-P2P-STORAGE-2026-V2.md §3.13
-namespace P2PStorage.FS;
+// Source: ST-S3M-2026-V2.md §3.13
+namespace S3m.FS;
 
 // Métadonnée libre clé/valeur portée par une entrée de répertoire.
 table Metadata {

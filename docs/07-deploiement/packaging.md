@@ -44,7 +44,7 @@ Ajout du 2026-11-20 ([`protocols.partenariat-automatique`](../04-protocols/parte
   service en ligne ;
 - localisation par adresse IP avec une base locale au format MMDB (DB-IP
   « City Lite », CC BY 4.0, attribution affichée), téléchargée à la demande
-  de l'opérateur (`p2p-storage-node geoip-update`) ; adresse publiée dans
+  de l'opérateur (`s3m-node geoip-update`) ; adresse publiée dans
   l'entrée DHT pour les Nœuds, adresse de la dernière connexion pour les
   Utilisateurs (enregistrement désactivable) ; adresses privées ou
   inconnues comptées « non localisées ».

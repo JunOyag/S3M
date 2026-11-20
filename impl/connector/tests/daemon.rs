@@ -3,8 +3,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use p2p_storage_connector::daemon::*;
-use p2p_storage_node::exchange::{BlockServer, NodeService, UserAccount};
+use s3m_connector::daemon::*;
+use s3m_node::exchange::{BlockServer, NodeService, UserAccount};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const MNEMONIC: &str =

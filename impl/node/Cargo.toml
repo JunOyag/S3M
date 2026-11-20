@@ -1,5 +1,5 @@
 [package]
-name = "p2p-storage-node"
+name = "s3m-node"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,8 +16,8 @@ ed25519-dalek = "2"
 flatbuffers = "=23.5.26"
 futures = "0.3"
 libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response", "identify", "autonat", "upnp", "relay", "dcutr", "quic"] }
-p2p-storage-core = { path = "../core" }
-p2p-storage-protocol = { path = "../protocol" }
+s3m-core = { path = "../core" }
+s3m-protocol = { path = "../protocol" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
 libc = "0.2"
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -29,4 +29,4 @@ thiserror = "2"
 
 [features]
 default = []
-vdf = ["p2p-storage-core/vdf"]
+vdf = ["s3m-core/vdf"]

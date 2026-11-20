@@ -6,11 +6,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use flatbuffers::FlatBufferBuilder;
-use p2p_storage_core::vdf::VdfProof;
-use p2p_storage_core::CoreError;
-use p2p_storage_node::dht_directory::{DhtConfig, DhtNode, DhtNodeError, SharedVdfVerifier};
-use p2p_storage_protocol::dht::{build_envelope, sign, DhtError, EntryKind};
-use p2p_storage_protocol::fb::dht as fb;
+use s3m_core::vdf::VdfProof;
+use s3m_core::CoreError;
+use s3m_node::dht_directory::{DhtConfig, DhtNode, DhtNodeError, SharedVdfVerifier};
+use s3m_protocol::dht::{build_envelope, sign, DhtError, EntryKind};
+use s3m_protocol::fb::dht as fb;
 
 const NOW: u64 = 1_800_000_000;
 
@@ -153,8 +153,8 @@ async fn node_never_returns_an_entry_it_cannot_verify() {
 /// réinjectée.
 #[tokio::test(flavor = "multi_thread")]
 async fn node_deletes_dispersal_entry_and_old_entry_cannot_come_back() {
-    use p2p_storage_node::dht_directory::delete_dispersal_entry;
-    use p2p_storage_protocol::dht::is_dispersal_deletion;
+    use s3m_node::dht_directory::delete_dispersal_entry;
+    use s3m_protocol::dht::is_dispersal_deletion;
     let (a, b, _c) = mesh([true; 3]).await;
     let seed = [0x31; 32];
     let old = dispersal_envelope(&seed, NOW - 10);

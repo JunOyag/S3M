@@ -1,6 +1,6 @@
 # Contenu de ce scaffold
 
-Généré à fusionner tel quel à la racine du dépôt `p2p-storage-docs`
+Généré à fusionner tel quel à la racine du dépôt `s3m-docs`
 (celui contenant déjà README.md, AGENTS.md, docs/, schemas/, impl/*.yml).
 
 - `CLAUDE.md`                    — instructions de session pour Claude Code
@@ -20,7 +20,7 @@ Généré à fusionner tel quel à la racine du dépôt `p2p-storage-docs`
 
 Toutes les fonctions sont `todo!()` intentionnellement — c'est la matière de
 la Phase 0. Chaque fichier porte en commentaire la référence exacte à la
-section du protocole (ST-P2P-STORAGE-2026-V2.md) et/ou à la page docs/
+section du protocole (ST-S3M-2026-V2.md) et/ou à la page docs/
 correspondante.
 
 Premier pas concret recommandé : ouvrir Claude Code sur ce dépôt fusionné,

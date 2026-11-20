@@ -19,15 +19,15 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
-use p2p_storage_core::erasure::{encode_parity, padding_block};
-use p2p_storage_core::k_attach::derive_k_attach_as_node;
-use p2p_storage_core::k_dispersal::derive_k_dispersal_content;
-use p2p_storage_core::symmetric_suite::hash_sha256;
-use p2p_storage_core::version::CURRENT_HEADER;
-use p2p_storage_protocol::dht::{dispersal_dht_key, next_republish_at};
-use p2p_storage_protocol::dispersal::*;
-use p2p_storage_protocol::exchange::{verify_receipt, Body, Request};
-use p2p_storage_protocol::index::seal_index_node;
+use s3m_core::erasure::{encode_parity, padding_block};
+use s3m_core::k_attach::derive_k_attach_as_node;
+use s3m_core::k_dispersal::derive_k_dispersal_content;
+use s3m_core::symmetric_suite::hash_sha256;
+use s3m_core::version::CURRENT_HEADER;
+use s3m_protocol::dht::{dispersal_dht_key, next_republish_at};
+use s3m_protocol::dispersal::*;
+use s3m_protocol::exchange::{verify_receipt, Body, Request};
+use s3m_protocol::index::seal_index_node;
 use serde::{Deserialize, Serialize};
 
 use crate::chunk_store::Space;
@@ -78,7 +78,7 @@ pub trait Fabric: Send + Sync {
         &self,
         partner: &Id,
         req: Request,
-    ) -> Result<p2p_storage_protocol::exchange::Response, String>;
+    ) -> Result<s3m_protocol::exchange::Response, String>;
 }
 
 /// Requête `Tombstone` d'un avis.
@@ -722,7 +722,7 @@ impl Fabric for NetFabric {
             body: Body::StoreFragment { data },
         };
         match self.server.request(self.addr(partner)?, req).await {
-            Ok(p2p_storage_protocol::exchange::Response::FragmentReceipt { signature, .. }) => {
+            Ok(s3m_protocol::exchange::Response::FragmentReceipt { signature, .. }) => {
                 Ok(signature)
             }
             Ok(r) => Err(format!("{r:?}")),
@@ -736,7 +736,7 @@ impl Fabric for NetFabric {
             .request(self.addr(partner)?, tombstone_request(notice))
             .await
         {
-            Ok(p2p_storage_protocol::exchange::Response::Ack { freed }) => Ok(freed),
+            Ok(s3m_protocol::exchange::Response::Ack { freed }) => Ok(freed),
             Ok(r) => Err(format!("{r:?}")),
             Err(e) => Err(e.to_string()),
         }
@@ -750,7 +750,7 @@ impl Fabric for NetFabric {
         &self,
         partner: &Id,
         req: Request,
-    ) -> Result<p2p_storage_protocol::exchange::Response, String> {
+    ) -> Result<s3m_protocol::exchange::Response, String> {
         self.server
             .request(self.addr(partner)?, req)
             .await

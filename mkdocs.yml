@@ -1,4 +1,4 @@
-site_name: "Spécification P2P Storage — Documentation as Code"
+site_name: "Spécification S3m — Documentation as Code"
 site_description: "Stockage distribué souverain & échange pair-à-pair — doc pilotée par le code"
 docs_dir: docs
 site_dir: site
