@@ -25,7 +25,11 @@ une seule pile libp2p (même identité `pub_node`, mêmes ports) : TCP et
 ## Quatre mécanismes, du moins au plus coûteux
 
 1. **UPnP / IGD** : le Nœud demande à la box la redirection de son port
-   (TCP et UDP). Activé par défaut, désactivable (`upnp: false`).
+   (TCP et UDP). Activé par défaut, désactivable (`upnp: false`). La
+   recherche de la box part de l'adresse locale de la route par défaut
+   (sinon, sur une machine à plusieurs cartes réseau — WSL, Hyper-V, VPN —
+   elle peut sortir par une carte virtuelle et rester sans réponse) ; bail
+   d'une heure renouvelé, nouvel essai toutes les 5 minutes en cas d'échec.
 2. **Détection de joignabilité** (AutoNAT, Identify) : les pairs renvoient
    l'adresse publique observée et testent un rappel ; le Nœud se sait
    *public* ou *derrière un NAT*. Les adresses confirmées deviennent ses
