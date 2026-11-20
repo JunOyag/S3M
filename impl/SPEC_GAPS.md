@@ -619,3 +619,28 @@ nouvel appareil : la restauration du Connecteur depuis la seule phrase est
 désormais possible. Reste : le `NodeSnapshotPointer` (snapshot du
 NodeManifest non dispersé), donc la restauration du **Nœud** depuis sa seule
 seed ne retrouve pas encore ses Utilisateurs et partenaires.
+
+---
+
+## deploiement.disaster-recovery — Snapshot du NodeManifest
+
+**Constat** (2026-11-20, en implémentant) : (1) le `NodeSnapshotPointer`
+publie les partenaires du stripe du snapshot mais ni les hashes de ses
+fragments ni de sel ; (2) aucune clé n'est définie pour chiffrer les blocs
+du snapshot (`K_node_self` protège le pointeur DHT) ; (3) `PartnerAccount`
+ne porte pas le solde de troc accordé ; (4) le format (un ou plusieurs blocs)
+n'est pas fixé.
+
+**Question** : comment disperser et relire le snapshot ?
+
+**Impact si non résolu** : bloquant pour la restauration du Nœud depuis la
+seed.
+
+**Résolution** (orchestrateur, sur délégation de l'utilisateur, 2026-11-20) :
+champs **additifs** `node_snapshot_root_salt`, `node_snapshot_root_stripe`
+(`NodeSnapshotPointer`) et `allowance_blocks` (`PartnerAccount`) ; nouvelle
+étiquette KDF `"node-snapshot"` (IKM `priv_node`, sel 16 o, entrée
+`u32(index)`) ; clair `u32be(len) ‖ NodeManifest` réparti sur les k blocs de
+données d'un stripe ; réémission à chaque changement ; restauration
+automatique au démarrage d'une installation vide. Page
+`deploiement.disaster-recovery` § Snapshot.

@@ -10,6 +10,8 @@ namespace P2PStorage.Dht;
 table NodeSnapshotPointer {
   node_snapshot_root_hash: [ubyte];
   node_snapshot_root_partners: [P2PStorage.Dispersal.Partner];
+  node_snapshot_root_salt: [ubyte];                    // ajout 2026-11-20 : 16 o, sel de K_node_snapshot
+  node_snapshot_root_stripe: P2PStorage.Dispersal.Stripe; // ajout 2026-11-20 : hash et partenaire de chaque fragment
 }
 
 /// Entrée DHT Node (§3.9). TTL 15 552 000 s, republiée toutes les 2 592 000 s.
