@@ -1,0 +1,16 @@
+# Réglages Cargo communs aux quatre crates (core, protocol, node, connector).
+
+[build]
+# Un seul dossier de compilation, `impl/target` : les dépendances communes
+# (libp2p, tokio, chiavdf…) ne sont compilées et stockées qu'une fois, au lieu
+# d'une fois par crate.
+target-dir = "target"
+
+[profile.dev]
+# Débogage limité aux numéros de ligne (traces de panique lisibles) : les
+# binaires de test et le cache incrémental pèsent plusieurs fois moins.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+# Aucune information de débogage pour les dépendances.
+debug = false

@@ -52,9 +52,10 @@ $dist = Join-Path $here 'dist\windows'
 # Vide le dossier sans le supprimer (il peut etre ouvert dans l'Explorateur).
 New-Item -ItemType Directory -Force $dist | Out-Null
 Get-ChildItem $dist -Force | Remove-Item -Recurse -Force
-Copy-Item (Join-Path $here 'node\target\release\s3m-node.exe') $dist
-Copy-Item (Join-Path $here 'connector\target\release\s3m-connector.exe') $dist
-Copy-Item (Join-Path $here 'connector\target\release\S3m.exe') $dist
+# Dossier de compilation partagé (impl\.cargo\config.toml).
+Copy-Item (Join-Path $here 'target\release\s3m-node.exe') $dist
+Copy-Item (Join-Path $here 'target\release\s3m-connector.exe') $dist
+Copy-Item (Join-Path $here 'target\release\S3m.exe') $dist
 
 # DLL MPIR de la version de chiavdf effectivement compilee.
 $meta = cargo metadata --format-version 1 --manifest-path (Join-Path $here 'connector\Cargo.toml') --features vdf | ConvertFrom-Json
