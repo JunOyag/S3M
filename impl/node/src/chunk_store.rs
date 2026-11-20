@@ -52,6 +52,14 @@ pub trait ChunkStore: Send {
     fn owners(&self, space: Space) -> Vec<Id>;
     /// Hashes des blocs de `owner` dans `space`.
     fn hashes(&self, space: Space, owner: &Id) -> Vec<Id>;
+    /// Réécrit le contenu d'un bloc (auto-réparation de la copie locale).
+    fn replace(
+        &mut self,
+        space: Space,
+        owner: &Id,
+        hash: &Id,
+        data: &[u8],
+    ) -> Result<(), StoreError>;
 }
 
 /// Stockage en mémoire (tests, tailles libres).
@@ -103,6 +111,17 @@ impl ChunkStore for MemoryStore {
         v.sort();
         v.dedup();
         v
+    }
+
+    fn replace(
+        &mut self,
+        space: Space,
+        owner: &Id,
+        hash: &Id,
+        data: &[u8],
+    ) -> Result<(), StoreError> {
+        self.0.insert(*hash, (space, *owner, data.to_vec()));
+        Ok(())
     }
 
     fn hashes(&self, space: Space, owner: &Id) -> Vec<Id> {
@@ -172,6 +191,25 @@ impl ChunkStore for PhysicalStore {
             .into_iter()
             .filter_map(|o| o.as_slice().try_into().ok())
             .collect()
+    }
+
+    fn replace(
+        &mut self,
+        space: Space,
+        owner_id: &Id,
+        hash: &Id,
+        data: &[u8],
+    ) -> Result<(), StoreError> {
+        if data.len() != BLOCK_SIZE {
+            return Err(StoreError::BadSize);
+        }
+        let o = owner(space, owner_id);
+        if self.contains(hash) {
+            self.replace_block(&o, hash, hash, data)?;
+        } else {
+            self.write_block(&o, hash, data)?;
+        }
+        Ok(())
     }
 
     fn hashes(&self, space: Space, owner_id: &Id) -> Vec<Id> {

@@ -21,6 +21,7 @@ pub mod quota_sync;
 pub mod restore;
 pub mod self_repair;
 pub mod tombstones;
+pub mod upkeep;
 pub mod volatility;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};

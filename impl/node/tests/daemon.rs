@@ -34,6 +34,7 @@ fn config(dir: &std::path::Path) -> Config {
         bootstrap: vec![],
         api_port: 0,
         dispersal: Default::default(),
+        upkeep: Default::default(),
     }
 }
 

@@ -73,6 +73,12 @@ pub trait Fabric: Send + Sync {
     /// Envoie un avis de suppression ; rend le nombre de blocs libérés.
     async fn tombstone(&self, partner: &Id, notice: &TombstoneNotice) -> Result<u64, String>;
     async fn publish(&self, key: Vec<u8>, envelope: Vec<u8>) -> Result<(), String>;
+    /// Requête quelconque à un partenaire (`Err` : injoignable).
+    async fn request(
+        &self,
+        partner: &Id,
+        req: Request,
+    ) -> Result<p2p_storage_protocol::exchange::Response, String>;
 }
 
 /// Requête `Tombstone` d'un avis.
@@ -146,6 +152,9 @@ pub struct DispersalState {
     pub users: BTreeMap<String, UserDispersal>,
     /// Dernier horodatage d'avis envoyé, par partenaire (anti-rejeu).
     pub last_tombstone: BTreeMap<String, u64>,
+    /// Contrôles et réparation (`crate::upkeep`).
+    #[serde(default)]
+    pub upkeep: crate::upkeep::UpkeepState,
 }
 
 impl DispersalState {
@@ -703,5 +712,16 @@ impl Fabric for NetFabric {
 
     async fn publish(&self, key: Vec<u8>, envelope: Vec<u8>) -> Result<(), String> {
         self.dht.put(key, envelope).await.map_err(|e| e.to_string())
+    }
+
+    async fn request(
+        &self,
+        partner: &Id,
+        req: Request,
+    ) -> Result<p2p_storage_protocol::exchange::Response, String> {
+        self.server
+            .request(self.addr(partner)?, req)
+            .await
+            .map_err(|e| e.to_string())
     }
 }

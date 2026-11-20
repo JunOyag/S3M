@@ -30,6 +30,7 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         bootstrap: vec![],
         api_port: 8765,
         dispersal: Default::default(),
+        upkeep: Default::default(),
     };
     std::fs::write(
         dir.join("node.json"),

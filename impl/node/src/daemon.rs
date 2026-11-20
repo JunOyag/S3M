@@ -26,6 +26,7 @@ use crate::dispersal_engine::{
 use crate::exchange::{refresh_successors, BlockServer, NodeService, PartnerState, UserAccount};
 use crate::local_http::{self, ActionFn, Asset, StatusFn};
 use crate::tombstones::PartnerLedger;
+use crate::upkeep::{run_upkeep, UpkeepConfig, UpkeepReport};
 use crate::{PhysicalStore, VolumeConfig};
 
 /// Erreurs de l'exécutable.
@@ -66,6 +67,9 @@ pub struct Config {
     /// Paramètres de dispersion (k, coef, délai de padding, délai de grâce).
     #[serde(default)]
     pub dispersal: EngineConfig,
+    /// Contrôles PoS, analyse de volatilité, scrubbing.
+    #[serde(default)]
+    pub upkeep: UpkeepConfig,
 }
 
 fn default_api_port() -> u16 {
@@ -299,6 +303,8 @@ pub struct Shared {
     pub dispersal: tokio::sync::Mutex<DispersalState>,
     /// Dernier cycle de dispersion : `(instant, bilan)`.
     pub last_cycle: Mutex<Option<(u64, CycleReport)>>,
+    /// Dernier cycle de contrôle : `(instant, bilan)`.
+    pub last_upkeep: Mutex<Option<(u64, UpkeepReport)>>,
     pub config: Config,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
@@ -353,13 +359,14 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "partenaires": partners,
         "alertes d'intégrité signalées": s.incidents.iter().map(|i| hx(i)).collect::<Vec<_>>(),
         "dispersion": dispersal_status(sh),
+        "contrôles et réparation": upkeep_status(sh),
         "migration": {
             "anciens node_id couverts": s.previous_node_ids.iter().map(|i| hx(i)).collect::<Vec<_>>(),
             "délégations reçues": s.delegations.len(),
             "pointeurs de migration connus": s.successors.len(),
         },
         "non suivi par cet exécutable": [
-            "liste noire", "taux de republication DHT", "espace de secours"
+            "taux de republication DHT", "espace de secours"
         ],
         "actions": [
             { "nom": "attach_user", "libellé": "Rattacher un utilisateur",
@@ -394,6 +401,30 @@ fn dispersal_status(sh: &Shared) -> Value {
         "dernier cycle": cycle.map(|(t, r)| json!({ "instant": t, "stripes dispersés": r.stripes_dispersed,
                         "publications": r.published, "fragments libérés": r.purged, "erreurs": r.errors })),
         "utilisateurs": users,
+    })
+}
+
+fn upkeep_status(sh: &Shared) -> Value {
+    let last = sh.last_upkeep.lock().unwrap().clone();
+    let up = match sh.dispersal.try_lock() {
+        Err(_) => return json!({ "état": "cycle en cours" }),
+        Ok(d) => d.upkeep.clone(),
+    };
+    let blacklist: Vec<Value> = up
+        .blacklist
+        .iter()
+        .map(|(n, (at, why))| json!({ "nœud": n, "depuis": at, "motif": why }))
+        .collect();
+    json!({
+        "challenges réussis": up.challenges_passed,
+        "challenges sans réponse": up.challenges_timeout,
+        "dernière analyse de volatilité": up.last_analysis,
+        "dernier scrubbing": up.last_scrub,
+        "dernier cycle": last.map(|(t, r)| json!({ "instant": t, "challengés": r.challenged,
+            "réussis": r.passed, "sans réponse": r.timeouts, "fraudes": r.frauds.len(),
+            "fragments replacés": r.repaired, "blocs locaux réparés": r.local_repaired })),
+        "liste noire": blacklist,
+        "événements récents": up.events.iter().rev().take(15).cloned().collect::<Vec<_>>(),
     })
 }
 
@@ -445,6 +476,14 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         }
         "add_partner" => {
             let id = unhex32(field(&v, "node_id")?)?;
+            let blacklisted = sh
+                .dispersal
+                .try_lock()
+                .map(|d| d.upkeep.is_blacklisted(&id))
+                .map_err(|_| "cycle de contrôle en cours, réessayez dans un instant".to_string())?;
+            if blacklisted {
+                return Err("partenaire en liste noire (fraude PoS) : refusé".into());
+            }
             let addr = field(&v, "addr")?;
             addr.parse::<Multiaddr>().map_err(|e| e.to_string())?;
             let allowance = number(&v, "allowance")?;
@@ -527,6 +566,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         addrs: Arc::new(Mutex::new(addrs)),
         dispersal: tokio::sync::Mutex::new(dispersal),
         last_cycle: Mutex::new(None),
+        last_upkeep: Mutex::new(None),
         peer_id: blocks.peer_id().to_string(),
         blocks_addr: blocks.listen_addr().await.map(|a| a.to_string()),
         dht_addr: dht.listen_addr().await.map(|a| a.to_string()),
@@ -561,6 +601,16 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
             {
                 let now = clock();
                 let mut d = sh.dispersal.lock().await;
+                let up = run_upkeep(
+                    &sh.service,
+                    &mut d,
+                    &fabric,
+                    &sh.config.dispersal,
+                    &sh.config.upkeep,
+                    now,
+                )
+                .await;
+                *sh.last_upkeep.lock().unwrap() = Some((now, up));
                 let report =
                     run_cycle(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await;
                 if let Err(e) = save_dispersal(&sh.config, &d) {
