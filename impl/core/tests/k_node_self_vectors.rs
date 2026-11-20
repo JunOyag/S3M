@@ -69,3 +69,14 @@ fn k_node_self_matches_generated_vector() {
         K_NODE_SELF_HEX
     );
 }
+
+#[test]
+fn snapshot_keys_are_separated_by_salt_index_and_from_k_node_self() {
+    use p2p_storage_core::k_node_self::{derive_k_node_self, derive_k_node_snapshot};
+    let p = [1u8; 32];
+    let a = derive_k_node_snapshot(&p, &[2; 16], 0).unwrap();
+    assert_ne!(a, derive_k_node_snapshot(&p, &[2; 16], 1).unwrap());
+    assert_ne!(a, derive_k_node_snapshot(&p, &[3; 16], 0).unwrap());
+    assert_ne!(a, derive_k_node_self(&p).unwrap());
+    assert_eq!(a, derive_k_node_snapshot(&p, &[2; 16], 0).unwrap());
+}

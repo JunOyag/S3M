@@ -42,9 +42,11 @@ pub const BLOCK: &str = "block";
 pub const MASTER_KEY_WRAP: &str = "master-key-wrap";
 /// Preuve d'authentification Connecteur → Nœud — protocols.echange-blocs.
 pub const CONNECTOR_AUTH: &str = "connector-auth";
+/// `K_node_snapshot` — deploiement.disaster-recovery § Snapshot.
+pub const NODE_SNAPSHOT: &str = "node-snapshot";
 
-/// Les 13 étiquettes KDF du registre — source du test d'unicité.
-pub const ALL_KDF_LABELS: [&str; 13] = [
+/// Les 14 étiquettes KDF du registre — source du test d'unicité.
+pub const ALL_KDF_LABELS: [&str; 14] = [
     ATTACH,
     DISPERSAL_SIGNING,
     DISPERSAL_CONTENT,
@@ -58,6 +60,7 @@ pub const ALL_KDF_LABELS: [&str; 13] = [
     BLOCK,
     MASTER_KEY_WRAP,
     CONNECTOR_AUTH,
+    NODE_SNAPSHOT,
 ];
 
 /// Étiquettes retirées en V3 — jamais réutilisables (test `tests/labels.rs`).

@@ -29,3 +29,20 @@ use crate::symmetric_suite::kdf;
 pub fn derive_k_node_self(priv_node: &[u8; 32]) -> Result<[u8; 32], CoreError> {
     kdf(priv_node, labels::NODE_RECOVERY, &[], &[])
 }
+
+/// `K_node_snapshot = KDF(priv_node, "node-snapshot", sel, u32(index))` —
+/// clé du bloc `index` du snapshot du NodeManifest
+/// (`deploiement.disaster-recovery` § Snapshot), sel de 16 o neuf à chaque
+/// émission.
+pub fn derive_k_node_snapshot(
+    priv_node: &[u8; 32],
+    salt: &[u8; 16],
+    index: u32,
+) -> Result<[u8; 32], CoreError> {
+    kdf(
+        priv_node,
+        labels::NODE_SNAPSHOT,
+        salt,
+        &[&index.to_be_bytes()],
+    )
+}

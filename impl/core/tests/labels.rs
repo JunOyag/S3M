@@ -11,7 +11,7 @@ use p2p_storage_core::labels::{
     AAD_CONTEXT_MASTER_KEY_WRAP, ALL_AAD_CONTEXTS, ALL_KDF_LABELS, ATTACH, ATTACHMENT_RECOVERY,
     BLOCK, CONNECTOR_AUTH, DHT_LOOKUP, DHT_SIGNING, DISPERSAL_BLOCK, DISPERSAL_CONTENT,
     DISPERSAL_SIGNING, EMERGENCY_CONTENT, EMERGENCY_SIGNING, KDF_PREFIX, MASTER_KEY_WRAP,
-    NODE_RECOVERY, RETIRED_LABELS,
+    NODE_RECOVERY, NODE_SNAPSHOT, RETIRED_LABELS,
 };
 
 #[test]
@@ -52,10 +52,11 @@ fn labels_match_the_spec_registry() {
         (BLOCK, "block"),
         (MASTER_KEY_WRAP, "master-key-wrap"),
         (CONNECTOR_AUTH, "connector-auth"),
+        (NODE_SNAPSHOT, "node-snapshot"),
     ];
     for (got, want) in expected {
         assert_eq!(got, want);
     }
-    assert_eq!(ALL_KDF_LABELS.len(), 13);
+    assert_eq!(ALL_KDF_LABELS.len(), 14);
     assert_eq!(AAD_CONTEXT_MASTER_KEY_WRAP, "master-key-wrap");
 }
