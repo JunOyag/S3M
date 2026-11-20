@@ -185,3 +185,13 @@ pub fn derive_k_wrap(
         ],
     )
 }
+
+/// Secret TOTP de l'administration à distance du Nœud :
+/// `KDF(priv_node, "admin-totp", —, u32(série))`, 20 premiers octets
+/// (deploiement.appairage-admin § Administration à distance).
+pub fn derive_admin_totp_secret(priv_node: &[u8; 32], serial: u32) -> Result<[u8; 20], CoreError> {
+    let k = kdf(priv_node, labels::ADMIN_TOTP, &[], &[&serial.to_be_bytes()])?;
+    let mut out = [0u8; 20];
+    out.copy_from_slice(&k[..20]);
+    Ok(out)
+}

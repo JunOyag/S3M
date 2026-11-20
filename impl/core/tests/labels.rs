@@ -57,6 +57,6 @@ fn labels_match_the_spec_registry() {
     for (got, want) in expected {
         assert_eq!(got, want);
     }
-    assert_eq!(ALL_KDF_LABELS.len(), 14);
+    assert_eq!(ALL_KDF_LABELS.len(), 15);
     assert_eq!(AAD_CONTEXT_MASTER_KEY_WRAP, "master-key-wrap");
 }

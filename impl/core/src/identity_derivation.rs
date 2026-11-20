@@ -183,3 +183,125 @@ fn pbkdf2_hmac_sha512_64(password: &[u8], salt: &[u8], rounds: u32) -> Result<[u
     }
     Ok(*t.as_ref())
 }
+
+// ------------------------------------------------- code de récupération
+
+/// Rôle porté par un code de récupération (§ Code de récupération).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryRole {
+    Node,
+    User,
+}
+
+impl RecoveryRole {
+    fn tag(self) -> &'static str {
+        match self {
+            RecoveryRole::Node => "N",
+            RecoveryRole::User => "U",
+        }
+    }
+}
+
+const RECOVERY_CODE_PREFIX: &str = "S3M1";
+const RECOVERY_CHECK_LABEL: &[u8] = b"s3m/recovery-code/v1";
+const B32: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/// Base32 RFC 4648, majuscules, sans remplissage.
+pub fn base32_encode(data: &[u8]) -> String {
+    let mut out = String::with_capacity(data.len() * 8 / 5 + 1);
+    let (mut buf, mut bits) = (0u32, 0u32);
+    for &b in data {
+        buf = (buf << 8) | b as u32;
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(B32[((buf >> bits) & 31) as usize] as char);
+        }
+        buf &= (1 << bits) - 1;
+    }
+    if bits > 0 {
+        out.push(B32[((buf << (5 - bits)) & 31) as usize] as char);
+    }
+    out
+}
+
+/// Inverse de [`base32_encode`] (casse indifférente) ; `None` si un
+/// caractère est hors alphabet ou si l'encodage n'est pas canonique.
+pub fn base32_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 5 / 8);
+    let (mut buf, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        let v = B32.iter().position(|&x| x == c.to_ascii_uppercase())? as u32;
+        buf = (buf << 5) | v;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+        buf &= (1 << bits) - 1;
+    }
+    (bits < 5 && buf == 0).then_some(out)
+}
+
+fn recovery_check(role: RecoveryRole, entropy: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(RECOVERY_CHECK_LABEL);
+    h.update(role.tag().as_bytes());
+    h.update(entropy);
+    base32_encode(&h.finalize()[..4])
+}
+
+fn valid_entropy_len(n: usize) -> bool {
+    (16..=32).contains(&n) && n.is_multiple_of(4)
+}
+
+/// `S3M1:<rôle>:<entropie base32>:<contrôle>` — même entropie BIP-39 que la
+/// phrase de récupération.
+pub fn recovery_code_encode(role: RecoveryRole, entropy: &[u8]) -> Result<String, CoreError> {
+    if !valid_entropy_len(entropy.len()) {
+        return Err(CoreError::RecoveryCode(
+            "entropie BIP-39 de 16 à 32 octets attendue",
+        ));
+    }
+    Ok(format!(
+        "{RECOVERY_CODE_PREFIX}:{}:{}:{}",
+        role.tag(),
+        base32_encode(entropy),
+        recovery_check(role, entropy)
+    ))
+}
+
+/// Décode un code de récupération (espaces et casse ignorés) ; rend le rôle
+/// et l'entropie BIP-39.
+pub fn recovery_code_decode(text: &str) -> Result<(RecoveryRole, Vec<u8>), CoreError> {
+    let clean: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_ascii_uppercase();
+    let parts: Vec<&str> = clean.split(':').collect();
+    let [prefix, role, entropy, check] = parts[..] else {
+        return Err(CoreError::RecoveryCode(
+            "format S3M1:<rôle>:<entropie>:<contrôle> attendu",
+        ));
+    };
+    if prefix != RECOVERY_CODE_PREFIX {
+        return Err(CoreError::RecoveryCode("version inconnue"));
+    }
+    let role = match role {
+        "N" => RecoveryRole::Node,
+        "U" => RecoveryRole::User,
+        _ => return Err(CoreError::RecoveryCode("rôle inconnu")),
+    };
+    let entropy = base32_decode(entropy).ok_or(CoreError::RecoveryCode("caractère invalide"))?;
+    if !valid_entropy_len(entropy.len()) {
+        return Err(CoreError::RecoveryCode("longueur invalide"));
+    }
+    if recovery_check(role, &entropy) != check {
+        return Err(CoreError::RecoveryCode(
+            "code de contrôle faux (faute de frappe ?)",
+        ));
+    }
+    Ok((role, entropy))
+}

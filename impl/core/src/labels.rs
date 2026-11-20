@@ -44,9 +44,11 @@ pub const MASTER_KEY_WRAP: &str = "master-key-wrap";
 pub const CONNECTOR_AUTH: &str = "connector-auth";
 /// `K_node_snapshot` — deploiement.disaster-recovery § Snapshot.
 pub const NODE_SNAPSHOT: &str = "node-snapshot";
+/// Secret TOTP de l'administration à distance — deploiement.appairage-admin.
+pub const ADMIN_TOTP: &str = "admin-totp";
 
-/// Les 14 étiquettes KDF du registre — source du test d'unicité.
-pub const ALL_KDF_LABELS: [&str; 14] = [
+/// Les 15 étiquettes KDF du registre — source du test d'unicité.
+pub const ALL_KDF_LABELS: [&str; 15] = [
     ATTACH,
     DISPERSAL_SIGNING,
     DISPERSAL_CONTENT,
@@ -61,6 +63,7 @@ pub const ALL_KDF_LABELS: [&str; 14] = [
     MASTER_KEY_WRAP,
     CONNECTOR_AUTH,
     NODE_SNAPSHOT,
+    ADMIN_TOTP,
 ];
 
 /// Étiquettes retirées en V3 — jamais réutilisables (test `tests/labels.rs`).
