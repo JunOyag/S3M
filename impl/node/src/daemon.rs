@@ -580,6 +580,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "actions": ["attach_user", "set_quota", "set_attach_policy"] },
         { "id": "partenaires", "titre": "Partenaires", "carte": true,
           "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner"] },
+        { "id": "carte", "titre": "Carte du monde", "cadre": "map.html", "sections": [], "actions": [] },
         { "id": "stockage", "titre": "Stockage et protection",
           "sections": ["volumes", "dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "reseau", "titre": "Réseau",

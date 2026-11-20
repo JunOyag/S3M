@@ -144,7 +144,7 @@ function renderToggles() {
   const un = Object.entries(data.non_localises || {}).filter(([, n]) => n > 0);
   const u = document.getElementById("unlocated");
   u.replaceChildren();
-  if (!data.geoip) u.append(el("div", "Base de géolocalisation absente : s3m-node geoip-update"));
+  if (!data.geoip) u.append(el("div", "Base de géolocalisation absente : écran Réseau, « Mettre à jour la base de géolocalisation »"));
   if (un.length) u.append(el("div", "Non localisés : " + un.map(([k, n]) => `${k} ${n}`).join(", ")));
   document.getElementById("foot").textContent = [data.attribution, world.length ? "Fond : Natural Earth" : ""].filter(Boolean).join(" · ");
 }

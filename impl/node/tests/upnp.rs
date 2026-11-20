@@ -32,3 +32,40 @@ async fn the_box_is_found_from_the_lan_interface() {
     let ext = gw.get_external_ip().await.expect("adresse externe");
     println!("box {} depuis {lan}, adresse externe {ext}", gw.addr);
 }
+
+#[test]
+fn box_errors_are_described_plainly() {
+    let fault = "Invalid response from gateway: <UPnPError><errorCode>718</errorCode></UPnPError>";
+    assert!(s3m_node::upnp::describe(fault).contains("déjà redirigé"));
+    assert_eq!(
+        s3m_node::upnp::describe("<errorCode>999</errorCode>"),
+        "erreur UPnP 999"
+    );
+}
+
+#[tokio::test]
+#[ignore = "réseau réel : liste (lecture seule) des redirections de la box"]
+async fn list_the_box_port_mappings() {
+    let lan = lan_ipv4().expect("adresse locale");
+    let gw = search_gateway(SearchOptions {
+        bind_addr: SocketAddr::new(IpAddr::V4(lan), 0),
+        timeout: Some(Duration::from_secs(5)),
+        ..Default::default()
+    })
+    .await
+    .expect("box trouvée");
+    for i in 0..64 {
+        let Ok(m) = gw.get_generic_port_mapping_entry(i).await else {
+            break;
+        };
+        println!(
+            "redirection {:?} {} -> {}:{} ({}, bail {} s)",
+            m.protocol,
+            m.external_port,
+            m.internal_client,
+            m.internal_port,
+            m.port_mapping_description,
+            m.lease_duration
+        );
+    }
+}

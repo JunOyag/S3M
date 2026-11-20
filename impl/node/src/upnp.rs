@@ -107,28 +107,40 @@ pub fn spawn(ports: Vec<u16>, nat: Arc<Mutex<NatState>>, tx: mpsc::Sender<Multia
                 continue;
             }
             let mut errors = Vec::new();
+            let mut opened: Vec<(PortMappingProtocol, u16, u16)> = Vec::new();
             for &port in &ports {
                 for proto in [PortMappingProtocol::TCP, PortMappingProtocol::UDP] {
-                    let local = SocketAddr::V4(SocketAddrV4::new(lan, port));
-                    if let Err(e) = gw.add_port(proto, port, local, LEASE_S, "s3m-node").await {
-                        errors.push(format!("{proto:?} {port} : {e}"));
+                    match map_port(&gw, proto, port, lan).await {
+                        Ok(ext_port) => opened.push((proto, port, ext_port)),
+                        Err(e) => errors.push(format!("{proto:?} {port} : {e}")),
                     }
                 }
             }
             if errors.is_empty() {
+                let shown: Vec<String> = opened
+                    .iter()
+                    .map(|(proto, port, ext_port)| {
+                        if port == ext_port {
+                            format!("{proto:?} {port}")
+                        } else {
+                            format!("{proto:?} {port} (externe {ext_port}, le {port} est déjà pris sur la box)")
+                        }
+                    })
+                    .collect();
                 set(format!(
-                    "port ouvert : {ext}:{} (box {})",
-                    ports
-                        .iter()
-                        .map(|p| p.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", "),
+                    "port ouvert : {ext} — {} (box {})",
+                    shown.join(", "),
                     gw.addr
                 ));
-                for &port in &ports {
-                    for a in external_addrs(ext, port) {
-                        let _ = tx.send(a).await;
-                    }
+                for (proto, _, ext_port) in &opened {
+                    let a = Multiaddr::empty().with(Protocol::Ip4(ext));
+                    let a = match proto {
+                        PortMappingProtocol::TCP => a.with(Protocol::Tcp(*ext_port)),
+                        PortMappingProtocol::UDP => {
+                            a.with(Protocol::Udp(*ext_port)).with(Protocol::QuicV1)
+                        }
+                    };
+                    let _ = tx.send(a).await;
                 }
                 tokio::time::sleep(Duration::from_secs(LEASE_S as u64 / 2)).await;
             } else {
@@ -140,4 +152,62 @@ pub fn spawn(ports: Vec<u16>, nat: Arc<Mutex<NatState>>, tx: mpsc::Sender<Multia
             }
         }
     });
+}
+
+/// Code d'erreur UPnP d'une réponse de la box (`<errorCode>718</errorCode>`).
+fn upnp_code(e: &str) -> Option<u32> {
+    let i = e.find("<errorCode>")? + "<errorCode>".len();
+    e[i..].split('<').next()?.trim().parse().ok()
+}
+
+/// Message lisible d'une erreur de la box.
+pub fn describe(e: &str) -> String {
+    match upnp_code(e) {
+        Some(718) => "port déjà redirigé vers une autre machine (718)".into(),
+        Some(725) => "la box n'accepte que des redirections permanentes (725)".into(),
+        Some(606) | Some(501) => "action refusée par la box (UPnP en lecture seule ?)".into(),
+        Some(c) => format!("erreur UPnP {c}"),
+        None => e.chars().take(120).collect(),
+    }
+}
+
+/// Redirige `port` (même numéro externe si possible) vers `lan:port` ; rend
+/// le port externe. Une redirection déjà en place vers cette machine est
+/// reprise ; si le numéro est pris par une autre, la box en choisit un autre.
+async fn map_port(
+    gw: &igd_next::aio::Gateway<igd_next::aio::tokio::Tokio>,
+    proto: PortMappingProtocol,
+    port: u16,
+    lan: Ipv4Addr,
+) -> Result<u16, String> {
+    let local = SocketAddr::V4(SocketAddrV4::new(lan, port));
+    let first = match gw.add_port(proto, port, local, LEASE_S, "s3m-node").await {
+        Ok(()) => return Ok(port),
+        Err(e) => e.to_string(),
+    };
+    // Bail refusé (725) : redirection permanente.
+    if upnp_code(&first) == Some(725)
+        && gw.add_port(proto, port, local, 0, "s3m-node").await.is_ok()
+    {
+        return Ok(port);
+    }
+    for i in 0..256 {
+        let Ok(m) = gw.get_generic_port_mapping_entry(i).await else {
+            break;
+        };
+        if m.external_port == port && m.protocol == proto {
+            if m.internal_client == lan.to_string() && m.internal_port == port {
+                return Ok(port);
+            }
+            break;
+        }
+    }
+    match gw.add_any_port(proto, local, LEASE_S, "s3m-node").await {
+        Ok(p) => Ok(p),
+        Err(e) => Err(format!(
+            "{} ; autre port : {}",
+            describe(&first),
+            describe(&e.to_string())
+        )),
+    }
 }
