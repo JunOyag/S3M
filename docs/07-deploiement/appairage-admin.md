@@ -60,9 +60,10 @@ définitive. Messages (une clé par message) :
 | `{"login":{"totp":"123456"}}` | `{"session":{"token":hex}}` | définitif |
 | `{"call":{"token":hex,"op":"status"}}` | `{"result":…}` | tous |
 | `{"call":{"token":hex,"op":"action","name":…,"body":{…}}}` | `{"result":…}` | tous |
+| `{"call":{"token":hex,"op":"map"}}` | `{"result":…}` (points de la carte du monde) | définitif |
 
-Toute erreur : `{"error":"…"}`. `status` et `action` sont exactement ceux de
-l'[API locale](packaging.md#api-locale) (la carte n'est pas exposée). Le
+Toute erreur : `{"error":"…"}`. `status`, `action` et `map` sont exactement ceux de
+l'[API locale](packaging.md#api-locale). Le
 Connecteur présente le résultat dans un dashboard servi sur son propre
 `127.0.0.1`, protégé par les mêmes règles que l'API locale.
 
