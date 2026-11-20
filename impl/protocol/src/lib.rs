@@ -27,6 +27,7 @@ pub use generated::p2_pstorage as fb;
 
 pub mod dht;
 pub mod dispersal;
+pub mod entries;
 pub mod exchange;
 pub mod index;
 pub mod layout;
