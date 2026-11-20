@@ -96,6 +96,31 @@ pub type VdfCheck =
     std::sync::Arc<dyn Fn(&[u8; 33], &s3m_core::vdf::VdfProof) -> bool + Send + Sync>;
 
 /// État et règles du service d'échange d'un Nœud.
+/// `(partenaire demandeur, hashes)` → pour chacun, placé chez lui et
+/// toujours tenu pour sien ? `None` : réessayer plus tard.
+pub type PlacementCheck = std::sync::Arc<dyn Fn(&Id, &[Id]) -> Option<Vec<bool>> + Send + Sync>;
+
+/// Taille maximale d'une `OwnershipQuery` (hashes).
+pub const MAX_OWNERSHIP_HASHES: usize = 1024;
+
+/// Bits `owned` d'une `OwnershipAnswer` (bit `i % 8` de l'octet `i / 8`).
+pub fn pack_bits(bits: &[bool]) -> Vec<u8> {
+    let mut out = vec![0u8; bits.len().div_ceil(8)];
+    for (i, b) in bits.iter().enumerate() {
+        if *b {
+            out[i / 8] |= 1 << (i % 8);
+        }
+    }
+    out
+}
+
+/// Inverse de [`pack_bits`] pour `n` hashes.
+pub fn unpack_bits(bytes: &[u8], n: usize) -> Vec<bool> {
+    (0..n)
+        .map(|i| bytes.get(i / 8).is_some_and(|b| b & (1 << (i % 8)) != 0))
+        .collect()
+}
+
 pub struct NodeService {
     priv_node: [u8; 32],
     node_id: Id,
@@ -120,6 +145,10 @@ pub struct NodeService {
     /// Vérification des preuves VDF (rattachement et partenariat
     /// automatiques) ; `None` : ces demandes sont refusées.
     pub vdf: Option<VdfCheck>,
+    /// Fragments placés par ce Nœud chez un partenaire
+    /// (`protocols.gestion-volumes` § OwnershipQuery) : `None` si
+    /// l'information est momentanément indisponible.
+    pub placements: Option<PlacementCheck>,
     /// Miroir de la liste noire (`upkeep`), pour refuser les propositions.
     pub blacklisted: std::collections::HashSet<Id>,
     /// Utilisateurs rattachés automatiquement.
@@ -171,6 +200,7 @@ impl NodeService {
             attach_policy: AttachPolicy::default(),
             partner_policy: PartnerPolicy::default(),
             vdf: None,
+            placements: None,
             blacklisted: Default::default(),
             auto_attached: Default::default(),
             used_attach_identities: Default::default(),
@@ -377,6 +407,21 @@ impl NodeService {
                     TombstoneError::Signature(_) => Refusal::Unauthorized,
                 })?;
                 Ok(Response::Ack { freed })
+            }
+            Body::OwnershipQuery { hashes } => {
+                let p = from_node.ok_or(Refusal::Unauthorized)?;
+                if hashes.len() % 32 != 0 || hashes.len() > 32 * MAX_OWNERSHIP_HASHES {
+                    return Err(Refusal::Malformed);
+                }
+                let list: Vec<Id> = hashes
+                    .chunks(32)
+                    .map(|c| c.try_into().expect("32 octets"))
+                    .collect();
+                let check = self.placements.as_ref().ok_or(Refusal::RateLimited)?;
+                let bits = check(&p, &list).ok_or(Refusal::RateLimited)?;
+                Ok(Response::OwnershipAnswer {
+                    owned: pack_bits(&bits),
+                })
             }
             Body::Probe { nonce } => Ok(Response::ProbeReply {
                 nonce,

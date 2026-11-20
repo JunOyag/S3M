@@ -24,6 +24,7 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
             volume_id: 1,
             mount_path: PathBuf::from("data/volume1"),
             max_capacity_bytes: 100 << 30,
+            draining: false,
         }],
         listen: s3m_node::daemon::default_listen(),
         dht_listen: None,

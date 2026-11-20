@@ -52,6 +52,10 @@ pub trait ChunkStore: Send {
     fn owners(&self, space: Space) -> Vec<Id>;
     /// Hashes des blocs de `owner` dans `space`.
     fn hashes(&self, space: Space, owner: &Id) -> Vec<Id>;
+    /// Stockage physique sous-jacent (gestion des volumes), s'il y en a un.
+    fn physical(&mut self) -> Option<&mut PhysicalStore> {
+        None
+    }
     /// Réécrit le contenu d'un bloc (auto-réparation de la copie locale).
     fn replace(
         &mut self,
@@ -141,6 +145,9 @@ fn owner(space: Space, id: &Id) -> Owner {
 }
 
 impl ChunkStore for PhysicalStore {
+    fn physical(&mut self) -> Option<&mut PhysicalStore> {
+        Some(self)
+    }
     fn get(&self, space: Space, hash: &Id) -> Option<(Id, Vec<u8>)> {
         let loc = self.location(hash).ok()??;
         let c = self.container(loc.container_id).ok()?;

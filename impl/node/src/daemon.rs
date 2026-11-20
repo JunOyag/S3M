@@ -53,6 +53,9 @@ pub struct VolumeSpec {
     pub volume_id: u32,
     pub mount_path: PathBuf,
     pub max_capacity_bytes: u64,
+    /// En vidage avant retrait (`protocols.gestion-volumes`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub draining: bool,
 }
 
 /// Fichier de configuration (JSON).
@@ -515,6 +518,23 @@ pub struct GeoipState {
     pub last: Option<Option<String>>,
 }
 
+/// Gestion des volumes vue du dashboard (`protocols.gestion-volumes`).
+#[derive(Default)]
+pub struct VolumesUi {
+    pub draft: Vec<crate::volumes::Change>,
+    pub imports: std::collections::BTreeMap<u32, crate::volumes::ImportCounts>,
+    pub events: Vec<String>,
+}
+
+impl VolumesUi {
+    pub fn log(&mut self, e: String) {
+        self.events.push(e);
+        if self.events.len() > 20 {
+            self.events.remove(0);
+        }
+    }
+}
+
 /// Contexte partagé par le dashboard et les tâches.
 pub struct Shared {
     pub service: Arc<Mutex<NodeService>>,
@@ -544,6 +564,8 @@ pub struct Shared {
     pub admin_serial: std::sync::atomic::AtomicU32,
     pub admin_reveal_until: Mutex<Option<u64>>,
     pub admin: Mutex<Option<crate::admin::AdminServer>>,
+    /// Brouillon et suivi de la gestion des volumes.
+    pub volumes_ui: Mutex<VolumesUi>,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
     pub dht_addr: Option<String>,
@@ -559,6 +581,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         a.extend(forms);
     }
     v["géolocalisation"] = geoip_status(sh);
+    volumes_status(sh, &mut v);
     v["administration à distance"] = admin_status(sh);
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
         a.push(
@@ -581,8 +604,11 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         { "id": "partenaires", "titre": "Partenaires", "carte": true,
           "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner"] },
         { "id": "carte", "titre": "Carte du monde", "cadre": "map.html", "sections": [], "actions": [] },
+        { "id": "volumes", "titre": "Volumes",
+          "sections": ["volumes", "modifications en attente", "imports de volumes", "journal des volumes"],
+          "actions": ["volume_draft_add", "volume_draft_edit", "volume_apply", "volume_draft_clear"] },
         { "id": "stockage", "titre": "Stockage et protection",
-          "sections": ["volumes", "dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
+          "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "reseau", "titre": "Réseau",
           "sections": ["traversée de NAT", "annuaire (entrée Node)", "géolocalisation"], "actions": ["geoip_update"] },
         { "id": "distance", "titre": "Administration à distance",
@@ -1146,6 +1172,9 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
     if name == "set_config" {
         return set_config(sh, &v);
     }
+    if name.starts_with("volume_") {
+        return volume_action(sh, name, &v);
+    }
     if name == "regenerate_totp" {
         regenerate_totp(sh)?;
     }
@@ -1285,8 +1314,17 @@ pub async fn start_with(
             max_capacity_bytes: v.max_capacity_bytes,
         })
         .collect();
-    let store = PhysicalStore::open(config.data_dir.join("store.sqlite"), volumes)
+    let mut store = PhysicalStore::open(config.data_dir.join("store.sqlite"), volumes)
         .map_err(|e| start(&e))?;
+    for v in &config.volumes {
+        if v.draining {
+            let _ = store.set_draining(v.volume_id, true);
+        }
+        // Marqueur signé (`protocols.gestion-volumes` § Marqueur) : posé s'il manque.
+        if crate::volumes::read_marker(&v.mount_path).is_none() {
+            let _ = crate::volumes::write_marker(&v.mount_path, &seed, v.volume_id);
+        }
+    }
     let mut service = NodeService::with_store(seed, Box::new(store));
     service.attach_policy = config.attach;
     service.partner_policy = config.partner_policy;
@@ -1396,7 +1434,18 @@ pub async fn start_with(
         admin_serial: std::sync::atomic::AtomicU32::new(config.admin_totp_serial),
         admin_reveal_until: Mutex::new(None),
         admin: Mutex::new(None),
+        volumes_ui: Mutex::new(VolumesUi::default()),
     });
+    {
+        // Réponses aux OwnershipQuery des partenaires (import d'un volume).
+        let weak = Arc::downgrade(&shared);
+        let check: crate::exchange::PlacementCheck = Arc::new(move |p, hashes| {
+            let sh = weak.upgrade()?;
+            let d = sh.dispersal.try_lock().ok()?;
+            Some(crate::volumes::placed_with(&d, p, hashes))
+        });
+        shared.service.lock().unwrap().placements = Some(check);
+    }
 
     let clock = system_clock();
     let st_fn: StatusFn = {
@@ -1490,6 +1539,22 @@ pub async fn start_with(
             }
         });
     }
+    {
+        let worker = NetFabric {
+            server: fabric.server.clone(),
+            dht: fabric.dht.clone(),
+            service: shared.service.clone(),
+            addrs: shared.addrs.clone(),
+            excluded: shared.excluded.clone(),
+        };
+        let sh = shared.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                volumes_tick(&sh, &worker).await;
+            }
+        });
+    }
     let sh = shared.clone();
     tokio::spawn(async move {
         let mut tick: u64 = 0;
@@ -1562,4 +1627,487 @@ pub async fn start_with(
         }
     });
     Ok(shared)
+}
+
+// --------------------------------------------- gestion des volumes (écran)
+
+fn volume_usage(sh: &Shared) -> Vec<crate::VolumeUsage> {
+    sh.service
+        .lock()
+        .unwrap()
+        .store
+        .physical()
+        .map(|p| p.volume_usage())
+        .unwrap_or_default()
+}
+
+fn volumes_status(sh: &Shared, v: &mut Value) {
+    let usage = volume_usage(sh);
+    let ui = sh.volumes_ui.lock().unwrap();
+    let rows: Vec<Value> = usage
+        .iter()
+        .map(|u| {
+            let id = u.volume_id.to_string();
+            let act = |nom: &str, libelle: &str| {
+                json!({ "nom": "volume_draft", "libellé": libelle, "valeurs": { "volume": id, "modification": nom } })
+            };
+            let mut actions = Vec::new();
+            if u.draining {
+                actions.push(act("cancel_remove", "Annuler le retrait"));
+            } else {
+                actions.push(act("remove", "Retirer"));
+            }
+            actions.push(act("lost", "Déclarer perdu"));
+            if u.blocks == 0 {
+                actions.push(act("wipe", "Effacer"));
+            }
+            json!({
+                "volume": u.volume_id,
+                "chemin": u.mount_path.display().to_string(),
+                "capacité (octets)": u.max_capacity_bytes,
+                "utilisé (octets)": u.used_bytes,
+                "blocs": u.blocks,
+                "état": if u.draining { format!("vidage : {} blocs restants", u.blocks) } else { "actif".into() },
+                "_actions": actions,
+            })
+        })
+        .collect();
+    v["volumes"] = json!(rows);
+    v["modifications en attente"] = if ui.draft.is_empty() {
+        json!("aucune")
+    } else {
+        json!(ui
+            .draft
+            .iter()
+            .enumerate()
+            .map(|(i, c)| json!({
+                "n°": i + 1,
+                "modification": c.describe(),
+                "_actions": [{ "nom": "volume_draft_drop", "libellé": "Retirer du brouillon",
+                               "valeurs": { "n": (i + 1).to_string() } }],
+            }))
+            .collect::<Vec<_>>())
+    };
+    v["imports de volumes"] = if ui.imports.is_empty() {
+        json!("aucun")
+    } else {
+        json!(ui
+            .imports
+            .iter()
+            .map(|(id, c)| json!({
+                "volume": id,
+                "retenus": c.kept,
+                "déjà présents": c.already_present,
+                "supprimés": c.removed,
+                "en attente de partenaires": c.waiting.len(),
+                "terminé": c.done,
+            }))
+            .collect::<Vec<_>>())
+    };
+    v["journal des volumes"] = json!(ui.events.iter().rev().cloned().collect::<Vec<_>>());
+    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        a.push(json!({ "nom": "volume_draft_add", "titre": "Ajouter un volume", "libellé": "Ajouter au brouillon",
+            "champs": ["chemin", "capacité (Go)", "effacer et réutiliser"],
+            "types": { "capacité (Go)": "number", "effacer et réutiliser": "bool" },
+            "aide": { "chemin": "Dossier sur le disque (créé s'il n'existe pas)",
+                      "effacer et réutiliser": "Seulement pour un disque d'un autre Nœud : ses données S3m seront effacées" } }));
+        a.push(json!({ "nom": "volume_draft_edit", "titre": "Modifier un volume", "libellé": "Ajouter au brouillon",
+            "champs": ["volume", "nouveau chemin", "nouvelle capacité (Go)"],
+            "types": { "volume": "number", "nouvelle capacité (Go)": "number" },
+            "aide": { "nouveau chemin": "Laisser vide pour ne pas changer ; les données doivent déjà s'y trouver",
+                      "nouvelle capacité (Go)": "Laisser vide pour ne pas changer" } }));
+        a.push(json!({ "nom": "volume_apply", "titre": "Enregistrer les modifications", "libellé": "Enregistrer",
+            "champs": ["code 2FA"],
+            "aide": { "code 2FA": "Demandé uniquement en administration à distance" } }));
+        a.push(
+            json!({ "nom": "volume_draft_clear", "libellé": "Vider le brouillon", "champs": [] }),
+        );
+    }
+}
+
+fn gib(v: &Value, k: &str) -> Result<Option<u64>, String> {
+    let s = match v.get(k) {
+        Some(Value::String(s)) => s.trim().replace(',', "."),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => return Ok(None),
+    };
+    if s.is_empty() {
+        return Ok(None);
+    }
+    let g: f64 = s.parse().map_err(|_| format!("« {k} » : nombre attendu"))?;
+    if g.is_nan() || g <= 0.0 {
+        return Err(format!("« {k} » : doit être positif"));
+    }
+    Ok(Some((g * (1u64 << 30) as f64) as u64))
+}
+
+fn volume_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
+    use crate::volumes::Change;
+    let text = |k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
+    let num = |k: &str| -> Result<u32, String> {
+        match v.get(k) {
+            Some(Value::Number(n)) => n
+                .as_u64()
+                .map(|x| x as u32)
+                .ok_or_else(|| format!("« {k} » invalide")),
+            _ => text(k)
+                .parse()
+                .map_err(|_| format!("« {k} » : numéro attendu")),
+        }
+    };
+    let push = |c: Change| -> Result<Value, String> {
+        let mut ui = sh.volumes_ui.lock().unwrap();
+        if let Some(id) = c.volume() {
+            if ui.draft.iter().any(|d| d.volume() == Some(id)) {
+                return Err(format!(
+                    "le volume {id} a déjà une modification dans le brouillon"
+                ));
+            }
+        }
+        let m = format!("Ajouté au brouillon : {}", c.describe());
+        ui.draft.push(c);
+        Ok(json!({ "ok": true, "message": m }))
+    };
+    match name {
+        "volume_draft_add" => {
+            let path = text("chemin");
+            if path.is_empty() {
+                return Err("chemin manquant".into());
+            }
+            let capacity_bytes = gib(v, "capacité (Go)")?.ok_or("capacité manquante")?;
+            let wipe = v
+                .get("effacer et réutiliser")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
+            push(Change::Add {
+                path,
+                capacity_bytes,
+                wipe,
+            })
+        }
+        "volume_draft_edit" => {
+            let volume_id = num("volume")?;
+            let path = Some(text("nouveau chemin")).filter(|p| !p.is_empty());
+            let capacity_bytes = gib(v, "nouvelle capacité (Go)")?;
+            if path.is_none() && capacity_bytes.is_none() {
+                return Err("rien à modifier".into());
+            }
+            push(Change::Edit {
+                volume_id,
+                path,
+                capacity_bytes,
+            })
+        }
+        "volume_draft" => {
+            let volume_id = num("volume")?;
+            push(match text("modification").as_str() {
+                "remove" => Change::Remove { volume_id },
+                "cancel_remove" => Change::CancelRemove { volume_id },
+                "lost" => Change::Lost { volume_id },
+                "wipe" => Change::Wipe { volume_id },
+                other => return Err(format!("modification inconnue : {other}")),
+            })
+        }
+        "volume_draft_drop" => {
+            let n = num("n")? as usize;
+            let mut ui = sh.volumes_ui.lock().unwrap();
+            if n == 0 || n > ui.draft.len() {
+                return Err("modification introuvable".into());
+            }
+            ui.draft.remove(n - 1);
+            Ok(json!({ "ok": true, "message": "Modification retirée du brouillon" }))
+        }
+        "volume_draft_clear" => {
+            sh.volumes_ui.lock().unwrap().draft.clear();
+            Ok(json!({ "ok": true, "message": "Brouillon vidé" }))
+        }
+        "volume_apply" => apply_volume_changes(sh),
+        _ => Err(format!("action inconnue : {name}")),
+    }
+}
+
+/// Valide tout le brouillon puis l'applique (`protocols.gestion-volumes`
+/// § Brouillon).
+fn apply_volume_changes(sh: &Shared) -> Result<Value, String> {
+    use crate::volumes::{self, Change, Inspection};
+    let draft = sh.volumes_ui.lock().unwrap().draft.clone();
+    if draft.is_empty() {
+        return Err("brouillon vide".into());
+    }
+    let node_id = sh.service.lock().unwrap().node_id();
+    let usage = volume_usage(sh);
+    volumes::validate(&draft, &usage, &node_id)?;
+    let path = sh
+        .config
+        .source
+        .clone()
+        .ok_or("configuration sans fichier source")?;
+    let mut done = Vec::new();
+    let mut lost_any = false;
+    for c in &draft {
+        let r: Result<String, String> = (|| {
+            let mut s = sh.service.lock().unwrap();
+            let phys = s.store.physical().ok_or("stockage sans volumes")?;
+            match c {
+                Change::Add {
+                    path: p,
+                    capacity_bytes,
+                    wipe,
+                } => {
+                    let mount = PathBuf::from(p);
+                    let next = phys
+                        .volume_usage()
+                        .iter()
+                        .map(|u| u.volume_id)
+                        .max()
+                        .map_or(1, |m| m + 1);
+                    let (volume_id, import) = match volumes::inspect(&mount, &node_id) {
+                        Inspection::Foreign { .. } if *wipe => {
+                            volumes::wipe(&mount).map_err(|e| e.to_string())?;
+                            (next, false)
+                        }
+                        Inspection::Mine { volume_id, blocks }
+                            if !usage.iter().any(|u| u.volume_id == volume_id) =>
+                        {
+                            (volume_id, blocks)
+                        }
+                        Inspection::Mine { blocks, .. } => (next, blocks),
+                        Inspection::Unmarked => (next, true),
+                        _ => (next, false),
+                    };
+                    phys.add_volume(crate::VolumeConfig {
+                        volume_id,
+                        mount_path: mount.clone(),
+                        max_capacity_bytes: *capacity_bytes,
+                    })
+                    .map_err(|e| e.to_string())?;
+                    volumes::write_marker(&mount, &sh.priv_node, volume_id)
+                        .map_err(|e| e.to_string())?;
+                    crate::settings::edit_raw(&path, |f| {
+                        if let Some(a) = f["volumes"].as_array_mut() {
+                            a.push(json!({ "volume_id": volume_id, "mount_path": p, "max_capacity_bytes": capacity_bytes }));
+                        }
+                    })?;
+                    drop(s);
+                    if import {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        volumes::start_import(&mount, now).map_err(|e| e.to_string())?;
+                        sh.volumes_ui
+                            .lock()
+                            .unwrap()
+                            .imports
+                            .insert(volume_id, Default::default());
+                    }
+                    Ok(format!(
+                        "volume {volume_id} ajouté{}",
+                        if import {
+                            " (import des blocs trouvés)"
+                        } else {
+                            ""
+                        }
+                    ))
+                }
+                Change::Edit {
+                    volume_id,
+                    path: p,
+                    capacity_bytes,
+                } => {
+                    phys.update_volume(*volume_id, p.as_ref().map(PathBuf::from), *capacity_bytes)
+                        .map_err(|e| e.to_string())?;
+                    crate::settings::edit_raw(&path, |f| {
+                        if let Some(e) = volume_entry(f, *volume_id) {
+                            if let Some(p) = p {
+                                e["mount_path"] = json!(p);
+                            }
+                            if let Some(c) = capacity_bytes {
+                                e["max_capacity_bytes"] = json!(c);
+                            }
+                        }
+                    })?;
+                    Ok(format!("volume {volume_id} modifié"))
+                }
+                Change::Remove { volume_id } | Change::CancelRemove { volume_id } => {
+                    let on = matches!(c, Change::Remove { .. });
+                    phys.set_draining(*volume_id, on)
+                        .map_err(|e| e.to_string())?;
+                    crate::settings::edit_raw(&path, |f| {
+                        if let Some(e) = volume_entry(f, *volume_id) {
+                            if on {
+                                e["draining"] = json!(true);
+                            } else if let Some(o) = e.as_object_mut() {
+                                o.remove("draining");
+                            }
+                        }
+                    })?;
+                    Ok(if on {
+                        format!("volume {volume_id} en vidage")
+                    } else {
+                        format!("retrait du volume {volume_id} annulé")
+                    })
+                }
+                Change::Lost { volume_id } => {
+                    let lost = phys.forget_volume(*volume_id).map_err(|e| e.to_string())?;
+                    let mut fragments = 0;
+                    for (owner, hashes) in &lost {
+                        if owner.owner_type == crate::OwnerType::Partner {
+                            if let Ok(p) = <[u8; 32]>::try_from(owner.owner_id.as_slice()) {
+                                if let Some(st) = s.partners.get_mut(&p) {
+                                    st.ledger.hosted_by_partner = st
+                                        .ledger
+                                        .hosted_by_partner
+                                        .saturating_sub(hashes.len() as u64);
+                                }
+                            }
+                            fragments += hashes.len();
+                        }
+                    }
+                    let blocks: usize = lost.iter().map(|(_, h)| h.len()).sum();
+                    crate::settings::edit_raw(&path, |f| remove_volume_entry(f, *volume_id))?;
+                    lost_any = true;
+                    Ok(format!("volume {volume_id} déclaré perdu : {blocks} blocs ({fragments} fragments de partenaires) à reconstruire"))
+                }
+                Change::Wipe { volume_id } => {
+                    let mount = usage
+                        .iter()
+                        .find(|u| u.volume_id == *volume_id)
+                        .map(|u| u.mount_path.clone())
+                        .ok_or("volume inconnu")?;
+                    phys.remove_volume(*volume_id).map_err(|e| e.to_string())?;
+                    volumes::wipe(&mount).map_err(|e| e.to_string())?;
+                    crate::settings::edit_raw(&path, |f| remove_volume_entry(f, *volume_id))?;
+                    Ok(format!("volume {volume_id} effacé et retiré"))
+                }
+            }
+        })();
+        match r {
+            Ok(m) => done.push(m),
+            Err(e) => {
+                let msg = format!(
+                    "arrêt à « {} » : {e} (déjà appliqué : {})",
+                    c.describe(),
+                    if done.is_empty() {
+                        "rien".to_string()
+                    } else {
+                        done.join(" ; ")
+                    }
+                );
+                let mut ui = sh.volumes_ui.lock().unwrap();
+                ui.draft.drain(..done.len());
+                ui.log(msg.clone());
+                return Err(msg);
+            }
+        }
+    }
+    if lost_any {
+        // Reconstruction des blocs locaux perdus depuis la parité, sans attendre.
+        if let Ok(mut d) = sh.dispersal.try_lock() {
+            d.upkeep.last_scrub = 0;
+        }
+    }
+    let _ = save(sh);
+    let mut ui = sh.volumes_ui.lock().unwrap();
+    ui.draft.clear();
+    for m in &done {
+        ui.log(m.clone());
+    }
+    Ok(json!({ "ok": true, "message": format!("Enregistré : {}", done.join(" ; ")) }))
+}
+
+fn volume_entry(f: &mut Value, volume_id: u32) -> Option<&mut Value> {
+    f["volumes"]
+        .as_array_mut()?
+        .iter_mut()
+        .find(|e| e["volume_id"].as_u64() == Some(volume_id as u64))
+}
+
+fn remove_volume_entry(f: &mut Value, volume_id: u32) {
+    if let Some(a) = f["volumes"].as_array_mut() {
+        a.retain(|e| e["volume_id"].as_u64() != Some(volume_id as u64));
+    }
+}
+
+/// Tâche de fond : vidage des volumes retirés, import des blocs trouvés.
+async fn volumes_tick(sh: &Arc<Shared>, fabric: &NetFabric) {
+    let usage = volume_usage(sh);
+    for u in usage.iter().filter(|u| u.draining) {
+        let started = std::time::Instant::now();
+        let mut remaining = usize::MAX;
+        // Lots courts, verrou relâché entre deux lots (~1 s par tour).
+        while started.elapsed() < Duration::from_secs(1) && remaining > 0 {
+            let r = {
+                let mut s = sh.service.lock().unwrap();
+                match s.store.physical() {
+                    Some(p) => {
+                        crate::volumes::drain_step(p, u.volume_id, crate::volumes::DRAIN_BATCH)
+                    }
+                    None => return,
+                }
+            };
+            match r {
+                Ok(n) => remaining = n,
+                Err(e) => {
+                    sh.volumes_ui
+                        .lock()
+                        .unwrap()
+                        .log(format!("vidage du volume {} : {e}", u.volume_id));
+                    break;
+                }
+            }
+        }
+        if remaining == 0 {
+            let removed = {
+                let mut s = sh.service.lock().unwrap();
+                s.store.physical().map(|p| p.remove_volume(u.volume_id))
+            };
+            if let Some(Ok(())) = removed {
+                let _ = std::fs::remove_file(u.mount_path.join(crate::volumes::MARKER_FILE));
+                if let Some(path) = &sh.config.source {
+                    let _ =
+                        crate::settings::edit_raw(path, |f| remove_volume_entry(f, u.volume_id));
+                }
+                sh.volumes_ui
+                    .lock()
+                    .unwrap()
+                    .log(format!("volume {} vidé et retiré", u.volume_id));
+            }
+        }
+    }
+    for u in usage.iter().filter(|u| !u.draining) {
+        if crate::volumes::import_dirs(&u.mount_path).is_empty() {
+            continue;
+        }
+        let mut counts = sh
+            .volumes_ui
+            .lock()
+            .unwrap()
+            .imports
+            .get(&u.volume_id)
+            .cloned()
+            .unwrap_or_default();
+        let done = crate::volumes::import_step(
+            &sh.service,
+            &sh.dispersal,
+            fabric,
+            &u.mount_path,
+            &mut counts,
+        )
+        .await;
+        let mut ui = sh.volumes_ui.lock().unwrap();
+        ui.imports.insert(u.volume_id, counts.clone());
+        if done {
+            ui.log(format!(
+                "import du volume {} terminé : {} retenus, {} déjà présents, {} supprimés",
+                u.volume_id, counts.kept, counts.already_present, counts.removed
+            ));
+        }
+    }
 }

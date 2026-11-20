@@ -28,6 +28,7 @@ fn config(dir: &std::path::Path) -> Config {
             volume_id: 1,
             mount_path: dir.join("vol"),
             max_capacity_bytes: 1 << 30,
+            draining: false,
         }],
         listen: "/ip4/127.0.0.1/tcp/0".into(),
         dht_listen: None,

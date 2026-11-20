@@ -33,6 +33,7 @@ pub mod tombstones;
 pub mod upkeep;
 pub mod upnp;
 pub mod volatility;
+pub mod volumes;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -98,6 +99,9 @@ pub enum StorageError {
     IdentifierOverflow,
     #[error("container file {0} is missing although its bitmap has occupied slots")]
     MissingOccupiedContainer(PathBuf),
+    /// Opération de gestion des volumes refusée (message pour l'opérateur).
+    #[error("{0}")]
+    Volume(String),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -189,6 +193,33 @@ enum Mutation {
     RemoveOwner {
         owner: Owner,
     },
+    /// Bloc déplacé hors d'un volume en vidage (`protocols.gestion-volumes`).
+    Relocate {
+        from_container: u32,
+        from_slot: u32,
+        container: ContainerFile,
+        location: BlockLocation,
+        removed_container: bool,
+    },
+    /// Volume déclaré perdu : conteneurs et emplacements oubliés.
+    ForgetVolume {
+        volume_id: u32,
+    },
+}
+
+/// Blocs perdus d'un volume, par propriétaire.
+pub type LostBlocks = Vec<(Owner, Vec<Vec<u8>>)>;
+
+/// Occupation d'un volume (`protocols.gestion-volumes`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VolumeUsage {
+    pub volume_id: u32,
+    pub mount_path: PathBuf,
+    pub max_capacity_bytes: u64,
+    pub used_bytes: u64,
+    pub containers: usize,
+    pub blocks: usize,
+    pub draining: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -205,6 +236,8 @@ pub struct PhysicalStore {
     volumes: BTreeMap<u32, VolumeConfig>,
     /// In-memory bitmap cache, reconstructed from SQLite on startup.
     containers_cache: HashMap<u32, ContainerFile>,
+    /// Volumes en vidage : plus aucune allocation (`protocols.gestion-volumes`).
+    draining: std::collections::BTreeSet<u32>,
 }
 
 impl PhysicalStore {
@@ -274,6 +307,7 @@ impl PhysicalStore {
             connection,
             volumes: volume_map,
             containers_cache,
+            draining: Default::default(),
         };
         store.restore_container_files()?;
         store.validate_location_bitmaps()?;
@@ -308,7 +342,11 @@ impl PhysicalStore {
             return Ok(existing);
         }
 
-        let containers = self.containers_for(owner)?;
+        let containers: Vec<ContainerFile> = self
+            .containers_for(owner)?
+            .into_iter()
+            .filter(|c| !self.draining.contains(&c.volume_id))
+            .collect();
         if let Some((container_id, slot)) = first_available_slot(&containers) {
             let mut container = containers
                 .into_iter()
@@ -674,6 +712,273 @@ impl PhysicalStore {
         Ok(())
     }
 
+    // ------------------------------------- gestion des volumes en service
+
+    /// Occupation de chaque volume configuré.
+    pub fn volume_usage(&self) -> Vec<VolumeUsage> {
+        self.volumes
+            .values()
+            .map(|v| {
+                let on: Vec<&ContainerFile> = self
+                    .containers_cache
+                    .values()
+                    .filter(|c| c.volume_id == v.volume_id)
+                    .collect();
+                VolumeUsage {
+                    volume_id: v.volume_id,
+                    mount_path: v.mount_path.clone(),
+                    max_capacity_bytes: v.max_capacity_bytes,
+                    used_bytes: self.physical_usage(v.volume_id).unwrap_or(0),
+                    containers: on.len(),
+                    blocks: on
+                        .iter()
+                        .map(|c| occupied_count(&c.occupied_bitmap) as usize)
+                        .sum(),
+                    draining: self.draining.contains(&v.volume_id),
+                }
+            })
+            .collect()
+    }
+
+    /// Ajoute un volume (identifiant et chemin inédits).
+    pub fn add_volume(&mut self, volume: VolumeConfig) -> Result<(), StorageError> {
+        if self.volumes.contains_key(&volume.volume_id) {
+            return Err(StorageError::Volume(format!(
+                "volume {} déjà déclaré",
+                volume.volume_id
+            )));
+        }
+        if self
+            .volumes
+            .values()
+            .any(|v| v.mount_path == volume.mount_path)
+        {
+            return Err(StorageError::Volume(
+                "chemin déjà utilisé par un autre volume".into(),
+            ));
+        }
+        fs::create_dir_all(&volume.mount_path)?;
+        self.volumes.insert(volume.volume_id, volume);
+        Ok(())
+    }
+
+    /// Change le chemin (conteneurs déjà présents au nouveau chemin) et/ou la
+    /// capacité (au moins l'occupation) d'un volume.
+    pub fn update_volume(
+        &mut self,
+        volume_id: u32,
+        mount_path: Option<PathBuf>,
+        max_capacity_bytes: Option<u64>,
+    ) -> Result<(), StorageError> {
+        let used = self.physical_usage(volume_id)?;
+        if let Some(cap) = max_capacity_bytes {
+            if cap < used {
+                return Err(StorageError::Volume(format!(
+                    "capacité inférieure à l'occupation du volume {volume_id} ({used} octets)"
+                )));
+            }
+        }
+        if let Some(path) = &mount_path {
+            for c in self
+                .containers_cache
+                .values()
+                .filter(|c| c.volume_id == volume_id)
+            {
+                if !path.join(Path::new(&c.file_path)).exists() {
+                    return Err(StorageError::Volume(format!(
+                        "les données du volume {volume_id} sont absentes de {} : déplacez-les d'abord",
+                        path.display()
+                    )));
+                }
+            }
+        }
+        let v = self
+            .volumes
+            .get_mut(&volume_id)
+            .ok_or(StorageError::MissingVolume(volume_id))?;
+        if let Some(path) = mount_path {
+            v.mount_path = path;
+        }
+        if let Some(cap) = max_capacity_bytes {
+            v.max_capacity_bytes = cap;
+        }
+        Ok(())
+    }
+
+    /// Retire un volume vide.
+    pub fn remove_volume(&mut self, volume_id: u32) -> Result<(), StorageError> {
+        if self
+            .containers_cache
+            .values()
+            .any(|c| c.volume_id == volume_id)
+        {
+            return Err(StorageError::Volume(format!(
+                "le volume {volume_id} contient encore des blocs"
+            )));
+        }
+        self.volumes.remove(&volume_id);
+        self.draining.remove(&volume_id);
+        Ok(())
+    }
+
+    /// Met un volume en vidage (ou l'en sort : annulation).
+    pub fn set_draining(&mut self, volume_id: u32, draining: bool) -> Result<(), StorageError> {
+        if !self.volumes.contains_key(&volume_id) {
+            return Err(StorageError::MissingVolume(volume_id));
+        }
+        if draining {
+            self.draining.insert(volume_id);
+        } else {
+            self.draining.remove(&volume_id);
+        }
+        Ok(())
+    }
+
+    /// Hashes d'au plus `limit` blocs rangés sur un volume.
+    pub fn blocks_on_volume(
+        &self,
+        volume_id: u32,
+        limit: usize,
+    ) -> Result<Vec<Vec<u8>>, StorageError> {
+        let mut st = self.connection.prepare(
+            "SELECT b.block_hash FROM block_locations b JOIN containers c
+                 ON b.container_id = c.container_id WHERE c.volume_id = ?1 LIMIT ?2",
+        )?;
+        let rows = st.query_map(params![volume_id, limit as i64], |r| r.get::<_, Vec<u8>>(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Déplace un bloc d'un volume en vidage vers un autre volume : écriture
+    /// du nouvel emplacement, bascule de l'emplacement et des deux bitmaps
+    /// dans une transaction, puis libération de l'ancien slot. Rend faux si
+    /// le bloc n'est pas sur un volume en vidage.
+    pub fn relocate_block(&mut self, block_hash: &[u8]) -> Result<bool, StorageError> {
+        let Some(loc) = self.location(block_hash)? else {
+            return Ok(false);
+        };
+        let mut old = self.container(loc.container_id)?;
+        if !self.draining.contains(&old.volume_id) {
+            return Ok(false);
+        }
+        let data = self
+            .read_block(block_hash)?
+            .ok_or(StorageError::MissingBlock)?;
+        let owner = Owner {
+            owner_type: old.owner_type,
+            owner_id: old.owner_id.clone(),
+        };
+        let candidates: Vec<ContainerFile> = self
+            .containers_for(&owner)?
+            .into_iter()
+            .filter(|c| !self.draining.contains(&c.volume_id))
+            .collect();
+        let (mut new, slot) = match first_available_slot(&candidates) {
+            Some((id, slot)) => (
+                candidates
+                    .into_iter()
+                    .find(|c| c.container_id == id)
+                    .expect("allocator only returns a listed container"),
+                slot,
+            ),
+            None => (self.create_container(&owner)?, 0),
+        };
+        set_slot(&mut new.occupied_bitmap, slot, true);
+        self.write_at(&new, slot, &data)?;
+        set_slot(&mut old.occupied_bitmap, loc.slot_index, false);
+        let remove_old = old.occupied_bitmap.iter().all(|b| *b == 0);
+        let old_path = self.absolute_path(&old)?;
+        let location = BlockLocation {
+            block_hash: block_hash.to_vec(),
+            container_id: new.container_id,
+            slot_index: slot,
+        };
+        self.persist_mutation(
+            Mutation::Relocate {
+                from_container: old.container_id,
+                from_slot: loc.slot_index,
+                container: new.clone(),
+                location: location.clone(),
+                removed_container: remove_old,
+            },
+            |tx| {
+                persist_container(tx, &new)?;
+                tx.execute(
+                    "UPDATE block_locations SET container_id = ?1, slot_index = ?2
+                     WHERE block_hash = ?3",
+                    params![new.container_id, slot, block_hash],
+                )?;
+                if remove_old {
+                    tx.execute(
+                        "DELETE FROM containers WHERE container_id = ?1",
+                        params![old.container_id],
+                    )?;
+                } else {
+                    persist_container(tx, &old)?;
+                }
+                Ok(())
+            },
+        )?;
+        self.containers_cache.insert(new.container_id, new.clone());
+        self.write_bitmap_header(new.container_id)?;
+        if remove_old {
+            self.containers_cache.remove(&old.container_id);
+            if old_path.exists() {
+                fs::remove_file(&old_path)?;
+            }
+        } else {
+            self.containers_cache.insert(old.container_id, old.clone());
+            self.write_bitmap_header(old.container_id)?;
+            punch_hole(&old_path, slot_offset(loc.slot_index), BLOCK_SIZE as u64)?;
+        }
+        self.maybe_compact_mutation_log()?;
+        Ok(true)
+    }
+
+    /// Volume perdu : ses conteneurs et emplacements sont oubliés et le
+    /// volume retiré. Rend les blocs perdus, par propriétaire.
+    pub fn forget_volume(&mut self, volume_id: u32) -> Result<LostBlocks, StorageError> {
+        if !self.volumes.contains_key(&volume_id) {
+            return Err(StorageError::MissingVolume(volume_id));
+        }
+        let containers: Vec<ContainerFile> = self
+            .containers_cache
+            .values()
+            .filter(|c| c.volume_id == volume_id)
+            .cloned()
+            .collect();
+        let mut lost: Vec<(Owner, Vec<Vec<u8>>)> = Vec::new();
+        for c in &containers {
+            let mut st = self
+                .connection
+                .prepare("SELECT block_hash FROM block_locations WHERE container_id = ?1")?;
+            let hashes: Vec<Vec<u8>> = st
+                .query_map(params![c.container_id], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            let owner = Owner {
+                owner_type: c.owner_type,
+                owner_id: c.owner_id.clone(),
+            };
+            match lost.iter_mut().find(|(o, _)| *o == owner) {
+                Some((_, v)) => v.extend(hashes),
+                None => lost.push((owner, hashes)),
+            }
+        }
+        self.persist_mutation(Mutation::ForgetVolume { volume_id }, |tx| {
+            tx.execute(
+                "DELETE FROM containers WHERE volume_id = ?1",
+                params![volume_id],
+            )?;
+            Ok(())
+        })?;
+        for c in &containers {
+            self.containers_cache.remove(&c.container_id);
+        }
+        self.volumes.remove(&volume_id);
+        self.draining.remove(&volume_id);
+        self.maybe_compact_mutation_log()?;
+        Ok(lost)
+    }
+
     fn create_container(&self, owner: &Owner) -> Result<ContainerFile, StorageError> {
         let existing = self.containers_for(owner)?;
         let sequence_number = existing
@@ -726,6 +1031,9 @@ impl PhysicalStore {
     fn least_loaded_volume(&self) -> Result<&VolumeConfig, StorageError> {
         let mut selected: Option<(&VolumeConfig, u64)> = None;
         for volume in self.volumes.values() {
+            if self.draining.contains(&volume.volume_id) {
+                continue;
+            }
             let used = self.physical_usage(volume.volume_id)?;
             let free = volume.max_capacity_bytes.saturating_sub(used);
             if free == 0 {

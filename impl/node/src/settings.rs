@@ -474,3 +474,20 @@ pub fn set_raw(path: &Path, key: &str, value: Value) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
+
+/// Modifie le fichier brut par `f`, valide la configuration complète, puis
+/// écrit de façon atomique.
+pub fn edit_raw(path: &Path, f: impl FnOnce(&mut Value)) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut file: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    f(&mut file);
+    serde_json::from_value::<Config>(file.clone())
+        .map_err(|e| format!("configuration invalide : {e}"))?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&file).expect("sérialisable"),
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+}

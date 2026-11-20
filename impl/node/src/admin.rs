@@ -29,6 +29,8 @@ pub const SESSION_IDLE: Duration = Duration::from_secs(30 * 60);
 pub const MAX_FAILURES: u32 = 5;
 /// Actions réservées au dashboard local.
 pub const LOCAL_ONLY: &[&str] = &["show_totp", "regenerate_totp"];
+/// Actions qui exigent, à distance, un code 2FA frais dans `code 2FA`.
+pub const CONFIRM_2FA: &[&str] = &["volume_apply"];
 
 /// HOTP (RFC 4226) sur HMAC-SHA1, `digits` chiffres.
 pub fn hotp(secret: &[u8], counter: u64, digits: u32) -> u32 {
@@ -151,6 +153,28 @@ impl Auth {
         token
     }
 
+    /// Code TOTP valide (fenêtre ±1 pas), jamais deux fois le même pas.
+    fn totp_ok(&mut self, secret: &[u8; 20], code: &str, unix: u64) -> bool {
+        let code = code.trim();
+        let Ok(c) = code.parse::<u32>() else {
+            return false;
+        };
+        if code.len() != 6 {
+            return false;
+        }
+        let step = unix / TOTP_STEP;
+        match [step.wrapping_sub(1), step, step + 1]
+            .into_iter()
+            .find(|s| *s > self.last_step && hotp(secret, *s, 6) == c)
+        {
+            Some(s) => {
+                self.last_step = s;
+                true
+            }
+            None => false,
+        }
+    }
+
     fn current_secret(&self) -> Option<[u8; 20]> {
         match &self.mode {
             Mode::Node { secret } => secret(),
@@ -225,23 +249,13 @@ impl Auth {
                 let Some(secret) = self.current_secret() else {
                     return AdminResponse::Error("administration à distance indisponible".into());
                 };
-                let code: u32 = match totp.trim().parse() {
-                    Ok(c) if totp.trim().len() == 6 => c,
-                    _ => return self.fail(now),
-                };
-                let step = unix / TOTP_STEP;
-                let ok = [step.wrapping_sub(1), step, step + 1]
-                    .into_iter()
-                    .find(|s| *s > self.last_step && hotp(&secret, *s, 6) == code);
-                match ok {
-                    Some(s) => {
-                        self.last_step = s;
-                        AdminResponse::Session {
-                            token: self.open(peer, Some(secret), now),
-                            mac: None,
-                        }
+                if self.totp_ok(&secret, &totp, unix) {
+                    AdminResponse::Session {
+                        token: self.open(peer, Some(secret), now),
+                        mac: None,
                     }
-                    None => self.fail(now),
+                } else {
+                    self.fail(now)
                 }
             }
             AdminRequest::Call {
@@ -289,6 +303,30 @@ impl Auth {
                             return AdminResponse::Error(
                                 "action réservée au tableau de bord local du Nœud".into(),
                             );
+                        }
+                        // Volumes : code 2FA frais à l'enregistrement
+                        // (`protocols.gestion-volumes` § Brouillon).
+                        if !setup && CONFIRM_2FA.contains(&name.as_str()) {
+                            if self.locked(now) {
+                                return AdminResponse::Error(
+                                    "trop d'essais : réessayez plus tard".into(),
+                                );
+                            }
+                            let code = body
+                                .get("code 2FA")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            let ok = match self.current_secret() {
+                                Some(secret) => self.totp_ok(&secret, &code, unix),
+                                None => false,
+                            };
+                            if !ok {
+                                self.fail(now);
+                                return AdminResponse::Error(
+                                    "code 2FA requis ou invalide pour enregistrer".into(),
+                                );
+                            }
                         }
                         match action(&name, body) {
                             Ok(v) => AdminResponse::Result(v),
