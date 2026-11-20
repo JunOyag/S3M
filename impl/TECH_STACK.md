@@ -176,6 +176,11 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   couper), service de relais (`relay_server`, `relay_limits`), relais imposés
   possibles (`relays`). Sous Windows, les connexions sortantes prennent un
   port neuf : le perçage de NAT passe surtout par QUIC.
+- Application de barre des tâches `S3m.exe` (feature `tray` du Connecteur :
+  `tray-icon`, `tao`, `winreg`, notifications WinRT ; icône intégrée par
+  `embed-resource`). Données dans `%APPDATA%\S3m` ; `S3M_HEADLESS=1` : mode
+  d'essai sans navigateur ni notification. Icônes régénérables depuis
+  `LogoS3M.png` : `python impl/connector/assets/make_icons.py` (Pillow).
 - Carte du dashboard Nœud : base de géolocalisation DB-IP « City Lite »
   (≈ 130 Mo, CC BY 4.0) téléchargée par `s3m-node geoip-update
   <data_dir>` (mise à jour mensuelle à relancer) ; sans elle, la carte compte

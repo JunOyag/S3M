@@ -42,7 +42,7 @@ lesquels une session Claude Code se trompe le plus souvent.
   Reste `in_progress` : `deploiement.packaging` (exécutables, dashboards et image Docker
   livrés, dispersion, contrôles, publication DHT Node/User et snapshot du Nœud
   (restauration depuis la seed), partenariats et rattachements automatiques, carte du
-  réseau et traversée de NAT livrés ; dashboards incomplets —
+  réseau, traversée de NAT et application de barre des tâches S3m.exe livrés ; dashboards incomplets —
   `impl/SPEC_GAPS.md`). Lecteur Windows (WinFsp) livré ; FUSE viendra ensuite.
 - **Échange de blocs** : spécifié et livré (`protocols.echange-blocs`, 2026-11-20) —
   libp2p requête/réponse `/s3m/blocks/1`, à côté de la DHT (Kademlia). Reste à
