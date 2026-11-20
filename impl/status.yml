@@ -268,7 +268,7 @@ entries:
       stockage disque du Nœud, état persistant, API locale HTTP/WebSocket
       protégée (local_api), dashboards statiques servis par les binaires, image
       Docker du Nœud (impl/node/Dockerfile). Restent pour clore : dashboards
-      incomplets (liste noire, taux de republication DHT, espace de secours,
+      incomplets (taux de republication DHT, espace de secours,
       écriture d'urgence non suivis), publication des entrées DHT Node et
       User (VDF sous Windows) ; la dispersion automatique est livrée —
       voir impl/SPEC_GAPS.md.
@@ -877,6 +877,7 @@ entries:
       - volatility::partners_offline_more_than_six_months_are_purged
       - volatility::regenerated_fragments_match_originals_and_go_to_new_distinct_partners
       - volatility::surplus_is_resolved_when_the_original_partner_returns
+      - upkeep::fraud_absence_and_local_corruption_are_repaired_automatically
     notes: >-
       impl/node/src/volatility.rs : analyse de disponibilité des fragments de
       parité, réparation dès moins de k+2 fragments disponibles (seuil retenu,
@@ -884,6 +885,8 @@ entries:
       nouveaux partenaires distincts, purge après 6 mois hors ligne,
       suppression des copies temporaires au retour du partenaire d'origine.
       Envoi réel des fragments : protocole d'échange (SPEC_GAPS).
+      Orchestration automatique par l'exécutable du Nœud (upkeep.rs) livrée
+      le 2026-11-20.
   protocols.write-queue:
     kind: narrative
     status: done
@@ -910,6 +913,7 @@ entries:
     tests:
       - blacklist::fraud_destroys_all_data_of_the_partner_and_blacklists_it
       - blacklist::blacklist_is_permanent_and_survives_manifest_roundtrip
+      - upkeep::fraud_absence_and_local_corruption_are_repaired_automatically
     notes: >-
       impl/node/src/blacklist.rs : sur fraude PoS, effacement en bloc des
       conteneurs du partenaire (PhysicalStore::remove_owner, données des
@@ -917,6 +921,8 @@ entries:
       liste des fragments à réparer immédiatement, inscription permanente et
       idempotente dans la liste noire, sérialisée dans le NodeManifest
       (node.BlacklistedPartner). Testé sur un stockage physique réel.
+      Orchestration automatique par l'exécutable du Nœud (upkeep.rs) livrée
+      le 2026-11-20.
   securite.incidents-compromissions:
     kind: narrative
     status: done
@@ -943,6 +949,7 @@ entries:
       - integrity::reconstructed_block_is_queued_for_retransmission_to_the_node
       - self_repair::repair_replaces_corrupted_copy_only_with_a_block_matching_its_hash
       - self_repair::scrubbing_detects_corruption_and_flags_failing_volumes
+      - upkeep::fraud_absence_and_local_corruption_are_repaired_automatically
     notes: >-
       connector : IntegrityLog::pending_repairs, le bloc reconstruit après
       incohérence est mis en attente de retransmission au Nœud, même
@@ -951,6 +958,8 @@ entries:
       blocs locaux contre les block_hash attendus, volume signalé à partir de
       3 anomalies (seuil retenu, page précisée). Testé sur un stockage
       physique réel.
+      Orchestration automatique par l'exécutable du Nœud (upkeep.rs) livrée
+      le 2026-11-20.
   securite.pos-challenges:
     kind: narrative
     status: done
@@ -960,6 +969,7 @@ entries:
       - pos::full_block_request_is_judged_like_a_challenge
       - pos::timeout_follows_measured_mean_latency
       - pos::pos_messages_are_never_throttled
+      - upkeep::fraud_absence_and_local_corruption_are_repaired_automatically
     notes: >-
       impl/node/src/pos.rs : réponse SHA-256(fragment || nonce), référence
       recalculée en local par Reed-Solomon depuis les k blocs, verdicts Passed
@@ -968,6 +978,8 @@ entries:
       glissante (valeurs retenues, page précisée), bridage de bande passante
       jamais appliqué au PoS. Échange réseau des challenges : protocole
       d'échange (SPEC_GAPS).
+      Orchestration automatique par l'exécutable du Nœud (upkeep.rs) livrée
+      le 2026-11-20.
   network.AttachmentRecord:
     kind: schema
     status: done
