@@ -107,10 +107,16 @@ table Attach {
   signature: [ubyte];         // Ed25519 par sig_priv_user sur L("s3m/sig/attach/v1") ‖ pub_user ‖ node_id
 }
 
+// Ajout du 2026-11-20 (protocols.gestion-volumes) : Nœud → partenaire,
+// import d'un volume — « ces fragments sont-ils à vous, placés chez moi ? ».
+table OwnershipQuery {
+  hashes: [ubyte];            // SHA-256 concaténés (32 o chacun, 1024 au plus)
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
   StoreFragment, Challenge, FetchFragment, Tombstone,
-  Probe, ProposePartnership, Attach
+  Probe, ProposePartnership, Attach, OwnershipQuery
 }
 
 // Requête : une par flux libp2p request-response.

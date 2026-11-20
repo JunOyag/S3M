@@ -84,8 +84,10 @@ d'ensemble (`résumé` : libellé, valeur, état ok / attention / problème,
 écran de détail au clic) ; ce qu'aucun écran ne cite tombe dans le dernier
 (« Diagnostic » ou « Paramètres »).
 
-- **Nœud** : vue d'ensemble, utilisateurs, partenaires (carte), stockage et
-  protection, réseau, administration à distance, configuration, diagnostic.
+- **Nœud** : vue d'ensemble, utilisateurs, partenaires, carte du monde,
+  volumes ([`protocols.gestion-volumes`](../04-protocols/gestion-volumes.md) :
+  brouillon de modifications enregistré d'un coup), stockage et protection,
+  réseau, administration à distance, configuration, diagnostic.
 - **Connecteur** : vue d'ensemble, fichiers et synchronisation, mon Nœud,
   identité et sécurité, paramètres.
 

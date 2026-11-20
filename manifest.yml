@@ -972,6 +972,21 @@ pages:
       - tombstones::tombstone_label_is_distinct_from_dht_labels
 
   # ------------------------------------------------- stockage physique (ajout post-V2)
+  - id: protocols.gestion-volumes
+    kind: narrative
+    path: 04-protocols/gestion-volumes.md
+    title: "Gestion des Volumes du Nœud"
+    section: "§4.4 (ajout post-V2)"
+    refs: [protocols.stockage-physique, node.VolumeConfig, protocols.echange-blocs, securite.integrite-autoreparation, securite.pos-challenges, deploiement.appairage-admin, deploiement.packaging]
+    verified_by:
+      - volumes::draining_moves_every_block_and_can_be_cancelled
+      - volumes::a_lost_volume_is_forgotten_and_reports_its_blocks
+      - volumes::marker_tells_own_foreign_and_unmarked_disks_apart
+      - volumes::importing_a_volume_keeps_only_verified_blocks
+      - volumes::the_draft_is_validated_as_a_whole
+      - volumes::ownership_query_answers_only_for_fragments_placed_at_the_requester
+      - exchange::ownership_query_and_answer_round_trip
+
   - id: protocols.stockage-physique
     kind: narrative
     path: 04-protocols/stockage-physique.md

@@ -170,6 +170,12 @@ au besoin être reconstruites par un scan des fichiers conteneurs restaurés
 (lecture des bitmaps + recalcul de `block_hash` par slot occupé), en secours
 si le cache local rapide n'a pas survécu intact.
 
+## Gestion des volumes en service
+
+Ajout, retrait par vidage annulable, volume perdu, import d'un volume
+contenant déjà des blocs, effacement : voir
+[`protocols.gestion-volumes`](gestion-volumes.md).
+
 ## Compaction — hors périmètre de cette version
 
 Un conteneur partiellement vidé (quelques trous, pas entièrement libre)

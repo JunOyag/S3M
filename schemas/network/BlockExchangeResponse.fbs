@@ -63,9 +63,14 @@ table Attached {
   quota_bytes: uint64;
 }
 
+// OwnershipQuery (ajout du 2026-11-20, protocols.gestion-volumes)
+table OwnershipAnswer {
+  owned: [ubyte];             // un bit par hash demandé, bit i%8 de l'octet i/8
+}
+
 union ResponseBody {
   Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
-  Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached
+  Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached, OwnershipAnswer
 }
 
 table BlockResponse {

@@ -214,6 +214,11 @@ qu'il doit héberger est traité comme un échec PoS
 `Probe`, `ProposePartnership` et `Attach` (ajouts du 2026-11-20) : voir
 [`protocols.partenariat-automatique`](partenariat-automatique.md).
 
+## Import d'un volume
+
+`OwnershipQuery` (ajout du 2026-11-20), Nœud → partenaire : voir
+[`protocols.gestion-volumes`](gestion-volumes.md#ownership-query).
+
 ## Hors périmètre
 
 Traversée de NAT ([`network.bootstrap`](../01-network-dht/bootstrap.md)),
