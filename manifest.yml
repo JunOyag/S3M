@@ -255,6 +255,9 @@ pages:
     section: "protocols.echange-blocs"
     fbs: "schemas/network/BlockExchange.fbs#BlockRequest"
     refs: [protocols.echange-blocs, network.RescueGrant]
+    verified_by:
+      - exchange::every_request_and_response_roundtrips
+      - exchange::oversize_foreign_and_unknown_version_messages_are_rejected
 
   - id: network.BlockResponse
     kind: schema
@@ -263,6 +266,9 @@ pages:
     section: "protocols.echange-blocs"
     fbs: "schemas/network/BlockExchangeResponse.fbs#BlockResponse"
     refs: [protocols.echange-blocs, network.BlockRequest]
+    verified_by:
+      - exchange::every_request_and_response_roundtrips
+      - exchange::oversize_foreign_and_unknown_version_messages_are_rejected
 
   - id: network.RescueGrant
     kind: schema
@@ -271,6 +277,9 @@ pages:
     section: "protocols.echange-blocs"
     fbs: "schemas/network/BlockExchange.fbs#RescueGrant"
     refs: [protocols.echange-blocs, network.SignedRescueGrant, network.SignedMigrationPointer]
+    verified_by:
+      - exchange::grant_is_signed_by_issuer_and_expires_after_six_months
+      - exchange::every_request_and_response_roundtrips
 
   - id: network.SignedRescueGrant
     kind: schema
@@ -279,6 +288,9 @@ pages:
     section: "protocols.echange-blocs"
     fbs: "schemas/network/BlockExchange.fbs#SignedRescueGrant"
     refs: [network.RescueGrant, protocols.echange-blocs]
+    verified_by:
+      - exchange::grant_is_signed_by_issuer_and_expires_after_six_months
+      - exchange::every_request_and_response_roundtrips
 
   # -------------------------------------------------------- schemas: node.*
   - id: node.VolumeConfig
@@ -776,6 +788,22 @@ pages:
     title: "Protocole d'Échange de Blocs"
     section: "§3.7, §3.12"
     refs: [network.dht-directory, network.BlockRequest, network.BlockResponse, network.RescueGrant, crypto.k-attach, crypto.symmetric-suite, securite.pos-challenges, protocols.tombstones, protocols.dispersion-transactionnelle, protocols.migration-noeud, securite.incidents-compromissions]
+    verified_by:
+      - exchange::connector_proof_is_bound_to_both_peers_and_k_attach
+      - exchange::rescue_session_proof_is_bound_to_the_connection
+      - exchange::delegation_lets_only_the_delegate_node_read_within_the_grant_lifetime
+      - exchange::migration_pointer_revokes_old_grants_and_extends_new_ones
+      - exchange::rescue_rate_is_bounded_per_grant
+      - exchange::attached_connector_reads_writes_and_commits_with_conflict_detection
+      - exchange::partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance
+      - exchange::rescue_read_requires_a_grant_from_the_owner_and_is_rate_limited
+      - exchange::new_node_reads_old_fragments_by_delegation_after_total_loss
+      - exchange::migration_pointer_switches_rescue_access_to_the_new_node
+      - exchange::fragments_of_a_silent_node_are_kept_six_months
+      - exchange::two_nodes_exchange_fragments_over_libp2p
+      - exchange::connector_writes_reads_then_rescues_from_partner_when_node_is_down
+      - exchange::delegation_reaches_the_new_node_which_reads_old_fragments
+      - exchange::block_source_and_replay_sink_use_the_network
 
   - id: protocols.acces-applicatif
     kind: narrative

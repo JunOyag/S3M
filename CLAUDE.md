@@ -34,18 +34,16 @@ lesquels une session Claude Code se trompe le plus souvent.
    tests des invariants explicites + `impl/status.yml` à `done` + `verified_by` renseigné +
    `mkdocs build --strict` toujours vert). Ne jamais marquer `done` sans ces 5 conditions.
 
-## État actuel (2026-11-19)
+## État actuel (2026-11-20)
 
 - **Orchestration** : Claude Code est la seule IA du projet, orchestrateur compris.
 - **Spec V3 intégrée** (entrée « Spec V3 » de `impl/SPEC_GAPS.md`).
 - **Phases 0 à 6 implémentées** (logique testée) ; voir `impl/status.yml` pour le détail.
-  Restent `in_progress` : `protocols.acces-applicatif` (backends WinFsp/FUSE, protocole
-  d'échange de blocs) et `deploiement.packaging` (binaires, serveur HTTP, dashboards,
+  Restent `in_progress` : `protocols.acces-applicatif` (backends WinFsp/FUSE) et `deploiement.packaging` (binaires, serveur HTTP, dashboards,
   image Docker).
-- **Manque transverse** : le protocole réseau d'échange de blocs Connecteur ↔ Nœud ↔
-  partenaires n'est pas spécifié (`impl/SPEC_GAPS.md`) ; les ids qui en dépendent livrent
-  leur logique derrière des interfaces (`BlockSource`, `ReplaySink`…), testée sans réseau.
-  Seule la DHT (libp2p Kademlia) circule réellement sur le réseau.
+- **Échange de blocs** : spécifié et livré (`protocols.echange-blocs`, 2026-11-20) —
+  libp2p requête/réponse `/p2p-storage/blocks/1`, à côté de la DHT (Kademlia). Reste à
+  l'assembler dans les binaires (`deploiement.packaging`).
 - **Phase 7 (post-quantique) reportée** : optionnelle pour un MVP et contraire à la V3
   (seul le tag 0 est accepté).
 - L'essai V1 de `network.dht-directory` reste archivé sur `archive/dht-directory-v1`.

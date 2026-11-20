@@ -656,10 +656,9 @@ entries:
       Moteur livré (impl/connector/src/access.rs) : résolution de chemins depuis
       fs_root_hash, récupération paresseuse, chemin normal / chemin de secours
       avec vérification d'intégrité, convention mime inode/directory. Restent
-      pour clore : backends du lecteur monté (WinFsp puis FUSE) et protocole
-      d'échange de blocs Connecteur <-> Nœud <-> partenaires (SPEC_GAPS), dont
-      dépendent aussi l'étape 4 de network.bootstrap et l'envoi réel de
-      plusieurs ids de Phase 3-4.
+      pour clore : backends du lecteur monté (WinFsp puis FUSE). Le transport
+      est désormais livré par protocols.echange-blocs (NetBlockSource,
+      NetReplaySink) ; reste à l'assembler dans le binaire avec le moteur.
   protocols.dispersion-transactionnelle:
     kind: narrative
     status: done
@@ -1092,31 +1091,69 @@ entries:
       monté (protocols.acces-applicatif).
   protocols.echange-blocs:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - exchange::connector_proof_is_bound_to_both_peers_and_k_attach
+      - exchange::rescue_session_proof_is_bound_to_the_connection
+      - exchange::delegation_lets_only_the_delegate_node_read_within_the_grant_lifetime
+      - exchange::migration_pointer_revokes_old_grants_and_extends_new_ones
+      - exchange::rescue_rate_is_bounded_per_grant
+      - exchange::attached_connector_reads_writes_and_commits_with_conflict_detection
+      - exchange::partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance
+      - exchange::rescue_read_requires_a_grant_from_the_owner_and_is_rate_limited
+      - exchange::new_node_reads_old_fragments_by_delegation_after_total_loss
+      - exchange::migration_pointer_switches_rescue_access_to_the_new_node
+      - exchange::fragments_of_a_silent_node_are_kept_six_months
+      - exchange::two_nodes_exchange_fragments_over_libp2p
+      - exchange::connector_writes_reads_then_rescues_from_partner_when_node_is_down
+      - exchange::delegation_reaches_the_new_node_which_reads_old_fragments
+      - exchange::block_source_and_replay_sink_use_the_network
+    notes: >-
+      Spec 2026-11-20. Partie commune dans impl/protocol (messages, preuves,
+      autorisations de secours, couverture, débit) ; serveur et transport
+      libp2p dans impl/node ; client, session, secours, délégation et
+      branchements BlockSource/ReplaySink dans impl/connector. Le
+      rafraîchissement des pointeurs de migration depuis la DHT
+      (refresh_successors) est à planifier par le binaire
+      (deploiement.packaging).
   network.BlockRequest:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - exchange::every_request_and_response_roundtrips
+      - exchange::oversize_foreign_and_unknown_version_messages_are_rejected
+    notes: >-
+      Types générés (impl/protocol/src/generated/p2_pstorage/exchange), codage
+      dans protocol::exchange.
   network.BlockResponse:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - exchange::every_request_and_response_roundtrips
+      - exchange::oversize_foreign_and_unknown_version_messages_are_rejected
+    notes: >-
+      Types générés (impl/protocol/src/generated/p2_pstorage/exchange), codage
+      dans protocol::exchange.
   network.RescueGrant:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - exchange::grant_is_signed_by_issuer_and_expires_after_six_months
+      - exchange::every_request_and_response_roundtrips
+    notes: >-
+      Émission et vérification : protocol::exchange::{issue_grant,
+      open_grant}.
   network.SignedRescueGrant:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - exchange::grant_is_signed_by_issuer_and_expires_after_six_months
+      - exchange::every_request_and_response_roundtrips
+    notes: >-
+      Émission et vérification : protocol::exchange::{issue_grant,
+      open_grant}.

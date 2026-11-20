@@ -9,17 +9,18 @@ license = "MIT"
 name = "p2p_storage_connector"
 
 [dependencies]
+async-trait = "0.1"
+ed25519-dalek = "2"
 futures = "0.3"
 flatbuffers = "=23.5.26"
 getrandom = "0.2"
-libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519"] }
+libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response"] }
 p2p-storage-core = { path = "../core" }
 p2p-storage-protocol = { path = "../protocol" }
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 
 [dev-dependencies]
-ed25519-dalek = "2"
 p2p-storage-node = { path = "../node" }
 
 [features]

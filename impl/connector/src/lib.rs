@@ -7,6 +7,7 @@ pub mod access;
 pub mod bootstrap;
 pub mod dht_directory;
 pub mod emergency;
+pub mod exchange;
 pub mod fs;
 pub mod incidents;
 pub mod integrity;
