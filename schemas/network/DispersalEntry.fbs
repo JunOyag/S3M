@@ -10,6 +10,7 @@ table DispersalRootPointer {
   dispersal_root_hash: [ubyte];
   dispersal_root_partners: [P2PStorage.Dispersal.Partner];
   dispersal_root_salt: [ubyte];   // 16 o, sel du nœud racine de l'arbre d'index (K_dispersal_block, §3.8)
+  dispersal_root_stripe: P2PStorage.Dispersal.Stripe; // ajout 2026-11-20 : hash et partenaire de chaque fragment du stripe racine
 }
 
 /// Entrée DHT DispersalManifest (§3.9). TTL 15 552 000 s, republiée toutes les 2 592 000 s.

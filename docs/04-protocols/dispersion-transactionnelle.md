@@ -39,6 +39,33 @@ l'ancienne version reste intégralement valide et récupérable.
    ([`node.MutationLog`](../02-schemas/node/MutationLog.md)) ; adressage par
    hash ⇒ reprise idempotente.
 
+## Orchestration par le Nœud {: #orchestration }
+
+Précisions d'implémentation (2026-11-20, `impl/SPEC_GAPS.md`) :
+
+- **Blocs à disperser** : chaque bloc reçu d'un Utilisateur (`PutBlock`,
+  [`protocols.echange-blocs`](echange-blocs.md)) entre dans l'assemblage
+  progressif de [`protocols.erasure-coding`](erasure-coding.md#assemblage-progressif)
+  (k par défaut 4, coef 3, padding après `duree_max_idle_seconds`). Un
+  stripe partiel est recréé dès l'arrivée de vrais blocs ; l'ancien est
+  purgé par tombstones.
+- **Placement** : les coef×k fragments de parité vont à coef×k partenaires
+  distincts, choisis par distance XOR entre `node_id` et `stripe_id`
+  (`stripe_id` = SHA-256 des hashes de ses k blocs de données) parmi ceux
+  dont le solde de troc le permet ; un partenaire injoignable est remplacé
+  par le suivant. Seul un reçu signé compte comme confirmation.
+- **Arbre d'index** : un `IndexNode` tient dans un bloc chiffré
+  ([`crypto.k-dispersal`](../03-crypto/k-dispersal.md)) ; il forme le bloc 0
+  d'un stripe complet dont les k−1 autres blocs de données sont du padding,
+  si bien que k fragments quelconques parmi N suffisent à le relire. L'arbre
+  est réémis entièrement à chaque changement du catalogue (copy-on-write :
+  les stripes de données inchangés sont repris tels quels) ; les anciens
+  stripes d'index sont purgés après un délai de grâce de 3 600 s.
+- **Publication** : `DispersalRootPointer` (avec `dispersal_root_stripe`)
+  chiffré sous `K_attach`, signé par `sig_priv_dispersal`, publié sous
+  `SHA-256(K_attach)` puis republié selon
+  [`network.dht-directory`](../01-network-dht/dht-directory.md#expiration-et-republication).
+
 ## Cas d'usage de ce protocole
 
 Ce protocole "standard" est le mécanisme sous-jacent de plusieurs scénarios

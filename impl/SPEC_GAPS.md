@@ -564,3 +564,27 @@ Connecteur depuis la seule seed n'est pas possible ; (4) lecteur WinFsp
 sensible à la casse, comme le moteur. Le Nœud ne lance pas encore de
 lui-même la dispersion de la parité vers ses partenaires (orchestration de
 `protocols.dispersion-transactionnelle` dans l'exécutable) : à faire.
+
+---
+
+## protocols.dispersion-transactionnelle — Amorçage du stripe racine et stripes d'index
+
+**Constat** (2026-11-20, en implémentant la dispersion automatique) : (1) le
+`DispersalRootPointer` publie les partenaires du stripe racine mais pas les
+hashes de ses fragments, alors que les fragments se demandent par hash ;
+l'arbre d'index serait illisible après la perte du Nœud. (2) La spec dit que
+chaque enfant de l'arbre est « un Stripe complet (k fragments de données +
+coef×k de parité) » alors qu'un `IndexNode` tient dans un seul bloc.
+
+**Question** : comment amorcer la lecture et former un stripe d'index ?
+
+**Impact si non résolu** : bloquant pour la restauration depuis la parité.
+
+**Résolution** (orchestrateur, sur délégation de l'utilisateur, 2026-11-20) :
+(1) champ **additif** `dispersal_root_stripe: Stripe` dans
+`DispersalRootPointer` (§3.5 respecté) ; (2) le bloc d'index chiffré est le
+bloc 0 de son stripe, les k−1 autres sont du padding. Autres valeurs
+retenues : placement par distance XOR au `stripe_id` (SHA-256 des hashes de
+données), arbre réémis entier à chaque changement, purge des anciens stripes
+d'index après 3 600 s. Pages `network.DispersalRootPointer` et
+`protocols.dispersion-transactionnelle` mises à jour.
