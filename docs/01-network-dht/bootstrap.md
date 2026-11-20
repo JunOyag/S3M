@@ -27,6 +27,11 @@ Connecteur ([`deploiement.packaging`](../07-deploiement/packaging.md#barre-des-t
 propose la liste ; le `node_id` se déduit du `PeerId` annoncé. L'annonce ne
 révèle que la présence d'un Nœud S3m et son adresse locale.
 
+Un Nœud encore sous [identité temporaire](../07-deploiement/appairage-admin.md#temporaire)
+s'annonce de même, avec cette identité, sur son port d'administration ; il
+ne répond pas au `Probe` mais au `hello` du canal d'administration
+(`mode: setup`), et l'assistant le liste comme « à configurer ».
+
 ## Chemin rapide (cache local présent)
 
 Le Connecteur interroge en priorité son **cache local** pour obtenir

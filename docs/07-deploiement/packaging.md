@@ -16,6 +16,13 @@ le moteur par l'[API locale](#api-locale) ci-dessous.
 
 ## Dashboard Nœud
 
+Au premier lancement, le dashboard propose **nouvelle identité** ou
+**identité existante**, sous identité temporaire, et affiche le code
+d'appairage ([`deploiement.appairage-admin`](appairage-admin.md)) ; il passe
+ensuite au dashboard ci-dessous sans changer d'adresse ni de jeton. La
+section « administration à distance » affiche à la demande le QR code 2FA et
+permet de le régénérer.
+
 Volumes et quotas ([`node.NodeConfig`](../02-schemas/node/NodeConfig.md)),
 utilisateurs rattachés
 ([`node.AttachedUser`](../02-schemas/node/AttachedUser.md)), état des
@@ -125,13 +132,19 @@ synchronisation courantes :
   nouveau joignable, rattachement automatique accepté ou refusé, erreur de
   synchronisation persistante.
 - **Assistant de premier lancement** (aucune configuration) : création de
-  la phrase de récupération (affichée une fois, à recopier), recherche des
+  la phrase de récupération, affichée en
+  [code de récupération](../03-crypto/identity-derivation.md#code-de-recuperation)
+  (QR code, texte, 24 mots), ou reprise d'une identité existante, recherche des
   Nœuds du réseau local
   ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)),
   bouton « Se rattacher » sur chaque Nœud trouvé ou saisie manuelle de son
   adresse, puis démarrage normal et ouverture du tableau de bord ; le
   rattachement est demandé automatiquement
   ([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md)).
+  Un Nœud « à configurer » trouvé se configure depuis l'assistant avec son
+  code d'appairage ; le dashboard du Connecteur permet ensuite
+  d'administrer son Nœud à distance avec le code 2FA
+  ([`deploiement.appairage-admin`](appairage-admin.md)).
 
 ## API locale {: #api-locale }
 

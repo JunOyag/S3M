@@ -1106,6 +1106,13 @@ pages:
     section: "§7.3"
     refs: [protocols.write-queue, protocols.espace-secours, securite.blacklist-fraude]
 
+  - id: deploiement.appairage-admin
+    kind: narrative
+    path: 07-deploiement/appairage-admin.md
+    title: "Identité temporaire, Appairage et Administration à distance du Nœud"
+    section: "§7.3"
+    refs: [deploiement.packaging, crypto.identity-derivation, crypto.symmetric-suite, crypto.key-hierarchy, network.bootstrap, network.vdf-identity, network.dht-directory, deploiement.disaster-recovery, securite.incidents-compromissions]
+
   # ------------------------------------------------------------ agilité crypto
   - id: agilite.kem-vs-nike
     kind: narrative

@@ -145,6 +145,7 @@ L'unicité fait l'objet d'un test unitaire du noyau (`impl/core`,
 | `"block"` | `K_block` | `master_key[version]` | `encryption_salt` | `u32(index_du_bloc)` | [`crypto.k-block`](k-block.md) |
 | `"master-key-wrap"` | `K_wrap` | `master_key[version_courante]` | — | `u16(version_wrappée)`, `u16(version_courante)` | cette page |
 | `"node-snapshot"` | `K_node_snapshot` (blocs du snapshot du NodeManifest) | `priv_node` | sel du snapshot (16 o) | `u32(index_du_bloc)` | [`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md#snapshot) |
+| `"admin-totp"` | secret TOTP de l'administration à distance (20 premiers octets) | `priv_node` | — | `u32(numéro_de_série)` | [`deploiement.appairage-admin`](../07-deploiement/appairage-admin.md#administration) |
 | `"connector-auth"` | preuve d'authentification Connecteur → Nœud | `K_attach` | — | `PeerId` du Connecteur, `PeerId` du Nœud | [`protocols.echange-blocs`](../04-protocols/echange-blocs.md) |
 
 - `K_attach` n'est plus une exception : la V2 lui donnait un `info` vide, la

@@ -1248,3 +1248,9 @@ entries:
       de réutilisation de port) : le perçage s'appuie surtout sur QUIC. Essai
       : un Nœud n'écoutant nulle part est joint par un autre Nœud et par un
       Connecteur via son relais.
+  deploiement.appairage-admin:
+    kind: narrative
+    status: in_progress
+    owner: claude-code
+    tests: []
+    notes: ""
