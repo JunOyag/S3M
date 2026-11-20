@@ -170,7 +170,7 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
             let s = state.lock().unwrap();
             if let Some(path) = &s.done {
                 return json!({ "titre": "S3m — configuration terminée",
-                    "état": format!("Configuration enregistrée ({}). S3m démarre : vous pouvez fermer cette page.", path.display()) });
+                    "état": format!("Configuration enregistrée ({}). S3m démarre et ouvre le tableau de bord : vous pouvez fermer cette page.", path.display()) });
             }
             let found: Vec<Value> = s
                 .found
@@ -182,6 +182,8 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                         "nœud": format!("{}…", &hex::encode(n.node_id)[..16]),
                         "adresse": n.addr,
                         "accepte de nouveaux partenaires": n.accepting_partners,
+                        "_actions": [{ "nom": "choose", "libellé": "Se rattacher",
+                                       "valeurs": { "numéro": (i + 1).to_string() } }],
                     })
                 })
                 .collect();
@@ -198,8 +200,8 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                 },
                 "message": s.message,
                 "actions": [
-                    { "nom": "choose", "libellé": "Utiliser le nœud n°", "champs": ["numéro"] },
-                    { "nom": "manual", "libellé": "Utiliser l'adresse", "champs": ["adresse"] },
+                    { "nom": "manual", "titre": "Nœud absent de la liste : saisir son adresse",
+                      "libellé": "Se rattacher", "champs": ["adresse"] },
                     { "nom": "scan", "libellé": "Rechercher à nouveau", "champs": [] }
                 ]
             })
@@ -211,7 +213,9 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
             let addr = match name {
                 "scan" => {
                     rescan(state.clone());
-                    return Ok(json!({ "ok": true }));
+                    return Ok(
+                        json!({ "ok": true, "message": "Recherche des Nœuds du réseau local…" }),
+                    );
                 }
                 "choose" => {
                     let n: usize = v
@@ -240,12 +244,10 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                     if let Some(tx) = s.notify.take() {
                         let _ = tx.send(path);
                     }
-                    Ok(json!({ "ok": true }))
+                    Ok(json!({ "ok": true, "message": "Configuration enregistrée : S3m démarre" }))
                 }
-                Err(e) => {
-                    state.lock().unwrap().message = Some(e.clone());
-                    Err(e)
-                }
+                // L'erreur s'affiche dans un message éphémère.
+                Err(e) => Err(e),
             }
         })
     };

@@ -218,6 +218,7 @@ fn main() {
     let mut dash_url: Option<String> = None;
     let mut last: Option<TrayView> = None;
     let mut offline_notified = false;
+    let mut after_setup = false;
     event_loop.run(move |event, _, flow| {
         *flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_secs(2));
         match event {
@@ -241,10 +242,15 @@ fn main() {
             Event::UserEvent(UserEvent::ConfigReady(path)) => {
                 log("configuration écrite");
                 open_dash.set_text("Ouvrir le tableau de bord");
+                after_setup = true;
                 start_connector(&rt, path, proxy.clone());
             }
             Event::UserEvent(UserEvent::Started(sh, url)) => {
                 log("Connecteur démarré");
+                // Premier lancement : le tableau de bord suit l'assistant.
+                if std::mem::take(&mut after_setup) {
+                    open(&url);
+                }
                 dash_url = Some(url);
                 shared = Some(sh);
                 for item in [&open_dash, &sync, &pause] {
