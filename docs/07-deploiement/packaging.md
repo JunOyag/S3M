@@ -23,6 +23,12 @@ ensuite au dashboard ci-dessous sans changer d'adresse ni de jeton. La
 section « administration à distance » affiche à la demande le QR code 2FA et
 permet de le régénérer.
 
+**Ports du Nœud** : `listen` (par défaut `/ip4/0.0.0.0/tcp/4001`) porte toute
+la pile réseau — DHT, échange de blocs, traversée de NAT — en TCP, et QUIC
+sur le même numéro en UDP ; `admin_listen` (4003, TCP) porte le canal
+d'administration. Les anciens réglages `dht_listen` / `blocks_listen`
+restent lus s'ils figurent dans la configuration.
+
 Volumes et quotas ([`node.NodeConfig`](../02-schemas/node/NodeConfig.md)),
 utilisateurs rattachés
 ([`node.AttachedUser`](../02-schemas/node/AttachedUser.md)), état des
