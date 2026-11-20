@@ -37,6 +37,7 @@ fn published_node_entry(priv_node: &[u8; 32]) -> Vec<u8> {
         &fb::NodeSnapshotPointerArgs {
             node_snapshot_root_hash: Some(root),
             node_snapshot_root_partners: Some(partners),
+            ..Default::default()
         },
     );
     fbb.finish_minimal(ptr);

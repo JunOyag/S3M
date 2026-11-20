@@ -5,8 +5,8 @@
 //! fois dans un fil dédié (≈ 30 s à 1,5 min) puis conservée sur disque ;
 //! l'entrée est publiée dès qu'elle est prête, puis republiée à l'échéance
 //! lissée (`next_republish_at(pub_node, …)`) ou si l'adresse change.
-//! Le `NodeSnapshotPointer` n'est pas encore produit (snapshot du
-//! NodeManifest non dispersé) : l'entrée part sans `snapshot_ciphertext`.
+//! Le `NodeSnapshotPointer` (snapshot du NodeManifest, `snapshot_engine`)
+//! est chiffré sous `K_node_self` ; tout nouveau pointeur republie l'entrée.
 
 use std::path::Path;
 
@@ -26,6 +26,7 @@ pub struct NodeEntryState {
     pub published_at: Option<u64>,
     pub next_republish: u64,
     pub published_addr: Option<(String, u16)>,
+    pub published_snapshot: Option<Vec<u8>>,
     pub last_error: Option<String>,
 }
 
@@ -59,6 +60,7 @@ pub async fn publish_if_due(
     pub_node_recovery: &[u8; 32],
     addr: (String, u16),
     proof: &VdfProof,
+    snapshot: Option<Vec<u8>>,
     state: &std::sync::Mutex<NodeEntryState>,
     now: u64,
 ) {
@@ -67,6 +69,7 @@ pub async fn publish_if_due(
         s.published_at.is_none()
             || now >= s.next_republish
             || s.published_addr.as_ref() != Some(&addr)
+            || s.published_snapshot != snapshot
     };
     if !due {
         return;
@@ -81,7 +84,7 @@ pub async fn publish_if_due(
             timestamp: now,
             proof,
             pub_node_recovery,
-            snapshot_pointer: None,
+            snapshot_pointer: snapshot.as_deref(),
         },
         &nonce,
     );
@@ -98,6 +101,7 @@ pub async fn publish_if_due(
             s.published_at = Some(now);
             s.next_republish = next_republish_at(pub_node, now + 1);
             s.published_addr = Some(addr);
+            s.published_snapshot = snapshot;
             s.last_error = None;
         }
         Err(e) => s.last_error = Some(e),

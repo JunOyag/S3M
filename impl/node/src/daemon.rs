@@ -26,6 +26,8 @@ use crate::dispersal_engine::{
 use crate::exchange::{refresh_successors, BlockServer, NodeService, PartnerState, UserAccount};
 use crate::local_http::{self, ActionFn, Asset, StatusFn};
 use crate::publish::{ensure_node_proof, publish_if_due, NodeEntryState};
+use crate::recovery::recover;
+use crate::snapshot_engine::run_snapshot;
 use crate::tombstones::PartnerLedger;
 use crate::upkeep::{run_upkeep, UpkeepConfig, UpkeepReport};
 use crate::{PhysicalStore, VolumeConfig};
@@ -86,6 +88,10 @@ fn default_api_port() -> u16 {
 }
 
 impl Config {
+    fn dht_bootstrap_is_empty(&self) -> bool {
+        self.bootstrap.is_empty()
+    }
+
     pub fn load(path: &Path) -> Result<Self, DaemonError> {
         let s = std::fs::read_to_string(path)?;
         let mut c: Config =
@@ -343,6 +349,10 @@ pub struct Shared {
     pub last_upkeep: Mutex<Option<(u64, UpkeepReport)>>,
     /// Entrée DHT Node.
     pub node_entry: Arc<Mutex<NodeEntryState>>,
+    /// `NodeSnapshotPointer` courant (sérialisé).
+    pub snapshot_pointer: Mutex<Option<Vec<u8>>>,
+    /// Résultat de la restauration au démarrage, s'il y en a eu une.
+    pub recovery: Mutex<Option<Value>>,
     pub config: Config,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
@@ -399,6 +409,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "dispersion": dispersal_status(sh),
         "contrôles et réparation": upkeep_status(sh),
         "annuaire (entrée Node)": node_entry_status(sh),
+        "snapshot du nœud": snapshot_status(sh),
         "migration": {
             "anciens node_id couverts": s.previous_node_ids.iter().map(|i| hx(i)).collect::<Vec<_>>(),
             "délégations reçues": s.delegations.len(),
@@ -476,6 +487,21 @@ fn node_entry_status(sh: &Shared) -> Value {
         "publiée le": s.published_at,
         "prochaine republication": if s.published_at.is_some() { json!(s.next_republish) } else { Value::Null },
         "erreur": s.last_error,
+    })
+}
+
+fn snapshot_status(sh: &Shared) -> Value {
+    let recovery = sh.recovery.lock().unwrap().clone();
+    let snap = match sh.dispersal.try_lock() {
+        Err(_) => return json!({ "état": "cycle en cours", "restauration": recovery }),
+        Ok(d) => d.snapshot.clone(),
+    };
+    json!({
+        "dernier snapshot": if snap.last_at == 0 { Value::Null } else { json!(snap.last_at) },
+        "fragments placés": snap.stripe.as_ref().map(|s| s.parity.len()),
+        "publié dans l'entrée Node": sh.node_entry.lock().unwrap().published_snapshot.is_some(),
+        "erreur": snap.last_error,
+        "restauration au démarrage": recovery,
     })
 }
 
@@ -581,6 +607,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         .restore(&mut service)
         .map_err(DaemonError::Config)?;
     let service = Arc::new(Mutex::new(service));
+    let fresh = !state_path(&config).exists() && !dispersal_path(&config).exists();
     let mut dispersal: DispersalState = match std::fs::read(dispersal_path(&config)) {
         Ok(b) => serde_json::from_slice(&b).map_err(|e| DaemonError::Config(e.to_string()))?,
         Err(_) => DispersalState::default(),
@@ -613,6 +640,37 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
     .await
     .map_err(|e| start(&e))?;
 
+    // Installation vide : restauration depuis le réseau (seed seule).
+    let restored = Arc::new(Mutex::new(HashMap::new()));
+    let mut recovery_report = None;
+    if fresh && !config.dht_bootstrap_is_empty() {
+        let attempt = tokio::time::timeout(
+            Duration::from_secs(300),
+            recover(
+                &service,
+                &mut dispersal,
+                &blocks,
+                &dht,
+                &config.dispersal,
+                &restored,
+                system_clock()(),
+            ),
+        )
+        .await;
+        recovery_report = Some(match attempt {
+            Err(_) => json!({ "erreur": "délai dépassé" }),
+            Ok(Err(e)) => json!({ "erreur": e }),
+            Ok(Ok(r)) => json!({ "utilisateurs": r.users, "partenaires": r.partners,
+                "stripes": r.stripes, "blocs reconstruits": r.blocks, "erreurs": r.errors }),
+        });
+    }
+    let mut addrs = addrs;
+    addrs.extend(restored.lock().unwrap().drain());
+    let initial_pointer = dispersal
+        .snapshot
+        .pointer
+        .as_deref()
+        .and_then(|p| hex::decode(p).ok());
     let shared = Arc::new(Shared {
         service,
         addrs: Arc::new(Mutex::new(addrs)),
@@ -620,6 +678,8 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
         last_cycle: Mutex::new(None),
         last_upkeep: Mutex::new(None),
         node_entry: Arc::new(Mutex::new(NodeEntryState::default())),
+        snapshot_pointer: Mutex::new(initial_pointer),
+        recovery: Mutex::new(recovery_report),
         peer_id: blocks.peer_id().to_string(),
         blocks_addr: blocks.listen_addr().await.map(|a| a.to_string()),
         dht_addr: dht.listen_addr().await.map(|a| a.to_string()),
@@ -662,6 +722,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
             loop {
                 match announced_addr(&sh.config) {
                     Some(addr) => {
+                        let snapshot = sh.snapshot_pointer.lock().unwrap().clone();
                         publish_if_due(
                             &dht,
                             &seed,
@@ -669,6 +730,7 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
                             &recovery_pub,
                             addr,
                             &proof,
+                            snapshot,
                             &sh.node_entry,
                             clock(),
                         )
@@ -704,6 +766,13 @@ pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError>
                 *sh.last_upkeep.lock().unwrap() = Some((now, up));
                 let report =
                     run_cycle(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await;
+                if run_snapshot(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await {
+                    *sh.snapshot_pointer.lock().unwrap() = d
+                        .snapshot
+                        .pointer
+                        .as_deref()
+                        .and_then(|p| hex::decode(p).ok());
+                }
                 if let Err(e) = save_dispersal(&sh.config, &d) {
                     eprintln!("sauvegarde de la dispersion : {e}");
                 }

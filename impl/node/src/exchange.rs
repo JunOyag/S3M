@@ -66,6 +66,9 @@ pub struct NodeService {
     pub delegations: Vec<Delegation>,
     /// Blocs reçus à disperser : `(pub_user, hash)` (moteur de dispersion).
     pub dispersal_queue: Vec<(Id, Id)>,
+    /// Après restauration, la racine courante de ces Utilisateurs est
+    /// inconnue : leur prochaine validation est adoptée telle quelle.
+    pub adopt_next_root: std::collections::HashSet<Id>,
     limiter: RescueLimiter,
 }
 
@@ -102,6 +105,7 @@ impl NodeService {
             incidents: Vec::new(),
             delegations: Vec::new(),
             dispersal_queue: Vec::new(),
+            adopt_next_root: Default::default(),
             limiter: RescueLimiter::default(),
         }
     }
@@ -194,8 +198,9 @@ impl NodeService {
             } => {
                 let u = self.user(cred, from, local)?;
                 let (base, new) = (id32(&base_root)?, id32(&new_root)?);
+                let adopt = self.adopt_next_root.remove(&u);
                 let acc = self.users.get_mut(&u).ok_or(Refusal::Unauthorized)?;
-                let committed = acc.root == base;
+                let committed = adopt || acc.root == base;
                 if committed {
                     acc.root = new;
                 }

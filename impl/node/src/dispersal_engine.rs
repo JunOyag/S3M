@@ -155,6 +155,22 @@ pub struct DispersalState {
     /// Contrôles et réparation (`crate::upkeep`).
     #[serde(default)]
     pub upkeep: crate::upkeep::UpkeepState,
+    /// Snapshot du NodeManifest (`crate::snapshot_engine`).
+    #[serde(default)]
+    pub snapshot: SnapshotRec,
+}
+
+/// Snapshot du NodeManifest dispersé.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SnapshotRec {
+    /// SHA-256 du contenu (horodatage exclu) du dernier snapshot dispersé.
+    pub digest: String,
+    pub stripe: Option<StripeRec>,
+    /// `NodeSnapshotPointer` sérialisé (hex).
+    pub pointer: Option<String>,
+    pub last_at: u64,
+    pub retired: Vec<Retired>,
+    pub last_error: Option<String>,
 }
 
 impl DispersalState {
@@ -190,7 +206,7 @@ fn random<const N: usize>() -> [u8; N] {
 
 /// Disperse un stripe de k blocs de 65 536 o.
 #[allow(clippy::too_many_arguments)]
-async fn disperse(
+pub(crate) async fn disperse(
     service: &Mutex<NodeService>,
     fabric: &dyn Fabric,
     cfg: &EngineConfig,
@@ -244,7 +260,7 @@ async fn disperse(
     Ok(rec)
 }
 
-fn retire(rec: &StripeRec, retired: &mut Vec<Retired>, now: u64) {
+pub(crate) fn retire(rec: &StripeRec, retired: &mut Vec<Retired>, now: u64) {
     retired.extend(rec.parity.iter().map(|(_, h, p)| Retired {
         at: now,
         hash: h.clone(),
@@ -254,13 +270,13 @@ fn retire(rec: &StripeRec, retired: &mut Vec<Retired>, now: u64) {
 
 /// Table `Partner` du manifeste : `node_id` → `partner_id` (1, 2, …).
 #[derive(Default)]
-struct PartnerTable {
+pub(crate) struct PartnerTable {
     ids: HashMap<Id, u16>,
-    list: Vec<PartnerDesc>,
+    pub(crate) list: Vec<PartnerDesc>,
 }
 
 impl PartnerTable {
-    fn id_of(&mut self, node: &Id, reach: &[Reachable]) -> u16 {
+    pub(crate) fn id_of(&mut self, node: &Id, reach: &[Reachable]) -> u16 {
         if let Some(i) = self.ids.get(node) {
             return *i;
         }
@@ -276,7 +292,7 @@ impl PartnerTable {
         i
     }
 
-    fn desc(&mut self, rec: &StripeRec, k: usize, reach: &[Reachable]) -> StripeDesc {
+    pub(crate) fn desc(&mut self, rec: &StripeRec, k: usize, reach: &[Reachable]) -> StripeDesc {
         let mut blocks: Vec<BlockRef> = rec
             .data
             .iter()
@@ -516,8 +532,13 @@ async fn purge(
 ) -> u64 {
     let priv_node = service.lock().unwrap().priv_node();
     let mut by_partner: BTreeMap<String, Vec<Id>> = BTreeMap::new();
-    for u in state.users.values() {
-        for r in u.retired.iter().filter(|r| r.at + cfg.grace_s <= now) {
+    let lists = state
+        .users
+        .values()
+        .map(|u| &u.retired)
+        .chain(std::iter::once(&state.snapshot.retired));
+    for list in lists {
+        for r in list.iter().filter(|r| r.at + cfg.grace_s <= now) {
             by_partner
                 .entry(r.partner.clone())
                 .or_default()
@@ -540,6 +561,10 @@ async fn purge(
                 u.retired
                     .retain(|r| !(r.partner == partner && done.contains(&r.hash)));
             }
+            state
+                .snapshot
+                .retired
+                .retain(|r| !(r.partner == partner && done.contains(&r.hash)));
         }
     }
     freed_total

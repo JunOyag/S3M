@@ -50,6 +50,7 @@ async fn node_entry_is_published_cached_proof_reused_and_republished_on_schedule
         &[7; 32],
         addr.clone(),
         &proof,
+        None,
         &state,
         1_000,
     )
@@ -65,7 +66,7 @@ async fn node_entry_is_published_cached_proof_reused_and_republished_on_schedule
 
     // Pas due : rien ; nouvelle adresse : republication.
     publish_if_due(
-        &dht, &seed, &pub_node, &[7; 32], addr, &proof, &state, 1_001,
+        &dht, &seed, &pub_node, &[7; 32], addr, &proof, None, &state, 1_001,
     )
     .await;
     assert_eq!(state.lock().unwrap().published_at, Some(1_000));
@@ -76,6 +77,7 @@ async fn node_entry_is_published_cached_proof_reused_and_republished_on_schedule
         &[7; 32],
         ("203.0.113.10".into(), 4002),
         &proof,
+        None,
         &state,
         1_002,
     )
