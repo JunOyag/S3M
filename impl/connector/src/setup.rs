@@ -36,6 +36,21 @@ pub fn config_path(dir: &Path) -> PathBuf {
     dir.join("connector.json")
 }
 
+/// « Changer de Nœud » : `connector.json` et `data` sont renommés
+/// (suffixe horodaté) ; l'identité (`user.seed`, `attach.salt`) reste.
+/// L'assistant s'ouvre au démarrage suivant.
+pub fn set_aside_config(dir: &Path, stamp: u64) -> std::io::Result<()> {
+    let cfg = config_path(dir);
+    if cfg.exists() {
+        std::fs::rename(&cfg, dir.join(format!("connector.{stamp}.json")))?;
+    }
+    let data = dir.join("data");
+    if data.exists() {
+        std::fs::rename(&data, dir.join(format!("data.{stamp}")))?;
+    }
+    Ok(())
+}
+
 /// Identité préparée avant le choix du Nœud.
 #[derive(Debug, Clone)]
 pub struct Prepared {

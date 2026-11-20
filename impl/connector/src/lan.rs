@@ -43,6 +43,14 @@ pub fn node_id_of(peer: &PeerId) -> Option<[u8; 32]> {
         .map(|k| k.to_bytes())
 }
 
+/// `a` suffixée de `/p2p/<peer>` (sans doublon : mDNS l'inclut déjà).
+fn with_peer(a: Multiaddr, peer: PeerId) -> Multiaddr {
+    match a.iter().last() {
+        Some(Protocol::P2p(_)) => a,
+        _ => a.with(Protocol::P2p(peer)),
+    }
+}
+
 fn rank(a: &Multiaddr) -> u8 {
     let ip4 = a
         .iter()
@@ -100,7 +108,7 @@ pub async fn scan(duration: Duration) -> Result<Vec<FoundNode>, String> {
         addrs.sort_by_key(rank);
         let mut probed = false;
         for a in addrs.clone() {
-            let a = a.with(Protocol::P2p(peer));
+            let a = with_peer(a, peer);
             let req = Request {
                 credential: None,
                 body: Body::Probe { nonce: vec![1; 16] },
@@ -126,7 +134,7 @@ pub async fn scan(duration: Duration) -> Result<Vec<FoundNode>, String> {
         }
         // Pas de `Probe` : Nœud sous identité temporaire ?
         for a in addrs {
-            let a = a.with(Protocol::P2p(peer));
+            let a = with_peer(a, peer);
             let r = tokio::time::timeout(Duration::from_secs(3), admin.hello(&a)).await;
             if let Ok(Ok(mode)) = r {
                 if mode == s3m_protocol::admin::MODE_SETUP {

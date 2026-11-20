@@ -35,10 +35,15 @@ async fn a_temporary_node_is_configured_remotely_with_its_pairing_code() {
     let mut code = String::new();
     for _ in 0..100 {
         let st = switch.status_fn()();
-        if let Some(c) = st
-            .pointer("/identité/code d'appairage")
-            .and_then(|c| c.as_str())
-        {
+        // Le code s'affiche avant l'ouverture de l'écoute : attendre les deux.
+        let ready = st
+            .pointer("/identité/adresses d'administration/0")
+            .is_some();
+        if let (true, Some(c)) = (
+            ready,
+            st.pointer("/identité/code d'appairage")
+                .and_then(|c| c.as_str()),
+        ) {
             code = c.to_string();
             break;
         }

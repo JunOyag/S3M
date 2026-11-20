@@ -266,6 +266,10 @@ pub struct Health {
 /// Contexte partagé par le dashboard et la surveillance.
 pub struct Shared {
     pub config: Config,
+    /// Dernière recherche du Nœud sur le réseau local (adresse changée).
+    pub last_lan_search: Mutex<Option<u64>>,
+    /// « Changer de Nœud » demandé (l'application redémarre sur l'assistant).
+    pub change_node: std::sync::atomic::AtomicBool,
     pub pub_user: [u8; 32],
     pub session: NodeSession,
     pub keeper: tokio::sync::Mutex<GrantKeeper>,
@@ -339,7 +343,10 @@ pub fn status(sh: &Shared) -> Value {
             { "nom": "admin_node", "titre": "Administrer mon Nœud à distance",
               "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration"],
               "aide": { "code 2FA": "Code à 6 chiffres de votre application d'authentification",
-                        "adresse d'administration": "Facultatif : par défaut, IP du Nœud et port 4003" } }
+                        "adresse d'administration": "Facultatif : par défaut, IP du Nœud et port 4003" } },
+            { "nom": "change_node", "titre": "Changer de Nœud",
+              "libellé": "Changer de Nœud", "champs": ["je confirme"], "types": { "je confirme": "bool" },
+              "aide": { "je confirme": "S3m redémarre sur l'assistant (votre identité est conservée). L'ancienne configuration et les données locales sont mises de côté, pas effacées." } }
         ]
     })
 }
@@ -651,6 +658,31 @@ pub fn node_candidates(pub_node: &[u8; 32], envelope: &[u8]) -> Vec<Multiaddr> {
     out
 }
 
+/// Période minimale entre deux recherches du Nœud sur le réseau local.
+pub const LAN_SEARCH_PERIOD_S: u64 = 120;
+const LEARNED_ADDR_FILE: &str = "node.addr";
+
+/// Adresse du Nœud apprise sur le réseau local, si elle désigne le même
+/// Nœud (`PeerId` identique) que `configured`.
+pub fn learned_node_addr(data_dir: &Path, configured: &Multiaddr) -> Option<Multiaddr> {
+    let a: Multiaddr = std::fs::read_to_string(data_dir.join(LEARNED_ADDR_FILE))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    let peer = |m: &Multiaddr| match m.iter().last() {
+        Some(libp2p::multiaddr::Protocol::P2p(p)) => Some(p),
+        _ => None,
+    };
+    (peer(&a).is_some() && peer(&a) == peer(configured)).then_some(a)
+}
+
+/// Retient l'adresse qui a répondu (préférée au prochain démarrage).
+pub fn save_learned_node_addr(data_dir: &Path, addr: &Multiaddr) -> std::io::Result<()> {
+    std::fs::create_dir_all(data_dir)?;
+    std::fs::write(data_dir.join(LEARNED_ADDR_FILE), addr.to_string())
+}
+
 /// Un tour de surveillance : joignabilité du Nœud, renouvellement de
 /// l'autorisation de secours.
 pub async fn watch_once(sh: &Shared) {
@@ -704,6 +736,45 @@ pub async fn watch_once(sh: &Shared) {
                 if matches!(probe, Err(ExchangeError::Network(_))) {
                     sh.session.set_node_addr(current);
                 }
+            }
+        }
+    }
+    // Toujours injoignable : le Nœud a peut-être changé d'adresse sur le
+    // réseau local (box, DHCP) — recherche mDNS par son identité, au plus
+    // toutes les 2 minutes (`network.bootstrap` § Découverte sur le réseau local).
+    if matches!(probe, Err(ExchangeError::Network(_))) {
+        let due = {
+            let mut last = sh.last_lan_search.lock().unwrap();
+            let due = last.is_none_or(|t| now.saturating_sub(t) >= LAN_SEARCH_PERIOD_S);
+            if due {
+                *last = Some(now);
+            }
+            due
+        };
+        if due {
+            let current = sh.session.node_addr();
+            let found = crate::lan::scan(Duration::from_secs(4))
+                .await
+                .unwrap_or_default();
+            for n in found
+                .iter()
+                .filter(|n| n.node_id == sh.pub_node && !n.to_configure)
+            {
+                let Ok(a) = n.addr.parse::<Multiaddr>() else {
+                    continue;
+                };
+                if a == current {
+                    continue;
+                }
+                sh.session.set_node_addr(a.clone());
+                probe = sh.session.get_block(&[0; 32]).await;
+                if !matches!(probe, Err(ExchangeError::Network(_))) {
+                    if let Err(e) = save_learned_node_addr(&sh.config.data_dir, &a) {
+                        eprintln!("adresse du Nœud : {e}");
+                    }
+                    break;
+                }
+                sh.session.set_node_addr(current.clone());
             }
         }
     }
@@ -768,6 +839,7 @@ pub async fn start(
         .addr
         .parse()
         .map_err(|e| DaemonError::Config(format!("adresse du Nœud : {e}")))?;
+    let addr = learned_node_addr(&config.data_dir, &addr).unwrap_or(addr);
     let pub_node: [u8; 32] = unhex(&config.node.node_id, 32)?.try_into().unwrap();
     let salt = unhex(&config.node.salt, 16)?;
     let client = BlockClient::start()?;
@@ -805,6 +877,8 @@ pub async fn start(
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
         dht: std::sync::OnceLock::new(),
+        last_lan_search: Mutex::new(None),
+        change_node: Default::default(),
         priv_user,
         pub_node,
         salt: salt.clone(),
@@ -826,6 +900,16 @@ pub async fn start(
                 Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
             }
             "admin_node" => admin_node(&sh.config.node.addr, &v),
+            "change_node" => {
+                if v.get("je confirme").and_then(|x| x.as_bool()) != Some(true) {
+                    return Err("cochez « je confirme » pour changer de Nœud".into());
+                }
+                sh.change_node
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(
+                    json!({ "ok": true, "message": "S3m redémarre et ouvre l'assistant de choix du Nœud…" }),
+                )
+            }
             _ => Err(format!("action inconnue : {name}")),
         })
     };

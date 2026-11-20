@@ -99,6 +99,18 @@ fn set_autostart(on: bool) {
 }
 
 /// Verrou d'instance unique : fichier ouvert en exclusivité.
+/// Variable d'environnement du redémarrage « Changer de Nœud ».
+const CHANGE_NODE_ENV: &str = "S3M_CHANGE_NODE";
+
+/// Relance S3m sur l'assistant ; l'instance courante doit ensuite quitter.
+fn restart_for_new_node() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe)
+            .env(CHANGE_NODE_ENV, "1")
+            .spawn();
+    }
+}
+
 fn single_instance(dir: &Path) -> Option<std::fs::File> {
     use std::os::windows::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
@@ -153,11 +165,28 @@ fn main() {
         .open(dir.join("logs").join("s3m.log"))
         .ok();
     std::panic::set_hook(Box::new(|p| log(&format!("panique : {p}"))));
-    let Some(_lock) = single_instance(&dir) else {
+    // Redémarrage demandé par « Changer de Nœud » : l'ancienne instance
+    // libère le verrou en quittant.
+    let changing = std::env::var_os(CHANGE_NODE_ENV).is_some();
+    let mut lock = single_instance(&dir);
+    for _ in 0..60 {
+        if lock.is_some() || !changing {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        lock = single_instance(&dir);
+    }
+    let Some(_lock) = lock else {
         notify("S3m est déjà lancé (icône dans la barre des tâches).");
         return;
     };
     log("démarrage");
+    if changing {
+        match s3m_connector::setup::set_aside_config(&dir, clock()) {
+            Ok(()) => log("changement de Nœud : ancienne configuration mise de côté"),
+            Err(e) => log(&format!("changement de Nœud : {e}")),
+        }
+    }
     let rt = tokio::runtime::Runtime::new().expect("runtime tokio");
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -176,6 +205,7 @@ fn main() {
     let pause = MenuItem::new("Suspendre la synchronisation", false, None);
     let autostart = CheckMenuItem::new("Démarrer avec Windows", true, autostart_enabled(), None);
     let logs = MenuItem::new("Ouvrir les journaux", true, None);
+    let change = MenuItem::new("Changer de Nœud…", true, None);
     let quit = MenuItem::new("Quitter S3m", true, None);
     let menu = Menu::new();
     let _ = menu.append_items(&[
@@ -188,6 +218,7 @@ fn main() {
         &pause,
         &PredefinedMenuItem::separator(),
         &autostart,
+        &change,
         &logs,
         &PredefinedMenuItem::separator(),
         &quit,
@@ -270,6 +301,11 @@ fn main() {
                 if e.id == quit.id() {
                     log("arrêt demandé");
                     *flow = ControlFlow::Exit;
+                } else if e.id == change.id() {
+                    log("changement de Nœud demandé");
+                    notify("S3m redémarre sur l'assistant : votre identité est conservée, l'ancienne configuration est mise de côté.");
+                    restart_for_new_node();
+                    *flow = ControlFlow::Exit;
                 } else if e.id == logs.id() {
                     open(&dir.join("logs").display().to_string());
                 } else if e.id == autostart.id() {
@@ -297,6 +333,12 @@ fn main() {
             }
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 let Some(sh) = &shared else { return };
+                if sh.change_node.load(Ordering::SeqCst) {
+                    log("changement de Nœud demandé (tableau de bord)");
+                    restart_for_new_node();
+                    *flow = ControlFlow::Exit;
+                    return;
+                }
                 let v = daemon::tray_view(sh);
                 if last.as_ref() != Some(&v) {
                     status.set_text(&v.text);
