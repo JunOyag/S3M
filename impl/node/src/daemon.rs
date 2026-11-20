@@ -573,7 +573,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     });
     v["résumé"] = node_summary(&v);
     v["pages"] = json!([
-        { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true,
+        { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
           "sections": ["alertes d'intégrité signalées", "identité"], "actions": [] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],

@@ -19,8 +19,8 @@ use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{
-    autonat, dcutr, identify, identity, kad, mdns, noise, relay, tcp, upnp, yamux, Multiaddr,
-    PeerId, StreamProtocol, Swarm,
+    autonat, dcutr, identify, identity, kad, mdns, noise, relay, tcp, yamux, Multiaddr, PeerId,
+    StreamProtocol, Swarm,
 };
 use s3m_protocol::exchange::PROTOCOL;
 use serde::{Deserialize, Serialize};
@@ -135,7 +135,6 @@ pub(crate) struct NodeBehaviour {
     rr: request_response::Behaviour<FrameCodec>,
     identify: identify::Behaviour,
     autonat: autonat::Behaviour,
-    upnp: Toggle<upnp::tokio::Behaviour>,
     relay_server: Toggle<relay::Behaviour>,
     relay_client: relay::client::Behaviour,
     dcutr: dcutr::Behaviour,
@@ -263,7 +262,6 @@ pub async fn start(cfg: NetConfig) -> Result<NodeNet, String> {
                         .with_agent_version(format!("s3m-node/{}", env!("CARGO_PKG_VERSION"))),
                 ),
                 autonat: autonat::Behaviour::new(id, autonat::Config::default()),
-                upnp: Toggle::from(upnp_on.then(upnp::tokio::Behaviour::default)),
                 relay_server: Toggle::from(relay_on.then(|| relay::Behaviour::new(id, relay_cfg))),
                 relay_client,
                 dcutr: dcutr::Behaviour::new(id),
@@ -306,12 +304,30 @@ pub async fn start(cfg: NetConfig) -> Result<NodeNet, String> {
     }));
     let (dtx, drx) = mpsc::channel(64);
     let (btx, brx) = mpsc::channel(64);
+    // UPnP : adresses externes ouvertes sur la box (`upnp.rs`).
+    let (utx, urx) = mpsc::channel(16);
+    if upnp_on {
+        let ports: Vec<u16> = cfg
+            .listen
+            .iter()
+            .filter_map(|a| {
+                a.iter().find_map(|p| match p {
+                    Protocol::Tcp(port) if port != 0 => Some(port),
+                    _ => None,
+                })
+            })
+            .collect();
+        crate::upnp::spawn(ports, nat.clone(), utx);
+    } else {
+        drop(utx);
+    }
     let dl = DhtLoop::new(cfg.vdf, cfg.clock.clone());
     let el = ExchangeLoop::new(peer_id, Some(cfg.service), cfg.clock);
     let opts = RunOpts {
         static_relays: cfg.relays,
         force_relay: cfg.force_relay,
         assume_listen_public: cfg.assume_listen_public,
+        upnp_addrs: urx,
     };
     tokio::spawn(run(swarm, drx, brx, dl, el, nat.clone(), opts));
     Ok(NodeNet {
@@ -325,6 +341,8 @@ struct RunOpts {
     static_relays: Vec<Multiaddr>,
     force_relay: bool,
     assume_listen_public: bool,
+    /// Adresses externes ouvertes sur la box (`upnp.rs`).
+    upnp_addrs: mpsc::Receiver<Multiaddr>,
 }
 
 async fn run(
@@ -340,6 +358,7 @@ async fn run(
         static_relays,
         force_relay,
         assume_listen_public,
+        upnp_addrs: mut urx,
     } = opts;
     let me = *swarm.local_peer_id();
     // Pairs capables de relayer, avec leurs adresses (Identify).
@@ -362,6 +381,7 @@ async fn run(
                 None => return,
                 Some(c) => el.on_cmd(&mut swarm, c),
             },
+            Some(a) = urx.recv() => swarm.add_external_address(a),
             _ = tick.tick() => {
                 // Derrière un NAT (ou forcé) : réservations chez des relais.
                 let active = nat.lock().unwrap().relayed.len();
@@ -473,14 +493,6 @@ async fn run(
                             }
                             autonat::NatStatus::Unknown => n.status = "inconnu".into(),
                         }
-                    }
-                    NodeBehaviourEvent::Upnp(e) => {
-                        nat.lock().unwrap().upnp = match e {
-                            upnp::Event::NewExternalAddr(a) => format!("port ouvert : {a}"),
-                            upnp::Event::ExpiredExternalAddr(a) => format!("redirection expirée : {a}"),
-                            upnp::Event::GatewayNotFound => "aucune box UPnP trouvée".into(),
-                            upnp::Event::NonRoutableGateway => "box non exposée à Internet (double NAT ?)".into(),
-                        };
                     }
                     NodeBehaviourEvent::RelayClient(relay::client::Event::ReservationReqAccepted { relay_peer_id, .. }) => {
                         nat.lock().unwrap().relay_error = None;
