@@ -7,6 +7,7 @@ pub mod access;
 pub mod bootstrap;
 pub mod daemon;
 pub mod dht_directory;
+pub mod drive;
 pub mod emergency;
 pub mod exchange;
 pub mod fs;
@@ -14,5 +15,7 @@ pub mod incidents;
 pub mod integrity;
 pub mod local_http;
 pub mod migration;
+#[cfg(all(windows, feature = "mount"))]
+pub mod winfsp_backend;
 pub mod write_back;
 pub mod write_queue;

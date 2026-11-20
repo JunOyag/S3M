@@ -12,8 +12,8 @@
 //!   `fs.DirectoryEntry` n'a pas de champ de type — convention retenue le
 //!   2026-11-19).
 //!
-//! Restent à faire pour clore l'id : les backends WinFsp / FUSE et le
-//! transport des blocs (protocole d'échange, `impl/SPEC_GAPS.md`).
+//! Backends : moteur d'écriture `drive`, WinFsp `winfsp_backend` ;
+//! transport : `exchange` (`protocols.echange-blocs`).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -137,6 +137,11 @@ impl<'a> Volume<'a> {
         let e = self
             .lookup(path)?
             .ok_or_else(|| AccessError::NotFound(path.to_owned()))?;
+        self.read_entry(&e)
+    }
+
+    /// Lit le fichier désigné par une entrée déjà résolue.
+    pub fn read_entry(&self, e: &Entry) -> Result<Vec<u8>, AccessError> {
         let key = self.key(e.key_version)?;
         Ok(read_file(
             &e.first_block_hash,
