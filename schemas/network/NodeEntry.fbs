@@ -23,6 +23,7 @@ table NodeEntry {
   pub_node_recovery: [ubyte];     // immuable (§5.2)
   migration_pointer: SignedMigrationPointer;  // optionnel (§5.2)
   snapshot_ciphertext: [ubyte];   // nonce ‖ chiffré ‖ tag de NodeSnapshotPointer sous K_node_self
+  addrs: [string];                // ajout 2026-11-20 (network.traversee-nat) : multiaddrs joignables, directes d'abord puis via relais
 }
 
 root_type NodeEntry;

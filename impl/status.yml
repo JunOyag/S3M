@@ -1223,3 +1223,9 @@ entries:
       enrichie, carte du monde (dashboard/map.*, geo.rs, base DB-IP City Lite
       par geoip-update). connector : rattachement automatique avec preuve VDF.
       Essai réel : carte géolocalisée et regroupée vérifiée par capture.
+  network.traversee-nat:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""

@@ -15,8 +15,10 @@ entre nœuds partenaires, sans organe centralisé de contrôle.
 
 ## Principes clés
 
-- **Architecture réseau** : `libp2p` (NAT natif, relais STUN/TURN/ICE, DHT
-  Kademlia) — détaillé dans [`network.dht-directory`](../01-network-dht/dht-directory.md).
+- **Architecture réseau** : `libp2p` (DHT Kademlia, TCP et QUIC ; traversée de
+  NAT par UPnP, AutoNAT, relais circuit v2 et perçage DCUtR, sans serveur
+  STUN/TURN dédié) — détaillé dans [`network.dht-directory`](../01-network-dht/dht-directory.md)
+  et [`network.traversee-nat`](../01-network-dht/traversee-nat.md).
 - **Unité de stockage (bloc)** : taille fixe 64 KiO (65 536 octets), chiffré
   de bout en bout, en-tête fixe (version de protocole).
 - **Équité d'échange (Troc 1:1)** : chaque bloc de parité envoyé sur un nœud

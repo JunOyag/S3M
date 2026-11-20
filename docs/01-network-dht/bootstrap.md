@@ -12,7 +12,8 @@ verified_by: []
 Entrée dans le réseau : le Connecteur (client, voir
 [`network.dht-directory`](dht-directory.md)) se connecte à une **liste de
 Nœuds d'amorçage fournie par sa configuration**. La traversée de NAT
-(Rendezvous / STUN / TURN) est une fonctionnalité séparée, à spécifier plus
+(Rendezvous / STUN / TURN) est une fonctionnalité séparée
+([`network.traversee-nat`](traversee-nat.md), ajoutée le 2026-11-20), à spécifier plus
 tard (arbitrage du 2026-11-19, `impl/SPEC_GAPS.md`).
 
 ## Chemin rapide (cache local présent)

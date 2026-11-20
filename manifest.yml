@@ -108,6 +108,13 @@ pages:
       - publish::node_entry_is_published_cached_proof_reused_and_republished_on_schedule
       - publish::user_entry_is_published_on_new_roots_and_restores_a_new_device
 
+  - id: network.traversee-nat
+    kind: narrative
+    path: 01-network-dht/traversee-nat.md
+    title: "Traversée de NAT"
+    section: "§2"
+    refs: [network.dht-directory, protocols.echange-blocs, network.bootstrap, network.NodeEntry, protocols.partenariat-automatique]
+
   - id: network.bootstrap
     kind: narrative
     path: 01-network-dht/bootstrap.md
