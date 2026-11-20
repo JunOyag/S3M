@@ -521,15 +521,21 @@ pub struct GeoipState {
 /// Gestion des volumes vue du dashboard (`protocols.gestion-volumes`).
 #[derive(Default)]
 pub struct VolumesUi {
+    /// Liste des actions saisies, appliquées d'un coup.
     pub draft: Vec<crate::volumes::Change>,
     pub imports: std::collections::BTreeMap<u32, crate::volumes::ImportCounts>,
-    pub events: Vec<String>,
+    /// Journal : `(instant Unix, action)`.
+    pub events: Vec<(u64, String)>,
 }
 
 impl VolumesUi {
     pub fn log(&mut self, e: String) {
-        self.events.push(e);
-        if self.events.len() > 20 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        self.events.push((now, e));
+        if self.events.len() > 1000 {
             self.events.remove(0);
         }
     }
@@ -581,6 +587,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         a.extend(forms);
     }
     v["géolocalisation"] = geoip_status(sh);
+    v["republication DHT"] = republication_status(sh);
     volumes_status(sh, &mut v);
     v["administration à distance"] = admin_status(sh);
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
@@ -605,12 +612,12 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner"] },
         { "id": "carte", "titre": "Carte du monde", "cadre": "map.html", "sections": [], "actions": [] },
         { "id": "volumes", "titre": "Volumes",
-          "sections": ["volumes", "modifications en attente", "imports de volumes", "journal des volumes"],
+          "sections": ["volumes", "liste des actions", "imports de volumes", "journal des volumes"],
           "actions": ["volume_draft_add", "volume_draft_edit", "volume_apply", "volume_draft_clear"] },
         { "id": "stockage", "titre": "Stockage et protection",
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "reseau", "titre": "Réseau",
-          "sections": ["traversée de NAT", "annuaire (entrée Node)", "géolocalisation"], "actions": ["geoip_update"] },
+          "sections": ["traversée de NAT", "annuaire (entrée Node)", "republication DHT", "géolocalisation"], "actions": ["geoip_update"] },
         { "id": "distance", "titre": "Administration à distance",
           "sections": ["administration à distance"], "actions": ["show_totp", "regenerate_totp"] },
         { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config"] },
@@ -666,6 +673,10 @@ fn node_summary(v: &Value) -> Value {
     json!([
         { "libellé": "Joignabilité", "valeur": nat, "état": nat_state, "page": "reseau" },
         { "libellé": "Annuaire", "valeur": dir, "état": dir_state, "page": "reseau" },
+        { "libellé": "Republication DHT", "valeur": v.pointer("/republication DHT/taux de republication (%)").and_then(|x| x.as_f64()).map(|x| format!("{x} %")).unwrap_or_else(|| "—".into()),
+          "état": match v.pointer("/republication DHT/taux de republication (%)").and_then(|x| x.as_f64()) {
+              Some(x) if x >= 100.0 => "ok", Some(x) if x > 0.0 => "attention", Some(_) => "probleme", None => "neutre" },
+          "page": "reseau" },
         { "libellé": "Utilisateurs", "valeur": len("utilisateurs rattachés"), "état": "neutre", "page": "utilisateurs" },
         { "libellé": "Partenaires", "valeur": partners, "détail": format!("{target} visés"),
           "état": if partners == 0 { "attention" } else { "ok" }, "page": "partenaires" },
@@ -934,13 +945,13 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "pointeurs de migration connus": s.successors.len(),
         },
         "non suivi par cet exécutable": [
-            "taux de republication DHT", "espace de secours"
+            "espace de secours"
         ],
         "actions": [
             { "nom": "attach_user", "titre": "Rattacher un utilisateur manuellement", "libellé": "Rattacher",
-              "champs": ["user_id", "salt", "quota_bytes"],
-              "libellés": { "user_id": "identifiant de l'utilisateur", "salt": "sel d'attachement", "quota_bytes": "quota (octets)" },
-              "types": { "quota_bytes": "number" },
+              "champs": ["user_id", "salt", "quota (Gio)"],
+              "libellés": { "user_id": "identifiant de l'utilisateur", "salt": "sel d'attachement" },
+              "types": { "quota (Gio)": "number" },
               "aide": { "user_id": "Affiché par l'assistant de S3m de l'utilisateur", "salt": "Affiché à côté de l'identifiant (32 caractères)" } },
             { "nom": "add_partner", "titre": "Ajouter un partenaire manuellement", "libellé": "Ajouter",
               "champs": ["node_id", "addr", "allowance"],
@@ -948,17 +959,18 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "types": { "allowance": "number" },
               "aide": { "addr": "/ip4/…/tcp/…/p2p/…" } },
             { "nom": "set_quota", "titre": "Changer le quota d'un utilisateur", "libellé": "Changer",
-              "champs": ["user_id", "quota_bytes"],
-              "libellés": { "user_id": "identifiant de l'utilisateur", "quota_bytes": "nouveau quota (octets)" },
-              "types": { "quota_bytes": "number" } },
+              "champs": ["user_id", "quota (Gio)"],
+              "libellés": { "user_id": "identifiant de l'utilisateur", "quota (Gio)": "nouveau quota (Gio)" },
+              "types": { "quota (Gio)": "number" } },
             { "nom": "set_attach_policy", "titre": "Rattachement automatique des utilisateurs",
               "libellé": "Enregistrer",
-              "champs": ["enabled", "quota_bytes", "max_users", "budget_bytes"],
-              "libellés": { "enabled": "accepter automatiquement les nouveaux utilisateurs", "quota_bytes": "quota par utilisateur (octets)",
-                            "max_users": "utilisateurs au plus", "budget_bytes": "budget total (octets)" },
-              "valeurs": { "enabled": s.attach_policy.enabled, "quota_bytes": s.attach_policy.quota_bytes,
-                           "max_users": s.attach_policy.max_users, "budget_bytes": s.attach_policy.budget_bytes },
-              "types": { "enabled": "bool", "quota_bytes": "number", "max_users": "number", "budget_bytes": "number" } }
+              "champs": ["enabled", "quota par utilisateur (Gio)", "max_users"],
+              "libellés": { "enabled": "accepter automatiquement les nouveaux utilisateurs", "max_users": "utilisateurs au plus" },
+              "valeurs": { "enabled": s.attach_policy.enabled,
+                           "quota par utilisateur (Gio)": s.attach_policy.quota_bytes as f64 / (1u64 << 30) as f64,
+                           "max_users": s.attach_policy.max_users },
+              "types": { "enabled": "bool", "quota par utilisateur (Gio)": "number", "max_users": "number" },
+              "aide": { "max_users": "Budget total réservé = quota par utilisateur × utilisateurs au plus" } }
         ]
     })
 }
@@ -1024,6 +1036,58 @@ fn nat_status(sh: &Shared) -> Value {
         "perçages réussis": n.hole_punch_ok,
         "perçages échoués": n.hole_punch_failed,
         "circuits relayés pour d'autres": n.relay_circuits_served,
+    })
+}
+
+/// Période de republication des entrées Node et DispersalManifest
+/// (`network.dht-directory` § Expiration & republication).
+const REPUBLISH_PERIOD_S: u64 = 2_592_000;
+/// Tolérance avant de compter une entrée « en retard ».
+const REPUBLISH_GRACE_S: u64 = 86_400;
+
+/// Taux de republication DHT : part des entrées gérées par ce Nœud (entrée
+/// Node, DispersalManifest de chaque Utilisateur) republiées à temps.
+fn republication_status(sh: &Shared) -> Value {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut entries: Vec<(String, u64, u64)> = Vec::new();
+    {
+        let n = sh.node_entry.lock().unwrap();
+        entries.push((
+            "entrée Node".into(),
+            n.published_at.unwrap_or(0),
+            n.next_republish,
+        ));
+    }
+    match sh.dispersal.try_lock() {
+        Ok(d) => {
+            for (u, x) in &d.users {
+                if x.pointer.is_some() || x.published_at > 0 {
+                    entries.push((
+                        format!("DispersalManifest {}…", &u[..12.min(u.len())]),
+                        x.published_at,
+                        x.next_republish,
+                    ));
+                }
+            }
+        }
+        Err(_) => return json!({ "état": "cycle en cours" }),
+    }
+    let on_time = |p: u64| p > 0 && now < p + REPUBLISH_PERIOD_S + REPUBLISH_GRACE_S;
+    let ok = entries.iter().filter(|e| on_time(e.1)).count();
+    let late: Vec<Value> = entries
+        .iter()
+        .filter(|e| !on_time(e.1))
+        .map(|e| json!({ "entrée": e.0, "dernière publication": if e.1 == 0 { Value::Null } else { json!(e.1) } }))
+        .collect();
+    json!({
+        "entrées gérées": entries.len(),
+        "à jour": ok,
+        "taux de republication (%)": (ok as f64 * 1000.0 / entries.len().max(1) as f64).round() / 10.0,
+        "prochaine republication": entries.iter().map(|e| e.2).filter(|t| *t > 0).min(),
+        "en retard ou jamais publiées": late,
     })
 }
 
@@ -1198,7 +1262,9 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             if salt.len() != 16 {
                 return Err("sel de 16 octets attendu".into());
             }
-            let quota_bytes = number(&v, "quota_bytes")?;
+            let quota_bytes = gib(&v, "quota (Gio)")?
+                .or(number(&v, "quota_bytes").ok())
+                .ok_or("quota manquant")?;
             let e = s.users.entry(id).or_insert(UserAccount {
                 salt: salt.clone(),
                 quota_bytes,
@@ -1226,7 +1292,9 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         }
         "set_quota" => {
             let id = unhex32(field(&v, "user_id")?)?;
-            let q = number(&v, "quota_bytes")?;
+            let q = gib(&v, "quota (Gio)")?
+                .or(number(&v, "quota_bytes").ok())
+                .ok_or("quota manquant")?;
             s.users
                 .get_mut(&id)
                 .ok_or("utilisateur inconnu")?
@@ -1247,15 +1315,16 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
                     p.enabled = yes(e);
                 }
             }
-            if let Ok(q) = number(&v, "quota_bytes") {
+            if let Some(q) = gib(&v, "quota par utilisateur (Gio)")? {
+                p.quota_bytes = q;
+            } else if let Ok(q) = number(&v, "quota_bytes") {
                 p.quota_bytes = q;
             }
             if let Ok(m) = number(&v, "max_users") {
                 p.max_users = m as usize;
             }
-            if let Ok(b) = number(&v, "budget_bytes") {
-                p.budget_bytes = b;
-            }
+            // Budget total : quota par utilisateur × nombre maximal d'utilisateurs.
+            p.budget_bytes = p.quota_bytes.saturating_mul(p.max_users as u64);
             s.attach_policy = p;
         }
         _ => return Err(format!("action inconnue : {name}")),
@@ -1666,6 +1735,10 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
                 "chemin": u.mount_path.display().to_string(),
                 "capacité (octets)": u.max_capacity_bytes,
                 "utilisé (octets)": u.used_bytes,
+                "libre (octets)": u.max_capacity_bytes.saturating_sub(u.used_bytes),
+                "utilisé (%)": if u.max_capacity_bytes == 0 { 0.0 } else {
+                    (u.used_bytes as f64 * 1000.0 / u.max_capacity_bytes as f64).round() / 10.0 },
+                "slots libres (octets)": u.free_slot_bytes,
                 "blocs": u.blocks,
                 "état": if u.draining { format!("vidage : {} blocs restants", u.blocks) } else { "actif".into() },
                 "_actions": actions,
@@ -1673,7 +1746,7 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
         })
         .collect();
     v["volumes"] = json!(rows);
-    v["modifications en attente"] = if ui.draft.is_empty() {
+    v["liste des actions"] = if ui.draft.is_empty() {
         json!("aucune")
     } else {
         json!(ui
@@ -1683,7 +1756,7 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
             .map(|(i, c)| json!({
                 "n°": i + 1,
                 "modification": c.describe(),
-                "_actions": [{ "nom": "volume_draft_drop", "libellé": "Retirer du brouillon",
+                "_actions": [{ "nom": "volume_draft_drop", "libellé": "Retirer de la liste",
                                "valeurs": { "n": (i + 1).to_string() } }],
             }))
             .collect::<Vec<_>>())
@@ -1704,24 +1777,39 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
             }))
             .collect::<Vec<_>>())
     };
-    v["journal des volumes"] = json!(ui.events.iter().rev().cloned().collect::<Vec<_>>());
+    v["journal des volumes"] = json!(ui
+        .events
+        .iter()
+        .rev()
+        .map(|(t, e)| json!({ "date": t, "action": e }))
+        .collect::<Vec<_>>());
+    let confirm = if ui.draft.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "Appliquer ces {} action(s) ?\n\n{}",
+            ui.draft.len(),
+            ui.draft
+                .iter()
+                .map(|c| format!("• {}", c.describe()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
-        a.push(json!({ "nom": "volume_draft_add", "titre": "Ajouter un volume", "libellé": "Ajouter au brouillon",
+        a.push(json!({ "nom": "volume_draft_add", "titre": "Ajouter un volume", "libellé": "Ajouter à la liste",
             "champs": ["chemin", "capacité (Go)", "effacer et réutiliser"],
             "types": { "capacité (Go)": "number", "effacer et réutiliser": "bool" },
             "aide": { "chemin": "Dossier sur le disque (créé s'il n'existe pas)",
                       "effacer et réutiliser": "Seulement pour un disque d'un autre Nœud : ses données S3m seront effacées" } }));
-        a.push(json!({ "nom": "volume_draft_edit", "titre": "Modifier un volume", "libellé": "Ajouter au brouillon",
+        a.push(json!({ "nom": "volume_draft_edit", "titre": "Modifier un volume", "libellé": "Ajouter à la liste",
             "champs": ["volume", "nouveau chemin", "nouvelle capacité (Go)"],
             "types": { "volume": "number", "nouvelle capacité (Go)": "number" },
             "aide": { "nouveau chemin": "Laisser vide pour ne pas changer ; les données doivent déjà s'y trouver",
                       "nouvelle capacité (Go)": "Laisser vide pour ne pas changer" } }));
-        a.push(json!({ "nom": "volume_apply", "titre": "Enregistrer les modifications", "libellé": "Enregistrer",
-            "champs": ["code 2FA"],
-            "aide": { "code 2FA": "Demandé uniquement en administration à distance" } }));
-        a.push(
-            json!({ "nom": "volume_draft_clear", "libellé": "Vider le brouillon", "champs": [] }),
-        );
+        a.push(json!({ "nom": "volume_apply", "titre": "Appliquer la liste des actions", "libellé": "Appliquer",
+            "champs": [], "confirmer": confirm }));
+        a.push(json!({ "nom": "volume_draft_clear", "libellé": "Vider la liste", "champs": [] }));
     }
 }
 
@@ -1765,12 +1853,10 @@ fn volume_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
         let mut ui = sh.volumes_ui.lock().unwrap();
         if let Some(id) = c.volume() {
             if ui.draft.iter().any(|d| d.volume() == Some(id)) {
-                return Err(format!(
-                    "le volume {id} a déjà une modification dans le brouillon"
-                ));
+                return Err(format!("le volume {id} a déjà une action dans la liste"));
             }
         }
-        let m = format!("Ajouté au brouillon : {}", c.describe());
+        let m = format!("Ajouté à la liste des actions : {}", c.describe());
         ui.draft.push(c);
         Ok(json!({ "ok": true, "message": m }))
     };
@@ -1821,24 +1907,24 @@ fn volume_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
                 return Err("modification introuvable".into());
             }
             ui.draft.remove(n - 1);
-            Ok(json!({ "ok": true, "message": "Modification retirée du brouillon" }))
+            Ok(json!({ "ok": true, "message": "Action retirée de la liste" }))
         }
         "volume_draft_clear" => {
             sh.volumes_ui.lock().unwrap().draft.clear();
-            Ok(json!({ "ok": true, "message": "Brouillon vidé" }))
+            Ok(json!({ "ok": true, "message": "Liste des actions vidée" }))
         }
         "volume_apply" => apply_volume_changes(sh),
         _ => Err(format!("action inconnue : {name}")),
     }
 }
 
-/// Valide tout le brouillon puis l'applique (`protocols.gestion-volumes`
-/// § Brouillon).
+/// Valide toute la liste des actions puis l'applique
+/// (`protocols.gestion-volumes` § Liste des actions).
 fn apply_volume_changes(sh: &Shared) -> Result<Value, String> {
     use crate::volumes::{self, Change, Inspection};
     let draft = sh.volumes_ui.lock().unwrap().draft.clone();
     if draft.is_empty() {
-        return Err("brouillon vide".into());
+        return Err("liste des actions vide".into());
     }
     let node_id = sh.service.lock().unwrap().node_id();
     let usage = volume_usage(sh);

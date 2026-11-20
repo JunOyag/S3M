@@ -29,8 +29,6 @@ pub const SESSION_IDLE: Duration = Duration::from_secs(30 * 60);
 pub const MAX_FAILURES: u32 = 5;
 /// Actions réservées au dashboard local.
 pub const LOCAL_ONLY: &[&str] = &["show_totp", "regenerate_totp"];
-/// Actions qui exigent, à distance, un code 2FA frais dans `code 2FA`.
-pub const CONFIRM_2FA: &[&str] = &["volume_apply"];
 
 /// HOTP (RFC 4226) sur HMAC-SHA1, `digits` chiffres.
 pub fn hotp(secret: &[u8], counter: u64, digits: u32) -> u32 {
@@ -303,30 +301,6 @@ impl Auth {
                             return AdminResponse::Error(
                                 "action réservée au tableau de bord local du Nœud".into(),
                             );
-                        }
-                        // Volumes : code 2FA frais à l'enregistrement
-                        // (`protocols.gestion-volumes` § Brouillon).
-                        if !setup && CONFIRM_2FA.contains(&name.as_str()) {
-                            if self.locked(now) {
-                                return AdminResponse::Error(
-                                    "trop d'essais : réessayez plus tard".into(),
-                                );
-                            }
-                            let code = body
-                                .get("code 2FA")
-                                .and_then(|c| c.as_str())
-                                .unwrap_or_default()
-                                .to_string();
-                            let ok = match self.current_secret() {
-                                Some(secret) => self.totp_ok(&secret, &code, unix),
-                                None => false,
-                            };
-                            if !ok {
-                                self.fail(now);
-                                return AdminResponse::Error(
-                                    "code 2FA requis ou invalide pour enregistrer".into(),
-                                );
-                            }
                         }
                         match action(&name, body) {
                             Ok(v) => AdminResponse::Result(v),

@@ -219,6 +219,8 @@ pub struct VolumeUsage {
     pub used_bytes: u64,
     pub containers: usize,
     pub blocks: usize,
+    /// Place des slots inutilisés dans les conteneurs déjà créés.
+    pub free_slot_bytes: u64,
     pub draining: bool,
 }
 
@@ -733,6 +735,13 @@ impl PhysicalStore {
                     blocks: on
                         .iter()
                         .map(|c| occupied_count(&c.occupied_bitmap) as usize)
+                        .sum(),
+                    free_slot_bytes: on
+                        .iter()
+                        .map(|c| {
+                            (c.slot_count - occupied_count(&c.occupied_bitmap)) as u64
+                                * BLOCK_SIZE as u64
+                        })
                         .sum(),
                     draining: self.draining.contains(&v.volume_id),
                 }

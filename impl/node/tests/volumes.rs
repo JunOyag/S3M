@@ -286,6 +286,7 @@ fn the_draft_is_validated_as_a_whole() {
         used_bytes: 4 << 30,
         containers: 1,
         blocks: 100,
+        free_slot_bytes: 0,
         draining: false,
     }];
     let id = pk(&NODE);

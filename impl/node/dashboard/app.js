@@ -95,7 +95,7 @@ function bytes(n) {
   return (i ? n.toFixed(n < 10 ? 1 : 0).replace(".", ",") : String(n)) + " " + u[i];
 }
 
-const DATE_KEY = /(dernier|dernière|expire|publiée le|prochaine|contact|heure|le$)/i;
+const DATE_KEY = /(dernier|dernière|expire|publiée le|prochaine|contact|heure|date|le$)/i;
 
 function fmt(k, v) {
   if (typeof v === "number" && k) {
@@ -130,7 +130,26 @@ function rowActions(list) {
   return td;
 }
 
-function render(value) {
+// Tableaux : 25 lignes par page, export CSV (séparateur « ; », Excel).
+const PAGE = 25;
+const tableState = {};
+
+function csvOf(cols, rows) {
+  const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+  return [cols.map(q).join(";"), ...rows.map((o) => cols.map((c) => q(fmt(c, o[c]))).join(";"))].join("\r\n");
+}
+
+function download(name, text) {
+  const a = el("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" }));
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function render(value, key) {
   if (Array.isArray(value)) {
     if (value.length === 0) return el("p", "aucun", "empty");
     if (typeof value[0] !== "object" || value[0] === null) {
@@ -140,41 +159,69 @@ function render(value) {
     }
     const cols = [...new Set(value.flatMap((o) => Object.keys(o)))].filter((c) => c !== "_actions");
     const withActions = value.some((o) => o["_actions"]);
+    const box = el("div", undefined, "table-box");
     const t = el("table");
     const head = t.createTHead().insertRow();
     const body = t.createTBody();
-    let sortCol = null;
-    let asc = true;
+    // Tri et page conservés d'un rafraîchissement à l'autre (par section).
+    const st = key ? (tableState[key] = tableState[key] || { sortCol: null, asc: true, page: 0 }) : { sortCol: null, asc: true, page: 0 };
+    const foot = el("div", undefined, "table-foot");
+    const sorted = () =>
+      st.sortCol === null
+        ? value
+        : [...value].sort((a, b) => {
+            const x = a[st.sortCol], y = b[st.sortCol];
+            const r = typeof x === "number" && typeof y === "number" ? x - y : cell(x).localeCompare(cell(y), "fr", { numeric: true });
+            return st.asc ? r : -r;
+          });
     const fill = () => {
       body.replaceChildren();
-      const rows = sortCol === null ? value : [...value].sort((a, b) => {
-        const x = a[sortCol], y = b[sortCol];
-        const r = typeof x === "number" && typeof y === "number" ? x - y : cell(x).localeCompare(cell(y), "fr", { numeric: true });
-        return asc ? r : -r;
-      });
-      rows.forEach((o) => {
+      const rows = sorted();
+      const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+      st.page = Math.min(st.page, pages - 1);
+      rows.slice(st.page * PAGE, (st.page + 1) * PAGE).forEach((o) => {
         const r = body.insertRow();
-        cols.forEach((c) => r.appendChild(el("td", fmt(c, o[c]))));
+        cols.forEach((c) => {
+          const text = fmt(c, o[c]);
+          // Valeur longue (chemin, identifiant) : largeur minimale lisible.
+          r.appendChild(el("td", text, text.length > 40 ? "long" : undefined));
+        });
         if (withActions) r.appendChild(rowActions(o["_actions"]));
       });
+      foot.replaceChildren();
+      if (pages > 1) {
+        const prev = el("button", "‹ Précédent", "small");
+        const next = el("button", "Suivant ›", "small");
+        prev.disabled = st.page === 0;
+        next.disabled = st.page >= pages - 1;
+        prev.addEventListener("click", () => { st.page--; fill(); });
+        next.addEventListener("click", () => { st.page++; fill(); });
+        foot.append(prev, el("span", `page ${st.page + 1} / ${pages} · ${rows.length} lignes`, "muted"), next);
+      }
+      if (key) {
+        const csv = el("button", "Exporter en CSV", "small");
+        csv.addEventListener("click", () => download(key + ".csv", csvOf(cols, sorted())));
+        foot.append(csv);
+      }
     };
     cols.forEach((c) => {
-      const th = el("th", c);
+      const th = el("th", c + (st.sortCol === c ? (st.asc ? " ▲" : " ▼") : ""));
       th.title = "trier";
       th.style.cursor = "pointer";
       th.dataset.col = c;
       th.addEventListener("click", () => {
-        asc = sortCol === c ? !asc : true;
-        sortCol = c;
+        st.asc = st.sortCol === c ? !st.asc : true;
+        st.sortCol = c;
         head.querySelectorAll("th[data-col]").forEach((h) => (h.textContent = h.dataset.col));
-        th.textContent = c + (asc ? " ▲" : " ▼");
+        th.textContent = c + (st.asc ? " ▲" : " ▼");
         fill();
       });
       head.appendChild(th);
     });
     if (withActions) head.appendChild(el("th", ""));
     fill();
-    return t;
+    box.append(t, foot);
+    return box;
   }
   if (value !== null && typeof value === "object") {
     const t = el("table", undefined, "kv");
@@ -226,6 +273,8 @@ function actionForm(a) {
     ev.preventDefault();
     const body = {};
     inputs.forEach((i) => (body[i.name] = i.type === "checkbox" ? i.checked : i.value.trim()));
+    // `confirmer` : fenêtre de confirmation avant l'envoi.
+    if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
     runAction(a["nom"], body, b, a["libellé"]);
   });
   return f;
@@ -380,7 +429,7 @@ function show(status) {
     if (!(k in status)) return;
     const s = el("section");
     s.appendChild(el("h2", k));
-    s.appendChild(render(status[k]));
+    s.appendChild(render(status[k], k));
     frag.appendChild(s);
   });
   main.insertBefore(frag, frame || keep);
