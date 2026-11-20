@@ -46,6 +46,7 @@ fn old_dispersal_envelope(k_attach: &[u8; 32]) -> Vec<u8> {
             dispersal_root_hash: Some(root),
             dispersal_root_partners: Some(partners),
             dispersal_root_salt: Some(salt),
+            dispersal_root_stripe: None,
         },
     );
     fbb.finish_minimal(ptr);
