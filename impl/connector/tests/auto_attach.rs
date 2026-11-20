@@ -67,7 +67,15 @@ async fn unattached_connector_attaches_itself_with_the_node_policy_quota() {
         auto_attach: true,
     };
     let (shared, _) = start(config, clock).await.unwrap();
-    watch_once(&shared).await;
+    // Un premier tour peut échouer côté réseau (connexion en cours) : la
+    // surveillance réessaie à chaque tour, comme en production.
+    for _ in 0..5 {
+        watch_once(&shared).await;
+        if shared.attach.lock().unwrap().attached_quota.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
     let a = shared.attach.lock().unwrap().clone();
     assert_eq!(a.attached_quota, Some(5 << 30), "{:?}", a.last_error);
     assert_eq!(shared.health.lock().unwrap().reachable, Some(true));
