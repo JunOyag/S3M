@@ -6,7 +6,10 @@
 // actions (formulaires) et, dans les tableaux, boutons par ligne (`_actions`).
 "use strict";
 
-const token = new URLSearchParams(location.hash.slice(1)).get("token") || "";
+const hashParams = new URLSearchParams(location.hash.slice(1));
+const token = hashParams.get("token") || "";
+// `#token=…&page=<id>` ouvre directement un écran.
+const linkedPage = hashParams.get("page");
 history.replaceState(null, "", location.pathname);
 
 const main = document.getElementById("main");
@@ -81,15 +84,40 @@ function cell(v) {
   return String(v);
 }
 
+// Valeur lisible selon son libellé : tailles en octets, instants Unix.
+function bytes(n) {
+  const u = ["o", "Ko", "Mo", "Go", "To", "Po"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return (i ? n.toFixed(n < 10 ? 1 : 0).replace(".", ",") : String(n)) + " " + u[i];
+}
+
+const DATE_KEY = /(dernier|dernière|expire|publiée le|prochaine|contact|heure|le$)/i;
+
+function fmt(k, v) {
+  if (typeof v === "number" && k) {
+    if (/octets/i.test(k)) return bytes(v);
+    if (v > 1.4e9 && v < 4.2e9 && DATE_KEY.test(k)) return new Date(v * 1000).toLocaleString("fr-FR");
+  }
+  return cell(v);
+}
+
 // QR code : SVG fourni par le moteur, affiché comme image (jamais inséré).
-function valueNode(v) {
+// Objet imbriqué : sous-tableau.
+function valueNode(v, k) {
+  if (v !== null && typeof v === "object" && !(Array.isArray(v) && v.every((x) => x === null || typeof x !== "object"))) {
+    return render(v);
+  }
   if (typeof v === "string" && /^\s*(<\?xml[^>]*>\s*)?<svg[\s>]/.test(v)) {
     const i = el("img", undefined, "qr");
     i.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(v);
     i.alt = "QR code";
     return i;
   }
-  return document.createTextNode(cell(v));
+  return document.createTextNode(fmt(k, v));
 }
 
 function rowActions(list) {
@@ -126,7 +154,7 @@ function render(value) {
       });
       rows.forEach((o) => {
         const r = body.insertRow();
-        cols.forEach((c) => r.appendChild(el("td", cell(o[c]))));
+        cols.forEach((c) => r.appendChild(el("td", fmt(c, o[c]))));
         if (withActions) r.appendChild(rowActions(o["_actions"]));
       });
     };
@@ -154,7 +182,7 @@ function render(value) {
       const r = t.insertRow();
       r.appendChild(el("th", k));
       const td = el("td");
-      td.appendChild(valueNode(v));
+      td.appendChild(valueNode(v, k));
       r.appendChild(td);
     });
     return t;
@@ -168,21 +196,24 @@ function actionForm(a) {
   const values = a["valeurs"] || {};
   const types = a["types"] || {};
   const help = a["aide"] || {};
+  // `libellés` : texte affiché d'un champ (le nom envoyé reste `champs`).
+  const labels = a["libellés"] || {};
   if (a["titre"]) f.appendChild(el("h3", a["titre"]));
   const inputs = (a["champs"] || []).map((name) => {
     const l = el("label");
     const i = el("input");
     i.name = name;
     i.autocomplete = "off";
+    const text = labels[name] || name;
     if (types[name] === "bool") {
       i.type = "checkbox";
       i.checked = values[name] === true;
       l.classList.add("check");
-      l.append(i, el("span", name));
+      l.append(i, el("span", text));
     } else {
       if (types[name] === "number") i.type = "number";
       if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
-      l.append(el("span", name), i);
+      l.append(el("span", text), i);
     }
     if (help[name]) l.title = help[name];
     f.appendChild(l);
@@ -202,15 +233,105 @@ function actionForm(a) {
 
 // --------------------------------------------------------------- affichage
 
+// Écrans : le moteur décrit `pages` (sections et actions de chacune) et
+// `résumé` (indicateurs de la vue d'ensemble). Sans `pages`, un seul écran.
+const RESERVED = new Set(["titre", "actions", "carte", "pages", "résumé"]);
 let actionsKey = "";
+let lastStatus = null;
+let page = null;
+
+function pagesOf(status) {
+  const all = Object.keys(status).filter((k) => !RESERVED.has(k));
+  const pages = status["pages"];
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return [{ id: "_", titre: "", sections: all, actions: null, carte: true }];
+  }
+  const out = pages.map((p) => ({ ...p, sections: [...(p.sections || [])] }));
+  // Ce qu'aucun écran ne cite va dans l'écran « autres » (rien ne se perd).
+  const used = new Set(out.flatMap((p) => p.sections));
+  const other = out.find((p) => p["autres"]) || out[out.length - 1];
+  all.filter((k) => !used.has(k)).forEach((k) => other.sections.push(k));
+  const named = new Set(out.flatMap((p) => p.actions || []));
+  other.extra = (status["actions"] || []).filter((a) => !named.has(a["nom"])).map((a) => a["nom"]);
+  return out;
+}
+
+function go(id) {
+  page = id;
+  try {
+    sessionStorage.setItem("s3m-page", id);
+  } catch (e) {
+    /* stockage indisponible : sans effet */
+  }
+  window.scrollTo(0, 0);
+  if (lastStatus) show(lastStatus);
+}
+
+function menu(pages) {
+  let nav = document.getElementById("menu");
+  if (pages.length < 2) {
+    if (nav) nav.remove();
+    document.body.classList.remove("with-menu");
+    return;
+  }
+  document.body.classList.add("with-menu");
+  if (!nav) {
+    nav = el("nav");
+    nav.id = "menu";
+    nav.setAttribute("aria-label", "Écrans");
+    document.body.insertBefore(nav, main);
+  }
+  const key = pages.map((p) => p.id + ":" + p.titre).join("|") + "#" + page;
+  if (nav.dataset.key === key) return;
+  nav.dataset.key = key;
+  nav.replaceChildren();
+  pages.forEach((p) => {
+    const b = el("button", p.titre, p.id === page ? "active" : undefined);
+    b.type = "button";
+    if (p.id === page) b.setAttribute("aria-current", "page");
+    b.addEventListener("click", () => go(p.id));
+    nav.appendChild(b);
+  });
+}
+
+function cards(list) {
+  const box = el("div", undefined, "cards");
+  list.forEach((c) => {
+    const d = el(c["page"] ? "button" : "div", undefined, "card " + (c["état"] || "neutre"));
+    if (c["page"]) {
+      d.type = "button";
+      d.addEventListener("click", () => go(c["page"]));
+    }
+    d.appendChild(el("span", c["libellé"], "card-label"));
+    d.appendChild(el("span", c["unité"] === "octets" ? bytes(c["valeur"] || 0) : cell(c["valeur"]), "card-value"));
+    if (c["détail"]) d.appendChild(el("span", c["détail"], "card-detail"));
+    box.appendChild(d);
+  });
+  return box;
+}
 
 function show(status) {
+  lastStatus = status;
   document.getElementById("title").textContent = status["titre"] || "S3m";
   document.title = status["titre"] || "S3m";
-  const actions = status["actions"] || [];
+  const pages = pagesOf(status);
+  if (!page || !pages.some((p) => p.id === page)) {
+    let saved = null;
+    try {
+      saved = sessionStorage.getItem("s3m-page");
+    } catch (e) {
+      /* stockage indisponible */
+    }
+    const want = linkedPage || saved;
+    page = pages.some((p) => p.id === want) ? want : pages[0].id;
+  }
+  menu(pages);
+  const p = pages.find((x) => x.id === page);
+  const wanted = p.actions === null ? null : [...(p.actions || []), ...(p.extra || [])];
+  const actions = (status["actions"] || []).filter((a) => wanted === null || wanted.includes(a["nom"]));
   // Les formulaires ne sont reconstruits que s'ils changent, et restent dans
   // la page entre deux rafraîchissements : saisie et focus préservés.
-  const key = JSON.stringify(actions);
+  const key = page + JSON.stringify(actions);
   let keep = document.getElementById("actions");
   if (keep && key !== actionsKey) {
     keep.remove();
@@ -218,25 +339,27 @@ function show(status) {
   }
   [...main.children].forEach((c) => c !== keep && c.remove());
   const frag = document.createDocumentFragment();
-  if (status["carte"]) {
+  if (pages.length > 1) frag.appendChild(el("h2", p.titre, "page-title"));
+  if (p["résumé"] && Array.isArray(status["résumé"])) frag.appendChild(cards(status["résumé"]));
+  if (status["carte"] && p.carte) {
     const s = el("section");
     const b = el("button", "Ouvrir la carte du monde");
     b.addEventListener("click", () => window.open("map.html#token=" + encodeURIComponent(token), "_blank", "noopener"));
     s.appendChild(b);
     frag.appendChild(s);
   }
-  Object.entries(status).forEach(([k, v]) => {
-    if (k === "titre" || k === "actions" || k === "carte") return;
+  p.sections.forEach((k) => {
+    if (!(k in status)) return;
     const s = el("section");
     s.appendChild(el("h2", k));
-    s.appendChild(render(v));
+    s.appendChild(render(status[k]));
     frag.appendChild(s);
   });
   main.insertBefore(frag, keep);
   if (!keep && actions.length) {
     const s = el("section");
     s.id = "actions";
-    s.appendChild(el("h2", "actions"));
+    s.appendChild(el("h2", "Actions"));
     actions.forEach((a) => s.appendChild(actionForm(a)));
     main.appendChild(s);
     actionsKey = key;

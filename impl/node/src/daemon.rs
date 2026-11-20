@@ -571,7 +571,81 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "fichier": sh.config.source.as_ref().map(|p| p.display().to_string()),
         "en attente de redémarrage": if pending.is_empty() { json!("rien") } else { json!(pending) },
     });
+    v["résumé"] = node_summary(&v);
+    v["pages"] = json!([
+        { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true,
+          "sections": ["alertes d'intégrité signalées", "identité"], "actions": [] },
+        { "id": "utilisateurs", "titre": "Utilisateurs",
+          "sections": ["utilisateurs rattachés", "rattachement automatique"],
+          "actions": ["attach_user", "set_quota", "set_attach_policy"] },
+        { "id": "partenaires", "titre": "Partenaires", "carte": true,
+          "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner"] },
+        { "id": "stockage", "titre": "Stockage et protection",
+          "sections": ["volumes", "dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
+        { "id": "reseau", "titre": "Réseau",
+          "sections": ["traversée de NAT", "annuaire (entrée Node)", "géolocalisation"], "actions": ["geoip_update"] },
+        { "id": "distance", "titre": "Administration à distance",
+          "sections": ["administration à distance"], "actions": ["show_totp", "regenerate_totp"] },
+        { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config"] },
+        { "id": "diagnostic", "titre": "Diagnostic", "autres": true,
+          "sections": ["migration", "non suivi par cet exécutable"], "actions": [] }
+    ]);
     v
+}
+
+/// Indicateurs de la vue d'ensemble (`état` : ok, attention, probleme, neutre).
+fn node_summary(v: &Value) -> Value {
+    let len = |k: &str| v.get(k).and_then(|x| x.as_array()).map_or(0, |a| a.len());
+    let nat = v
+        .pointer("/traversée de NAT/joignabilité")
+        .and_then(|x| x.as_str())
+        .unwrap_or("inconnu")
+        .to_string();
+    let nat_state = if nat.contains("public") || nat.contains("direct") {
+        "ok"
+    } else if nat == "inconnu" {
+        "neutre"
+    } else {
+        "attention"
+    };
+    let entry = v.get("annuaire (entrée Node)");
+    let (dir, dir_state) = match entry {
+        Some(e) if e.get("erreur").is_some_and(|x| !x.is_null()) => {
+            ("erreur".to_string(), "probleme")
+        }
+        Some(e) if e.get("publiée le").is_some_and(|x| !x.is_null()) => {
+            ("publiée".to_string(), "ok")
+        }
+        Some(e) => (
+            e.get("preuve VDF")
+                .and_then(|x| x.as_str())
+                .unwrap_or("en attente")
+                .to_string(),
+            "neutre",
+        ),
+        None => ("—".into(), "neutre"),
+    };
+    let target = v
+        .pointer("/recherche de partenaires/partenaires visés")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(0);
+    let partners = len("partenaires");
+    let capacity: u64 = v.get("volumes").and_then(|x| x.as_array()).map_or(0, |a| {
+        a.iter()
+            .filter_map(|x| x.get("capacité (octets)")?.as_u64())
+            .sum()
+    });
+    let alerts = len("alertes d'intégrité signalées");
+    json!([
+        { "libellé": "Joignabilité", "valeur": nat, "état": nat_state, "page": "reseau" },
+        { "libellé": "Annuaire", "valeur": dir, "état": dir_state, "page": "reseau" },
+        { "libellé": "Utilisateurs", "valeur": len("utilisateurs rattachés"), "état": "neutre", "page": "utilisateurs" },
+        { "libellé": "Partenaires", "valeur": partners, "détail": format!("{target} visés"),
+          "état": if partners == 0 { "attention" } else { "ok" }, "page": "partenaires" },
+        { "libellé": "Capacité", "valeur": capacity, "unité": "octets", "état": "neutre", "page": "stockage" },
+        { "libellé": "Alertes d'intégrité", "valeur": alerts,
+          "état": if alerts == 0 { "ok" } else { "probleme" }, "page": "accueil" }
+    ])
 }
 
 fn admin_status(sh: &Shared) -> Value {
@@ -836,15 +910,25 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "taux de republication DHT", "espace de secours"
         ],
         "actions": [
-            { "nom": "attach_user", "libellé": "Rattacher un utilisateur",
-              "champs": ["user_id", "salt", "quota_bytes"] },
-            { "nom": "add_partner", "libellé": "Ajouter un partenaire",
-              "champs": ["node_id", "addr", "allowance"] },
-            { "nom": "set_quota", "libellé": "Changer le quota d'un utilisateur",
-              "champs": ["user_id", "quota_bytes"] },
+            { "nom": "attach_user", "titre": "Rattacher un utilisateur manuellement", "libellé": "Rattacher",
+              "champs": ["user_id", "salt", "quota_bytes"],
+              "libellés": { "user_id": "identifiant de l'utilisateur", "salt": "sel d'attachement", "quota_bytes": "quota (octets)" },
+              "types": { "quota_bytes": "number" },
+              "aide": { "user_id": "Affiché par l'assistant de S3m de l'utilisateur", "salt": "Affiché à côté de l'identifiant (32 caractères)" } },
+            { "nom": "add_partner", "titre": "Ajouter un partenaire manuellement", "libellé": "Ajouter",
+              "champs": ["node_id", "addr", "allowance"],
+              "libellés": { "node_id": "identifiant du Nœud", "addr": "adresse", "allowance": "solde accordé (fragments)" },
+              "types": { "allowance": "number" },
+              "aide": { "addr": "/ip4/…/tcp/…/p2p/…" } },
+            { "nom": "set_quota", "titre": "Changer le quota d'un utilisateur", "libellé": "Changer",
+              "champs": ["user_id", "quota_bytes"],
+              "libellés": { "user_id": "identifiant de l'utilisateur", "quota_bytes": "nouveau quota (octets)" },
+              "types": { "quota_bytes": "number" } },
             { "nom": "set_attach_policy", "titre": "Rattachement automatique des utilisateurs",
               "libellé": "Enregistrer",
               "champs": ["enabled", "quota_bytes", "max_users", "budget_bytes"],
+              "libellés": { "enabled": "accepter automatiquement les nouveaux utilisateurs", "quota_bytes": "quota par utilisateur (octets)",
+                            "max_users": "utilisateurs au plus", "budget_bytes": "budget total (octets)" },
               "valeurs": { "enabled": s.attach_policy.enabled, "quota_bytes": s.attach_policy.quota_bytes,
                            "max_users": s.attach_policy.max_users, "budget_bytes": s.attach_policy.budget_bytes },
               "types": { "enabled": "bool", "quota_bytes": "number", "max_users": "number", "budget_bytes": "number" } }
