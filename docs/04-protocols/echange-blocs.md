@@ -209,6 +209,11 @@ répond `NotFound` à un `FetchFragment` ou `Challenge` portant sur un fragment
 qu'il doit héberger est traité comme un échec PoS
 ([`securite.blacklist-fraude`](../05-securite/blacklist-fraude.md)).
 
+## Partenariats et rattachements automatiques
+
+`Probe`, `ProposePartnership` et `Attach` (ajouts du 2026-11-20) : voir
+[`protocols.partenariat-automatique`](partenariat-automatique.md).
+
 ## Hors périmètre
 
 Traversée de NAT ([`network.bootstrap`](../01-network-dht/bootstrap.md)),

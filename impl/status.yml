@@ -1202,3 +1202,9 @@ entries:
     notes: >-
       Émission et vérification : protocol::exchange::{issue_grant,
       open_grant}.
+  protocols.partenariat-automatique:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""

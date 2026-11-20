@@ -48,9 +48,24 @@ table GrantIssued {
   grant: SignedRescueGrant;
 }
 
+// Ajouts du 2026-11-20 (protocols.partenariat-automatique).
+// Probe
+table ProbeReply {
+  nonce: [ubyte];
+  accepting_partners: bool;   // accepte de nouvelles propositions
+}
+// ProposePartnership
+table PartnershipAnswer {
+  granted_blocks: uint64;     // 0 : refusé
+}
+// Attach
+table Attached {
+  quota_bytes: uint64;
+}
+
 union ResponseBody {
   Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
-  Ack, GrantIssued
+  Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached
 }
 
 table BlockResponse {

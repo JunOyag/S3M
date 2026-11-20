@@ -29,6 +29,26 @@ scrubbing/auto-réparation
 espace de secours occupé/réservé pour tiers en détresse
 ([`protocols.espace-secours`](../04-protocols/espace-secours.md)).
 
+### Liste des partenaires et carte {: #carte }
+
+Ajout du 2026-11-20 ([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md)) :
+
+- liste des partenaires triable : score et composantes, état (actif, en
+  retrait, terminé), fragments confiés et reçus, solde accordé, dernier
+  challenge réussi, latence, pays ;
+- **carte du monde** plein écran : partenaires, Nœuds non partenaires
+  (candidats découverts), Nœuds en liste noire, Utilisateurs rattachés —
+  chaque type affichable ou masquable ; points proches regroupés en bulles
+  portant leur nombre, dégroupées au zoom ; détail au clic ;
+- fond de carte embarqué (Natural Earth, domaine public) : aucune tuile ni
+  service en ligne ;
+- localisation par adresse IP avec une base locale au format MMDB (DB-IP
+  « City Lite », CC BY 4.0, attribution affichée), téléchargée à la demande
+  de l'opérateur (`p2p-storage-node geoip-update`) ; adresse publiée dans
+  l'entrée DHT pour les Nœuds, adresse de la dernière connexion pour les
+  Utilisateurs (enregistrement désactivable) ; adresses privées ou
+  inconnues comptées « non localisées ».
+
 ## Dashboard Connecteur
 
 Nœud rattaché et son état de joignabilité, palier d'alerte de migration en

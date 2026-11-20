@@ -87,9 +87,30 @@ table Tombstone {
   signature: [ubyte];
 }
 
+// Ajouts du 2026-11-20 (protocols.partenariat-automatique) :
+// N'importe quel pair → Nœud : mesure de disponibilité et de vitesse.
+table Probe {
+  nonce: [ubyte];
+}
+// Nœud → Nœud candidat : proposition de partenariat de troc 1:1.
+table ProposePartnership {
+  allowance_blocks: uint64;   // solde demandé (fragments hébergés de part et d'autre)
+  node_entry: [ubyte];        // entrée DHT Node du demandeur (enveloppe signée, preuve VDF)
+}
+// Connecteur → Nœud : rattachement automatique (credential UserCredential
+// calculé avec le K_attach de ce sel).
+table Attach {
+  salt: [ubyte];              // sel d'attachement (16 o)
+  sig_pub_user: [ubyte];      // identité VDF du User (32 o)
+  vdf_y: [ubyte];
+  vdf_pi: [ubyte];
+  signature: [ubyte];         // Ed25519 par sig_priv_user sur L("p2p-storage/sig/attach/v1") ‖ pub_user ‖ node_id
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
-  StoreFragment, Challenge, FetchFragment, Tombstone
+  StoreFragment, Challenge, FetchFragment, Tombstone,
+  Probe, ProposePartnership, Attach
 }
 
 // Requête : une par flux libp2p request-response.
