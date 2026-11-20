@@ -49,6 +49,8 @@
   .toast.error { border-left-color: var(--bad); }
   .toast.show { opacity: 1; transform: none; }
   /* Écrans et menu */
+  iframe.frame { width: 100%; height: calc(100vh - 170px); min-height: 420px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+  .frame-link { font-size: 12px; color: var(--accent); justify-self: end; }
   body.with-menu { display: grid; grid-template-columns: 230px minmax(0, 1fr); grid-template-rows: auto 1fr; min-height: 100vh; }
   body.with-menu header { grid-column: 1 / -1; }
   #menu { padding: 16px 10px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; align-self: start; }

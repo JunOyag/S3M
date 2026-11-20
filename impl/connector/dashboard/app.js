@@ -246,7 +246,10 @@ function pagesOf(status) {
   if (!Array.isArray(pages) || pages.length === 0) {
     return [{ id: "_", titre: "", sections: all, actions: null, carte: true }];
   }
-  const out = pages.map((p) => ({ ...p, sections: [...(p.sections || [])] }));
+  // La carte n'existe que sur le Nœud lui-même (pas à distance).
+  const out = pages
+    .filter((p) => p["cadre"] !== "map.html" || status["carte"])
+    .map((p) => ({ ...p, sections: [...(p.sections || [])] }));
   // Ce qu'aucun écran ne cite va dans l'écran « autres » (rien ne se perd).
   const used = new Set(out.flatMap((p) => p.sections));
   const other = out.find((p) => p["autres"]) || out[out.length - 1];
@@ -337,16 +340,41 @@ function show(status) {
     keep.remove();
     keep = null;
   }
-  [...main.children].forEach((c) => c !== keep && c.remove());
+  // Écran intégré (`cadre`, ex. la carte) : gardé entre deux rafraîchissements
+  // (zoom et position conservés).
+  let frame = document.getElementById("frame");
+  if (frame && frame.dataset.page !== page) {
+    frame.remove();
+    frame = null;
+  }
+  [...main.children].forEach((c) => c !== keep && c !== frame && c.remove());
   const frag = document.createDocumentFragment();
   if (pages.length > 1) frag.appendChild(el("h2", p.titre, "page-title"));
   if (p["résumé"] && Array.isArray(status["résumé"])) frag.appendChild(cards(status["résumé"]));
+  const mapPage = pages.find((x) => x["cadre"] === "map.html");
   if (status["carte"] && p.carte) {
     const s = el("section");
     const b = el("button", "Ouvrir la carte du monde");
-    b.addEventListener("click", () => window.open("map.html#token=" + encodeURIComponent(token), "_blank", "noopener"));
+    b.addEventListener("click", () =>
+      mapPage ? go(mapPage.id) : window.open("map.html#token=" + encodeURIComponent(token), "_blank", "noopener"),
+    );
     s.appendChild(b);
     frag.appendChild(s);
+  }
+  if (p["cadre"] && !frame) {
+    frame = el("iframe", undefined, "frame");
+    frame.id = "frame";
+    frame.dataset.page = page;
+    frame.title = p.titre;
+    frame.src = p["cadre"] + "#token=" + encodeURIComponent(token);
+    main.appendChild(frame);
+  }
+  if (p["cadre"]) {
+    const full = el("a", "Ouvrir en plein écran", "frame-link");
+    full.href = p["cadre"] + "#token=" + encodeURIComponent(token);
+    full.target = "_blank";
+    full.rel = "noopener";
+    frag.appendChild(full);
   }
   p.sections.forEach((k) => {
     if (!(k in status)) return;
@@ -355,7 +383,7 @@ function show(status) {
     s.appendChild(render(status[k]));
     frag.appendChild(s);
   });
-  main.insertBefore(frag, keep);
+  main.insertBefore(frag, frame || keep);
   if (!keep && actions.length) {
     const s = el("section");
     s.id = "actions";
