@@ -16,6 +16,17 @@ Nœuds d'amorçage fournie par sa configuration**. La traversée de NAT
 ([`network.traversee-nat`](traversee-nat.md), ajoutée le 2026-11-20), à spécifier plus
 tard (arbitrage du 2026-11-19, `impl/SPEC_GAPS.md`).
 
+## Découverte sur le réseau local {: #reseau-local }
+
+Ajout du 2026-11-20. Chaque Nœud s'annonce sur le réseau local par **mDNS**
+(libp2p, désactivable par `mdns: false`) ; les Nœuds découverts ainsi
+entrent aussi dans sa table DHT. L'assistant de premier lancement du
+Connecteur ([`deploiement.packaging`](../07-deploiement/packaging.md#barre-des-taches))
+écoute ces annonces quelques secondes, vérifie chaque candidat par un
+`Probe` ([`protocols.echange-blocs`](../04-protocols/echange-blocs.md)) et
+propose la liste ; le `node_id` se déduit du `PeerId` annoncé. L'annonce ne
+révèle que la présence d'un Nœud S3m et son adresse locale.
+
 ## Chemin rapide (cache local présent)
 
 Le Connecteur interroge en priorité son **cache local** pour obtenir

@@ -80,6 +80,38 @@ différée, indicateur des synchronisations en attente et action
   lecteur monté ([`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md))
   nécessite WinFsp ou FUSE.
 
+### Application de la barre des tâches (Connecteur, Windows) {: #barre-des-taches }
+
+Ajout du 2026-11-20. Le Connecteur s'utilise comme les applications de
+synchronisation courantes :
+
+- **Application de session** `S3m.exe` (pas un service Windows : un
+  service tourne hors de la session et ne pourrait ni afficher d'icône ni
+  présenter le lecteur monté à l'utilisateur). Sans fenêtre de console, une
+  seule instance par utilisateur, lancée à l'ouverture de session si
+  l'option « Démarrer avec Windows » est cochée (clé `Run` du profil).
+  `s3m-connector.exe` reste disponible en ligne de commande.
+- **Emplacement** : `%APPDATA%\S3m` — configuration, phrase de
+  récupération, journaux (`logs\`) et données de travail.
+- **Icône** dont la couleur suit l'état : à jour, synchronisation en cours,
+  synchronisation suspendue, Nœud injoignable, erreur. Infobulle avec l'état
+  en clair.
+- **Menu** : état ; ouvrir le lecteur ; ouvrir le tableau de bord ;
+  synchroniser maintenant ; suspendre / reprendre la synchronisation (les
+  modifications restent journalisées localement) ; démarrer avec Windows ;
+  ouvrir les journaux ; quitter (démonte le lecteur).
+- **Notifications Windows** pour les événements importants : conflit de
+  synchronisation, Nœud injoignable depuis plus de 10 minutes puis de
+  nouveau joignable, rattachement automatique accepté ou refusé, erreur de
+  synchronisation persistante.
+- **Assistant de premier lancement** (aucune configuration) : création de
+  la phrase de récupération (affichée une fois, à recopier), recherche des
+  Nœuds du réseau local
+  ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)), choix
+  du Nœud ou saisie manuelle de son adresse, puis démarrage normal ; le
+  rattachement est demandé automatiquement
+  ([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md)).
+
 ## API locale {: #api-locale }
 
 Chaque dashboard dialogue avec son moteur par une **API locale** (HTTP et
