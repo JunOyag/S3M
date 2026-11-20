@@ -29,6 +29,7 @@ impl<'a> PartnerAccount<'a> {
   pub const VT_PARTNER_NODE_ID: flatbuffers::VOffsetT = 4;
   pub const VT_BLOCKS_HOSTED_FOR_PARTNER: flatbuffers::VOffsetT = 6;
   pub const VT_BLOCKS_HOSTED_BY_PARTNER: flatbuffers::VOffsetT = 8;
+  pub const VT_ALLOWANCE_BLOCKS: flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -40,6 +41,7 @@ impl<'a> PartnerAccount<'a> {
     args: &'args PartnerAccountArgs<'args>
   ) -> flatbuffers::WIPOffset<PartnerAccount<'bldr>> {
     let mut builder = PartnerAccountBuilder::new(_fbb);
+    builder.add_allowance_blocks(args.allowance_blocks);
     builder.add_blocks_hosted_by_partner(args.blocks_hosted_by_partner);
     builder.add_blocks_hosted_for_partner(args.blocks_hosted_for_partner);
     if let Some(x) = args.partner_node_id { builder.add_partner_node_id(x); }
@@ -68,6 +70,13 @@ impl<'a> PartnerAccount<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u64>(PartnerAccount::VT_BLOCKS_HOSTED_BY_PARTNER, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn allowance_blocks(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(PartnerAccount::VT_ALLOWANCE_BLOCKS, Some(0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for PartnerAccount<'_> {
@@ -80,6 +89,7 @@ impl flatbuffers::Verifiable for PartnerAccount<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("partner_node_id", Self::VT_PARTNER_NODE_ID, false)?
      .visit_field::<u64>("blocks_hosted_for_partner", Self::VT_BLOCKS_HOSTED_FOR_PARTNER, false)?
      .visit_field::<u64>("blocks_hosted_by_partner", Self::VT_BLOCKS_HOSTED_BY_PARTNER, false)?
+     .visit_field::<u64>("allowance_blocks", Self::VT_ALLOWANCE_BLOCKS, false)?
      .finish();
     Ok(())
   }
@@ -88,6 +98,7 @@ pub struct PartnerAccountArgs<'a> {
     pub partner_node_id: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub blocks_hosted_for_partner: u64,
     pub blocks_hosted_by_partner: u64,
+    pub allowance_blocks: u64,
 }
 impl<'a> Default for PartnerAccountArgs<'a> {
   #[inline]
@@ -96,6 +107,7 @@ impl<'a> Default for PartnerAccountArgs<'a> {
       partner_node_id: None,
       blocks_hosted_for_partner: 0,
       blocks_hosted_by_partner: 0,
+      allowance_blocks: 0,
     }
   }
 }
@@ -118,6 +130,10 @@ impl<'a: 'b, 'b> PartnerAccountBuilder<'a, 'b> {
     self.fbb_.push_slot::<u64>(PartnerAccount::VT_BLOCKS_HOSTED_BY_PARTNER, blocks_hosted_by_partner, 0);
   }
   #[inline]
+  pub fn add_allowance_blocks(&mut self, allowance_blocks: u64) {
+    self.fbb_.push_slot::<u64>(PartnerAccount::VT_ALLOWANCE_BLOCKS, allowance_blocks, 0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> PartnerAccountBuilder<'a, 'b> {
     let start = _fbb.start_table();
     PartnerAccountBuilder {
@@ -138,6 +154,7 @@ impl core::fmt::Debug for PartnerAccount<'_> {
       ds.field("partner_node_id", &self.partner_node_id());
       ds.field("blocks_hosted_for_partner", &self.blocks_hosted_for_partner());
       ds.field("blocks_hosted_by_partner", &self.blocks_hosted_by_partner());
+      ds.field("allowance_blocks", &self.allowance_blocks());
       ds.finish()
   }
 }

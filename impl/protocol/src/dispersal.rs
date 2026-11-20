@@ -115,7 +115,10 @@ pub fn by_xor_distance(candidates: &mut [Id], target: &Id) {
 
 // ------------------------------------------------------------------ codage
 
-fn stripe_fb<'a>(b: &mut FlatBufferBuilder<'a>, s: &StripeDesc) -> WIPOffset<fbs::Stripe<'a>> {
+pub(crate) fn stripe_fb<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    s: &StripeDesc,
+) -> WIPOffset<fbs::Stripe<'a>> {
     let blocks: Vec<_> = s
         .blocks
         .iter()
@@ -148,7 +151,7 @@ fn stripe_fb<'a>(b: &mut FlatBufferBuilder<'a>, s: &StripeDesc) -> WIPOffset<fbs
     )
 }
 
-fn partners_fb<'a>(
+pub(crate) fn partners_fb<'a>(
     b: &mut FlatBufferBuilder<'a>,
     ps: &[PartnerDesc],
 ) -> WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<fbs::Partner<'a>>>> {
@@ -189,7 +192,7 @@ fn id_of(v: Option<flatbuffers::Vector<'_, u8>>) -> Result<Id, CatalogError> {
         .ok_or(CatalogError::Format("identifiant de 32 o"))
 }
 
-fn stripe_of(s: fbs::Stripe<'_>) -> Result<StripeDesc, CatalogError> {
+pub(crate) fn stripe_of(s: fbs::Stripe<'_>) -> Result<StripeDesc, CatalogError> {
     let blocks = s
         .blocks()
         .map(|v| {
@@ -221,7 +224,7 @@ fn stripe_of(s: fbs::Stripe<'_>) -> Result<StripeDesc, CatalogError> {
     })
 }
 
-fn partners_of(
+pub(crate) fn partners_of(
     v: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<fbs::Partner<'_>>>>,
 ) -> Result<Vec<PartnerDesc>, CatalogError> {
     v.map(|v| {

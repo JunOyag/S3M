@@ -27,6 +27,8 @@ impl<'a> flatbuffers::Follow<'a> for NodeSnapshotPointer<'a> {
 impl<'a> NodeSnapshotPointer<'a> {
   pub const VT_NODE_SNAPSHOT_ROOT_HASH: flatbuffers::VOffsetT = 4;
   pub const VT_NODE_SNAPSHOT_ROOT_PARTNERS: flatbuffers::VOffsetT = 6;
+  pub const VT_NODE_SNAPSHOT_ROOT_SALT: flatbuffers::VOffsetT = 8;
+  pub const VT_NODE_SNAPSHOT_ROOT_STRIPE: flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -38,6 +40,8 @@ impl<'a> NodeSnapshotPointer<'a> {
     args: &'args NodeSnapshotPointerArgs<'args>
   ) -> flatbuffers::WIPOffset<NodeSnapshotPointer<'bldr>> {
     let mut builder = NodeSnapshotPointerBuilder::new(_fbb);
+    if let Some(x) = args.node_snapshot_root_stripe { builder.add_node_snapshot_root_stripe(x); }
+    if let Some(x) = args.node_snapshot_root_salt { builder.add_node_snapshot_root_salt(x); }
     if let Some(x) = args.node_snapshot_root_partners { builder.add_node_snapshot_root_partners(x); }
     if let Some(x) = args.node_snapshot_root_hash { builder.add_node_snapshot_root_hash(x); }
     builder.finish()
@@ -58,6 +62,20 @@ impl<'a> NodeSnapshotPointer<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<super::dispersal::Partner>>>>(NodeSnapshotPointer::VT_NODE_SNAPSHOT_ROOT_PARTNERS, None)}
   }
+  #[inline]
+  pub fn node_snapshot_root_salt(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(NodeSnapshotPointer::VT_NODE_SNAPSHOT_ROOT_SALT, None)}
+  }
+  #[inline]
+  pub fn node_snapshot_root_stripe(&self) -> Option<super::dispersal::Stripe<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<super::dispersal::Stripe>>(NodeSnapshotPointer::VT_NODE_SNAPSHOT_ROOT_STRIPE, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for NodeSnapshotPointer<'_> {
@@ -69,6 +87,8 @@ impl flatbuffers::Verifiable for NodeSnapshotPointer<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("node_snapshot_root_hash", Self::VT_NODE_SNAPSHOT_ROOT_HASH, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<super::dispersal::Partner>>>>("node_snapshot_root_partners", Self::VT_NODE_SNAPSHOT_ROOT_PARTNERS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("node_snapshot_root_salt", Self::VT_NODE_SNAPSHOT_ROOT_SALT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<super::dispersal::Stripe>>("node_snapshot_root_stripe", Self::VT_NODE_SNAPSHOT_ROOT_STRIPE, false)?
      .finish();
     Ok(())
   }
@@ -76,6 +96,8 @@ impl flatbuffers::Verifiable for NodeSnapshotPointer<'_> {
 pub struct NodeSnapshotPointerArgs<'a> {
     pub node_snapshot_root_hash: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub node_snapshot_root_partners: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<super::dispersal::Partner<'a>>>>>,
+    pub node_snapshot_root_salt: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub node_snapshot_root_stripe: Option<flatbuffers::WIPOffset<super::dispersal::Stripe<'a>>>,
 }
 impl<'a> Default for NodeSnapshotPointerArgs<'a> {
   #[inline]
@@ -83,6 +105,8 @@ impl<'a> Default for NodeSnapshotPointerArgs<'a> {
     NodeSnapshotPointerArgs {
       node_snapshot_root_hash: None,
       node_snapshot_root_partners: None,
+      node_snapshot_root_salt: None,
+      node_snapshot_root_stripe: None,
     }
   }
 }
@@ -99,6 +123,14 @@ impl<'a: 'b, 'b> NodeSnapshotPointerBuilder<'a, 'b> {
   #[inline]
   pub fn add_node_snapshot_root_partners(&mut self, node_snapshot_root_partners: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<super::dispersal::Partner<'b >>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeSnapshotPointer::VT_NODE_SNAPSHOT_ROOT_PARTNERS, node_snapshot_root_partners);
+  }
+  #[inline]
+  pub fn add_node_snapshot_root_salt(&mut self, node_snapshot_root_salt: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeSnapshotPointer::VT_NODE_SNAPSHOT_ROOT_SALT, node_snapshot_root_salt);
+  }
+  #[inline]
+  pub fn add_node_snapshot_root_stripe(&mut self, node_snapshot_root_stripe: flatbuffers::WIPOffset<super::dispersal::Stripe<'b >>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<super::dispersal::Stripe>>(NodeSnapshotPointer::VT_NODE_SNAPSHOT_ROOT_STRIPE, node_snapshot_root_stripe);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> NodeSnapshotPointerBuilder<'a, 'b> {
@@ -120,6 +152,8 @@ impl core::fmt::Debug for NodeSnapshotPointer<'_> {
     let mut ds = f.debug_struct("NodeSnapshotPointer");
       ds.field("node_snapshot_root_hash", &self.node_snapshot_root_hash());
       ds.field("node_snapshot_root_partners", &self.node_snapshot_root_partners());
+      ds.field("node_snapshot_root_salt", &self.node_snapshot_root_salt());
+      ds.field("node_snapshot_root_stripe", &self.node_snapshot_root_stripe());
       ds.finish()
   }
 }
