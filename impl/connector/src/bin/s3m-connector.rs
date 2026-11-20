@@ -31,7 +31,7 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         identity_index: 0,
         data_dir: "data".into(),
         node: NodeLink {
-            addr: "/ip4/<IP du Nœud>/tcp/4002/p2p/<PeerId du Nœud>".into(),
+            addr: "/ip4/<IP du Nœud>/tcp/4001/p2p/<PeerId du Nœud>".into(),
             node_id: "<node_id du Nœud>".into(),
             salt: salt.clone(),
         },

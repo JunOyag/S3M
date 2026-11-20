@@ -24,7 +24,7 @@ async fn a_temporary_node_is_configured_remotely_with_its_pairing_code() {
     std::fs::create_dir_all(&dir).unwrap();
     let config: Config = serde_json::from_value(json!({
         "seed_file": dir.join("node.seed"), "data_dir": dir.join("data"), "volumes": [],
-        "dht_listen": "/ip4/127.0.0.1/tcp/0", "blocks_listen": "/ip4/127.0.0.1/tcp/0",
+        "listen": "/ip4/127.0.0.1/tcp/0",
         "admin_listen": "/ip4/127.0.0.1/tcp/0", "mdns": false,
     }))
     .unwrap();
