@@ -269,8 +269,8 @@ entries:
       protégée (local_api), dashboards statiques servis par les binaires, image
       Docker du Nœud (impl/node/Dockerfile). Restent pour clore : dashboards
       incomplets (liste noire, taux de republication DHT, espace de secours,
-      écriture d'urgence non suivis), orchestration de la dispersion par
-      l'exécutable du Nœud, publication des entrées DHT (VDF sous Windows) —
+      écriture d'urgence non suivis), publication des entrées DHT Node et
+      User (VDF sous Windows) ; la dispersion automatique est livrée —
       voir impl/SPEC_GAPS.md.
   dispersal.BlockEntry:
     kind: schema
@@ -679,6 +679,9 @@ entries:
       - dispersion::journal_replay_is_idempotent
       - dispersion::orphans_are_purged_after_grace_period_only
       - dispersion::malformed_transactions_and_unknown_stripes_are_rejected
+      - dispersal_engine::node_disperses_publishes_and_data_survives_total_node_loss
+      - dispersal::dispersal_entry_is_accepted_by_the_dht_and_opens_under_k_attach
+      - dispersal::full_index_nodes_fit_in_one_block
     notes: >-
       impl/node/src/dispersion.rs : dispersion ascendante, seuil k+2
       confirmations de partenaires distincts avant le niveau parent, commit
@@ -687,6 +690,10 @@ entries:
       (paramètre : la spec ne fixe pas sa valeur). Persistance du journal dans
       node.MutationLog et transport vers les partenaires : protocole d'échange
       (SPEC_GAPS).
+      Orchestration par l'exécutable du Nœud livrée le 2026-11-20
+      (dispersal_engine.rs : assemblage, placement XOR, arbre d'index,
+      publication DHT, republication, purge) ; reconstruction complète depuis
+      la DHT et la parité testée.
   protocols.erasure-coding:
     kind: narrative
     status: done

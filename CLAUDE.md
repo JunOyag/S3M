@@ -40,7 +40,8 @@ lesquels une session Claude Code se trompe le plus souvent.
 - **Spec V3 intégrée** (entrée « Spec V3 » de `impl/SPEC_GAPS.md`).
 - **Phases 0 à 6 implémentées** (logique testée) ; voir `impl/status.yml` pour le détail.
   Reste `in_progress` : `deploiement.packaging` (exécutables, dashboards et image Docker
-  livrés ; dashboards incomplets, dispersion automatique et publication DHT à faire —
+  livrés, dispersion automatique livrée ; dashboards incomplets et publication DHT
+  Node/User à faire —
   `impl/SPEC_GAPS.md`). Lecteur Windows (WinFsp) livré ; FUSE viendra ensuite.
 - **Échange de blocs** : spécifié et livré (`protocols.echange-blocs`, 2026-11-20) —
   libp2p requête/réponse `/p2p-storage/blocks/1`, à côté de la DHT (Kademlia). Reste à

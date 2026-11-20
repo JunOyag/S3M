@@ -762,6 +762,9 @@ pages:
       - dispersion::journal_replay_is_idempotent
       - dispersion::orphans_are_purged_after_grace_period_only
       - dispersion::malformed_transactions_and_unknown_stripes_are_rejected
+      - dispersal_engine::node_disperses_publishes_and_data_survives_total_node_loss
+      - dispersal::dispersal_entry_is_accepted_by_the_dht_and_opens_under_k_attach
+      - dispersal::full_index_nodes_fit_in_one_block
 
   - id: protocols.migration-noeud
     kind: narrative
