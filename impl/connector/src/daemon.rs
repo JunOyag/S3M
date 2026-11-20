@@ -80,6 +80,23 @@ pub struct Config {
     /// du dashboard Nœud). Vide : pas de publication de l'entrée User.
     #[serde(default)]
     pub dht_bootstrap: Vec<String>,
+    /// Demander soi-même le rattachement au Nœud s'il refuse l'identifiant
+    /// (`protocols.partenariat-automatique`).
+    #[serde(default = "default_true")]
+    pub auto_attach: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// État du rattachement automatique.
+#[derive(Debug, Clone, Default)]
+pub struct AttachState {
+    pub in_progress: bool,
+    pub attached_quota: Option<u64>,
+    pub last_error: Option<String>,
+    pub last_attempt: u64,
 }
 
 fn default_api_port() -> u16 {
@@ -259,6 +276,10 @@ pub struct Shared {
     pub scheduler: Arc<Mutex<Scheduler>>,
     pub drive_status: Mutex<DriveStatus>,
     pub user_entry: Mutex<UserEntryState>,
+    pub attach: Mutex<AttachState>,
+    priv_user: [u8; 32],
+    pub_node: [u8; 32],
+    salt: Vec<u8>,
 }
 
 fn queue_status(c: &Config) -> Value {
@@ -298,6 +319,7 @@ pub fn status(sh: &Shared) -> Value {
         "incidents d'intégrité": h.incidents,
         "lecteur": drive_status(sh),
         "annuaire (entrée User)": user_entry_status(sh),
+        "rattachement automatique": attach_status(sh),
         "configuration": {
             "Q_max (octets)": sh.config.q_max_bytes,
             "intervalle de surveillance (s)": sh.config.watch_interval_s,
@@ -463,13 +485,69 @@ pub fn sync_drive(sh: &Shared) -> Option<Result<usize, DriveError>> {
     Some(r)
 }
 
+fn attach_status(sh: &Shared) -> Value {
+    if !sh.config.auto_attach {
+        return json!("désactivé");
+    }
+    let a = sh.attach.lock().unwrap().clone();
+    json!({
+        "en cours": a.in_progress,
+        "quota attribué (octets)": a.attached_quota,
+        "dernière tentative": if a.last_attempt == 0 { Value::Null } else { json!(a.last_attempt) },
+        "erreur": a.last_error,
+    })
+}
+
+/// Rattachement automatique : preuve VDF (calculée une fois), signature
+/// liant l'identité VDF à `pub_user` et au Nœud, requête `Attach`.
+async fn auto_attach(sh: &Shared) -> Result<u64, String> {
+    let cache = sh.config.data_dir.join("vdf_proof.bin");
+    let proof = ensure_user_proof(&cache, &sh.priv_user, &sh.pub_user).await?;
+    let sig_priv = p2p_storage_core::keys::derive_sig_priv_user(&sh.priv_user, &sh.pub_user)
+        .map_err(|e| e.to_string())?;
+    let sig_pub = p2p_storage_core::keys::derive_sig_pub_user(&sig_priv);
+    let signature =
+        p2p_storage_protocol::exchange::attach_signature(&sig_priv, &sh.pub_user, &sh.pub_node);
+    sh.session
+        .attach(&sh.salt, &sig_pub, &proof, signature)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Un tour de surveillance : joignabilité du Nœud, renouvellement de
 /// l'autorisation de secours.
 pub async fn watch_once(sh: &Shared) {
     let now = (sh.clock)();
     // Sonde : un hash nul n'existe jamais ; `NotFound` prouve que le Nœud
     // répond et accepte notre identifiant.
-    let probe = sh.session.get_block(&[0; 32]).await;
+    let mut probe = sh.session.get_block(&[0; 32]).await;
+    // Identifiant refusé : pas encore rattaché — demande automatique (au
+    // plus une tentative toutes les 10 minutes).
+    let refused = matches!(probe, Err(ExchangeError::Refused(Refusal::Unauthorized)));
+    let retry = {
+        let a = sh.attach.lock().unwrap();
+        !a.in_progress && now >= a.last_attempt + 600
+    };
+    if refused && sh.config.auto_attach && retry {
+        {
+            let mut a = sh.attach.lock().unwrap();
+            a.in_progress = true;
+            a.last_attempt = now;
+        }
+        let r = auto_attach(sh).await;
+        {
+            let mut a = sh.attach.lock().unwrap();
+            a.in_progress = false;
+            match r {
+                Ok(q) => {
+                    a.attached_quota = Some(q);
+                    a.last_error = None;
+                }
+                Err(e) => a.last_error = Some(e),
+            }
+        }
+        probe = sh.session.get_block(&[0; 32]).await;
+    }
     let ok = matches!(probe, Err(ExchangeError::Refused(Refusal::NotFound)));
     {
         let mut h = sh.health.lock().unwrap();
@@ -559,6 +637,10 @@ pub async fn start(
         scheduler: Arc::new(Mutex::new(Scheduler::new(WriteBackConfig::default()))),
         drive_status: Mutex::new(DriveStatus::default()),
         user_entry: Mutex::new(UserEntryState::default()),
+        attach: Mutex::new(AttachState::default()),
+        priv_user,
+        pub_node,
+        salt: salt.clone(),
         session,
         keeper: tokio::sync::Mutex::new(keeper),
         grant_expiry: Mutex::new(expiry),

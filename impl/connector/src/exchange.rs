@@ -355,6 +355,28 @@ impl NodeSession {
         }
     }
 
+    /// Rattachement automatique (`protocols.partenariat-automatique`) :
+    /// rend le quota attribué.
+    pub async fn attach(
+        &self,
+        salt: &[u8],
+        sig_pub_user: &Id,
+        proof: &p2p_storage_core::vdf::VdfProof,
+        signature: Vec<u8>,
+    ) -> Result<u64, ExchangeError> {
+        let body = Body::Attach {
+            salt: salt.to_vec(),
+            sig_pub_user: sig_pub_user.to_vec(),
+            vdf_y: proof.y.clone(),
+            vdf_pi: proof.pi.clone(),
+            signature,
+        };
+        match self.call(body).await? {
+            Response::Attached { quota_bytes } => Ok(quota_bytes),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
     /// Remet une délégation au (nouveau) Nœud de cette session.
     pub async fn delegate(&self, d: Delegation) -> Result<(), ExchangeError> {
         match self.call(Body::Delegate(d)).await? {

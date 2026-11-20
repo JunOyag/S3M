@@ -40,6 +40,7 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         watch_interval_s: DEFAULT_WATCH_INTERVAL_S,
         mount_point: Some("P:".into()),
         dht_bootstrap: vec![],
+        auto_attach: true,
     };
     let cfg = dir.join("connector.json");
     std::fs::write(&cfg, serde_json::to_string_pretty(&config)?)?;
@@ -47,7 +48,8 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         "Phrase de récupération écrite dans {} — recopiez-la hors de cette machine.",
         seed.display()
     );
-    println!("À transmettre à l'opérateur du Nœud (action « Rattacher un utilisateur ») :");
+    println!("Rattachement automatique activé : si le Nœud l'autorise, aucune action de son opérateur n'est nécessaire.");
+    println!("Sinon, à transmettre à l'opérateur du Nœud (action « Rattacher un utilisateur ») :");
     println!("  user_id : {}", hex::encode(pub_user));
     println!("  salt    : {salt}");
     println!(
