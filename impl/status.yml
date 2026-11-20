@@ -227,6 +227,10 @@ entries:
       - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
       - migration::new_node_rebuilds_from_parity_and_signs_with_its_own_key
       - publish::user_entry_is_published_on_new_roots_and_restores_a_new_device
+      - recovery::node_restored_from_seed_alone_recovers_users_partners_and_every_block
+      - snapshot::snapshot_spans_the_k_blocks_and_needs_the_node_key_and_salt
+      - snapshot::pointer_travels_encrypted_in_the_node_entry
+      - k_node_self_vectors::snapshot_keys_are_separated_by_salt_index_and_from_k_node_self
     notes: >-
       node : impl/node/src/restore.rs, depuis la seule seed Node : pointeur de
       snapshot de l'entrée Node déchiffré sous K_node_self, K_attach et clé
@@ -239,6 +243,9 @@ entries:
       d'échange (SPEC_GAPS).
       Publication par les exécutables (preuve VDF native Windows) livrée le
       2026-11-20 ; essai réel : nouvel appareil restauré depuis la seule phrase.
+      Snapshot du NodeManifest dispersé et publié, restauration automatique
+      d'une installation vide depuis la seed (Utilisateurs, partenaires, liste
+      noire, copie locale intégrale) livrés le 2026-11-20.
   deploiement.formats-serialisation:
     kind: narrative
     status: done
@@ -272,8 +279,7 @@ entries:
       protégée (local_api), dashboards statiques servis par les binaires, image
       Docker du Nœud (impl/node/Dockerfile). Restent pour clore : dashboards
       incomplets (taux de republication DHT, espace de secours,
-      écriture d'urgence non suivis), snapshot du NodeManifest
-      (NodeSnapshotPointer) ; dispersion automatique, contrôles et
+      écriture d'urgence non suivis) ; snapshot du Nœud, dispersion, contrôles et
       publication des entrées DHT Node/User (VDF natif Windows) livrés —
       voir impl/SPEC_GAPS.md.
   dispersal.BlockEntry:

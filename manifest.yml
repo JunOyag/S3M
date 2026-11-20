@@ -1057,6 +1057,10 @@ pages:
       - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
       - migration::new_node_rebuilds_from_parity_and_signs_with_its_own_key
       - publish::user_entry_is_published_on_new_roots_and_restores_a_new_device
+      - recovery::node_restored_from_seed_alone_recovers_users_partners_and_every_block
+      - snapshot::snapshot_spans_the_k_blocks_and_needs_the_node_key_and_salt
+      - snapshot::pointer_travels_encrypted_in_the_node_entry
+      - k_node_self_vectors::snapshot_keys_are_separated_by_salt_index_and_from_k_node_self
 
   - id: deploiement.formats-serialisation
     kind: narrative

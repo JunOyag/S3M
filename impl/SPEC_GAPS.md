@@ -644,3 +644,8 @@ champs **additifs** `node_snapshot_root_salt`, `node_snapshot_root_stripe`
 données d'un stripe ; réémission à chaque changement ; restauration
 automatique au démarrage d'une installation vide. Page
 `deploiement.disaster-recovery` § Snapshot.
+
+**Mise à jour** (2026-11-20) : snapshot livré ; restauration automatique
+d'une installation vide (seed + `bootstrap` DHT). La racine courante de
+chaque Utilisateur n'étant pas dans le NodeManifest, sa première validation
+après restauration est adoptée telle quelle.
