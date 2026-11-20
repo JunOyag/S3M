@@ -17,7 +17,7 @@ futures = "0.3"
 flatbuffers = "=23.5.26"
 getrandom = "0.2"
 hex = "0.4"
-libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response", "identify", "relay", "dcutr", "quic"] }
+libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response", "identify", "relay", "dcutr", "quic", "mdns"] }
 s3m-core = { path = "../core" }
 s3m-protocol = { path = "../protocol" }
 serde = { version = "1", features = ["derive"] }
@@ -28,9 +28,14 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 [target.'cfg(windows)'.dependencies]
 winfsp = { version = "=0.13.2", optional = true }
 widestring = { version = "1", optional = true }
+tray-icon = { version = "=0.26.1", optional = true }
+tao = { version = "=0.37.3", optional = true }
+winreg = { version = "=0.56.0", optional = true }
+tauri-winrt-notification = { version = "=0.8.1", optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winfsp = { version = "=0.13.2", optional = true, default-features = false, features = ["delayload"] }
+embed-resource = { version = "=3.0.12", optional = true }
 
 [dev-dependencies]
 s3m-node = { path = "../node" }
@@ -40,3 +45,14 @@ default = []
 vdf = ["s3m-core/vdf"]
 # Lecteur monté Windows (WinFsp installé ; LLVM pour la compilation).
 mount = ["dep:winfsp", "dep:widestring"]
+# Application de la barre des tâches S3m.exe (Windows).
+tray = ["mount", "dep:tray-icon", "dep:tao", "dep:winreg", "dep:tauri-winrt-notification", "dep:embed-resource"]
+
+[[bin]]
+name = "S3m"
+path = "src/bin/S3m.rs"
+required-features = ["tray"]
+
+[[bin]]
+name = "s3m-connector"
+path = "src/bin/s3m-connector.rs"

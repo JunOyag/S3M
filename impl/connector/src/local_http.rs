@@ -26,7 +26,7 @@ pub type StatusFn = Arc<dyn Fn() -> Value + Send + Sync>;
 pub type ActionFn = Arc<dyn Fn(&str, Value) -> Result<Value, String> + Send + Sync>;
 
 /// Fichier statique : `(chemin, type MIME, contenu)`.
-pub type Asset = (&'static str, &'static str, &'static str);
+pub type Asset = (&'static str, &'static str, &'static [u8]);
 
 #[derive(Clone)]
 struct AppState {

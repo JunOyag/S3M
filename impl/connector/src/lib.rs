@@ -13,9 +13,11 @@ pub mod exchange;
 pub mod fs;
 pub mod incidents;
 pub mod integrity;
+pub mod lan;
 pub mod local_http;
 pub mod migration;
 pub mod publish;
+pub mod setup;
 #[cfg(all(windows, feature = "mount"))]
 pub mod winfsp_backend;
 pub mod write_back;

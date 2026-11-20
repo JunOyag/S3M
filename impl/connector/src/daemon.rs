@@ -275,6 +275,11 @@ pub struct Shared {
     pub drive: Option<Arc<Mutex<Drive>>>,
     pub scheduler: Arc<Mutex<Scheduler>>,
     pub drive_status: Mutex<DriveStatus>,
+    /// Synchronisation suspendue (menu de la barre des tâches) : les
+    /// modifications restent journalisées localement.
+    pub paused: std::sync::atomic::AtomicBool,
+    /// Synchronisation en cours.
+    pub syncing: std::sync::atomic::AtomicBool,
     pub user_entry: Mutex<UserEntryState>,
     pub attach: Mutex<AttachState>,
     /// Client DHT (si `dht_bootstrap`), pour relire l'entrée du Nœud.
@@ -471,11 +476,117 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
     });
 }
 
+/// Surveillance puis synchronisation immédiates (menu, dashboard), même si
+/// la synchronisation automatique est suspendue.
+pub fn sync_now(sh: &Arc<Shared>) {
+    let sh = sh.clone();
+    sh.scheduler.lock().unwrap().sync_now();
+    tokio::spawn(async move {
+        watch_once(&sh).await;
+        let s2 = sh.clone();
+        let _ = tokio::task::spawn_blocking(move || sync_drive(&s2)).await;
+    });
+}
+
+/// État résumé pour l'icône de la barre des tâches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrayState {
+    Starting,
+    Ok,
+    Syncing,
+    Paused,
+    Offline,
+    Error,
+}
+
+/// Vue de l'état pour l'icône, l'infobulle et les notifications.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrayView {
+    pub state: TrayState,
+    pub text: String,
+    pub pending: usize,
+    pub conflict: bool,
+    pub sync_error: Option<String>,
+    pub reachable: Option<bool>,
+    pub offline_since: Option<u64>,
+    pub attached_quota: Option<u64>,
+    pub attach_error: Option<String>,
+    pub mounted: bool,
+    pub mount_point: Option<String>,
+}
+
+/// Calcule la vue de l'état courant.
+pub fn tray_view(sh: &Shared) -> TrayView {
+    use std::sync::atomic::Ordering::Relaxed;
+    let h = sh.health.lock().unwrap().clone();
+    let ds = sh.drive_status.lock().unwrap().clone();
+    let (pending, conflict) = match &sh.drive {
+        Some(d) => {
+            let d = d.lock().unwrap();
+            (d.pending(), d.conflict.is_some())
+        }
+        None => (0, false),
+    };
+    let a = sh.attach.lock().unwrap().clone();
+    let (state, text) = if a.in_progress {
+        (
+            TrayState::Starting,
+            "Rattachement au Nœud (preuve d'identité, 1 à 2 min au premier lancement)…".to_string(),
+        )
+    } else if h.reachable.is_none() {
+        (TrayState::Starting, "Démarrage…".to_string())
+    } else if let Some(e) = &ds.mount_error {
+        (TrayState::Error, format!("Lecteur non monté : {e}"))
+    } else if conflict {
+        (
+            TrayState::Error,
+            "Conflit : la version du Nœud a changé (voir le tableau de bord)".into(),
+        )
+    } else if h.reachable == Some(false) {
+        (
+            TrayState::Offline,
+            "Nœud injoignable — modifications conservées localement".into(),
+        )
+    } else if let Some(e) = &ds.last_sync_error {
+        (TrayState::Error, format!("Erreur de synchronisation : {e}"))
+    } else if sh.syncing.load(Relaxed) {
+        (TrayState::Syncing, "Synchronisation en cours…".into())
+    } else if sh.paused.load(Relaxed) {
+        (
+            TrayState::Paused,
+            format!("Synchronisation suspendue ({pending} modification(s) en attente)"),
+        )
+    } else if pending > 0 {
+        (
+            TrayState::Syncing,
+            format!("{pending} modification(s) en attente"),
+        )
+    } else {
+        (TrayState::Ok, "À jour".into())
+    };
+    TrayView {
+        state,
+        text,
+        pending,
+        conflict,
+        sync_error: ds.last_sync_error,
+        reachable: h.reachable,
+        offline_since: h.inactivity_detected_at,
+        attached_quota: a.attached_quota,
+        attach_error: a.last_error,
+        mounted: ds.mounted,
+        mount_point: sh.config.mount_point.clone(),
+    }
+}
+
 /// Synchronise le lecteur (appel bloquant).
 pub fn sync_drive(sh: &Shared) -> Option<Result<usize, DriveError>> {
     let d = sh.drive.as_ref()?;
     let mut drive = d.lock().unwrap();
+    sh.syncing.store(true, std::sync::atomic::Ordering::Relaxed);
     let r = drive.sync();
+    sh.syncing
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     let mut st = sh.drive_status.lock().unwrap();
     match &r {
         Ok(_) => {
@@ -623,14 +734,19 @@ fn state_dir(c: &Config) -> Result<(), DaemonError> {
 
 const ASSETS: &[Asset] = &[
     (
+        "logo.png",
+        "image/png",
+        include_bytes!("../dashboard/logo.png"),
+    ),
+    (
         "index.html",
         "text/html; charset=utf-8",
-        include_str!("../dashboard/index.html"),
+        include_bytes!("../dashboard/index.html"),
     ),
     (
         "app.js",
         "text/javascript; charset=utf-8",
-        include_str!("../dashboard/app.js"),
+        include_bytes!("../dashboard/app.js"),
     ),
 ];
 
@@ -680,6 +796,8 @@ pub async fn start(
         drive,
         scheduler: Arc::new(Mutex::new(Scheduler::new(WriteBackConfig::default()))),
         drive_status: Mutex::new(DriveStatus::default()),
+        paused: Default::default(),
+        syncing: Default::default(),
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
         dht: std::sync::OnceLock::new(),
@@ -700,13 +818,7 @@ pub async fn start(
         let sh = shared.clone();
         Arc::new(move |name, _| match name {
             "sync_now" => {
-                let sh = sh.clone();
-                sh.scheduler.lock().unwrap().sync_now();
-                tokio::spawn(async move {
-                    watch_once(&sh).await;
-                    let s2 = sh.clone();
-                    let _ = tokio::task::spawn_blocking(move || sync_drive(&s2)).await;
-                });
+                sync_now(&sh);
                 Ok(json!({ "ok": true }))
             }
             _ => Err(format!("action inconnue : {name}")),
@@ -724,6 +836,9 @@ pub async fn start(
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(2)).await;
+                if sh.paused.load(std::sync::atomic::Ordering::Relaxed) {
+                    continue;
+                }
                 let due = !sh
                     .scheduler
                     .lock()
