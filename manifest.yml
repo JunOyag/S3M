@@ -114,6 +114,11 @@ pages:
     title: "Traversée de NAT"
     section: "§2"
     refs: [network.dht-directory, protocols.echange-blocs, network.bootstrap, network.NodeEntry, protocols.partenariat-automatique]
+    verified_by:
+      - nat::one_swarm_carries_dht_blocks_and_relayed_reachability
+      - nat::announced_addresses_put_direct_tcp_first_then_quic_then_relays
+      - nat::connector_reaches_a_node_behind_nat_through_its_relay
+      - entries::node_entry_is_accepted_with_proof_on_tagged_pub_node
 
   - id: network.bootstrap
     kind: narrative

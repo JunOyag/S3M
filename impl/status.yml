@@ -1225,7 +1225,21 @@ entries:
       Essai réel : carte géolocalisée et regroupée vérifiée par capture.
   network.traversee-nat:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - nat::one_swarm_carries_dht_blocks_and_relayed_reachability
+      - nat::announced_addresses_put_direct_tcp_first_then_quic_then_relays
+      - nat::connector_reaches_a_node_behind_nat_through_its_relay
+      - entries::node_entry_is_accepted_with_proof_on_tagged_pub_node
+    notes: >-
+      Livré le 2026-11-20. node : pile libp2p unique (net.rs) portant DHT,
+      échange de blocs, TCP+QUIC, Identify, AutoNAT, UPnP (désactivable),
+      service de relais aux limites prudentes, client de relais (2
+      réservations), DCUtR ; entrée Node avec adresses multiples (directes
+      puis relais) ; recherche de partenaires et restauration essaient ces
+      adresses. connector : QUIC, relais, perçage, repli sur les adresses
+      publiées du Nœud. Sous Windows, connexions sortantes sur port neuf (pas
+      de réutilisation de port) : le perçage s'appuie surtout sur QUIC. Essai
+      : un Nœud n'écoutant nulle part est joint par un autre Nœud et par un
+      Connecteur via son relais.

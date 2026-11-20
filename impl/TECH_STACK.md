@@ -171,6 +171,11 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   (compilation, `LIBCLANG_PATH="C:/Program Files/LLVM/bin"`) —
   `cargo build --release --features mount`. La DLL WinFsp est cherchée dans
   `%ProgramFiles(x86)%\WinFsp\bin` (ou `WINFSP_DIR`).
+- Réseau du Nœud : une seule pile libp2p (TCP + QUIC sur le même port —
+  ouvrir TCP **et** UDP), UPnP actif par défaut (`upnp: false` pour le
+  couper), service de relais (`relay_server`, `relay_limits`), relais imposés
+  possibles (`relays`). Sous Windows, les connexions sortantes prennent un
+  port neuf : le perçage de NAT passe surtout par QUIC.
 - Carte du dashboard Nœud : base de géolocalisation DB-IP « City Lite »
   (≈ 130 Mo, CC BY 4.0) téléchargée par `p2p-storage-node geoip-update
   <data_dir>` (mise à jour mensuelle à relancer) ; sans elle, la carte compte
