@@ -138,6 +138,12 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
 - **Windows : MSVC uniquement.** La crate embarque sa propre MPIR pour
   MSVC ; MinGW est exclu (build impossible, prouveur bloqué avec une
   bibliothèque de substitution).
+- **Validé en local le 2026-11-20** (Windows 11, VS 2022, CMake 4 via
+  winget, LLVM 23) : `cargo test --features vdf` de `impl/core` passe
+  nativement ; preuve `T = 5 400 000` en ≈ 110 s. Les tests et binaires
+  ont besoin des DLL `mpir*.dll` de chiavdf (`mpir_gc_x64/`) dans le `PATH`
+  ou à côté de l'exécutable — `bash impl/package-windows.sh` produit
+  `impl/dist/windows/` (Nœud, Connecteur, DLL).
 - **Builds locaux** : un conteneur Docker Linux (`cmake`, `libgmp-dev`,
   `libclang-dev`, toolchain Rust) suffit pour compiler et tester
   `impl/core` avec la feature `vdf` hors de la CI.
@@ -159,3 +165,7 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   (compilation, `LIBCLANG_PATH="C:/Program Files/LLVM/bin"`) —
   `cargo build --release --features mount`. La DLL WinFsp est cherchée dans
   `%ProgramFiles(x86)%\WinFsp\bin` (ou `WINFSP_DIR`).
+- Entrées DHT : le Nœud publie son entrée (preuve VDF calculée une fois,
+  `data/vdf_proof.bin`, adresse `public_ip`/`public_port`) ; le Connecteur
+  publie son entrée User si `dht_bootstrap` est renseigné (adresse « DHT »
+  du dashboard Nœud) et y relit sa racine sur un nouvel appareil.

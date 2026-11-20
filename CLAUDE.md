@@ -40,8 +40,8 @@ lesquels une session Claude Code se trompe le plus souvent.
 - **Spec V3 intégrée** (entrée « Spec V3 » de `impl/SPEC_GAPS.md`).
 - **Phases 0 à 6 implémentées** (logique testée) ; voir `impl/status.yml` pour le détail.
   Reste `in_progress` : `deploiement.packaging` (exécutables, dashboards et image Docker
-  livrés, dispersion automatique livrée ; dashboards incomplets et publication DHT
-  Node/User à faire —
+  livrés, dispersion, contrôles et publication DHT Node/User livrés ; dashboards
+  incomplets et snapshot du NodeManifest à faire —
   `impl/SPEC_GAPS.md`). Lecteur Windows (WinFsp) livré ; FUSE viendra ensuite.
 - **Échange de blocs** : spécifié et livré (`protocols.echange-blocs`, 2026-11-20) —
   libp2p requête/réponse `/p2p-storage/blocks/1`, à côté de la DHT (Kademlia). Reste à
@@ -49,7 +49,9 @@ lesquels une session Claude Code se trompe le plus souvent.
 - **Phase 7 (post-quantique) reportée** : optionnelle pour un MVP et contraire à la V3
   (seul le tag 0 est accepté).
 - L'essai V1 de `network.dht-directory` reste archivé sur `archive/dht-directory-v1`.
-- Builds : `cargo test` en local (Windows) ; lecteur : `--features mount` (WinFsp + LLVM) ; tests `--features vdf` via
+- Builds : `cargo test` en local (Windows) ; lecteur : `--features mount` (WinFsp + LLVM) ;
+  VDF natif Windows : `--features vdf` (MSVC + CMake + LLVM, DLL MPIR dans le PATH) ;
+  exécutables : `bash impl/package-windows.sh` ; tests `--features vdf` via
   `bash impl/docker-test.sh` ; types FlatBuffers via `bash impl/protocol/gen.sh`.
 
 ## Commandes utiles

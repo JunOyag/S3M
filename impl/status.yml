@@ -226,6 +226,7 @@ entries:
       - bootstrap::cold_path_resolves_current_node_from_seed_alone
       - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
       - migration::new_node_rebuilds_from_parity_and_signs_with_its_own_key
+      - publish::user_entry_is_published_on_new_roots_and_restores_a_new_device
     notes: >-
       node : impl/node/src/restore.rs, depuis la seule seed Node : pointeur de
       snapshot de l'entrée Node déchiffré sous K_node_self, K_attach et clé
@@ -236,6 +237,8 @@ entries:
       conteneurs est couverte par protocols.stockage-physique ; la
       récupération réseau des fragments du snapshot dépend du protocole
       d'échange (SPEC_GAPS).
+      Publication par les exécutables (preuve VDF native Windows) livrée le
+      2026-11-20 ; essai réel : nouvel appareil restauré depuis la seule phrase.
   deploiement.formats-serialisation:
     kind: narrative
     status: done
@@ -269,8 +272,9 @@ entries:
       protégée (local_api), dashboards statiques servis par les binaires, image
       Docker du Nœud (impl/node/Dockerfile). Restent pour clore : dashboards
       incomplets (taux de republication DHT, espace de secours,
-      écriture d'urgence non suivis), publication des entrées DHT Node et
-      User (VDF sous Windows) ; la dispersion automatique est livrée —
+      écriture d'urgence non suivis), snapshot du NodeManifest
+      (NodeSnapshotPointer) ; dispersion automatique, contrôles et
+      publication des entrées DHT Node/User (VDF natif Windows) livrés —
       voir impl/SPEC_GAPS.md.
   dispersal.BlockEntry:
     kind: schema
@@ -486,6 +490,10 @@ entries:
       - dht_client::connector_is_client_only_with_ephemeral_identity
       - dht_client::connector_and_nodes_exchange_entries
       - dht_client::connector_refuses_entries_it_cannot_verify
+      - entries::node_entry_is_accepted_with_proof_on_tagged_pub_node
+      - entries::user_entry_is_accepted_and_opens_with_the_user_key_only
+      - publish::node_entry_is_published_cached_proof_reused_and_republished_on_schedule
+      - publish::user_entry_is_published_on_new_roots_and_restores_a_new_device
     notes: >-
       Trois tâches livrées. protocol : impl/protocol/src/dht.rs (enveloppe
       signée sur L(libellé) || payload, file_identifier, tags, VDF injectée,
@@ -497,6 +505,8 @@ entries:
       derive_sig_priv_user, derive_sig_pub_user, derive_user_dht_key. Amorçage
       provisoire par configuration (network.bootstrap à venir). VDF :
       vérificateur injecté, chiavdf en production.
+      Publication par les exécutables (preuve VDF native Windows) livrée le
+      2026-11-20 ; essai réel : nouvel appareil restauré depuis la seule phrase.
   network.vdf-identity:
     kind: narrative
     status: done

@@ -103,6 +103,10 @@ pages:
       - dht_client::connector_is_client_only_with_ephemeral_identity
       - dht_client::connector_and_nodes_exchange_entries
       - dht_client::connector_refuses_entries_it_cannot_verify
+      - entries::node_entry_is_accepted_with_proof_on_tagged_pub_node
+      - entries::user_entry_is_accepted_and_opens_with_the_user_key_only
+      - publish::node_entry_is_published_cached_proof_reused_and_republished_on_schedule
+      - publish::user_entry_is_published_on_new_roots_and_restores_a_new_device
 
   - id: network.bootstrap
     kind: narrative
@@ -1052,6 +1056,7 @@ pages:
       - bootstrap::cold_path_resolves_current_node_from_seed_alone
       - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
       - migration::new_node_rebuilds_from_parity_and_signs_with_its_own_key
+      - publish::user_entry_is_published_on_new_roots_and_restores_a_new_device
 
   - id: deploiement.formats-serialisation
     kind: narrative

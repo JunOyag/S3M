@@ -611,3 +611,11 @@ quand l'absent revient ; stripes d'index : réémission de l'arbre ; le Nœud
 reconstruit lui-même un bloc local altéré depuis la parité. Pages
 `securite.pos-challenges`, `protocols.volatilite-reparation`,
 `securite.integrite-autoreparation` mises à jour.
+
+**Mise à jour** (2026-11-20) : chiavdf compile et prouve nativement sous
+Windows (MSVC + CMake + LLVM) ; le Nœud publie son entrée Node et le
+Connecteur son entrée User (racine, sel, version, attachement), relue sur un
+nouvel appareil : la restauration du Connecteur depuis la seule phrase est
+désormais possible. Reste : le `NodeSnapshotPointer` (snapshot du
+NodeManifest non dispersé), donc la restauration du **Nœud** depuis sa seule
+seed ne retrouve pas encore ses Utilisateurs et partenaires.
