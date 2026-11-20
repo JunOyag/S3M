@@ -32,6 +32,13 @@ s'annonce de même, avec cette identité, sur son port d'administration ; il
 ne répond pas au `Probe` mais au `hello` du canal d'administration
 (`mode: setup`), et l'assistant le liste comme « à configurer ».
 
+**Nœud qui change d'adresse** (box, DHCP, autre réseau) : un Connecteur dont
+le Nœud reste injoignable, y compris aux adresses de son entrée DHT, le
+recherche sur le réseau local par son identité (même `node_id`), au plus
+toutes les 2 minutes. L'adresse qui répond est retenue (fichier `node.addr`
+des données du Connecteur, ignoré s'il désigne un autre `PeerId`) et
+préférée au démarrage suivant ; la configuration n'est pas réécrite.
+
 ## Chemin rapide (cache local présent)
 
 Le Connecteur interroge en priorité son **cache local** pour obtenir

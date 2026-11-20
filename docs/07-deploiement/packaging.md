@@ -145,6 +145,10 @@ synchronisation courantes :
   code d'appairage ; le dashboard du Connecteur permet ensuite
   d'administrer son Nœud à distance avec le code 2FA
   ([`deploiement.appairage-admin`](appairage-admin.md)).
+- **Changer de Nœud** (menu de l'icône, ou tableau de bord avec
+  confirmation) : S3m redémarre sur l'assistant. L'identité (phrase de
+  récupération, sel d'attachement) est conservée ; `connector.json` et les
+  données locales sont renommés avec un suffixe horodaté, jamais effacés.
 
 ## API locale {: #api-locale }
 
