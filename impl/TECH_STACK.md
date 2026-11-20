@@ -160,6 +160,12 @@ La crate compile du C++ par CMake et génère ses bindings avec `bindgen`
   Docker : `docker build -f impl/node/Dockerfile -t p2p-storage-node impl`
   (feature `vdf`, réseau de l'hôte : l'API du dashboard n'écoute que
   `127.0.0.1`).
+  Vérifiée le 2026-11-20 : preuve VDF en ≈ 20 s dans le conteneur, entrée
+  Node publiée ; renseigner `public_ip` dans `/data/node.json` après
+  `init`. Sous Docker Desktop (Windows, macOS), `--network host` ne relie pas
+  le conteneur au poste : le dashboard n'y est joignable que depuis un
+  conteneur partageant son réseau (`--network container:<nom>`) ; sur un
+  hôte Linux, il l'est depuis l'hôte.
 - `p2p-storage-connector` (`impl/connector`) ; lecteur WinFsp derrière la
   feature `mount` : WinFsp installé (exécution) et LLVM pour bindgen
   (compilation, `LIBCLANG_PATH="C:/Program Files/LLVM/bin"`) —
