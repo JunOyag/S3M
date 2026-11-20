@@ -52,7 +52,6 @@ fn decorate(mut v: Value, addr: &str) -> Value {
         .to_string();
     if let Some(o) = v.as_object_mut() {
         o.insert("titre".into(), json!(format!("{title} (à distance)")));
-        o.remove("carte");
         o.insert(
             "connexion".into(),
             json!({ "Nœud": addr, "canal": "chiffré, authentifié" }),

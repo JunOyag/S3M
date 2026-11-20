@@ -136,3 +136,61 @@ async fn a_configured_node_is_administered_with_the_totp_code_only() {
     assert!(url.starts_with("http://127.0.0.1:"));
     server.stop().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_remote_dashboard_keeps_the_world_map() {
+    let key = libp2p::identity::Keypair::generate_ed25519();
+    let peer = key.public().to_peer_id();
+    let secret: SecretFn = Arc::new(|| Some([6u8; 20]));
+    let st: StatusFn = Arc::new(|| json!({ "titre": "Nœud", "carte": true }));
+    let act: ActionFn = Arc::new(|_, _| Ok(json!({})));
+    let map: StatusFn = Arc::new(|| json!({ "points": [] }));
+    let server = serve(
+        key,
+        "/ip4/127.0.0.1/tcp/0",
+        false,
+        Mode::Node { secret },
+        st,
+        act,
+        Some(map),
+    )
+    .await
+    .unwrap();
+    let addr = admin_addr(&server.listen.lock().unwrap().clone(), peer);
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let code = format!("{:06}", hotp(&[6u8; 20], unix / TOTP_STEP, 6));
+    let session = AdminClient::start()
+        .unwrap()
+        .login(&addr, &code)
+        .await
+        .unwrap();
+    let url = s3m_connector::remote::serve_remote(session).await.unwrap();
+    // Statut servi par le dashboard distant : la carte y figure.
+    let port: u16 = url
+        .trim_start_matches("http://127.0.0.1:")
+        .split('/')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let token = url.split("token=").nth(1).unwrap().to_string();
+    let body = tokio::task::spawn_blocking(move || {
+        use std::io::{Read, Write};
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        for path in ["/api/status", "/api/map"] {
+            write!(s, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: {}\r\n\r\n",
+                if path == "/api/map" { "close" } else { "keep-alive" }).unwrap();
+        }
+        let mut out = String::new();
+        s.read_to_string(&mut out).unwrap();
+        out
+    })
+    .await
+    .unwrap();
+    assert!(body.contains("\"carte\":true"), "{body}");
+    assert!(body.contains("\"points\":[]"), "{body}");
+    server.stop().await;
+}
