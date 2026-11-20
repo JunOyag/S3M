@@ -84,7 +84,15 @@ async fn connector_finds_its_node_again_after_an_address_change() {
         auto_attach: false,
     };
     let (shared, _) = start(config, Arc::new(|| 1_000_000)).await.unwrap();
-    watch_once(&shared).await;
+    // L'annonce mDNS d'un Nœud tout juste démarré peut manquer une recherche :
+    // comme en production (nouvelle recherche toutes les 2 min), on réessaie.
+    for _ in 0..4 {
+        watch_once(&shared).await;
+        if shared.health.lock().unwrap().reachable == Some(true) {
+            break;
+        }
+        *shared.last_lan_search.lock().unwrap() = None;
+    }
     assert_eq!(
         shared.health.lock().unwrap().reachable,
         Some(true),
