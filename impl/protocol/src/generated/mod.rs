@@ -93,6 +93,10 @@ pub mod s3m {
     pub use self::get_block_generated::*;
     mod grant_issued_generated;
     pub use self::grant_issued_generated::*;
+    mod ownership_answer_generated;
+    pub use self::ownership_answer_generated::*;
+    mod ownership_query_generated;
+    pub use self::ownership_query_generated::*;
     mod partnership_answer_generated;
     pub use self::partnership_answer_generated::*;
     mod probe_generated;

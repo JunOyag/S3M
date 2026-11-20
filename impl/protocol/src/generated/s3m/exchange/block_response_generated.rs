@@ -232,6 +232,21 @@ impl<'a> BlockResponse<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_ownership_answer(&self) -> Option<OwnershipAnswer<'a>> {
+    if self.body_type() == ResponseBody::OwnershipAnswer {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { OwnershipAnswer::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockResponse<'_> {
@@ -255,6 +270,7 @@ impl flatbuffers::Verifiable for BlockResponse<'_> {
           ResponseBody::ProbeReply => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ProbeReply>>("ResponseBody::ProbeReply", pos),
           ResponseBody::PartnershipAnswer => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PartnershipAnswer>>("ResponseBody::PartnershipAnswer", pos),
           ResponseBody::Attached => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Attached>>("ResponseBody::Attached", pos),
+          ResponseBody::OwnershipAnswer => v.verify_union_variant::<flatbuffers::ForwardsUOffset<OwnershipAnswer>>("ResponseBody::OwnershipAnswer", pos),
           _ => Ok(()),
         }
      })?
@@ -388,6 +404,13 @@ impl core::fmt::Debug for BlockResponse<'_> {
         },
         ResponseBody::Attached => {
           if let Some(x) = self.body_as_attached() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResponseBody::OwnershipAnswer => {
+          if let Some(x) = self.body_as_ownership_answer() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

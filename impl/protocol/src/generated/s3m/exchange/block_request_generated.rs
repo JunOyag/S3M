@@ -325,6 +325,21 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_ownership_query(&self) -> Option<OwnershipQuery<'a>> {
+    if self.body_type() == RequestBody::OwnershipQuery {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { OwnershipQuery::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -358,6 +373,7 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::Probe => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Probe>>("RequestBody::Probe", pos),
           RequestBody::ProposePartnership => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ProposePartnership>>("RequestBody::ProposePartnership", pos),
           RequestBody::Attach => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Attach>>("RequestBody::Attach", pos),
+          RequestBody::OwnershipQuery => v.verify_union_variant::<flatbuffers::ForwardsUOffset<OwnershipQuery>>("RequestBody::OwnershipQuery", pos),
           _ => Ok(()),
         }
      })?
@@ -545,6 +561,13 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::Attach => {
           if let Some(x) = self.body_as_attach() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::OwnershipQuery => {
+          if let Some(x) = self.body_as_ownership_query() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

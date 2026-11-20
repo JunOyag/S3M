@@ -149,6 +149,10 @@ pub enum Body {
         hashes: Vec<u8>,
         signature: Vec<u8>,
     },
+    /// Import d'un volume (`protocols.gestion-volumes`) : SHA-256 concaténés.
+    OwnershipQuery {
+        hashes: Vec<u8>,
+    },
     /// Mesure de disponibilité/vitesse (`protocols.partenariat-automatique`).
     Probe {
         nonce: Vec<u8>,
@@ -204,6 +208,10 @@ pub enum Response {
     },
     Attached {
         quota_bytes: u64,
+    },
+    /// Un bit par hash demandé (bit `i % 8` de l'octet `i / 8`).
+    OwnershipAnswer {
+        owned: Vec<u8>,
     },
 }
 
@@ -363,6 +371,11 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
                 },
             );
             (fb::RequestBody::Tombstone, o.as_union_value())
+        }
+        Body::OwnershipQuery { hashes } => {
+            let h = b.create_vector(hashes);
+            let o = fb::OwnershipQuery::create(&mut b, &fb::OwnershipQueryArgs { hashes: Some(h) });
+            (fb::RequestBody::OwnershipQuery, o.as_union_value())
         }
         Body::Probe { nonce } => {
             let n = b.create_vector(nonce);
@@ -526,6 +539,9 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
                 signature: bytes(t.signature()),
             }
         }
+        fb::RequestBody::OwnershipQuery => Body::OwnershipQuery {
+            hashes: bytes(r.body_as_ownership_query().ok_or(m)?.hashes()),
+        },
         fb::RequestBody::Probe => Body::Probe {
             nonce: bytes(r.body_as_probe().ok_or(m)?.nonce()),
         },
@@ -626,6 +642,12 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             );
             (fb::ResponseBody::ProbeReply, o.as_union_value())
         }
+        Response::OwnershipAnswer { owned } => {
+            let v = b.create_vector(owned);
+            let o =
+                fb::OwnershipAnswer::create(&mut b, &fb::OwnershipAnswerArgs { owned: Some(v) });
+            (fb::ResponseBody::OwnershipAnswer, o.as_union_value())
+        }
         Response::PartnershipAnswer { granted_blocks } => {
             let o = fb::PartnershipAnswer::create(
                 &mut b,
@@ -707,6 +729,9 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
         }
         fb::ResponseBody::PartnershipAnswer => Response::PartnershipAnswer {
             granted_blocks: r.body_as_partnership_answer().ok_or(m)?.granted_blocks(),
+        },
+        fb::ResponseBody::OwnershipAnswer => Response::OwnershipAnswer {
+            owned: bytes(r.body_as_ownership_answer().ok_or(m)?.owned()),
         },
         fb::ResponseBody::Attached => Response::Attached {
             quota_bytes: r.body_as_attached().ok_or(m)?.quota_bytes(),

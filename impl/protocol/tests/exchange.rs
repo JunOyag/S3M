@@ -234,3 +234,17 @@ fn rescue_rate_is_bounded_per_grant() {
     assert!(l.allow(&[2; 32], 10), "seau distinct par autorisation");
     assert_eq!((0..100).filter(|_| l.allow(&k, 11)).count(), 64);
 }
+
+/// `protocols.gestion-volumes` § OwnershipQuery : aller-retour des deux messages.
+#[test]
+fn ownership_query_and_answer_round_trip() {
+    let req = Request {
+        credential: None,
+        body: Body::OwnershipQuery {
+            hashes: [[1u8; 32], [2u8; 32]].concat(),
+        },
+    };
+    assert_eq!(decode_request(&encode_request(&req)).unwrap(), req);
+    let r = Response::OwnershipAnswer { owned: vec![0b01] };
+    assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);
+}
