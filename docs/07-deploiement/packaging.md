@@ -60,8 +60,11 @@ Ajout du 2026-11-20 ([`protocols.partenariat-automatique`](../04-protocols/parte
   de l'opérateur (`s3m-node geoip-update`, ou bouton du dashboard :
   téléchargement en arrière-plan et rechargement sans redémarrage) ; adresse publiée dans
   l'entrée DHT pour les Nœuds, adresse de la dernière connexion pour les
-  Utilisateurs (enregistrement désactivable) ; adresses privées ou
-  inconnues comptées « non localisées ».
+  Utilisateurs (enregistrement désactivable) ; une adresse privée (réseau
+  local) est localisée par l'adresse publique de ce Nœud (`public_ip`, ou
+  adresse externe vue par UPnP / AutoNAT) et marquée « réseau local » ;
+  adresses inconnues, ou privées sans adresse publique connue, comptées
+  « non localisées ».
 
 ### Configuration depuis le dashboard {: #configuration }
 

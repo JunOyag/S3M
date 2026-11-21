@@ -1185,6 +1185,25 @@ fn snapshot_status(sh: &Shared) -> Value {
 
 /// Points de la carte du dashboard.
 pub fn map_points(sh: &Shared) -> Value {
+    // Pairs du réseau local (adresse privée) : localisés par l'adresse
+    // publique de la box, celle de ce Nœud.
+    let public = |ip: &str| {
+        ip.parse::<std::net::IpAddr>()
+            .is_ok_and(|a| !crate::geo::is_private(&a))
+    };
+    let own_ip: Option<String> = sh
+        .config
+        .public_ip
+        .clone()
+        .filter(|i| public(i))
+        .or_else(|| {
+            sh.nat
+                .lock()
+                .unwrap()
+                .direct_tcp()
+                .map(|(ip, _)| ip)
+                .filter(|i| public(i))
+        });
     let s = sh.service.lock().unwrap();
     let d = sh.dispersal.try_lock().ok();
     let peers = d
@@ -1207,6 +1226,17 @@ pub fn map_points(sh: &Shared) -> Value {
         })
     };
     let mut push = |kind: &'static str, ip: Option<String>, label: String, detail: String| {
+        let (ip, detail) = match ip {
+            Some(i) if !i.is_empty() && !public(&i) && own_ip.is_some() => (
+                own_ip.clone(),
+                if detail.is_empty() {
+                    "réseau local".to_string()
+                } else {
+                    format!("{detail} · réseau local")
+                },
+            ),
+            other => (other, detail),
+        };
         match ip.as_deref().and_then(|i| sh.geo.read().unwrap().locate(i)) {
             Some(p) => points.push(json!({ "kind": kind, "lat": p.lat, "lon": p.lon, "label": label,
                 "detail": format!("{}{}{}", [p.city.as_str(), p.country.as_str()].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(", "), if detail.is_empty() { "" } else { " — " }, detail) })),
