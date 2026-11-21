@@ -1317,3 +1317,21 @@ entries:
       appartenance par registre de dispersion ou OwnershipQuery, suppression
       des inconnus, partenaire injoignable réessayé) ; disque d'un autre Nœud
       : effacer et réutiliser seulement ; effacement limité aux données S3m.
+  protocols.canal-noeud:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
+  network.AlertEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
+  network.SignedNodeMessage:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""

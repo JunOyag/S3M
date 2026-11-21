@@ -71,9 +71,15 @@ table OwnershipAnswer {
   owned: [ubyte];             // un bit par hash demandé, bit i%8 de l'octet i/8
 }
 
+// ReadMessages (ajout du 2026-11-21, protocols.canal-noeud)
+table Messages {
+  messages: [SignedNodeMessage];
+}
+
 union ResponseBody {
   Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
-  Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached, OwnershipAnswer
+  Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached, OwnershipAnswer,
+  Messages
 }
 
 table BlockResponse {

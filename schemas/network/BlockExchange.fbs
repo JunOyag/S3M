@@ -3,6 +3,7 @@
 // Connecteur → Nœud, Nœud → partenaire, Connecteur ou nouveau Nœud →
 // partenaire (secours). Protocole libp2p "/s3m/blocks/1".
 // Source: protocols.echange-blocs (fonctionnalité ajoutée le 2026-11-20)
+include "NodeMessage.fbs";
 namespace S3m.Exchange;
 
 // Autorisation de lecture de secours émise par un Nœud au profit d'une clé
@@ -145,11 +146,24 @@ table EmergencyRelease {
   signature: [ubyte];         // Ed25519 par sig_priv_emergency sur L("s3m/sig/emergency-release/v1") ‖ emergency_pub ‖ u64be(timestamp) ‖ hashes
 }
 
+// Ajouts du 2026-11-21 (protocols.canal-noeud), Connecteur → son Nœud
+// (UserCredential).
+// Lecture des messages du Nœud de numéro > since (64 au plus, les plus anciens d'abord).
+table ReadMessages {
+  since_info: uint64;
+  since_alert: uint64;
+}
+// Message de l'Utilisateur à son Nœud.
+table PostMessage {
+  text: string;               // UTF-8, 4 096 o au plus
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
   StoreFragment, Challenge, FetchFragment, Tombstone,
   Probe, ProposePartnership, Attach, OwnershipQuery,
-  EmergencyPut, EmergencyGet, EmergencyRelease
+  EmergencyPut, EmergencyGet, EmergencyRelease,
+  ReadMessages, PostMessage
 }
 
 // Requête : une par flux libp2p request-response.

@@ -1,0 +1,19 @@
+// ---- AlertEntry.fbs ----
+// Entrée DHT d'une alerte de compromission, indexée par
+// SHA-256(pub_node_announce ‖ "alert"). Payload d'une DhtEnvelope signée par
+// priv_node_announce : un attaquant qui détient la seed du Nœud ne peut ni
+// la produire ni la remplacer.
+// Source: protocols.canal-noeud (fonctionnalité ajoutée le 2026-11-21)
+include "NodeMessage.fbs";
+namespace S3m.Dht;
+
+/// Entrée DHT Alert. TTL 15 552 000 s depuis `timestamp` ; l'enveloppe signée est
+/// republiée telle quelle par le Nœud et par tout Connecteur qui l'a vue.
+table AlertEntry {
+  pub_node_announce: [ubyte];     // en clair, pour que les pairs vérifient l'enveloppe (32 o)
+  timestamp: uint64;
+  alert: S3m.Exchange.SignedNodeMessage;  // kind = Alert ; la plus récente (seq) l'emporte
+}
+
+root_type AlertEntry;
+file_identifier "ALRT";

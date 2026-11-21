@@ -71,8 +71,11 @@ invalide leur attachement simultanément, nécessitant une réattache complète.
 
 Si c'est la **seed elle-même** qui est exfiltrée, `priv_node_recovery` est
 également compromise — aucun mécanisme cryptographique ne peut garantir
-l'authenticité d'un pointeur de migration. Nécessite une communication
-hors-bande, hors du périmètre cryptographique de ce protocole. La limite
+l'authenticité d'un pointeur de migration. L'avertissement des
+Utilisateurs passe alors par l'alerte signée par la clé d'annonce, extérieure
+à la seed et épinglée par chaque Connecteur
+([`protocols.canal-noeud`](../04-protocols/canal-noeud.md)) ; si cette clé a
+fuité elle aussi, seule une communication hors du protocole reste possible. La limite
 d'un seul saut automatique réduit toutefois l'impact d'une redirection en
 chaîne par un attaquant qui aurait obtenu la seed.
 

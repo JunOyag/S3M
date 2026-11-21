@@ -1,0 +1,33 @@
+// ---- NodeMessage.fbs ----
+// Message d'un Nœud à ses Utilisateurs (protocols.canal-noeud).
+// Source: protocols.canal-noeud (fonctionnalité ajoutée le 2026-11-21)
+namespace S3m.Exchange;
+
+enum MessageKind : ubyte {
+  Info = 0,    // message courant, signé par priv_node
+  Alert = 1    // alerte de compromission, signée par priv_node_announce
+}
+
+// Message sérialisé puis signé (SignedNodeMessage).
+table NodeMessage {
+  node_id: [ubyte];           // pub_node de l'émetteur (32 o)
+  seq: uint64;                // strictement croissant par Nœud et par sorte
+  timestamp: uint64;          // secondes Unix
+  kind: MessageKind;
+  text: string;               // UTF-8, 4 096 o au plus
+  successor_node_id: [ubyte]; // Alert seulement, optionnel : Nœud de remplacement (32 o)
+}
+
+// Info : Ed25519 par priv_node sur L("s3m/sig/node-message/v1") ‖ message.
+// Alert : Ed25519 par priv_node_announce sur L("s3m/sig/node-alert/v1") ‖ message.
+table SignedNodeMessage {
+  message: [ubyte];           // NodeMessage sérialisé
+  signature: [ubyte];
+}
+
+// Message d'un Utilisateur à son Nœud, conservé par le Nœud.
+table UserMessage {
+  user_id: [ubyte];           // pub_user de l'émetteur (32 o)
+  timestamp: uint64;          // horloge du Nœud à la réception
+  text: string;               // UTF-8, 4 096 o au plus
+}

@@ -264,6 +264,24 @@ pages:
       - schemas::write_queue_and_emergency_roundtrip
       - schemas::every_generated_table_builds_and_verifies
 
+  - id: network.AlertEntry
+    kind: schema
+    path: 02-schemas/network/AlertEntry.md
+    title: "AlertEntry"
+    section: "§3.11, §5.2"
+    fbs: "schemas/network/AlertEntry.fbs#AlertEntry"
+    refs: [network.dht-directory, protocols.canal-noeud, network.SignedNodeMessage]
+    verified_by: []
+
+  - id: network.SignedNodeMessage
+    kind: schema
+    path: 02-schemas/network/SignedNodeMessage.md
+    title: "SignedNodeMessage"
+    section: "§5.2"
+    fbs: "schemas/network/NodeMessage.fbs#SignedNodeMessage"
+    refs: [protocols.canal-noeud]
+    verified_by: []
+
   - id: network.BlockRequest
     kind: schema
     path: 02-schemas/network/BlockRequest.md
@@ -912,6 +930,14 @@ pages:
       - drive::emergency_tree_is_built_offline_and_committed_unchanged_on_return
       - drive::a_later_change_supersedes_the_emergency_tree
 
+  - id: protocols.canal-noeud
+    kind: narrative
+    path: 04-protocols/canal-noeud.md
+    title: "Canal Nœud ↔ Utilisateurs"
+    section: "§5.2"
+    refs: [protocols.echange-blocs, network.NodeEntry, network.AlertEntry, network.SignedNodeMessage, network.dht-directory, securite.incidents-compromissions, protocols.migration-noeud]
+    verified_by: []
+
   - id: protocols.ecriture-differee
     kind: narrative
     path: 04-protocols/ecriture-differee.md
@@ -1048,7 +1074,7 @@ pages:
     path: 05-securite/incidents-compromissions.md
     title: "Gestion des Incidents & Compromissions"
     section: "§5.2"
-    refs: [crypto.master-key-chain, protocols.migration-noeud, protocols.espace-secours, crypto.identity-derivation]
+    refs: [crypto.master-key-chain, protocols.migration-noeud, protocols.espace-secours, crypto.identity-derivation, protocols.canal-noeud]
     verified_by:
       - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
       - incidents::node_rotation_publishes_a_pointer_signed_by_the_old_recovery_key

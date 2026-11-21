@@ -27,6 +27,8 @@ l'expiration de sa durée de vie.
   [`crypto.k-attach`](../03-crypto/k-attach.md).
 - **EmergencyManifest** : `emergency_dht_key = SHA-256(K_attach ‖ "emergency")`
   — voir [`protocols.espace-secours`](../04-protocols/espace-secours.md).
+- **Alert** : `SHA-256(pub_node_announce ‖ "alert")` — voir
+  [`protocols.canal-noeud`](../04-protocols/canal-noeud.md#annuaire).
 
 ## Enveloppe signée
 
@@ -40,7 +42,7 @@ l'expiration de sa durée de vie.
   [`network.DispersalEntry`](../02-schemas/network/DispersalEntry.md) ou
   [`network.EmergencyEntry`](../02-schemas/network/EmergencyEntry.md)).
   Chaque type porte son propre `file_identifier` FlatBuffers (`"NODE"`,
-  `"USER"`, `"DISP"`, `"EMRG"`), vérifié avant tout décodage : un payload
+  `"USER"`, `"DISP"`, `"EMRG"`, `"ALRT"`), vérifié avant tout décodage : un payload
   n'est jamais décodé sous un mauvais type.
 - `signature` est une signature **Ed25519** sur
   `L(libellé de signature du type) ‖ payload`, où `payload` désigne les
@@ -63,6 +65,7 @@ signature d'un autre type par la même clé.
 | `DispersalEntry` | `sig_pub_dispersal` (en clair dans le payload) | `"s3m/sig/dispersal-entry/v1"` |
 | `EmergencyEntry` | `sig_pub_emergency` (en clair dans le payload) | `"s3m/sig/emergency-entry/v1"` |
 | `MigrationPointerPayload` | `pub_node_recovery` | `"s3m/sig/migration-pointer/v1"` |
+| `AlertEntry` | `pub_node_announce` (en clair dans le payload) | `"s3m/sig/alert-entry/v1"` |
 
 ### Tags `key_algorithm`
 
@@ -94,10 +97,11 @@ pour le détail de cette dérivation et son asymétrie d'usage.
 
 | Identité | Champs publiés | Durée de vie |
 |---|---|---|
-| **Node** | IP/port, `timestamp`, preuve VDF, `pub_node_recovery`, `migration_pointer` optionnel, `Encrypt(K_node_self, NodeSnapshotPointer)` | 15 552 000 s, republication toutes les 2 592 000 s |
+| **Node** | IP/port, `timestamp`, preuve VDF, `pub_node_recovery`, `migration_pointer` optionnel, `pub_node_announce` optionnelle, `Encrypt(K_node_self, NodeSnapshotPointer)` | 15 552 000 s, republication toutes les 2 592 000 s |
 | **User** | `sig_pub_user`, `timestamp`, preuve VDF, `Encrypt(K_self, UserEntryPlaintext)`. **Pas d'IP/port** : le Connecteur n'accepte aucune connexion entrante | 315 360 000 s |
 | **DispersalManifest** | `sig_pub_dispersal` en clair, `timestamp`, `Encrypt(K_attach, DispersalRootPointer)` | 15 552 000 s, republication toutes les 2 592 000 s |
 | **EmergencyManifest** (par `user_id`, indépendant du Nœud) | `sig_pub_emergency` en clair, `seq`, `timestamp`, `Encrypt(K_emergency_content, EmergencyManifest)` | 15 552 000 s, **ni republication ni suppression** |
+| **Alert** (par clé d'annonce) | `pub_node_announce` en clair, `timestamp`, alerte signée | 15 552 000 s depuis `timestamp`, enveloppe republiée telle quelle toutes les 2 592 000 s |
 
 L'`EmergencyManifest` est écrit par n'importe quel Connecteur du même
 `user_id` selon la règle de séquence de
