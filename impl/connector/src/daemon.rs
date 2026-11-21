@@ -1227,7 +1227,14 @@ pub async fn start(
             _ => Err(format!("action inconnue : {name}")),
         })
     };
-    let url = local_http::serve(config.api_port, st_fn, act_fn, ASSETS).await?;
+    let url = local_http::serve(
+        config.api_port,
+        st_fn,
+        act_fn,
+        ASSETS,
+        Some(&config.data_dir),
+    )
+    .await?;
     if !config.dht_bootstrap.is_empty() {
         spawn_user_entry(shared.clone(), priv_user, pub_node, salt.clone());
     }

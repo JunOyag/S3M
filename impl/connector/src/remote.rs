@@ -102,7 +102,7 @@ pub async fn serve_remote(session: RemoteSession) -> Result<String, String> {
                 .unwrap_or_else(|e| json!({ "points": [], "erreur": e }))
         })
     };
-    local_http::serve_with_map(0, st_fn, act_fn, Some(map_fn), ASSETS)
+    local_http::serve_with_map(0, st_fn, act_fn, Some(map_fn), ASSETS, None)
         .await
         .map_err(|e| e.to_string())
 }

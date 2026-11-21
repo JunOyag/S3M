@@ -393,7 +393,7 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
             }
         })
     };
-    let url = local_http::serve(0, st_fn, act_fn, ASSETS)
+    let url = local_http::serve(0, st_fn, act_fn, ASSETS, None)
         .await
         .map_err(|e| e.to_string())?;
     Ok((url, rx))

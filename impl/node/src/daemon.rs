@@ -1456,7 +1456,10 @@ pub fn save(sh: &Shared) -> Result<(), DaemonError> {
 /// Démarre le Nœud ; rend le contexte et l'URL du dashboard.
 pub async fn start(config: Config) -> Result<(Arc<Shared>, String), DaemonError> {
     let switch = crate::local_http::Switch::new();
-    let url = switch.serve(config.api_port, ASSETS).await?;
+    std::fs::create_dir_all(&config.data_dir)?;
+    let url = switch
+        .serve(config.api_port, ASSETS, Some(&config.data_dir))
+        .await?;
     let sh = start_with(config, &switch).await?;
     Ok((sh, url))
 }

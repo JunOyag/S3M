@@ -1,13 +1,24 @@
 // Dashboard local S3m (Nœud et Connecteur, même fichier).
-// Jeton remis par le fragment d'URL (#token=…), gardé en mémoire et retiré
-// de la barre d'adresse (docs/07-deploiement/packaging.md § API locale).
+// Jeton remis par le fragment d'URL (#token=…), retenu par le navigateur
+// pour cette adresse et retiré de la barre d'adresse : l'adresse nue peut
+// être mise en favori (docs/07-deploiement/packaging.md § API locale).
 //
 // Le serveur décrit tout en JSON : sections (objets, listes, tableaux),
 // actions (formulaires) et, dans les tableaux, boutons par ligne (`_actions`).
 "use strict";
 
 const hashParams = new URLSearchParams(location.hash.slice(1));
-const token = hashParams.get("token") || "";
+// Jeton retenu par le navigateur pour cette adresse (favoris) ; celui du
+// fragment, s'il y en a un, le remplace.
+const token = rememberToken(hashParams.get("token"));
+function rememberToken(t) {
+  try {
+    if (t) localStorage.setItem("s3m-token", t);
+    return t || localStorage.getItem("s3m-token") || "";
+  } catch (_) {
+    return t || "";
+  }
+}
 // `#token=…&page=<id>` ouvre directement un écran.
 const linkedPage = hashParams.get("page");
 history.replaceState(null, "", location.pathname);
@@ -747,7 +758,7 @@ function show(status) {
 async function refresh() {
   const r = await fetch("/api/status", { headers: { Authorization: "Bearer " + token } });
   if (!r.ok) {
-    live.textContent = "accès refusé (rouvrez l'URL affichée au démarrage)";
+    live.textContent = "accès refusé : ouvrez une fois le tableau de bord depuis S3m (icône ou adresse affichée au démarrage)";
     live.className = "error";
     return;
   }

@@ -62,7 +62,8 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
 async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let c = Config::load(path)?;
     let switch = Switch::new();
-    let url = switch.serve(c.api_port, ASSETS).await?;
+    std::fs::create_dir_all(&c.data_dir)?;
+    let url = switch.serve(c.api_port, ASSETS, Some(&c.data_dir)).await?;
     println!("Dashboard : {url}");
     if !c.seed_file.exists() {
         s3m_node::setup::run(&c, &switch).await?;

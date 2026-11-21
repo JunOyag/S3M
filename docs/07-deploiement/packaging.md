@@ -201,13 +201,20 @@ WebSocket). Les mêmes protections s'appliquent au Nœud et au Connecteur
 (arbitrage du 2026-11-19) :
 
 - **Liaison** : uniquement `127.0.0.1`, sur un port connu du processus.
-- **Jeton** : un secret aléatoire de **256 bits**, propre à **chaque
-  démarrage**, jamais écrit dans l'URL de requête, transmis dans l'en-tête
-  `Authorization: Bearer`. Comparaison à temps constant.
+- **Jeton** : un secret aléatoire de **256 bits**, jamais écrit dans l'URL
+  de requête, transmis dans l'en-tête `Authorization: Bearer`. Comparaison
+  à temps constant. Arbitrage du 2026-11-21 (favoris) : le jeton et le port
+  du dashboard du Nœud et du Connecteur sont **conservés** d'un démarrage à
+  l'autre dans `dashboard.json` du répertoire de données (port configuré
+  prioritaire ; port libre si le port conservé est pris) ; supprimer ce
+  fichier renouvelle le jeton. Assistant de premier lancement et
+  administration à distance : jeton propre à chaque démarrage.
 - **Remise du jeton au dashboard** : à l'ouverture du navigateur, le jeton
   est placé dans le **fragment d'URL** (`#…`), qui n'est jamais envoyé au
-  serveur, ni journalisé, ni transmis dans `Referer`. La page le garde en
-  mémoire et le retire de la barre d'adresse.
+  serveur, ni journalisé, ni transmis dans `Referer`. La page le retient
+  dans le stockage local du navigateur, propre à cette adresse, et le
+  retire de la barre d'adresse : l'adresse nue (`http://127.0.0.1:<port>/`)
+  peut être mise en favori.
 - **`Origin`** : toute requête qui en porte un est rejetée si elle ne
   correspond pas exactement à l'origine du dashboard servi par le binaire.
   Aucun en-tête CORS permissif.

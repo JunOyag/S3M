@@ -139,18 +139,63 @@ async fn ws(State(st): State<AppState>, h: HeaderMap, upgrade: WebSocketUpgrade)
     })
 }
 
-/// Lie `127.0.0.1:<port>` (0 : port libre), tire un jeton de 256 bits et
-/// sert le dashboard. Rend l'URL d'ouverture (jeton dans le fragment).
+/// Port et jeton du dashboard conservés dans `<dir>/dashboard.json`, pour
+/// que l'adresse reste la même d'un démarrage à l'autre (favoris). Le
+/// port configuré l'emporte ; à défaut, le port conservé, ou un port libre
+/// s'il est pris.
+async fn bind_kept(
+    port: u16,
+    keep: Option<&std::path::Path>,
+) -> std::io::Result<(tokio::net::TcpListener, [u8; 32])> {
+    let file = keep.map(|d| d.join("dashboard.json"));
+    let saved: Option<Value> = file
+        .as_ref()
+        .and_then(|f| std::fs::read(f).ok())
+        .and_then(|b| serde_json::from_slice(&b).ok());
+    let saved_port = saved
+        .as_ref()
+        .and_then(|v| v.get("port")?.as_u64())
+        .and_then(|p| u16::try_from(p).ok())
+        .unwrap_or(0);
+    let want = if port != 0 { port } else { saved_port };
+    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", want)).await {
+        Ok(l) => l,
+        Err(_) if port == 0 && want != 0 => tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?,
+        Err(e) => return Err(e),
+    };
+    let kept: Option<[u8; 32]> = saved
+        .as_ref()
+        .and_then(|v| v.get("token")?.as_str().map(str::to_owned))
+        .and_then(|t| hex::decode(t).ok()?.try_into().ok());
+    let token = match kept.filter(|_| file.is_some()) {
+        Some(t) => t,
+        None => {
+            let mut t = [0u8; 32];
+            getrandom::getrandom(&mut t).map_err(std::io::Error::other)?;
+            t
+        }
+    };
+    if let Some(f) = &file {
+        let v = serde_json::json!({ "port": listener.local_addr()?.port(), "token": hex::encode(token) });
+        let tmp = f.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(&v).expect("sérialisable"))?;
+        std::fs::rename(&tmp, f)?;
+    }
+    Ok((listener, token))
+}
+
+/// Lie `127.0.0.1:<port>` (0 : port libre), tire un jeton de 256 bits
+/// (conservé dans `keep` s'il est donné) et sert le dashboard. Rend l'URL
+/// d'ouverture (jeton dans le fragment).
 pub async fn serve(
     port: u16,
     status_fn: StatusFn,
     action_fn: ActionFn,
     map_fn: Option<StatusFn>,
     assets: &'static [Asset],
+    keep: Option<&std::path::Path>,
 ) -> std::io::Result<String> {
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-    let mut token = [0u8; 32];
-    getrandom::getrandom(&mut token).map_err(std::io::Error::other)?;
+    let (listener, token) = bind_kept(port, keep).await?;
     let guard = LocalApiGuard::new(token, listener.local_addr()?).map_err(std::io::Error::other)?;
     let url = guard.dashboard_url();
     let st = AppState {
@@ -225,6 +270,7 @@ impl Switch {
         self: &Arc<Self>,
         port: u16,
         assets: &'static [Asset],
+        keep: Option<&std::path::Path>,
     ) -> std::io::Result<String> {
         serve(
             port,
@@ -232,6 +278,7 @@ impl Switch {
             self.action_fn(),
             Some(self.map_fn()),
             assets,
+            keep,
         )
         .await
     }

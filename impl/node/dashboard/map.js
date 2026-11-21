@@ -3,7 +3,15 @@
 // bulles quand ils sont proches à l'écran. Aucune ressource extérieure.
 "use strict";
 
-const token = new URLSearchParams(location.hash.slice(1)).get("token") || "";
+const token = (() => {
+  const t = new URLSearchParams(location.hash.slice(1)).get("token");
+  try {
+    if (t) localStorage.setItem("s3m-token", t);
+    return t || localStorage.getItem("s3m-token") || "";
+  } catch (_) {
+    return t || "";
+  }
+})();
 history.replaceState(null, "", location.pathname);
 
 const KINDS = [
