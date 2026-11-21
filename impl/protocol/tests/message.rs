@@ -140,6 +140,23 @@ fn messages_requests_and_response_roundtrip() {
         assert_eq!(decode_request(&encode_request(&r)).unwrap(), r);
     }
     let s = sign_message(&[1; 32], &msg(&pk(&[1; 32]), 1, Kind::Info, None));
-    let r = Response::Messages(vec![s.clone(), s]);
-    assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);
+    for node_name in [None, Some("Cheval".to_string())] {
+        let r = Response::Messages {
+            messages: vec![s.clone(), s.clone()],
+            node_name,
+        };
+        assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);
+    }
+    // Nom vide ou à nettoyer : rendu nettoyé, absent s'il est vide.
+    let r = Response::Messages {
+        messages: vec![],
+        node_name: Some("  ".into()),
+    };
+    assert_eq!(
+        decode_response(&encode_response(&r)).unwrap(),
+        Response::Messages {
+            messages: vec![],
+            node_name: None
+        }
+    );
 }

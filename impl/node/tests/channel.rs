@@ -84,10 +84,16 @@ fn attached_user_reads_node_messages_and_posts_within_the_daily_limit() {
         since_info: 0,
         since_alert: 0,
     };
-    let Response::Messages(list) = call(&mut s, read) else {
+    s.name = Some("Cheval".into());
+    let Response::Messages {
+        messages: list,
+        node_name,
+    } = call(&mut s, read)
+    else {
         panic!("messages attendus")
     };
     assert_eq!(list.len(), 1);
+    assert_eq!(node_name.as_deref(), Some("Cheval"));
     assert_eq!(
         verify_message(&list[0], &pk(&NODE), None).unwrap().text,
         "maintenance dimanche"
@@ -96,7 +102,13 @@ fn attached_user_reads_node_messages_and_posts_within_the_daily_limit() {
         since_info: 1,
         since_alert: 0,
     };
-    assert_eq!(call(&mut s, none), Response::Messages(vec![]));
+    assert_eq!(
+        call(&mut s, none),
+        Response::Messages {
+            messages: vec![],
+            node_name: Some("Cheval".into())
+        }
+    );
     for _ in 0..POSTS_PER_DAY {
         assert_eq!(
             call(

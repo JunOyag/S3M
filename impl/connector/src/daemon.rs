@@ -669,6 +669,19 @@ fn channel_status(sh: &Shared, v: &mut Value) {
 /// Un tour du canal : épinglage de la clé d'annonce, lecture des messages
 /// (Nœud joignable), alerte relue dans l'annuaire (Nœud injoignable, ou une
 /// fois par jour) et republiée telle quelle.
+/// Nom du Nœud (`deploiement.pseudos`), conservé s'il change.
+fn set_node_name(sh: &Shared, name: Option<String>) {
+    let changed = {
+        let mut n = sh.names.lock().unwrap();
+        let changed = n.node_name != name;
+        n.node_name = name;
+        changed
+    };
+    if changed {
+        let _ = save_names(sh);
+    }
+}
+
 async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
     use s3m_protocol::message::{alert_key, open_alert_entry, ALERT_POLL_S};
     let before = sh.channel.lock().unwrap().clone();
@@ -692,15 +705,9 @@ async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
         if let Ok(Some(env)) = client.get(sh.pub_node.to_vec()).await {
             let ann = s3m_protocol::entries::node_entry_announce(&env);
             sh.channel.lock().unwrap().pin(&sh.pub_node, ann);
-            let published = s3m_protocol::entries::node_entry_name(&env);
-            let changed = {
-                let mut n = sh.names.lock().unwrap();
-                let changed = n.node_name != published;
-                n.node_name = published;
-                changed
-            };
-            if changed {
-                let _ = save_names(sh);
+            // Nœud joignable : son nom arrive avec ses messages.
+            if !reachable {
+                set_node_name(sh, s3m_protocol::entries::node_entry_name(&env));
             }
         }
     }
@@ -717,11 +724,14 @@ async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
     }
     if reachable {
         let cur = sh.channel.lock().unwrap().cursor;
-        if let Ok(list) = sh.session.read_messages(cur.info, cur.alert).await {
-            let mut c = sh.channel.lock().unwrap();
-            for s in &list {
-                c.accept(s);
+        if let Ok((list, node_name)) = sh.session.read_messages(cur.info, cur.alert).await {
+            {
+                let mut c = sh.channel.lock().unwrap();
+                for s in &list {
+                    c.accept(s);
+                }
             }
+            set_node_name(sh, node_name);
         }
     }
     let republish = sh.channel.lock().unwrap().republish_due(now);

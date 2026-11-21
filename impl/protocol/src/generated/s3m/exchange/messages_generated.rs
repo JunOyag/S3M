@@ -26,6 +26,7 @@ impl<'a> flatbuffers::Follow<'a> for Messages<'a> {
 
 impl<'a> Messages<'a> {
   pub const VT_MESSAGES: flatbuffers::VOffsetT = 4;
+  pub const VT_NODE_NAME: flatbuffers::VOffsetT = 6;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -37,6 +38,7 @@ impl<'a> Messages<'a> {
     args: &'args MessagesArgs<'args>
   ) -> flatbuffers::WIPOffset<Messages<'bldr>> {
     let mut builder = MessagesBuilder::new(_fbb);
+    if let Some(x) = args.node_name { builder.add_node_name(x); }
     if let Some(x) = args.messages { builder.add_messages(x); }
     builder.finish()
   }
@@ -49,6 +51,13 @@ impl<'a> Messages<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<SignedNodeMessage>>>>(Messages::VT_MESSAGES, None)}
   }
+  #[inline]
+  pub fn node_name(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Messages::VT_NODE_NAME, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for Messages<'_> {
@@ -59,18 +68,21 @@ impl flatbuffers::Verifiable for Messages<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<SignedNodeMessage>>>>("messages", Self::VT_MESSAGES, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("node_name", Self::VT_NODE_NAME, false)?
      .finish();
     Ok(())
   }
 }
 pub struct MessagesArgs<'a> {
     pub messages: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<SignedNodeMessage<'a>>>>>,
+    pub node_name: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for MessagesArgs<'a> {
   #[inline]
   fn default() -> Self {
     MessagesArgs {
       messages: None,
+      node_name: None,
     }
   }
 }
@@ -83,6 +95,10 @@ impl<'a: 'b, 'b> MessagesBuilder<'a, 'b> {
   #[inline]
   pub fn add_messages(&mut self, messages: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<SignedNodeMessage<'b >>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Messages::VT_MESSAGES, messages);
+  }
+  #[inline]
+  pub fn add_node_name(&mut self, node_name: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Messages::VT_NODE_NAME, node_name);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> MessagesBuilder<'a, 'b> {
@@ -103,6 +119,7 @@ impl core::fmt::Debug for Messages<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("Messages");
       ds.field("messages", &self.messages());
+      ds.field("node_name", &self.node_name());
       ds.finish()
   }
 }

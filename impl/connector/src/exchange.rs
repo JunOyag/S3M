@@ -396,12 +396,13 @@ impl NodeSession {
         }
     }
 
-    /// Messages du Nœud de `seq` supérieur (`protocols.canal-noeud`).
+    /// Messages du Nœud de `seq` supérieur (`protocols.canal-noeud`) et nom
+    /// actuel du Nœud (`deploiement.pseudos`).
     pub async fn read_messages(
         &self,
         since_info: u64,
         since_alert: u64,
-    ) -> Result<Vec<s3m_protocol::message::Signed>, ExchangeError> {
+    ) -> Result<(Vec<s3m_protocol::message::Signed>, Option<String>), ExchangeError> {
         match self
             .call(Body::ReadMessages {
                 since_info,
@@ -409,7 +410,10 @@ impl NodeSession {
             })
             .await?
         {
-            Response::Messages(m) => Ok(m),
+            Response::Messages {
+                messages,
+                node_name,
+            } => Ok((messages, node_name)),
             _ => Err(ExchangeError::Unexpected),
         }
     }

@@ -295,9 +295,10 @@ impl NodeService {
                 since_alert,
             } => {
                 self.user(cred, from, local)?;
-                Ok(Response::Messages(
-                    self.channel.read(since_info, since_alert),
-                ))
+                Ok(Response::Messages {
+                    messages: self.channel.read(since_info, since_alert),
+                    node_name: self.name.clone(),
+                })
             }
             Body::PostMessage { text } => {
                 let u = self.user(cred, from, local)?;

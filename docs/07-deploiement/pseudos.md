@@ -45,7 +45,11 @@ tient lieu pour l'opérateur.
   les clés.
 - **Affichage** : `nom · empreinte`, ou l'empreinte seule s'il n'y a pas de
   nom. Pour un Nœud, le Connecteur affiche le `node_label` de
-  l'Utilisateur, à défaut le `name` publié. Le Nœud affiche de même ses
+  l'Utilisateur, à défaut le nom du Nœud. Ce nom est lu dans le champ
+  `node_name` de la réponse `Messages`
+  ([`protocols.canal-noeud`](../04-protocols/canal-noeud.md#requetes)) quand
+  le Nœud est joignable, sinon dans le `name` de son entrée Node : il
+  s'affiche ainsi même quand le Nœud ne peut pas publier son entrée. Le Nœud affiche de même ses
   partenaires (`name` lu dans leur entrée) et ses Utilisateurs (étiquette
   locale).
 - Changer son pseudo, ou le nom de son Nœud, réémet l'entrée User. Changer

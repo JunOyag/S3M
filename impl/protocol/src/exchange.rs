@@ -259,8 +259,12 @@ pub enum Response {
     OwnershipAnswer {
         owned: Vec<u8>,
     },
-    /// Réponse à `ReadMessages`.
-    Messages(Vec<crate::message::Signed>),
+    /// Réponse à `ReadMessages`, avec le nom actuel du Nœud
+    /// (`deploiement.pseudos`).
+    Messages {
+        messages: Vec<crate::message::Signed>,
+        node_name: Option<String>,
+    },
 }
 
 // ------------------------------------------------------------------ codage
@@ -849,7 +853,15 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             );
             (fb::ResponseBody::Attached, o.as_union_value())
         }
-        Response::Messages(list) => {
+        Response::Messages {
+            messages: list,
+            node_name,
+        } => {
+            let name = node_name
+                .as_deref()
+                .map(crate::pseudo::sanitize)
+                .filter(|n| !n.is_empty())
+                .map(|n| b.create_string(&n));
             let items: Vec<_> = list
                 .iter()
                 .map(|s| {
@@ -865,7 +877,13 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
                 })
                 .collect();
             let v = b.create_vector(&items);
-            let o = fb::Messages::create(&mut b, &fb::MessagesArgs { messages: Some(v) });
+            let o = fb::Messages::create(
+                &mut b,
+                &fb::MessagesArgs {
+                    messages: Some(v),
+                    node_name: name,
+                },
+            );
             (fb::ResponseBody::Messages, o.as_union_value())
         }
     };
@@ -940,20 +958,26 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
         fb::ResponseBody::Attached => Response::Attached {
             quota_bytes: r.body_as_attached().ok_or(m)?.quota_bytes(),
         },
-        fb::ResponseBody::Messages => Response::Messages(
-            r.body_as_messages()
-                .ok_or(m)?
-                .messages()
-                .map(|v| {
-                    v.iter()
-                        .map(|s| crate::message::Signed {
-                            message: bytes(s.message()),
-                            signature: bytes(s.signature()),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-        ),
+        fb::ResponseBody::Messages => {
+            let body = r.body_as_messages().ok_or(m)?;
+            Response::Messages {
+                messages: body
+                    .messages()
+                    .map(|v| {
+                        v.iter()
+                            .map(|s| crate::message::Signed {
+                                message: bytes(s.message()),
+                                signature: bytes(s.signature()),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                node_name: body
+                    .node_name()
+                    .map(crate::pseudo::sanitize)
+                    .filter(|n| !n.is_empty()),
+            }
+        }
         fb::ResponseBody::GrantIssued => {
             Response::GrantIssued(signed_grant_of(r.body_as_grant_issued().ok_or(m)?.grant())?)
         }

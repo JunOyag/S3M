@@ -74,6 +74,7 @@ table OwnershipAnswer {
 // ReadMessages (ajout du 2026-11-21, protocols.canal-noeud)
 table Messages {
   messages: [SignedNodeMessage];
+  node_name: string;          // ajout du 2026-11-21 (deploiement.pseudos) : nom actuel du Nœud, absent sans nom
 }
 
 union ResponseBody {
