@@ -40,6 +40,10 @@ pub const SIG_LABEL_RESCUE_SESSION: &str = "s3m/sig/rescue-session/v1";
 pub const SIG_LABEL_RESCUE_DELEGATION: &str = "s3m/sig/rescue-delegation/v1";
 pub const SIG_LABEL_FRAGMENT_RECEIPT: &str = "s3m/sig/fragment-receipt/v1";
 pub const SIG_LABEL_ATTACH: &str = "s3m/sig/attach/v1";
+pub const SIG_LABEL_EMERGENCY_DEPOSIT: &str = "s3m/sig/emergency-deposit/v1";
+pub const SIG_LABEL_EMERGENCY_RELEASE: &str = "s3m/sig/emergency-release/v1";
+/// Nombre maximal de hashes d'un `EmergencyRelease`.
+pub const MAX_RELEASE_HASHES: usize = 1024;
 
 /// Identifiant de 32 o (`pub_node`, `pub_user`, `grant_pub`, hash).
 pub type Id = [u8; 32];
@@ -109,9 +113,23 @@ pub struct Delegation {
 /// Union `Credential`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Credential {
-    User { user_id: Vec<u8>, proof: Vec<u8> },
-    Rescue { grant: SignedGrant, proof: Vec<u8> },
+    User {
+        user_id: Vec<u8>,
+        proof: Vec<u8>,
+    },
+    Rescue {
+        grant: SignedGrant,
+        proof: Vec<u8>,
+    },
     Delegated(Delegation),
+    /// Dépôt d'urgence (`protocols.espace-secours`).
+    Emergency {
+        sig_pub_user: Vec<u8>,
+        vdf_y: Vec<u8>,
+        vdf_pi: Vec<u8>,
+        emergency_pub: Vec<u8>,
+        signature: Vec<u8>,
+    },
 }
 
 /// Union `RequestBody`.
@@ -170,6 +188,22 @@ pub enum Body {
         vdf_pi: Vec<u8>,
         signature: Vec<u8>,
     },
+    /// Dépôt d'un bloc chez un partenaire de secours.
+    EmergencyPut {
+        data: Vec<u8>,
+    },
+    /// Relecture d'un bloc déposé sous `emergency_pub`.
+    EmergencyGet {
+        emergency_pub: Vec<u8>,
+        hash: Vec<u8>,
+    },
+    /// Libération signée par `sig_priv_emergency`.
+    EmergencyRelease {
+        emergency_pub: Vec<u8>,
+        timestamp: u64,
+        hashes: Vec<u8>,
+        signature: Vec<u8>,
+    },
 }
 
 /// `BlockRequest`.
@@ -188,6 +222,9 @@ pub enum Response {
     RootState {
         committed: bool,
         current_root: Vec<u8>,
+        /// Quota et occupation de l'Utilisateur (0 : non communiqué).
+        quota_bytes: u64,
+        used_bytes: u64,
     },
     FragmentReceipt {
         hash: Vec<u8>,
@@ -283,6 +320,33 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             let o = delegation_fb(&mut b, d);
             (
                 fb::Credential::DelegatedCredential,
+                Some(o.as_union_value()),
+            )
+        }
+        Some(Credential::Emergency {
+            sig_pub_user,
+            vdf_y,
+            vdf_pi,
+            emergency_pub,
+            signature,
+        }) => {
+            let k = b.create_vector(sig_pub_user);
+            let y = b.create_vector(vdf_y);
+            let pi = b.create_vector(vdf_pi);
+            let e = b.create_vector(emergency_pub);
+            let sg = b.create_vector(signature);
+            let o = fb::EmergencyCredential::create(
+                &mut b,
+                &fb::EmergencyCredentialArgs {
+                    sig_pub_user: Some(k),
+                    vdf_y: Some(y),
+                    vdf_pi: Some(pi),
+                    emergency_pub: Some(e),
+                    signature: Some(sg),
+                },
+            );
+            (
+                fb::Credential::EmergencyCredential,
                 Some(o.as_union_value()),
             )
         }
@@ -420,6 +484,46 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             );
             (fb::RequestBody::Attach, o.as_union_value())
         }
+        Body::EmergencyPut { data } => {
+            let d = b.create_vector(data);
+            let o = fb::EmergencyPut::create(&mut b, &fb::EmergencyPutArgs { data: Some(d) });
+            (fb::RequestBody::EmergencyPut, o.as_union_value())
+        }
+        Body::EmergencyGet {
+            emergency_pub,
+            hash,
+        } => {
+            let e = b.create_vector(emergency_pub);
+            let h = b.create_vector(hash);
+            let o = fb::EmergencyGet::create(
+                &mut b,
+                &fb::EmergencyGetArgs {
+                    emergency_pub: Some(e),
+                    hash: Some(h),
+                },
+            );
+            (fb::RequestBody::EmergencyGet, o.as_union_value())
+        }
+        Body::EmergencyRelease {
+            emergency_pub,
+            timestamp,
+            hashes,
+            signature,
+        } => {
+            let e = b.create_vector(emergency_pub);
+            let h = b.create_vector(hashes);
+            let sg = b.create_vector(signature);
+            let o = fb::EmergencyRelease::create(
+                &mut b,
+                &fb::EmergencyReleaseArgs {
+                    emergency_pub: Some(e),
+                    timestamp: *timestamp,
+                    hashes: Some(h),
+                    signature: Some(sg),
+                },
+            );
+            (fb::RequestBody::EmergencyRelease, o.as_union_value())
+        }
     };
     let root = fb::BlockRequest::create(
         &mut b,
@@ -492,6 +596,18 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
         fb::Credential::DelegatedCredential => Some(Credential::Delegated(delegation_of(
             r.credential_as_delegated_credential(),
         )?)),
+        fb::Credential::EmergencyCredential => {
+            let c = r
+                .credential_as_emergency_credential()
+                .ok_or(Refusal::Malformed)?;
+            Some(Credential::Emergency {
+                sig_pub_user: bytes(c.sig_pub_user()),
+                vdf_y: bytes(c.vdf_y()),
+                vdf_pi: bytes(c.vdf_pi()),
+                emergency_pub: bytes(c.emergency_pub()),
+                signature: bytes(c.signature()),
+            })
+        }
         _ => return Err(Refusal::Malformed),
     };
     let m = Refusal::Malformed;
@@ -562,6 +678,25 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
                 signature: bytes(x.signature()),
             }
         }
+        fb::RequestBody::EmergencyPut => Body::EmergencyPut {
+            data: bytes(r.body_as_emergency_put().ok_or(m)?.data()),
+        },
+        fb::RequestBody::EmergencyGet => {
+            let x = r.body_as_emergency_get().ok_or(m)?;
+            Body::EmergencyGet {
+                emergency_pub: bytes(x.emergency_pub()),
+                hash: bytes(x.hash()),
+            }
+        }
+        fb::RequestBody::EmergencyRelease => {
+            let x = r.body_as_emergency_release().ok_or(m)?;
+            Body::EmergencyRelease {
+                emergency_pub: bytes(x.emergency_pub()),
+                timestamp: x.timestamp(),
+                hashes: bytes(x.hashes()),
+                signature: bytes(x.signature()),
+            }
+        }
         _ => return Err(m),
     };
     Ok(Request { credential, body })
@@ -588,6 +723,8 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
         Response::RootState {
             committed,
             current_root,
+            quota_bytes,
+            used_bytes,
         } => {
             let c = b.create_vector(current_root);
             let o = fb::RootState::create(
@@ -595,6 +732,8 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
                 &fb::RootStateArgs {
                     committed: *committed,
                     current_root: Some(c),
+                    quota_bytes: *quota_bytes,
+                    used_bytes: *used_bytes,
                 },
             );
             (fb::ResponseBody::RootState, o.as_union_value())
@@ -705,6 +844,8 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
             Response::RootState {
                 committed: s.committed(),
                 current_root: bytes(s.current_root()),
+                quota_bytes: s.quota_bytes(),
+                used_bytes: s.used_bytes(),
             }
         }
         fb::ResponseBody::FragmentReceipt => {
@@ -1004,6 +1145,86 @@ pub fn verify_attach_signature(
         sig_pub_user,
         SIG_LABEL_ATTACH,
         &attach_payload(pub_user, node_id),
+        signature,
+    )
+    .is_ok()
+}
+
+// ------------------------------------------------------ espace de secours
+
+fn deposit_payload(emergency_pub: &[u8], requester_peer: &[u8], partner_peer: &[u8]) -> Vec<u8> {
+    let mut p = emergency_pub.to_vec();
+    p.extend_from_slice(&canonical_encode(&[requester_peer, partner_peer]));
+    p
+}
+
+/// Signature de `sig_priv_user` liant la clé de secours aux deux `PeerId`
+/// de la connexion (`EmergencyCredential`).
+pub fn emergency_deposit_signature(
+    sig_priv_user: &[u8; 32],
+    emergency_pub: &Id,
+    requester_peer: &[u8],
+    partner_peer: &[u8],
+) -> Vec<u8> {
+    sign(
+        sig_priv_user,
+        SIG_LABEL_EMERGENCY_DEPOSIT,
+        &deposit_payload(emergency_pub, requester_peer, partner_peer),
+    )
+    .to_vec()
+}
+
+pub fn verify_emergency_deposit(
+    sig_pub_user: &[u8],
+    emergency_pub: &[u8],
+    requester_peer: &[u8],
+    partner_peer: &[u8],
+    signature: &[u8],
+) -> bool {
+    verify_signature(
+        sig_pub_user,
+        SIG_LABEL_EMERGENCY_DEPOSIT,
+        &deposit_payload(emergency_pub, requester_peer, partner_peer),
+        signature,
+    )
+    .is_ok()
+}
+
+fn release_payload(emergency_pub: &[u8], timestamp: u64, hashes: &[u8]) -> Vec<u8> {
+    let mut p = emergency_pub.to_vec();
+    p.extend_from_slice(&timestamp.to_be_bytes());
+    p.extend_from_slice(hashes);
+    p
+}
+
+/// Corps d'un `EmergencyRelease` signé par `sig_priv_emergency`.
+pub fn emergency_release(sig_priv_emergency: &[u8; 32], timestamp: u64, hashes: &[Id]) -> Body {
+    let emergency_pub = pub_of(sig_priv_emergency);
+    let hashes: Vec<u8> = hashes.concat();
+    let signature = sign(
+        sig_priv_emergency,
+        SIG_LABEL_EMERGENCY_RELEASE,
+        &release_payload(&emergency_pub, timestamp, &hashes),
+    )
+    .to_vec();
+    Body::EmergencyRelease {
+        emergency_pub: emergency_pub.to_vec(),
+        timestamp,
+        hashes,
+        signature,
+    }
+}
+
+pub fn verify_emergency_release(
+    emergency_pub: &[u8],
+    timestamp: u64,
+    hashes: &[u8],
+    signature: &[u8],
+) -> bool {
+    verify_signature(
+        emergency_pub,
+        SIG_LABEL_EMERGENCY_RELEASE,
+        &release_payload(emergency_pub, timestamp, hashes),
         signature,
     )
     .is_ok()

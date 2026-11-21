@@ -54,6 +54,19 @@ fn every_request_and_response_roundtrips() {
             vdf_pi: vec![18; 100],
             signature: vec![19; 64],
         },
+        Body::EmergencyPut {
+            data: vec![20; 65_536],
+        },
+        Body::EmergencyGet {
+            emergency_pub: vec![21; 32],
+            hash: vec![22; 32],
+        },
+        Body::EmergencyRelease {
+            emergency_pub: vec![23; 32],
+            timestamp: 9,
+            hashes: vec![24; 64],
+            signature: vec![25; 64],
+        },
     ];
     let creds = [
         None,
@@ -66,6 +79,13 @@ fn every_request_and_response_roundtrips() {
             proof: vec![3; 64],
         }),
         Some(Credential::Delegated(d)),
+        Some(Credential::Emergency {
+            sig_pub_user: vec![26; 32],
+            vdf_y: vec![27; 100],
+            vdf_pi: vec![28; 100],
+            emergency_pub: vec![29; 32],
+            signature: vec![30; 64],
+        }),
     ];
     for body in bodies {
         for credential in creds.clone() {
@@ -83,6 +103,8 @@ fn every_request_and_response_roundtrips() {
         Response::RootState {
             committed: false,
             current_root: vec![3; 32],
+            quota_bytes: 10 << 30,
+            used_bytes: 12_345,
         },
         Response::FragmentReceipt {
             hash: vec![4; 32],

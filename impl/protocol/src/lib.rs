@@ -28,6 +28,7 @@ pub use generated::s3m as fb;
 pub mod admin;
 pub mod dht;
 pub mod dispersal;
+pub mod emergency;
 pub mod entries;
 pub mod exchange;
 pub mod index;
