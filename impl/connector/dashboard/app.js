@@ -22,6 +22,292 @@ function el(tag, text, cls) {
   return e;
 }
 
+// ---------------------------------------------------------------- libellés
+
+// Libellés affichés et infobulles : `clé du moteur` → [texte, explication].
+// Sans entrée : première lettre en majuscule, unité « (octets) » retirée
+// (les tailles sont affichées en Ko, Mo, Go…).
+const LABELS = {
+  // ---- Généralités
+  "node_id": ["Identifiant du Nœud", "Clé publique du Nœud : elle l'identifie sur le réseau S3m."],
+  "peer_id": ["Identifiant réseau", "Identité libp2p du Nœud, dérivée de son identifiant."],
+  "user_id": ["Identifiant de l'utilisateur", "Clé publique de l'utilisateur, affichée par son application S3m."],
+  "salt": ["Sel d'attachement", "Valeur aléatoire propre au rattachement de cet utilisateur à ce Nœud (32 caractères)."],
+  "addr": ["Adresse", "Adresse réseau au format /ip4/…/tcp/…/p2p/…"],
+  "adresse": ["Adresse", "Adresse réseau au format /ip4/…/tcp/…/p2p/…"],
+  "allowance": ["Solde accordé (fragments)", "Nombre de fragments que chaque Nœud accepte d'héberger pour l'autre (troc 1 pour 1)."],
+  "enabled": ["Activé", ""],
+  "max_users": ["Utilisateurs au plus", "Nombre maximal d'utilisateurs rattachés automatiquement."],
+  "erreur": ["Erreur", "Dernière erreur rencontrée ; vide si tout va bien."],
+  "erreurs": ["Erreurs", ""],
+  "dernière erreur": ["Dernière erreur", ""],
+  "important": ["Important", ""],
+  "source": ["Source", ""],
+  "fichier": ["Fichier", "Fichier de configuration lu au démarrage."],
+  "unité": ["Unité", ""],
+  "base": ["Base", ""],
+
+  // ---- Nœud rattaché (Connecteur)
+  "nœud rattaché": ["Nœud rattaché", "Le Nœud qui stocke vos fichiers."],
+  "adresse configurée": ["Adresse configurée", "Adresse du Nœud enregistrée dans la configuration."],
+  "adresse utilisée": ["Adresse utilisée", "Adresse par laquelle le Nœud est joint en ce moment (elle peut différer après un changement de réseau)."],
+  "joignable": ["Joignable", "Le Nœud répond-il aux requêtes de ce connecteur ?"],
+  "dernier contact": ["Dernier contact", "Dernière réponse reçue du Nœud."],
+  "indisponible depuis (s)": ["Indisponible depuis (secondes)", "Durée depuis laquelle le Nœud ne répond plus."],
+  "espace": ["Espace", "Votre quota chez le Nœud : c'est aussi la taille du lecteur monté."],
+  "libre (octets)": ["Libre", "Espace encore disponible."],
+  "total (octets)": ["Total", "Quota attribué par le Nœud."],
+  "utilisé (octets)": ["Utilisé", "Espace occupé par vos fichiers chez le Nœud."],
+  "% utilisé": ["Utilisé (%)", "Part du quota occupée."],
+  "utilisé (%)": ["Utilisé (%)", "Part de la capacité occupée."],
+  "rattachement automatique": ["Rattachement automatique", "Rattachement d'un utilisateur sans intervention de l'opérateur du Nœud, dans les limites fixées par celui-ci."],
+  "en cours": ["En cours", ""],
+  "quota attribué (octets)": ["Quota attribué", "Espace accordé par le Nœud lors du rattachement automatique."],
+  "dernière tentative": ["Dernière tentative", ""],
+
+  // ---- Lecteur et synchronisation (Connecteur)
+  "lecteur": ["Lecteur", "Lecteur réseau où apparaissent vos fichiers S3m."],
+  "point de montage": ["Lettre du lecteur", "Lettre sous laquelle vos fichiers apparaissent dans l'Explorateur."],
+  "lecteur monté": ["Lettre du lecteur", "Lettre sous laquelle vos fichiers apparaissent dans l'Explorateur."],
+  "lettre du lecteur": ["Lettre du lecteur", "Lettre libre autre que C:, par exemple S:."],
+  "monté": ["Monté", "Le lecteur est-il visible dans l'Explorateur ?"],
+  "erreur de montage": ["Erreur de montage", "Raison pour laquelle le lecteur n'a pas pu être monté."],
+  "modifications en attente": ["Modifications en attente", "Fichiers et dossiers modifiés pas encore envoyés au Nœud."],
+  "synchronisations planifiées": ["Synchronisations planifiées", "Fichiers dont l'envoi est programmé (après un court délai sans modification)."],
+  "dernière synchronisation": ["Dernière synchronisation", "Dernier envoi réussi des modifications au Nœud."],
+  "erreur de synchronisation": ["Erreur de synchronisation", "Raison du dernier échec d'envoi ; un nouvel essai est fait automatiquement."],
+  "conflit (racine du Nœud)": ["Conflit", "Un autre appareil a modifié vos fichiers en même temps ; rien n'est perdu."],
+  "file d'écriture": ["File d'écriture hors ligne", "Modifications gardées sur ce PC pendant une coupure réseau."],
+  "mutations en attente": ["Modifications en attente", ""],
+  "taille (octets)": ["Taille", ""],
+  "Q_max (octets)": ["Budget hors ligne", "Volume maximal de modifications gardées pendant une coupure (Q_max, 4 Gio par défaut)."],
+  "intervalle de surveillance (s)": ["Intervalle de surveillance (secondes)", "Fréquence des vérifications de la joignabilité du Nœud."],
+  "configuration": ["Configuration", ""],
+
+  // ---- Écriture d'urgence (Connecteur)
+  "écriture d'urgence": ["Écriture d'urgence", "Si seul votre Nœud est injoignable, vos modifications sont déposées, chiffrées, chez des Nœuds de secours, puis récupérées à son retour."],
+  "partenaires de secours (n_secours)": ["Nœuds de secours", "Nombre de Nœuds distincts entre lesquels les dépôts d'urgence sont répartis."],
+  "dernier dépôt": ["Dernier dépôt", ""],
+  "séquence publiée": ["Version publiée", "Numéro de la dernière liste des dépôts publiée dans l'annuaire."],
+  "blocs déposés à libérer": ["Blocs à libérer", "Blocs déposés chez les Nœuds de secours, libérés une fois revenus sur votre Nœud."],
+  "blocs libérés": ["Blocs libérés", ""],
+  "dernière réconciliation": ["Dernière réconciliation", "Dernier retour des modifications déposées vers votre Nœud."],
+  "partenaire": ["Nœud", ""],
+  "blocs": ["Blocs", ""],
+
+  // ---- Identité et sécurité (Connecteur)
+  "utilisateur": ["Utilisateur", ""],
+  "annuaire (entrée User)": ["Annuaire (entrée utilisateur)", "Votre entrée chiffrée dans l'annuaire distribué : elle permet de retrouver vos fichiers depuis un autre appareil."],
+  "connecté à la DHT": ["Connecté à l'annuaire", "L'annuaire distribué (DHT) est-il joignable ?"],
+  "preuve VDF": ["Preuve d'identité calculée", "Preuve de travail qui protège le réseau des fausses identités ; calculée une seule fois."],
+  "racine publiée": ["Racine publiée", "Dernier état de vos fichiers enregistré dans l'annuaire."],
+  "publiée le": ["Publiée le", ""],
+  "publié le": ["Publié le", ""],
+  "racine restaurée depuis la DHT": ["Restaurée depuis l'annuaire", "Vos fichiers ont été retrouvés grâce à l'annuaire (nouvel appareil)."],
+  "autorisation de secours": ["Autorisation de secours", "Permet de lire vos fichiers chez les partenaires si votre Nœud est hors service."],
+  "expire le": ["Expire le", "Renouvelée automatiquement à chaque connexion au Nœud."],
+  "incidents d'intégrité": ["Incidents d'intégrité", "Blocs reçus abîmés et signalés au Nœud."],
+  "code 2FA": ["Code 2FA", "Code à 6 chiffres de votre application d'authentification."],
+  "adresse d'administration": ["Adresse d'administration", "Facultatif : par défaut, adresse du Nœud et port 4003."],
+  "je confirme": ["Je confirme", ""],
+  "numéro": ["Numéro", ""],
+  "numéro ou adresse": ["Numéro ou adresse", "Numéro du Nœud dans la liste, ou son adresse /ip4/…/p2p/…"],
+  "2. nœuds trouvés sur le réseau local": ["Nœuds trouvés sur le réseau local", ""],
+  "code d'appairage": ["Code d'appairage", "Code affiché par le Nœud à configurer."],
+  "code de récupération ou phrase": ["Code de récupération ou phrase", "Code S3M1:… ou phrase de 24 mots d'une identité existante."],
+  "24 mots": ["Phrase de récupération (24 mots)", "À noter et garder en lieu sûr : elle permet de tout restaurer."],
+  "QR code": ["QR code", ""],
+  "code": ["Code", ""],
+
+  // ---- Nœud : identité, utilisateurs
+  "identité": ["Identité", ""],
+  "identifiant temporaire": ["Identifiant temporaire", "Identité provisoire, en attendant le choix d'une identité définitive."],
+  "configuration depuis un autre ordinateur": ["Configuration depuis un autre ordinateur", ""],
+  "adresses d'administration": ["Adresses d'administration", "Adresses où le connecteur peut joindre ce Nœud pour l'administrer."],
+  "utilisateurs": ["Utilisateurs", ""],
+  "utilisateurs rattachés": ["Utilisateurs rattachés", "Utilisateurs dont ce Nœud stocke les fichiers."],
+  "utilisateurs rattachés automatiquement": ["Rattachés automatiquement", ""],
+  "rattachement": ["Rattachement", ""],
+  "quota (Gio)": ["Quota (Gio)", "Espace accordé à l'utilisateur, en gibioctets."],
+  "quota (octets)": ["Quota", "Espace accordé à l'utilisateur."],
+  "quota par utilisateur (Gio)": ["Quota par utilisateur (Gio)", "Espace accordé à chaque utilisateur rattaché automatiquement."],
+  "quota par utilisateur (octets)": ["Quota par utilisateur", ""],
+  "utilisateurs maximum": ["Utilisateurs au plus", ""],
+  "budget total (octets)": ["Budget total", "Quota par utilisateur × nombre maximal d'utilisateurs."],
+  "budget utilisé (octets)": ["Budget utilisé", "Somme des quotas déjà attribués automatiquement."],
+  "pays": ["Pays", "Estimé d'après l'adresse IP."],
+  "racine": ["Racine", "Dernier état validé du système de fichiers de l'utilisateur."],
+  "occupé (octets)": ["Occupé", ""],
+  "alertes d'intégrité signalées": ["Alertes d'intégrité signalées", "Blocs signalés abîmés par les connecteurs ; réparés automatiquement."],
+
+  // ---- Partenaires
+  "partenaires": ["Partenaires", "Nœuds qui hébergent la parité de vos données (et dont vous hébergez la parité)."],
+  "nœud": ["Nœud", ""],
+  "score": ["Score", "Note globale de fiabilité, disponibilité et vitesse (0 à 1)."],
+  "fiabilité": ["Fiabilité", "Part des contrôles réussis."],
+  "disponibilité": ["Disponibilité", "Part des sondages auxquels le Nœud a répondu."],
+  "vitesse": ["Vitesse", "Note de temps de réponse."],
+  "latence (ms)": ["Latence (ms)", "Temps de réponse moyen."],
+  "fragments confiés": ["Fragments confiés", "Fragments de parité placés chez ce partenaire."],
+  "fragments reçus": ["Fragments reçus", "Fragments hébergés pour ce partenaire."],
+  "solde accordé": ["Solde accordé", "Nombre de fragments accepté de part et d'autre."],
+  "dernier challenge réussi": ["Dernier contrôle réussi", "Dernière preuve que le partenaire détient bien les fragments confiés."],
+  "dernier échange": ["Dernier échange", ""],
+  "recherche de partenaires": ["Recherche de partenaires", "Découverte et évaluation automatiques de nouveaux partenaires."],
+  "candidats connus": ["Candidats connus", ""],
+  "découverts": ["Découverts", ""],
+  "proposés": ["Proposés", ""],
+  "acceptés": ["Acceptés", ""],
+  "terminé": ["Terminé", ""],
+  "terminés": ["Terminés", ""],
+  "mis en retrait": ["Mis en retrait", "Partenaires dont les fragments sont replacés ailleurs (score trop bas)."],
+  "partenaires visés": ["Partenaires visés", ""],
+  "liste noire": ["Liste noire", "Nœuds exclus après une fraude prouvée."],
+  "depuis": ["Depuis", ""],
+  "motif": ["Motif", ""],
+  "fraudes": ["Fraudes", ""],
+
+  // ---- Volumes
+  "volumes": ["Volumes", "Disques ou dossiers où ce Nœud range les blocs."],
+  "volume": ["Volume", ""],
+  "volume_id": ["Numéro", ""],
+  "mount_path": ["Chemin", ""],
+  "chemin": ["Chemin", ""],
+  "nouveau chemin": ["Nouveau chemin", ""],
+  "max_capacity_bytes": ["Capacité", ""],
+  "capacité (Go)": ["Capacité (Gio)", ""],
+  "nouvelle capacité (Go)": ["Nouvelle capacité (Gio)", ""],
+  "capacité (octets)": ["Capacité", ""],
+  "slots libres (octets)": ["Libre dans les conteneurs", "Place libre dans les fichiers déjà créés sur le disque (réutilisable sans agrandir)."],
+  "% occupé": ["Occupé (%)", ""],
+  "action": ["Action", ""],
+  "date": ["Date", ""],
+  "effacer et réutiliser": ["Effacer et réutiliser", "Supprime les seules données S3m de ce disque (jamais un formatage)."],
+  "modification": ["Modification", ""],
+  "nº": ["Nº", ""],
+  "retenus": ["Retenus", ""],
+  "supprimés": ["Supprimés", ""],
+  "déjà présents": ["Déjà présents", ""],
+  "testés": ["Testés", ""],
+
+  // ---- Stockage et protection
+  "dispersion": ["Dispersion", "Calcul de la parité et placement chez les partenaires."],
+  "dernier cycle": ["Dernier cycle", ""],
+  "blocs en attente": ["Blocs en attente", "Blocs reçus pas encore protégés par de la parité."],
+  "stripes": ["Groupes de blocs", ""],
+  "stripes dispersés": ["Groupes protégés", "Groupes de blocs dont la parité est placée chez les partenaires."],
+  "stripes d'index": ["Groupes d'index", ""],
+  "fragments placés": ["Fragments placés", ""],
+  "en attente de partenaires": ["En attente de partenaires", "Pas assez de partenaires pour placer la parité."],
+  "partenaires requis par stripe": ["Partenaires requis par groupe", ""],
+  "coef": ["Coefficient de parité", ""],
+  "contrôles et réparation": ["Contrôles et réparation", "Vérification des partenaires et des blocs locaux, réparation automatique."],
+  "challenges réussis": ["Contrôles réussis", ""],
+  "challenges sans réponse": ["Contrôles sans réponse", ""],
+  "challengés": ["Contrôlés", ""],
+  "réussis": ["Réussis", ""],
+  "sans réponse": ["Sans réponse", ""],
+  "dernier scrubbing": ["Dernière vérification des blocs", "Relecture complète des blocs locaux pour détecter la corruption."],
+  "blocs locaux réparés": ["Blocs locaux réparés", ""],
+  "blocs reconstruits": ["Blocs reconstruits", ""],
+  "fragments replacés": ["Fragments replacés", ""],
+  "fragments libérés": ["Fragments libérés", ""],
+  "fragments à purger": ["Fragments à purger", ""],
+  "purge à venir": ["Purge à venir", ""],
+  "purge échue": ["Purge échue", ""],
+  "dernière analyse de volatilité": ["Dernière analyse de disponibilité", ""],
+  "snapshot du nœud": ["Sauvegarde du Nœud", "Sauvegarde chiffrée de l'état du Nœud chez ses partenaires, restaurable avec sa phrase de récupération."],
+  "dernier snapshot": ["Dernière sauvegarde", ""],
+  "publié dans l'entrée Node": ["Publiée dans l'annuaire", ""],
+  "restauration": ["Restauration", ""],
+  "restauration au démarrage": ["Restauration au démarrage", ""],
+
+  // ---- Espace de secours (Nœud)
+  "espace de secours": ["Espace de secours", "Place réservée à d'autres utilisateurs dont le Nœud est momentanément injoignable."],
+  "utilisateurs accueillis": ["Utilisateurs accueillis", "En cours / au plus."],
+  "utilisateurs accueillis au plus": ["Utilisateurs accueillis au plus", "0 pour ne rien accueillir."],
+  "espace par utilisateur (Gio)": ["Espace par utilisateur (Gio)", ""],
+  "espace réservé (octets)": ["Espace réservé", "Utilisateurs au plus × espace par utilisateur."],
+  "espace occupé (octets)": ["Espace occupé", ""],
+  "plafond par utilisateur (octets)": ["Plafond par utilisateur", ""],
+  "déposants": ["Utilisateurs accueillis", ""],
+  "déposant": ["Clé de secours", "Identifie l'utilisateur accueilli sans révéler son identité."],
+  "dépôts oubliés purgés": ["Dépôts oubliés supprimés", "Dépôts jamais libérés, supprimés au bout de 6 mois."],
+  "retour de ce Nœud : dernier contrôle": ["Retour de ce Nœud : dernier contrôle", "Recherche des fichiers déposés ailleurs par vos utilisateurs pendant une absence de ce Nœud."],
+  "retour de ce Nœud : bilan": ["Retour de ce Nœud : bilan", ""],
+  "entrées à intégrer": ["Dépôts à récupérer", ""],
+  "blocs intégrés": ["Blocs récupérés", ""],
+  "blocs refusés (quota)": ["Blocs refusés (quota)", ""],
+  "blocs introuvables (nouvel essai)": ["Blocs introuvables", "Nouvel essai automatique plus tard."],
+
+  // ---- Réseau
+  "traversée de NAT": ["Accès depuis Internet", "Comment les autres Nœuds joignent celui-ci malgré la box."],
+  "joignabilité": ["Joignabilité", "Public : joignable directement ; derrière un NAT : via la box ou un relais."],
+  "box (UPnP)": ["Box (UPnP)", "Ouverture automatique du port sur la box."],
+  "adresse publique de la box": ["Adresse publique de la box", "Adresse Internet de votre box ; sert aussi à placer sur la carte les appareils du réseau local."],
+  "adresses externes confirmées": ["Adresses directes", "Adresses Internet où ce Nœud est joignable directement."],
+  "adresses via relais": ["Adresses via relais", "Adresses passant par un autre Nœud, quand l'accès direct est impossible."],
+  "perçages réussis": ["Connexions directes établies", "Connexions directes obtenues malgré le NAT (perçage)."],
+  "perçages échoués": ["Connexions directes échouées", ""],
+  "circuits relayés pour d'autres": ["Relais rendus", "Connexions relayées pour d'autres Nœuds."],
+  "écoute": ["Écoute", "Adresses locales où le Nœud attend les connexions."],
+  "adresse annoncée": ["Adresse annoncée", ""],
+  "adresses publiées": ["Adresses publiées", ""],
+  "annuaire (entrée Node)": ["Annuaire (entrée du Nœud)", "Entrée de ce Nœud dans l'annuaire distribué : permet aux autres de le trouver."],
+  "dernière publication": ["Dernière publication", ""],
+  "publications": ["Publications", ""],
+  "prochaine republication": ["Prochaine republication", ""],
+  "DHT": ["Annuaire (DHT)", ""],
+  "échange de blocs": ["Échange de blocs", ""],
+  "republication DHT": ["Republication dans l'annuaire", "Les entrées de l'annuaire expirent : elles doivent être republiées au moins tous les 30 jours."],
+  "taux de republication (%)": ["Taux de republication (%)", "Part des entrées republiées dans le délai."],
+  "entrées gérées": ["Entrées gérées", ""],
+  "à jour": ["À jour", ""],
+  "à republier": ["À republier", ""],
+  "en retard ou jamais publiées": ["En retard ou jamais publiées", ""],
+  "entrée": ["Entrée", ""],
+  "géolocalisation": ["Géolocalisation", "Base locale qui situe les adresses IP sur la carte (DB-IP, CC BY 4.0)."],
+  "dernière mise à jour": ["Dernière mise à jour", ""],
+  "active": ["Active", ""],
+  "activé": ["Activé", ""],
+  "activée": ["Activée", ""],
+
+  // ---- Administration, configuration, diagnostic
+  "administration à distance": ["Administration à distance", "Accès au tableau de bord de ce Nœud depuis le connecteur, protégé par un code 2FA."],
+  "QR code 2FA": ["QR code 2FA", "À scanner avec votre application d'authentification."],
+  "série du 2FA": ["Série du 2FA", "Augmente à chaque régénération du 2FA."],
+  "clé": ["Clé", ""],
+  "paramètres": ["Paramètres", ""],
+  "en attente de redémarrage": ["En attente de redémarrage", "Réglages enregistrés qui s'appliqueront au prochain démarrage."],
+  "migration": ["Migration", "Transfert vers un nouveau Nœud après une perte ou une compromission."],
+  "anciens node_id couverts": ["Anciens identifiants couverts", ""],
+  "délégations reçues": ["Délégations reçues", ""],
+  "pointeurs de migration connus": ["Pointeurs de migration connus", ""],
+  "événements récents": ["Événements récents", ""],
+  "instant": ["Instant", ""],
+  "heure (s)": ["Heure", ""],
+};
+
+// Texte affiché et infobulle d'une clé.
+function lab(k) {
+  const e = LABELS[k];
+  if (e) return { text: e[0], tip: e[1] || "" };
+  const s = String(k).replace(/\s*\(octets\)$/i, "");
+  return { text: s.charAt(0).toUpperCase() + s.slice(1), tip: "" };
+}
+
+// Élément portant un libellé, avec son infobulle (marquée « ⓘ »).
+function labelEl(tag, k, cls, extraTip) {
+  const { text, tip } = lab(k);
+  const e = el(tag, text, cls);
+  const t = extraTip || tip;
+  if (t) {
+    e.title = t;
+    e.appendChild(el("span", " ⓘ", "tip"));
+  }
+  return e;
+}
+
 // ---------------------------------------------------------------- messages
 
 function toast(message, kind = "ok", href) {
@@ -77,11 +363,17 @@ async function runAction(nom, body, button, label) {
 
 function cell(v) {
   if (v === null || v === undefined) return "—";
-  if (v === true) return "oui";
-  if (v === false) return "non";
-  if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) return v.length ? v.join("\n") : "aucun";
+  if (v === true) return "Oui";
+  if (v === false) return "Non";
+  if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) return v.length ? v.join("\n") : "Aucun";
   if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
+  return cap(String(v));
+}
+
+// Texte du moteur : première lettre en majuscule (sauf identifiants hexadécimaux).
+function cap(s) {
+  if (/^[0-9a-f]{8,}/.test(s) || !/^[a-zàâçéèêëîïôûùüÿœ]/.test(s)) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // Valeur lisible selon son libellé : tailles en octets, instants Unix.
@@ -136,7 +428,7 @@ const tableState = {};
 
 function csvOf(cols, rows) {
   const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
-  return [cols.map(q).join(";"), ...rows.map((o) => cols.map((c) => q(fmt(c, o[c]))).join(";"))].join("\r\n");
+  return [cols.map((c) => q(lab(c).text)).join(";"), ...rows.map((o) => cols.map((c) => q(fmt(c, o[c]))).join(";"))].join("\r\n");
 }
 
 function download(name, text) {
@@ -151,7 +443,7 @@ function download(name, text) {
 
 function render(value, key) {
   if (Array.isArray(value)) {
-    if (value.length === 0) return el("p", "aucun", "empty");
+    if (value.length === 0) return el("p", "Aucun", "empty");
     if (typeof value[0] !== "object" || value[0] === null) {
       const ul = el("ul");
       value.forEach((v) => ul.appendChild(el("li", cell(v))));
@@ -184,7 +476,7 @@ function render(value, key) {
         cols.forEach((c) => {
           const text = fmt(c, o[c]);
           // Valeur longue (chemin, identifiant) : largeur minimale lisible.
-          r.appendChild(el("td", text, text.length > 40 ? "long" : undefined));
+          r.appendChild(el("td", text, text.length > 40 ? "long" : text.length <= 16 ? "short" : undefined));
         });
         if (withActions) r.appendChild(rowActions(o["_actions"]));
       });
@@ -204,16 +496,22 @@ function render(value, key) {
         foot.append(csv);
       }
     };
+    // En-tête : libellé, flèche de tri, infobulle (explication puis « cliquer pour trier »).
+    const headText = (h) => {
+      const c = h.dataset.col;
+      h.textContent = lab(c).text + (st.sortCol === c ? (st.asc ? " ▲" : " ▼") : "");
+      if (lab(c).tip) h.appendChild(el("span", " ⓘ", "tip"));
+    };
     cols.forEach((c) => {
-      const th = el("th", c + (st.sortCol === c ? (st.asc ? " ▲" : " ▼") : ""));
-      th.title = "trier";
+      const th = el("th");
+      th.title = (lab(c).tip ? lab(c).tip + "\n" : "") + "Cliquer pour trier";
       th.style.cursor = "pointer";
       th.dataset.col = c;
+      headText(th);
       th.addEventListener("click", () => {
         st.asc = st.sortCol === c ? !st.asc : true;
         st.sortCol = c;
-        head.querySelectorAll("th[data-col]").forEach((h) => (h.textContent = h.dataset.col));
-        th.textContent = c + (st.asc ? " ▲" : " ▼");
+        head.querySelectorAll("th[data-col]").forEach(headText);
         fill();
       });
       head.appendChild(th);
@@ -227,7 +525,7 @@ function render(value, key) {
     const t = el("table", undefined, "kv");
     Object.entries(value).forEach(([k, v]) => {
       const r = t.insertRow();
-      r.appendChild(el("th", k));
+      r.appendChild(labelEl("th", k));
       const td = el("td");
       td.appendChild(valueNode(v, k));
       r.appendChild(td);
@@ -251,18 +549,21 @@ function actionForm(a) {
     const i = el("input");
     i.name = name;
     i.autocomplete = "off";
-    const text = labels[name] || name;
+    const text = labels[name] ? labels[name].charAt(0).toUpperCase() + labels[name].slice(1) : lab(name).text;
+    const tip = help[name] || lab(name).tip;
     if (types[name] === "bool") {
       i.type = "checkbox";
       i.checked = values[name] === true;
       l.classList.add("check");
       l.append(i, el("span", text));
+      if (tip) l.lastChild.appendChild(el("span", " ⓘ", "tip"));
     } else {
       if (types[name] === "number") i.type = "number";
       if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
       l.append(el("span", text), i);
+      if (tip) l.firstChild.appendChild(el("span", " ⓘ", "tip"));
     }
-    if (help[name]) l.title = help[name];
+    if (tip) l.title = tip;
     f.appendChild(l);
     return i;
   });
@@ -428,7 +729,7 @@ function show(status) {
   p.sections.forEach((k) => {
     if (!(k in status)) return;
     const s = el("section");
-    s.appendChild(el("h2", k));
+    s.appendChild(labelEl("h2", k));
     s.appendChild(render(status[k], k));
     frag.appendChild(s);
   });

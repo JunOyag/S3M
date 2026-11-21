@@ -122,15 +122,16 @@ fn free_letters() -> Vec<String> {
         .collect()
 }
 
-/// Change la lettre du lecteur dans le fichier de configuration ; S3m
-/// redémarre pour remonter le lecteur (modifications en attente conservées).
+/// Change la lettre du lecteur : démontage, montage sur la nouvelle lettre
+/// (retour à l'ancienne en cas d'échec), puis enregistrement dans le
+/// fichier de configuration. Les modifications en attente sont conservées.
 fn set_mount_point(sh: &Shared, v: &Value) -> Result<Value, String> {
     let raw = v
         .get("lettre du lecteur")
         .and_then(|x| x.as_str())
         .ok_or("champ « lettre du lecteur » manquant")?;
     let letter = parse_drive_letter(raw)?;
-    if sh.config.mount_point.as_deref() == Some(letter.as_str()) {
+    if sh.mount_point().as_deref() == Some(letter.as_str()) {
         return Ok(json!({ "ok": true, "message": format!("Le lecteur est déjà {letter}") }));
     }
     if Path::new(&format!("{letter}\\")).exists() {
@@ -141,6 +142,19 @@ fn set_mount_point(sh: &Shared, v: &Value) -> Result<Value, String> {
         .source
         .clone()
         .ok_or("fichier de configuration inconnu")?;
+    let remount = sh.remount.lock().unwrap().clone();
+    let live = match remount {
+        Some(tx) => {
+            let (rtx, rrx) = std::sync::mpsc::channel();
+            tx.send((letter.clone(), rtx))
+                .map_err(|_| "lecteur indisponible")?;
+            rrx.recv_timeout(Duration::from_secs(30))
+                .map_err(|_| "le remontage du lecteur ne répond pas")??;
+            true
+        }
+        None => false,
+    };
+    *sh.mount_point.lock().unwrap() = Some(letter.clone());
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     raw["mount_point"] = json!(letter);
@@ -151,9 +165,11 @@ fn set_mount_point(sh: &Shared, v: &Value) -> Result<Value, String> {
     )
     .map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-    sh.restart.store(true, std::sync::atomic::Ordering::SeqCst);
-    Ok(json!({ "ok": true,
-        "message": format!("S3m redémarre et monte le lecteur sur {letter} (modifications en attente conservées)…") }))
+    Ok(json!({ "ok": true, "message": if live {
+        format!("Lecteur déplacé sur {letter}")
+    } else {
+        format!("Lettre {letter} enregistrée : prise en compte au prochain démarrage")
+    } }))
 }
 
 fn default_n_secours() -> usize {
@@ -379,6 +395,9 @@ pub struct Health {
     pub incidents: Vec<String>,
 }
 
+/// Demande de remontage du lecteur : `(lettre, réponse)`.
+pub type RemountTx = std::sync::mpsc::Sender<(String, std::sync::mpsc::Sender<Result<(), String>>)>;
+
 /// Contexte partagé par le dashboard et la surveillance.
 pub struct Shared {
     pub config: Config,
@@ -386,8 +405,10 @@ pub struct Shared {
     pub last_lan_search: Mutex<Option<u64>>,
     /// « Changer de Nœud » demandé (l'application redémarre sur l'assistant).
     pub change_node: std::sync::atomic::AtomicBool,
-    /// Redémarrage demandé (nouvelle lettre de lecteur).
-    pub restart: std::sync::atomic::AtomicBool,
+    /// Lettre courante du lecteur.
+    pub mount_point: Mutex<Option<String>>,
+    /// Remontage du lecteur sur une autre lettre : `(lettre, réponse)`.
+    pub remount: Mutex<Option<RemountTx>>,
     pub pub_user: [u8; 32],
     pub session: NodeSession,
     pub keeper: tokio::sync::Mutex<GrantKeeper>,
@@ -536,14 +557,14 @@ fn status_base(sh: &Shared) -> Value {
         "configuration": {
             "Q_max (octets)": sh.config.q_max_bytes,
             "intervalle de surveillance (s)": sh.config.watch_interval_s,
-            "lecteur monté": sh.config.mount_point,
+            "lecteur monté": sh.mount_point(),
         },
         "écriture d'urgence": emergency_status(sh, now),
         "actions": [
             { "nom": "sync_now", "libellé": "Synchroniser maintenant", "champs": [] },
             { "nom": "set_mount_point", "titre": "Lettre du lecteur", "libellé": "Changer",
               "champs": ["lettre du lecteur"],
-              "valeurs": { "lettre du lecteur": sh.config.mount_point },
+              "valeurs": { "lettre du lecteur": sh.mount_point() },
               "aide": { "lettre du lecteur": format!("Lettres libres : {}. S3m redémarre ; les modifications en attente sont conservées.", free_letters().join(", ")) } },
             { "nom": "admin_node", "titre": "Administrer mon Nœud à distance",
               "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration"],
@@ -643,7 +664,7 @@ fn drive_status(sh: &Shared) -> Value {
         None => (None, None),
     };
     json!({
-        "point de montage": sh.config.mount_point,
+        "point de montage": sh.mount_point(),
         "monté": st.mounted,
         "erreur de montage": st.mount_error,
         "modifications en attente": pending,
@@ -868,7 +889,7 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         attached_quota: a.attached_quota,
         attach_error: a.last_error,
         mounted: ds.mounted,
-        mount_point: sh.config.mount_point.clone(),
+        mount_point: sh.mount_point(),
     }
 }
 
@@ -1169,7 +1190,8 @@ pub async fn start(
         emergency: Mutex::new(load_emergency(&config)),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
-        restart: Default::default(),
+        mount_point: Mutex::new(config.mount_point.clone()),
+        remount: Mutex::new(None),
         priv_user,
         pub_node,
         salt: salt.clone(),
@@ -1253,29 +1275,55 @@ pub async fn start(
 /// l'hôte WinFsp vivant.
 #[cfg(all(windows, feature = "mount"))]
 fn mount_drive(sh: &Arc<Shared>) {
-    let (Some(drive), Some(point)) = (sh.drive.clone(), sh.config.mount_point.clone()) else {
+    let (Some(drive), Some(point)) = (sh.drive.clone(), sh.mount_point()) else {
         return;
     };
     let sched = sh.scheduler.clone();
     let clock = sh.clock.clone();
     let sh2 = sh.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    *sh.remount.lock().unwrap() = Some(tx);
     std::thread::spawn(move || {
         let session = sh2.session.clone();
-        let fs = crate::winfsp_backend::DriveFs {
-            drive,
-            on_write: Arc::new(move |path, size| {
-                sched.lock().unwrap().on_write(path, size, clock());
-            }),
-            space: Arc::new(move || session.space()),
+        let on_write: crate::winfsp_backend::WriteHook = Arc::new(move |path, size| {
+            sched.lock().unwrap().on_write(path, size, clock());
+        });
+        let mount = |letter: &str| {
+            let session = session.clone();
+            let fs = crate::winfsp_backend::DriveFs {
+                drive: drive.clone(),
+                on_write: on_write.clone(),
+                space: Arc::new(move || session.space()),
+            };
+            let r = crate::winfsp_backend::mount(fs, letter);
+            let mut st = sh2.drive_status.lock().unwrap();
+            st.mounted = r.is_ok();
+            st.mount_error = r.as_ref().err().cloned();
+            r.ok()
         };
-        match crate::winfsp_backend::mount(fs, &point) {
-            Ok(_host) => {
-                sh2.drive_status.lock().unwrap().mounted = true;
-                loop {
-                    std::thread::park();
+        let mut point = point;
+        let mut host = mount(&point);
+        // Le fil garde l'hôte WinFsp vivant et traite les changements de lettre.
+        while let Ok((letter, reply)) = rx.recv() {
+            if let Some(mut h) = host.take() {
+                h.stop();
+                h.unmount();
+            }
+            match mount(&letter) {
+                Some(h) => {
+                    host = Some(h);
+                    point = letter;
+                    let _ = reply.send(Ok(()));
+                }
+                None => {
+                    let e = sh2.drive_status.lock().unwrap().mount_error.clone();
+                    host = mount(&point);
+                    let _ = reply.send(Err(format!(
+                        "montage sur {letter} impossible : {}",
+                        e.unwrap_or_default()
+                    )));
                 }
             }
-            Err(e) => sh2.drive_status.lock().unwrap().mount_error = Some(e),
         }
     });
 }
@@ -1309,6 +1357,13 @@ pub fn admin_node(node_addr: &str, v: &Value) -> Result<Value, String> {
 }
 
 // ------------------------------------------------- écriture d'urgence
+
+impl Shared {
+    /// Lettre courante du lecteur monté.
+    pub fn mount_point(&self) -> Option<String> {
+        self.mount_point.lock().unwrap().clone()
+    }
+}
 
 /// Un tour d'écriture d'urgence (`protocols.espace-secours`) : dépôt chez
 /// les partenaires de secours quand le Nœud est injoignable depuis
