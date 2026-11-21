@@ -96,14 +96,18 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
         call(&mut s, commit(0, 5)),
         Response::RootState {
             committed: true,
-            current_root: vec![5; 32]
+            current_root: vec![5; 32],
+            quota_bytes: 100,
+            used_bytes: 60,
         }
     );
     assert_eq!(
         call(&mut s, commit(0, 6)),
         Response::RootState {
             committed: false,
-            current_root: vec![5; 32]
+            current_root: vec![5; 32],
+            quota_bytes: 100,
+            used_bytes: 60,
         }
     );
     // Preuve reprise sur une autre connexion, ou absence d'identifiant.

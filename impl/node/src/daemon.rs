@@ -323,6 +323,9 @@ pub struct SavedState {
     /// `(user_id, ip)` de la dernière connexion.
     #[serde(default)]
     pub user_ips: Vec<(String, String)>,
+    /// Réserve de secours (limites et déposants accueillis).
+    #[serde(default)]
+    pub emergency: Option<crate::emergency::EmergencyReserve>,
 }
 
 impl SavedState {
@@ -380,6 +383,7 @@ impl SavedState {
                 v.sort();
                 v
             },
+            emergency: Some(s.emergency.clone()),
         }
     }
 
@@ -427,6 +431,9 @@ impl SavedState {
             .collect::<Result<_, _>>()?;
         if let Some(p) = self.attach_policy {
             s.attach_policy = p;
+        }
+        if let Some(e) = &self.emergency {
+            s.emergency = e.clone();
         }
         for u in &self.auto_attached {
             s.auto_attached.insert(unhex32(u)?);
@@ -518,6 +525,17 @@ pub struct GeoipState {
     pub last: Option<Option<String>>,
 }
 
+/// Espace de secours vu du dashboard (`protocols.espace-secours`).
+#[derive(Default)]
+pub struct EmergencyUi {
+    /// Dernière séquence d'entrée de secours entièrement intégrée, par Utilisateur.
+    pub seen: HashMap<[u8; 32], u64>,
+    /// Dernier tour d'intégration au retour : `(instant, bilan)`.
+    pub last: Option<(u64, crate::emergency::ReturnReport)>,
+    /// Dépôts oubliés purgés depuis le démarrage.
+    pub purged: usize,
+}
+
 /// Gestion des volumes vue du dashboard (`protocols.gestion-volumes`).
 #[derive(Default)]
 pub struct VolumesUi {
@@ -572,6 +590,7 @@ pub struct Shared {
     pub admin: Mutex<Option<crate::admin::AdminServer>>,
     /// Brouillon et suivi de la gestion des volumes.
     pub volumes_ui: Mutex<VolumesUi>,
+    pub emergency_ui: Mutex<EmergencyUi>,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
     pub dht_addr: Option<String>,
@@ -616,13 +635,15 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "actions": ["volume_draft_add", "volume_draft_edit", "volume_apply", "volume_draft_clear"] },
         { "id": "stockage", "titre": "Stockage et protection",
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
+        { "id": "secours", "titre": "Espace de secours",
+          "sections": ["espace de secours"], "actions": ["set_emergency_policy"] },
         { "id": "reseau", "titre": "Réseau",
           "sections": ["traversée de NAT", "annuaire (entrée Node)", "republication DHT", "géolocalisation"], "actions": ["geoip_update"] },
         { "id": "distance", "titre": "Administration à distance",
           "sections": ["administration à distance"], "actions": ["show_totp", "regenerate_totp"] },
         { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config"] },
         { "id": "diagnostic", "titre": "Diagnostic", "autres": true,
-          "sections": ["migration", "non suivi par cet exécutable"], "actions": [] }
+          "sections": ["migration"], "actions": [] }
     ]);
     v
 }
@@ -944,9 +965,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "délégations reçues": s.delegations.len(),
             "pointeurs de migration connus": s.successors.len(),
         },
-        "non suivi par cet exécutable": [
-            "espace de secours"
-        ],
+        "espace de secours": emergency_status(sh, &s),
         "actions": [
             { "nom": "attach_user", "titre": "Rattacher un utilisateur manuellement", "libellé": "Rattacher",
               "champs": ["user_id", "salt", "quota (Gio)"],
@@ -970,8 +989,53 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                            "quota par utilisateur (Gio)": s.attach_policy.quota_bytes as f64 / (1u64 << 30) as f64,
                            "max_users": s.attach_policy.max_users },
               "types": { "enabled": "bool", "quota par utilisateur (Gio)": "number", "max_users": "number" },
-              "aide": { "max_users": "Budget total réservé = quota par utilisateur × utilisateurs au plus" } }
+              "aide": { "max_users": "Budget total réservé = quota par utilisateur × utilisateurs au plus" } },
+            { "nom": "set_emergency_policy", "titre": "Accueil des utilisateurs en détresse",
+              "libellé": "Enregistrer",
+              "champs": ["utilisateurs accueillis au plus", "espace par utilisateur (Gio)"],
+              "valeurs": { "utilisateurs accueillis au plus": s.emergency.max_users,
+                           "espace par utilisateur (Gio)": s.emergency.per_depositor_bytes as f64 / (1u64 << 30) as f64 },
+              "types": { "utilisateurs accueillis au plus": "number", "espace par utilisateur (Gio)": "number" },
+              "aide": { "utilisateurs accueillis au plus": "U_backup : 0 pour ne rien accueillir",
+                        "espace par utilisateur (Gio)": "Espace réservé = utilisateurs au plus × espace par utilisateur" } }
         ]
+    })
+}
+
+/// Espace de secours : réserve pour tiers en détresse et intégration des
+/// dépôts faits pendant une absence de ce Nœud.
+fn emergency_status(sh: &Shared, s: &NodeService) -> Value {
+    let e = &s.emergency;
+    let rows: Vec<Value> = e
+        .depositors()
+        .map(|(k, d)| {
+            json!({ "déposant": k, "occupé (octets)": d.bytes,
+                    "dernier dépôt": if d.last_deposit == 0 { Value::Null } else { json!(d.last_deposit) } })
+        })
+        .collect();
+    let ui = sh.emergency_ui.lock().unwrap();
+    let pct = |a: u64, b: u64| {
+        if b == 0 {
+            0.0
+        } else {
+            (a as f64 * 1000.0 / b as f64).round() / 10.0
+        }
+    };
+    json!({
+        "utilisateurs accueillis": format!("{} / {}", e.users(), e.max_users),
+        "espace réservé (octets)": e.reserved_bytes,
+        "espace occupé (octets)": e.used_bytes(),
+        "% occupé": pct(e.used_bytes(), e.reserved_bytes),
+        "plafond par utilisateur (octets)": e.per_depositor_bytes,
+        "déposants": rows,
+        "dépôts oubliés purgés": ui.purged,
+        "retour de ce Nœud : dernier contrôle": ui.last.as_ref().map(|(t, _)| *t),
+        "retour de ce Nœud : bilan": ui.last.as_ref().map(|(_, r)| json!({
+            "entrées à intégrer": r.entries,
+            "blocs intégrés": r.integrated,
+            "blocs refusés (quota)": r.over_quota,
+            "blocs introuvables (nouvel essai)": r.missing,
+        })),
     })
 }
 
@@ -1300,6 +1364,14 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
                 .ok_or("utilisateur inconnu")?
                 .quota_bytes = q;
         }
+        "set_emergency_policy" => {
+            let users = number(&v, "utilisateurs accueillis au plus")
+                .unwrap_or(s.emergency.max_users as u64);
+            let per =
+                gib(&v, "espace par utilisateur (Gio)")?.unwrap_or(s.emergency.per_depositor_bytes);
+            let users = u32::try_from(users).map_err(|_| "nombre d'utilisateurs trop grand")?;
+            s.emergency.set_limits(users, per);
+        }
         "set_attach_policy" => {
             let yes = |x: &str| {
                 matches!(
@@ -1335,6 +1407,7 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         "attach_user" => "Utilisateur rattaché",
         "add_partner" => "Partenaire ajouté",
         "set_quota" => "Quota modifié",
+        "set_emergency_policy" => "Accueil des utilisateurs en détresse enregistré",
         _ => "Rattachement automatique enregistré",
     };
     Ok(json!({ "ok": true, "message": message }))
@@ -1404,6 +1477,7 @@ pub async fn start_with(
     let addrs = load_state(&state_path(&config))?
         .restore(&mut service)
         .map_err(DaemonError::Config)?;
+    service.rebuild_emergency(system_clock()());
     let service = Arc::new(Mutex::new(service));
     let fresh = !state_path(&config).exists() && !dispersal_path(&config).exists();
     let mut dispersal: DispersalState = match std::fs::read(dispersal_path(&config)) {
@@ -1504,6 +1578,7 @@ pub async fn start_with(
         admin_reveal_until: Mutex::new(None),
         admin: Mutex::new(None),
         volumes_ui: Mutex::new(VolumesUi::default()),
+        emergency_ui: Mutex::new(EmergencyUi::default()),
     });
     {
         // Réponses aux OwnershipQuery des partenaires (import d'un volume).
@@ -1689,6 +1764,18 @@ pub async fn start_with(
             if tick.is_multiple_of(2880) {
                 let now = clock();
                 sh.service.lock().unwrap().purge_silent_partners(now);
+            }
+            // Espace de secours, toutes les 5 minutes : purge des dépôts
+            // oubliés, intégration des blocs déposés pendant une absence.
+            if tick.is_multiple_of(10) {
+                let now = clock();
+                let purged = sh.service.lock().unwrap().purge_emergency(now);
+                let mut seen = std::mem::take(&mut sh.emergency_ui.lock().unwrap().seen);
+                let report = crate::emergency::integrate_returns(&fabric, &mut seen).await;
+                let mut ui = sh.emergency_ui.lock().unwrap();
+                ui.seen = seen;
+                ui.purged += purged;
+                ui.last = Some((now, report));
             }
             if let Err(e) = save(&sh) {
                 eprintln!("sauvegarde de l'état : {e}");

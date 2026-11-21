@@ -160,6 +160,10 @@ pub struct NodeService {
     /// Dernière adresse IP vue par Utilisateur (carte du dashboard).
     pub last_user_ip: HashMap<Id, String>,
     pub record_user_ips: bool,
+    /// Réserve de secours pour tiers en détresse (`protocols.espace-secours`).
+    pub emergency: crate::emergency::EmergencyReserve,
+    /// Identités VDF déjà vérifiées pour un dépôt d'urgence.
+    emergency_verified: std::collections::HashSet<Id>,
     limiter: RescueLimiter,
 }
 
@@ -207,6 +211,8 @@ impl NodeService {
             new_partners: Vec::new(),
             last_user_ip: HashMap::new(),
             record_user_ips: true,
+            emergency: Default::default(),
+            emergency_verified: Default::default(),
             limiter: RescueLimiter::default(),
         }
     }
@@ -274,24 +280,7 @@ impl NodeService {
             }
             Body::PutBlock { data } => {
                 let u = self.user(cred, from, local)?;
-                let hash = hash_sha256(&data);
-                if !self.store.contains(&hash) {
-                    let acc = self.users.get(&u).ok_or(Refusal::Unauthorized)?;
-                    let used = acc.used_bytes + data.len() as u64;
-                    if used > acc.quota_bytes {
-                        return Err(Refusal::QuotaExceeded);
-                    }
-                    self.store
-                        .put(Space::UserBlock, &u, &hash, &data)
-                        .map_err(store_refusal)?;
-                    if let Some(acc) = self.users.get_mut(&u) {
-                        acc.used_bytes = used;
-                    }
-                    self.dispersal_queue.push((u, hash));
-                } else if self.store.get(Space::UserBlock, &hash).map(|(o, _)| o) != Some(u) {
-                    return Err(Refusal::Unauthorized);
-                }
-                Ok(Response::Stored(hash.to_vec()))
+                Ok(Response::Stored(self.put_user_block(&u, &data)?.to_vec()))
             }
             Body::CommitRoot {
                 base_root,
@@ -308,6 +297,8 @@ impl NodeService {
                 Ok(Response::RootState {
                     committed,
                     current_root: acc.root.to_vec(),
+                    quota_bytes: acc.quota_bytes,
+                    used_bytes: acc.used_bytes,
                 })
             }
             Body::ReportIncident { hash } => {
@@ -501,7 +492,142 @@ impl NodeService {
                     quota_bytes: p.quota_bytes,
                 })
             }
+            Body::EmergencyPut { data } => {
+                let Some(Credential::Emergency {
+                    sig_pub_user,
+                    vdf_y,
+                    vdf_pi,
+                    emergency_pub,
+                    signature,
+                }) = cred
+                else {
+                    return Err(Refusal::Unauthorized);
+                };
+                let (identity, depositor) = (id32(sig_pub_user)?, id32(emergency_pub)?);
+                // Signature d'abord (aucun accès disque ni calcul VDF sinon).
+                if !verify_emergency_deposit(&identity, &depositor, from, local, signature) {
+                    return Err(Refusal::Unauthorized);
+                }
+                if !self.emergency_verified.contains(&identity) {
+                    let tagged = s3m_core::vdf::tagged_identity(0, &identity)
+                        .map_err(|_| Refusal::Unauthorized)?;
+                    let proof = s3m_core::vdf::VdfProof {
+                        y: vdf_y.clone(),
+                        pi: vdf_pi.clone(),
+                    };
+                    if !self.vdf.as_ref().is_some_and(|v| v(&tagged, &proof)) {
+                        return Err(Refusal::Unauthorized);
+                    }
+                    self.emergency_verified.insert(identity);
+                }
+                let hash = hash_sha256(&data);
+                if self.store.contains(&hash) {
+                    return match self.store.get(Space::Emergency, &hash) {
+                        Some((o, _)) if o == depositor => Ok(Response::Stored(hash.to_vec())),
+                        _ => Err(Refusal::Unauthorized),
+                    };
+                }
+                let size = data.len() as u64;
+                self.emergency
+                    .admit(depositor, &identity, size, now)
+                    .map_err(|_| Refusal::QuotaExceeded)?;
+                if let Err(e) = self.store.put(Space::Emergency, &depositor, &hash, &data) {
+                    self.emergency.freed(&depositor, size);
+                    return Err(store_refusal(e));
+                }
+                Ok(Response::Stored(hash.to_vec()))
+            }
+            Body::EmergencyGet {
+                emergency_pub,
+                hash,
+            } => {
+                let depositor = id32(&emergency_pub)?;
+                if !self.limiter.allow(&depositor, now) {
+                    return Err(Refusal::RateLimited);
+                }
+                match self.store.get(Space::Emergency, &id32(&hash)?) {
+                    Some((o, d)) if o == depositor => Ok(Response::BlockData(d)),
+                    _ => Err(Refusal::NotFound),
+                }
+            }
+            Body::EmergencyRelease {
+                emergency_pub,
+                timestamp,
+                hashes,
+                signature,
+            } => {
+                let depositor = id32(&emergency_pub)?;
+                if !hashes.len().is_multiple_of(32) || hashes.len() > 32 * MAX_RELEASE_HASHES {
+                    return Err(Refusal::Malformed);
+                }
+                if !verify_emergency_release(&depositor, timestamp, &hashes, &signature) {
+                    return Err(Refusal::Unauthorized);
+                }
+                if !self.emergency.check_release(&depositor, timestamp) {
+                    return Err(Refusal::Replayed);
+                }
+                let mut freed = 0;
+                for h in hashes.chunks(32) {
+                    let h: Id = h.try_into().expect("32 octets");
+                    let size = match self.store.get(Space::Emergency, &h) {
+                        Some((o, d)) if o == depositor => d.len() as u64,
+                        _ => continue,
+                    };
+                    if self.store.remove(Space::Emergency, &depositor, &h) {
+                        self.emergency.freed(&depositor, size);
+                        freed += 1;
+                    }
+                }
+                Ok(Response::Ack { freed })
+            }
         }
+    }
+
+    /// Range un bloc de données de l'Utilisateur `u` dans la limite de son
+    /// quota (`PutBlock`, intégration des blocs de secours) ; rend son hash.
+    pub fn put_user_block(&mut self, u: &Id, data: &[u8]) -> Result<Id, Refusal> {
+        let hash = hash_sha256(data);
+        if !self.store.contains(&hash) {
+            let acc = self.users.get(u).ok_or(Refusal::Unauthorized)?;
+            let used = acc.used_bytes + data.len() as u64;
+            if used > acc.quota_bytes {
+                return Err(Refusal::QuotaExceeded);
+            }
+            self.store
+                .put(Space::UserBlock, u, &hash, data)
+                .map_err(store_refusal)?;
+            if let Some(acc) = self.users.get_mut(u) {
+                acc.used_bytes = used;
+            }
+            self.dispersal_queue.push((*u, hash));
+        } else if self.store.get(Space::UserBlock, &hash).map(|(o, _)| o) != Some(*u) {
+            return Err(Refusal::Unauthorized);
+        }
+        Ok(hash)
+    }
+
+    /// Purge les dépôts de secours jamais libérés ; rend leur nombre.
+    pub fn purge_emergency(&mut self, now: u64) -> usize {
+        let expired = self.emergency.expired(now);
+        for d in &expired {
+            self.store.remove_owner(Space::Emergency, d);
+            self.emergency.release(d);
+        }
+        expired.len()
+    }
+
+    /// Recale la réserve de secours sur le stockage (démarrage).
+    pub fn rebuild_emergency(&mut self, now: u64) {
+        let stored: Vec<(Id, u64)> = self
+            .store
+            .owners(Space::Emergency)
+            .into_iter()
+            .map(|o| {
+                let n = self.store.hashes(Space::Emergency, &o).len() as u64;
+                (o, n * crate::BLOCK_SIZE as u64)
+            })
+            .collect();
+        self.emergency.rebuild(&stored, now);
     }
 
     /// Proposition de partenariat : solde accordé (0 = refus).

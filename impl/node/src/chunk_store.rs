@@ -16,6 +16,8 @@ pub enum Space {
     UserBlock,
     /// Fragment de parité d'un partenaire (propriétaire : `pub_node`).
     Fragment,
+    /// Dépôt d'urgence d'un tiers (propriétaire : sa clé de secours).
+    Emergency,
 }
 
 impl Space {
@@ -23,6 +25,7 @@ impl Space {
         match self {
             Space::UserBlock => OwnerType::AttachedUser,
             Space::Fragment => OwnerType::Partner,
+            Space::Emergency => OwnerType::EmergencyDepositor,
         }
     }
 }
