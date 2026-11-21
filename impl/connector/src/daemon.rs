@@ -217,6 +217,9 @@ fn save_emergency(sh: &Shared) {
     }
 }
 
+/// Relecture de l'entrée du Nœud (nom publié, clé d'annonce).
+pub const NODE_ENTRY_READ_S: u64 = 600;
+
 fn names_path(c: &Config) -> PathBuf {
     c.data_dir.join("names.json")
 }
@@ -498,6 +501,8 @@ pub struct Shared {
     /// : `names.json` existait, sinon les noms sont adoptés de l'entrée User.
     pub names: Mutex<crate::channel::Names>,
     pub names_known: std::sync::atomic::AtomicBool,
+    /// Dernière lecture de l'entrée du Nœud (0 : jamais).
+    pub node_entry_read_at: Mutex<u64>,
     priv_user: [u8; 32],
     pub_node: [u8; 32],
     salt: Vec<u8>,
@@ -673,8 +678,17 @@ async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
         !reachable || now >= c.alert_polled_at.saturating_add(ALERT_POLL_S)
     };
     let dht = sh.dht.get();
-    if let (true, Some(client)) = (poll_due, dht) {
-        // Entrée Node : clé d'annonce à épingler, nom publié par l'opérateur.
+    // Entrée Node, au démarrage puis toutes les 10 minutes : clé d'annonce
+    // à épingler, nom publié par l'opérateur.
+    let entry_due = {
+        let mut at = sh.node_entry_read_at.lock().unwrap();
+        let due = *at == 0 || now >= at.saturating_add(NODE_ENTRY_READ_S);
+        if due && dht.is_some() {
+            *at = now;
+        }
+        due
+    };
+    if let (true, Some(client)) = (entry_due, dht) {
         if let Ok(Some(env)) = client.get(sh.pub_node.to_vec()).await {
             let ann = s3m_protocol::entries::node_entry_announce(&env);
             sh.channel.lock().unwrap().pin(&sh.pub_node, ann);
@@ -689,6 +703,8 @@ async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
                 let _ = save_names(sh);
             }
         }
+    }
+    if let (true, Some(client)) = (poll_due, dht) {
         let announce = sh.channel.lock().unwrap().announce;
         if let Some(announce) = announce {
             if let Ok(Some(env)) = client.get(alert_key(&announce).to_vec()).await {
@@ -1441,6 +1457,7 @@ pub async fn start(
         channel: Mutex::new(load_channel(&config)),
         names_known: load_names(&config).is_some().into(),
         names: Mutex::new(load_names(&config).unwrap_or_default()),
+        node_entry_read_at: Mutex::new(0),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
         mount_point: Mutex::new(config.mount_point.clone()),
