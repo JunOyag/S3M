@@ -79,6 +79,7 @@ fn user_envelope(attachments: &[([u8; 32], u64)], fs_root: &[u8], ts: u64) -> Ve
             attachments: Some(recs),
             master_key_chain: None,
             schema_version: 1,
+            pseudo: None,
         },
     );
     fbb.finish_minimal(p);
@@ -160,6 +161,7 @@ fn node_envelope(seed: &[u8; 32], port: u16, to: Option<[u8; 32]>) -> Vec<u8> {
             snapshot_ciphertext: None,
             addrs: None,
             pub_node_announce: None,
+            name: None,
         },
     );
     fb::finish_node_entry_buffer(&mut fbb, e);

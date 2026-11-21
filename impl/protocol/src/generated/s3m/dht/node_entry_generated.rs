@@ -35,6 +35,7 @@ impl<'a> NodeEntry<'a> {
   pub const VT_SNAPSHOT_CIPHERTEXT: flatbuffers::VOffsetT = 16;
   pub const VT_ADDRS: flatbuffers::VOffsetT = 18;
   pub const VT_PUB_NODE_ANNOUNCE: flatbuffers::VOffsetT = 20;
+  pub const VT_NAME: flatbuffers::VOffsetT = 22;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -47,6 +48,7 @@ impl<'a> NodeEntry<'a> {
   ) -> flatbuffers::WIPOffset<NodeEntry<'bldr>> {
     let mut builder = NodeEntryBuilder::new(_fbb);
     builder.add_timestamp(args.timestamp);
+    if let Some(x) = args.name { builder.add_name(x); }
     if let Some(x) = args.pub_node_announce { builder.add_pub_node_announce(x); }
     if let Some(x) = args.addrs { builder.add_addrs(x); }
     if let Some(x) = args.snapshot_ciphertext { builder.add_snapshot_ciphertext(x); }
@@ -122,6 +124,13 @@ impl<'a> NodeEntry<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(NodeEntry::VT_PUB_NODE_ANNOUNCE, None)}
   }
+  #[inline]
+  pub fn name(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(NodeEntry::VT_NAME, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for NodeEntry<'_> {
@@ -140,6 +149,7 @@ impl flatbuffers::Verifiable for NodeEntry<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("snapshot_ciphertext", Self::VT_SNAPSHOT_CIPHERTEXT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&'_ str>>>>("addrs", Self::VT_ADDRS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("pub_node_announce", Self::VT_PUB_NODE_ANNOUNCE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("name", Self::VT_NAME, false)?
      .finish();
     Ok(())
   }
@@ -154,6 +164,7 @@ pub struct NodeEntryArgs<'a> {
     pub snapshot_ciphertext: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub addrs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
     pub pub_node_announce: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub name: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for NodeEntryArgs<'a> {
   #[inline]
@@ -168,6 +179,7 @@ impl<'a> Default for NodeEntryArgs<'a> {
       snapshot_ciphertext: None,
       addrs: None,
       pub_node_announce: None,
+      name: None,
     }
   }
 }
@@ -214,6 +226,10 @@ impl<'a: 'b, 'b> NodeEntryBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeEntry::VT_PUB_NODE_ANNOUNCE, pub_node_announce);
   }
   #[inline]
+  pub fn add_name(&mut self, name: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeEntry::VT_NAME, name);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> NodeEntryBuilder<'a, 'b> {
     let start = _fbb.start_table();
     NodeEntryBuilder {
@@ -240,6 +256,7 @@ impl core::fmt::Debug for NodeEntry<'_> {
       ds.field("snapshot_ciphertext", &self.snapshot_ciphertext());
       ds.field("addrs", &self.addrs());
       ds.field("pub_node_announce", &self.pub_node_announce());
+      ds.field("name", &self.name());
       ds.finish()
   }
 }

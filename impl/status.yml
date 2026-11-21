@@ -1348,7 +1348,13 @@ entries:
     notes: ""
   deploiement.pseudos:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - pseudo::fingerprint_is_12_base32_chars_in_three_groups_and_key_dependent
+      - pseudo::names_are_cleaned_bounded_and_never_shown_without_fingerprint
+      - entries::user_entry_is_accepted_and_opens_with_the_user_key_only
+      - entries::node_entry_is_accepted_with_proof_on_tagged_pub_node
+      - pseudos::node_name_and_user_labels_survive_a_restart
+      - pseudos::local_node_label_wins_over_the_published_name_and_fingerprint_always_shows
+    notes: "Livré le 2026-11-21 : empreinte et nettoyage (protocol/pseudo.rs), nom du Nœud publié, étiquettes locales des utilisateurs, noms des partenaires lus dans leur entrée (dashboard et carte), pseudo et nom local du Nœud du Connecteur publiés dans l'entrée User chiffrée et repris sur un nouvel appareil. Non testé en conditions réelles."

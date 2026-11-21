@@ -82,7 +82,9 @@ async fn user_entry_is_published_on_new_roots_and_restores_a_new_device() {
             salt: vec![7; 16],
             timestamp: 5,
             inactivity_detected_at: 0,
+            ..Default::default()
         }],
+        ..Default::default()
     };
     let proof = VdfProof {
         y: vec![1; 100],

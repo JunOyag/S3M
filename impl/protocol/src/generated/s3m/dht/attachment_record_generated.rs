@@ -32,6 +32,7 @@ impl<'a> AttachmentRecord<'a> {
   pub const VT_KEY_ALGORITHM: flatbuffers::VOffsetT = 12;
   pub const VT_KEM_CIPHERTEXT: flatbuffers::VOffsetT = 14;
   pub const VT_WRAPPED_SHARED_SECRET: flatbuffers::VOffsetT = 16;
+  pub const VT_NODE_LABEL: flatbuffers::VOffsetT = 18;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -45,6 +46,7 @@ impl<'a> AttachmentRecord<'a> {
     let mut builder = AttachmentRecordBuilder::new(_fbb);
     builder.add_inactivity_detected_at(args.inactivity_detected_at);
     builder.add_timestamp(args.timestamp);
+    if let Some(x) = args.node_label { builder.add_node_label(x); }
     if let Some(x) = args.wrapped_shared_secret { builder.add_wrapped_shared_secret(x); }
     if let Some(x) = args.kem_ciphertext { builder.add_kem_ciphertext(x); }
     if let Some(x) = args.salt { builder.add_salt(x); }
@@ -103,6 +105,13 @@ impl<'a> AttachmentRecord<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(AttachmentRecord::VT_WRAPPED_SHARED_SECRET, None)}
   }
+  #[inline]
+  pub fn node_label(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(AttachmentRecord::VT_NODE_LABEL, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for AttachmentRecord<'_> {
@@ -119,6 +128,7 @@ impl flatbuffers::Verifiable for AttachmentRecord<'_> {
      .visit_field::<u8>("key_algorithm", Self::VT_KEY_ALGORITHM, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("kem_ciphertext", Self::VT_KEM_CIPHERTEXT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("wrapped_shared_secret", Self::VT_WRAPPED_SHARED_SECRET, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("node_label", Self::VT_NODE_LABEL, false)?
      .finish();
     Ok(())
   }
@@ -131,6 +141,7 @@ pub struct AttachmentRecordArgs<'a> {
     pub key_algorithm: u8,
     pub kem_ciphertext: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub wrapped_shared_secret: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub node_label: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for AttachmentRecordArgs<'a> {
   #[inline]
@@ -143,6 +154,7 @@ impl<'a> Default for AttachmentRecordArgs<'a> {
       key_algorithm: 0,
       kem_ciphertext: None,
       wrapped_shared_secret: None,
+      node_label: None,
     }
   }
 }
@@ -181,6 +193,10 @@ impl<'a: 'b, 'b> AttachmentRecordBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(AttachmentRecord::VT_WRAPPED_SHARED_SECRET, wrapped_shared_secret);
   }
   #[inline]
+  pub fn add_node_label(&mut self, node_label: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(AttachmentRecord::VT_NODE_LABEL, node_label);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> AttachmentRecordBuilder<'a, 'b> {
     let start = _fbb.start_table();
     AttachmentRecordBuilder {
@@ -205,6 +221,7 @@ impl core::fmt::Debug for AttachmentRecord<'_> {
       ds.field("key_algorithm", &self.key_algorithm());
       ds.field("kem_ciphertext", &self.kem_ciphertext());
       ds.field("wrapped_shared_secret", &self.wrapped_shared_secret());
+      ds.field("node_label", &self.node_label());
       ds.finish()
   }
 }

@@ -164,6 +164,12 @@ pub struct NodeService {
     pub emergency: crate::emergency::EmergencyReserve,
     /// Canal Nœud ↔ Utilisateurs (`protocols.canal-noeud`).
     pub channel: crate::channel::Channel,
+    /// Nom publié du Nœud et étiquettes locales des Utilisateurs
+    /// (`deploiement.pseudos`).
+    pub name: Option<String>,
+    pub user_labels: HashMap<Id, String>,
+    /// Noms lus dans les entrées Node des partenaires.
+    pub partner_names: HashMap<Id, String>,
     /// Identités VDF déjà vérifiées pour un dépôt d'urgence.
     emergency_verified: std::collections::HashSet<Id>,
     limiter: RescueLimiter,
@@ -215,6 +221,9 @@ impl NodeService {
             record_user_ips: true,
             emergency: Default::default(),
             channel: Default::default(),
+            name: None,
+            user_labels: HashMap::new(),
+            partner_names: HashMap::new(),
             emergency_verified: Default::default(),
             limiter: RescueLimiter::default(),
         }
@@ -799,11 +808,16 @@ pub async fn refresh_successors(
         s.store.owners(Space::Fragment)
     };
     for owner in owners {
-        let next = dht
-            .get(owner.to_vec())
-            .await?
-            .and_then(|env| successor_from_node_entry(&env, &owner));
+        let env = dht.get(owner.to_vec()).await?;
+        let name = env
+            .as_deref()
+            .and_then(s3m_protocol::entries::node_entry_name);
+        let next = env.and_then(|env| successor_from_node_entry(&env, &owner));
         let mut s = service.lock().unwrap();
+        match name {
+            Some(n) => s.partner_names.insert(owner, n),
+            None => s.partner_names.remove(&owner),
+        };
         match next {
             Some(n) => s.successors.insert(owner, n),
             None => s.successors.remove(&owner),

@@ -78,6 +78,7 @@ fn node_entry_roundtrips_with_vdf_proof_and_migration_pointer() {
             snapshot_ciphertext: None,
             addrs: None,
             pub_node_announce: None,
+            name: None,
         },
     );
     dht::finish_node_entry_buffer(&mut fbb, root);

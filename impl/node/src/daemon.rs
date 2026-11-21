@@ -329,6 +329,12 @@ pub struct SavedState {
     /// Canal Nœud ↔ Utilisateurs (clé d'annonce, messages).
     #[serde(default)]
     pub channel: Option<crate::channel::Channel>,
+    /// Nom publié du Nœud (`deploiement.pseudos`).
+    #[serde(default)]
+    pub name: Option<String>,
+    /// `(user_id, étiquette)` locales.
+    #[serde(default)]
+    pub user_labels: Vec<(String, String)>,
 }
 
 impl SavedState {
@@ -388,6 +394,8 @@ impl SavedState {
             },
             emergency: Some(s.emergency.clone()),
             channel: Some(s.channel.clone()),
+            name: s.name.clone(),
+            user_labels: sorted_pairs(&s.user_labels),
         }
     }
 
@@ -442,6 +450,10 @@ impl SavedState {
         if let Some(c) = &self.channel {
             s.channel = c.clone();
         }
+        s.name = self.name.clone();
+        for (u, l) in &self.user_labels {
+            s.user_labels.insert(unhex32(u)?, l.clone());
+        }
         for u in &self.auto_attached {
             s.auto_attached.insert(unhex32(u)?);
         }
@@ -464,6 +476,12 @@ impl SavedState {
             .collect::<Result<_, _>>()?;
         Ok(addrs)
     }
+}
+
+fn sorted_pairs(m: &HashMap<[u8; 32], String>) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = m.iter().map(|(k, l)| (hx(k), l.clone())).collect();
+    v.sort();
+    v
 }
 
 fn sorted(it: impl Iterator<Item = String>) -> Vec<String> {
@@ -630,10 +648,10 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     v["résumé"] = node_summary(&v);
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
-          "sections": ["alertes d'intégrité signalées", "identité"], "actions": [] },
+          "sections": ["alertes d'intégrité signalées", "identité"], "actions": ["set_node_name"] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
-          "actions": ["attach_user", "set_quota", "set_attach_policy"] },
+          "actions": ["attach_user", "set_quota", "set_user_label", "set_attach_policy"] },
         { "id": "partenaires", "titre": "Partenaires", "carte": true,
           "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner"] },
         { "id": "carte", "titre": "Carte du monde", "cadre": "map.html", "sections": [], "actions": [] },
@@ -878,7 +896,9 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         .users
         .iter()
         .map(|(id, u)| {
-            json!({ "utilisateur": hx(id), "quota (octets)": u.quota_bytes,
+            json!({ "utilisateur": hx(id),
+                    "nom": s3m_protocol::pseudo::display(&[s.user_labels.get(id).map(String::as_str)], id),
+                    "quota (octets)": u.quota_bytes,
                     "utilisé (octets)": u.used_bytes,
                     "rattachement": if s.auto_attached.contains(id) { "automatique" } else { "manuel" },
                     "pays": country(s.last_user_ip.get(id)),
@@ -900,7 +920,9 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                 pos.1.get(&n).copied().unwrap_or(0),
             );
             let r2 = |x: f64| (x * 100.0).round() / 100.0;
-            json!({ "nœud": n, "score": r2(sc.total),
+            json!({ "nœud": n,
+                    "nom": s3m_protocol::pseudo::display(&[s.partner_names.get(id).map(String::as_str)], id),
+                    "score": r2(sc.total),
                     "fiabilité": r2(sc.reliability), "disponibilité": r2(sc.availability), "vitesse": r2(sc.speed),
                     "état": if peer.status.is_empty() { "partenaire".to_string() } else { peer.status.clone() },
                     "pays": country(Some(&peer.ip)),
@@ -941,6 +963,8 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         "carte": true,
         "identité": {
             "node_id": hx(&s.node_id()),
+            "nom": s3m_protocol::pseudo::display(&[s.name.as_deref()], &s.node_id()),
+            "empreinte": s3m_protocol::pseudo::fingerprint(&s.node_id()),
             "peer_id": sh.peer_id,
             "échange de blocs": sh.blocks_addr,
             "DHT": sh.dht_addr,
@@ -991,6 +1015,13 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             },
         },
         "actions": [
+            { "nom": "set_node_name", "titre": "Nom du Nœud", "libellé": "Enregistrer",
+              "champs": ["nom"], "valeurs": { "nom": s.name.clone().unwrap_or_default() },
+              "aide": { "nom": "Publié dans l'annuaire et affiché par les connecteurs avec l'empreinte du Nœud (64 octets au plus) ; vide pour aucun nom" } },
+            { "nom": "set_user_label", "titre": "Étiquette d'un utilisateur", "libellé": "Enregistrer",
+              "champs": ["utilisateur", "étiquette"],
+              "aide": { "utilisateur": "Identifiant de l'utilisateur (colonne « Utilisateur »)",
+                        "étiquette": "Visible par vous seul ; vide pour l'effacer" } },
             { "nom": "send_message", "titre": "Écrire aux utilisateurs", "libellé": "Envoyer",
               "champs": ["message"],
               "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (4 096 octets au plus, conservé 30 jours)" } },
@@ -1305,7 +1336,7 @@ pub fn map_points(sh: &Shared) -> Value {
         push(
             "partenaire",
             ip,
-            format!("{}…", &n[..16]),
+            s3m_protocol::pseudo::display(&[s.partner_names.get(id).map(String::as_str)], id),
             format!(
                 "solde {} · confiés {}",
                 p.allowance, p.ledger.hosted_for_partner
@@ -1327,7 +1358,7 @@ pub fn map_points(sh: &Shared) -> Value {
         push(
             "utilisateur",
             s.last_user_ip.get(id).cloned(),
-            format!("{}…", &hx(id)[..16]),
+            s3m_protocol::pseudo::display(&[s.user_labels.get(id).map(String::as_str)], id),
             if s.auto_attached.contains(id) {
                 "rattachement automatique".into()
             } else {
@@ -1495,6 +1526,24 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, St
         let mut s = sh.service.lock().unwrap();
         let node_id = s.node_id();
         match name {
+            "set_node_name" => {
+                let n = s3m_protocol::pseudo::sanitize(v.get("nom").and_then(Value::as_str).unwrap_or(""));
+                s.name = (!n.is_empty()).then_some(n);
+                Ok(json!({ "ok": true, "message": "Nom du Nœud enregistré ; l'annuaire sera mis à jour dans la minute" }))
+            }
+            "set_user_label" => (|| {
+                let u = unhex32(field(v, "utilisateur")?.trim())?;
+                if !s.users.contains_key(&u) {
+                    return Err("utilisateur inconnu".to_string());
+                }
+                let l = s3m_protocol::pseudo::sanitize(v.get("étiquette").and_then(Value::as_str).unwrap_or(""));
+                if l.is_empty() {
+                    s.user_labels.remove(&u);
+                } else {
+                    s.user_labels.insert(u, l);
+                }
+                Ok(json!({ "ok": true, "message": "Étiquette enregistrée" }))
+            })(),
             "delete_user_message" => (|| {
                 let u = unhex32(field(v, "utilisateur")?.trim())?;
                 let t = number(v, "n°")?;
@@ -1791,8 +1840,15 @@ pub async fn start_with(
                     );
                 } else {
                     let snapshot = sh.snapshot_pointer.lock().unwrap().clone();
-                    let announce = sh.service.lock().unwrap().channel.announce;
-                    sh.node_entry.lock().unwrap().announce = announce;
+                    let (announce, name) = {
+                        let s = sh.service.lock().unwrap();
+                        (s.channel.announce, s.name.clone())
+                    };
+                    {
+                        let mut e = sh.node_entry.lock().unwrap();
+                        e.announce = announce;
+                        e.name = name;
+                    }
                     publish_entry(
                         &dht,
                         &seed,

@@ -316,6 +316,12 @@ const LABELS = {
   "clé d'annonce du nœud": ["Clé d'annonce du Nœud", "Retenue au premier contact : une autre clé publiée ensuite est ignorée."],
   "acquittée": ["Acquittée", ""],
   "n°": ["N°", "Numéro du message, à reprendre pour le supprimer."],
+  // Pseudos et empreintes
+  "nom": ["Nom", "Nom lisible suivi de l'empreinte : seule l'empreinte identifie avec certitude."],
+  "empreinte": ["Empreinte", "12 caractères tirés de la clé publique, impossibles à imiter en pratique : comparez-les pour reconnaître une identité."],
+  "nom publié par l'opérateur": ["Nom publié par l'opérateur", "Nom choisi par l'opérateur de ce Nœud, lu dans l'annuaire."],
+  "pseudo": ["Pseudo", "Nom de cette identité, visible par vous seul."],
+  "étiquette": ["Étiquette", "Nom donné à cet utilisateur, visible par vous seul."],
   "conduite à tenir": ["Conduite à tenir", ""],
   "pointeur de migration": ["Pointeur de migration", "Redirection automatique vers un autre Nœud, ignorée après une alerte."],
 };

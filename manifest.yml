@@ -1174,7 +1174,13 @@ pages:
     title: "Pseudos et Empreintes"
     section: "§3.11"
     refs: [network.NodeEntry, network.UserEntryPlaintext, network.AttachmentRecord, deploiement.packaging]
-    verified_by: []
+    verified_by:
+      - pseudo::fingerprint_is_12_base32_chars_in_three_groups_and_key_dependent
+      - pseudo::names_are_cleaned_bounded_and_never_shown_without_fingerprint
+      - entries::user_entry_is_accepted_and_opens_with_the_user_key_only
+      - entries::node_entry_is_accepted_with_proof_on_tagged_pub_node
+      - pseudos::node_name_and_user_labels_survive_a_restart
+      - pseudos::local_node_label_wins_over_the_published_name_and_fingerprint_always_shows
   - id: deploiement.appairage-admin
     kind: narrative
     path: 07-deploiement/appairage-admin.md

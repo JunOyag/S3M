@@ -96,6 +96,7 @@ fn pointer_travels_encrypted_in_the_node_entry() {
             snapshot_pointer: Some(&encode_pointer(&p)),
             addrs: &[],
             pub_node_announce: None,
+            name: None,
         },
         &[1; 12],
     )

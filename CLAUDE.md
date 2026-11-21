@@ -50,6 +50,9 @@ lesquels une session Claude Code se trompe le plus souvent.
 - **Canal Nœud ↔ Utilisateurs** livré (`protocols.canal-noeud`, 2026-11-21) : messages,
   clé d'annonce hors seed épinglée par le Connecteur, alerte de compromission
   copiée dans l'annuaire (`AlertEntry`).
+- **Pseudos et empreintes** livrés (`deploiement.pseudos`, 2026-11-21), étape 1 de l'usage
+  de plusieurs identités dans le Connecteur (étapes suivantes : un lecteur par identité,
+  verrouillage, lecteur unique optionnel).
 - **Phase 7 (post-quantique) reportée** : optionnelle pour un MVP et contraire à la V3
   (seul le tag 0 est accepté).
 - L'essai V1 de `network.dht-directory` reste archivé sur `archive/dht-directory-v1`.

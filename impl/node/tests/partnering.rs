@@ -50,6 +50,7 @@ fn entry(seed: &[u8; 32]) -> Vec<u8> {
             snapshot_pointer: None,
             addrs: &[],
             pub_node_announce: None,
+            name: None,
         },
         &[1; 12],
     )

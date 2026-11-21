@@ -35,4 +35,5 @@ pub mod index;
 pub mod layout;
 pub mod local_api;
 pub mod message;
+pub mod pseudo;
 pub mod snapshot;

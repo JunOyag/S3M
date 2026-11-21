@@ -41,10 +41,12 @@ fn node_entry_is_accepted_with_proof_on_tagged_pub_node() {
             snapshot_pointer: Some(b"pointeur"),
             addrs: &[],
             pub_node_announce: None,
+            name: Some(" Nœud	de Paul "),
         },
         &[1; 12],
     )
     .unwrap();
+    assert_eq!(node_entry_name(&env).as_deref(), Some("Nœudde Paul"));
     let want = node_identity(&pk(&seed)).unwrap();
     let ok = accept_record(&pk(&seed), &env, None, 1_000, &|id, _| Ok(*id == want));
     assert!(ok.is_ok(), "{ok:?}");
@@ -65,6 +67,7 @@ fn node_entry_is_accepted_with_proof_on_tagged_pub_node() {
             snapshot_pointer: None,
             addrs: &relayed,
             pub_node_announce: None,
+            name: None,
         },
         &[1; 12],
     )
@@ -88,7 +91,9 @@ fn user_entry_is_accepted_and_opens_with_the_user_key_only() {
             salt: vec![5; 16],
             timestamp: 10,
             inactivity_detected_at: 0,
+            node_label: "Maison".into(),
         }],
+        pseudo: "Perso".into(),
     };
     let (key, env) =
         user_entry_envelope(&priv_user, &pub_user, 1_000, &proof(), &plain, &[2; 12]).unwrap();

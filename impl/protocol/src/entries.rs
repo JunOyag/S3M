@@ -76,6 +76,8 @@ pub struct NodeEntryParams<'a> {
     pub addrs: &'a [String],
     /// Clé d'annonce, hors seed (`protocols.canal-noeud`).
     pub pub_node_announce: Option<&'a [u8; 32]>,
+    /// Nom du Nœud (`deploiement.pseudos`), nettoyé à l'encodage.
+    pub name: Option<&'a str>,
 }
 
 /// Enveloppe signée de l'entrée Node.
@@ -102,6 +104,11 @@ pub fn node_entry_envelope(
     let addrs: Vec<_> = p.addrs.iter().map(|a| b.create_string(a)).collect();
     let addrs = b.create_vector(&addrs);
     let announce = p.pub_node_announce.map(|k| b.create_vector(k));
+    let name = p
+        .name
+        .map(crate::pseudo::sanitize)
+        .filter(|n| !n.is_empty())
+        .map(|n| b.create_string(&n));
     let e = fb::NodeEntry::create(
         &mut b,
         &fb::NodeEntryArgs {
@@ -114,6 +121,7 @@ pub fn node_entry_envelope(
             snapshot_ciphertext: ct,
             addrs: Some(addrs),
             pub_node_announce: announce,
+            name,
         },
     );
     fb::finish_node_entry_buffer(&mut b, e);
@@ -125,21 +133,25 @@ pub fn node_entry_envelope(
 }
 
 /// Attachement (User, Node) publié dans l'entrée User.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attachment {
     pub node_id: [u8; 32],
     pub salt: Vec<u8>,
     pub timestamp: u64,
     pub inactivity_detected_at: u64,
+    /// Nom donné au Nœud par l'Utilisateur (`deploiement.pseudos`).
+    pub node_label: String,
 }
 
 /// Contenu chiffré de l'entrée User (`UserEntryPlaintext`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UserPlain {
     pub fs_root_hash: [u8; 32],
     pub encryption_salt: [u8; 16],
     pub key_version: u16,
     pub attachments: Vec<Attachment>,
+    /// Pseudo de l'identité (`deploiement.pseudos`).
+    pub pseudo: String,
 }
 
 fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
@@ -150,6 +162,8 @@ fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
         .map(|a| {
             let n = b.create_vector(&a.node_id);
             let s = b.create_vector(&a.salt);
+            let label = crate::pseudo::sanitize(&a.node_label);
+            let label = (!label.is_empty()).then(|| b.create_string(&label));
             fb::AttachmentRecord::create(
                 &mut b,
                 &fb::AttachmentRecordArgs {
@@ -157,6 +171,7 @@ fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
                     salt: Some(s),
                     timestamp: a.timestamp,
                     inactivity_detected_at: a.inactivity_detected_at,
+                    node_label: label,
                     ..Default::default()
                 },
             )
@@ -165,6 +180,8 @@ fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
     let recs = b.create_vector(&recs);
     let root = b.create_vector(&u.fs_root_hash);
     let salt = b.create_vector(&u.encryption_salt);
+    let pseudo = crate::pseudo::sanitize(&u.pseudo);
+    let pseudo = (!pseudo.is_empty()).then(|| b.create_string(&pseudo));
     let p = fb::UserEntryPlaintext::create(
         &mut b,
         &fb::UserEntryPlaintextArgs {
@@ -174,6 +191,7 @@ fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
             attachments: Some(recs),
             master_key_chain: None,
             schema_version: 1,
+            pseudo,
         },
     );
     b.finish_minimal(p);
@@ -259,12 +277,14 @@ pub fn open_user_entry(priv_user: &[u8; 32], envelope: &[u8]) -> Result<UserPlai
                             salt: a.salt().map(|s| s.bytes().to_vec()).unwrap_or_default(),
                             timestamp: a.timestamp(),
                             inactivity_detected_at: a.inactivity_detected_at(),
+                            node_label: crate::pseudo::sanitize(a.node_label().unwrap_or_default()),
                         })
                     })
                     .collect::<Result<Vec<_>, DhtError>>()
             })
             .transpose()?
             .unwrap_or_default(),
+        pseudo: crate::pseudo::sanitize(p.pseudo().unwrap_or_default()),
     })
 }
 
@@ -291,4 +311,11 @@ pub fn node_entry_announce(envelope: &[u8]) -> Option<[u8; 32]> {
     let env = flatbuffers::root::<fb::DhtEnvelope>(envelope).ok()?;
     let e = fb::root_as_node_entry(env.payload()?.bytes()).ok()?;
     e.pub_node_announce()?.bytes().try_into().ok()
+}
+
+/// Nom publié par une entrée Node (enveloppe déjà vérifiée), nettoyé.
+pub fn node_entry_name(envelope: &[u8]) -> Option<String> {
+    let env = flatbuffers::root::<fb::DhtEnvelope>(envelope).ok()?;
+    let e = fb::root_as_node_entry(env.payload()?.bytes()).ok()?;
+    Some(crate::pseudo::sanitize(e.name()?)).filter(|n| !n.is_empty())
 }

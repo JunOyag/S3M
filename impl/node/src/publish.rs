@@ -32,6 +32,9 @@ pub struct NodeEntryState {
     /// Dernière enveloppe publiée (jointe aux propositions de partenariat).
     pub last_envelope: Option<Vec<u8>>,
     pub last_error: Option<String>,
+    /// Nom du Nœud à publier (`deploiement.pseudos`) et celui publié.
+    pub name: Option<String>,
+    pub published_name: Option<String>,
     /// Clé d'annonce à publier (`protocols.canal-noeud`) et celle publiée.
     pub announce: Option<[u8; 32]>,
     pub published_announce: Option<[u8; 32]>,
@@ -110,8 +113,12 @@ pub async fn publish_entry(
             || s.published_addrs != addrs
             || s.published_snapshot != snapshot
             || s.published_announce != s.announce
+            || s.published_name != s.name
     };
-    let announce = state.lock().unwrap().announce;
+    let (announce, name) = {
+        let s = state.lock().unwrap();
+        (s.announce, s.name.clone())
+    };
     if !due {
         return;
     }
@@ -128,6 +135,7 @@ pub async fn publish_entry(
             snapshot_pointer: snapshot.as_deref(),
             addrs: &addrs,
             pub_node_announce: announce.as_ref(),
+            name: name.as_deref(),
         },
         &nonce,
     );
@@ -149,6 +157,7 @@ pub async fn publish_entry(
             s.published_addrs = addrs;
             s.published_snapshot = snapshot;
             s.published_announce = announce;
+            s.published_name = name;
             s.last_error = None;
         }
         Err(e) => s.last_error = Some(e),

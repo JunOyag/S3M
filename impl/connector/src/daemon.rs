@@ -217,6 +217,49 @@ fn save_emergency(sh: &Shared) {
     }
 }
 
+fn names_path(c: &Config) -> PathBuf {
+    c.data_dir.join("names.json")
+}
+
+fn load_names(c: &Config) -> Option<crate::channel::Names> {
+    std::fs::read(names_path(c))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+}
+
+fn save_names(sh: &Shared) -> Result<(), String> {
+    let st = sh.names.lock().unwrap().clone();
+    let p = names_path(&sh.config);
+    let tmp = p.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(&st).expect("sérialisable"))
+        .and_then(|_| std::fs::rename(tmp, p))
+        .map_err(|e| e.to_string())
+}
+
+/// Actions des noms (`deploiement.pseudos`).
+fn names_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
+    let key = if name == "set_pseudo" {
+        "pseudo"
+    } else {
+        "nom"
+    };
+    let n = s3m_protocol::pseudo::sanitize(v.get(key).and_then(Value::as_str).unwrap_or(""));
+    {
+        let mut names = sh.names.lock().unwrap();
+        if name == "set_pseudo" {
+            names.pseudo = n;
+        } else {
+            names.node_label = n;
+        }
+    }
+    save_names(sh)?;
+    Ok(json!({ "ok": true, "message": if name == "set_pseudo" {
+        "Pseudo enregistré ; il suivra votre identité sur vos autres appareils"
+    } else {
+        "Nom du Nœud enregistré pour vous ; il suivra votre identité sur vos autres appareils"
+    } }))
+}
+
 fn channel_path(c: &Config) -> PathBuf {
     c.data_dir.join("channel.json")
 }
@@ -451,6 +494,10 @@ pub struct Shared {
     pub emergency: Mutex<EmergencyStatus>,
     /// Canal Nœud ↔ Utilisateurs (`protocols.canal-noeud`).
     pub channel: Mutex<crate::channel::ChannelState>,
+    /// Noms de l'identité et du Nœud (`deploiement.pseudos`) ; `names_known`
+    /// : `names.json` existait, sinon les noms sont adoptés de l'entrée User.
+    pub names: Mutex<crate::channel::Names>,
+    pub names_known: std::sync::atomic::AtomicBool,
     priv_user: [u8; 32],
     pub_node: [u8; 32],
     salt: Vec<u8>,
@@ -477,20 +524,29 @@ fn queue_status(c: &Config) -> Value {
 pub fn status(sh: &Shared) -> Value {
     let mut v = status_base(sh);
     channel_status(sh, &mut v);
+    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        let n = sh.names.lock().unwrap().clone();
+        a.push(json!({ "nom": "set_pseudo", "titre": "Pseudo de cette identité", "libellé": "Enregistrer",
+            "champs": ["pseudo"], "valeurs": { "pseudo": n.pseudo },
+            "aide": { "pseudo": "Visible par vous seul, sur tous vos appareils (64 octets au plus) ; vide pour aucun pseudo" } }));
+        a.push(json!({ "nom": "set_node_label", "titre": "Nom de mon Nœud (pour moi)", "libellé": "Enregistrer",
+            "champs": ["nom"], "valeurs": { "nom": n.node_label },
+            "aide": { "nom": "Remplace pour vous le nom choisi par l'opérateur ; l'empreinte reste toujours affichée" } }));
+    }
     v["résumé"] = connector_summary(&v);
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
           "sections": ["lecteur", "file d'écriture"], "actions": ["sync_now", "set_mount_point"] },
         { "id": "noeud", "titre": "Mon Nœud",
-          "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["admin_node", "change_node"] },
+          "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "messages", "titre": "Messages du Nœud",
           "sections": ["alerte du nœud", "messages du nœud", "messages envoyés au nœud"],
           "actions": ["send_node_message", "acknowledge_alert"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
-          "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": [] },
+          "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["set_pseudo"] },
         { "id": "parametres", "titre": "Paramètres", "autres": true,
           "sections": ["configuration"], "actions": [] }
     ]);
@@ -618,10 +674,19 @@ async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
     };
     let dht = sh.dht.get();
     if let (true, Some(client)) = (poll_due, dht) {
-        if sh.channel.lock().unwrap().announce.is_none() {
-            if let Ok(Some(env)) = client.get(sh.pub_node.to_vec()).await {
-                let ann = s3m_protocol::entries::node_entry_announce(&env);
-                sh.channel.lock().unwrap().pin(&sh.pub_node, ann);
+        // Entrée Node : clé d'annonce à épingler, nom publié par l'opérateur.
+        if let Ok(Some(env)) = client.get(sh.pub_node.to_vec()).await {
+            let ann = s3m_protocol::entries::node_entry_announce(&env);
+            sh.channel.lock().unwrap().pin(&sh.pub_node, ann);
+            let published = s3m_protocol::entries::node_entry_name(&env);
+            let changed = {
+                let mut n = sh.names.lock().unwrap();
+                let changed = n.node_name != published;
+                n.node_name = published;
+                changed
+            };
+            if changed {
+                let _ = save_names(sh);
             }
         }
         let announce = sh.channel.lock().unwrap().announce;
@@ -695,9 +760,12 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
 fn status_base(sh: &Shared) -> Value {
     let now = (sh.clock)();
     let h = sh.health.lock().unwrap().clone();
+    let names = sh.names.lock().unwrap().clone();
     json!({
         "titre": "Connecteur S3m",
         "nœud rattaché": {
+            "nom": names.node_display(&sh.pub_node),
+            "nom publié par l'opérateur": names.node_name,
             "node_id": sh.config.node.node_id,
             "adresse configurée": sh.config.node.addr,
             "adresse utilisée": sh.session.node_addr().to_string(),
@@ -706,7 +774,11 @@ fn status_base(sh: &Shared) -> Value {
             "indisponible depuis (s)": h.inactivity_detected_at.map(|t| now.saturating_sub(t)),
             "dernière erreur": h.last_error,
         },
-        "utilisateur": { "user_id": hex::encode(sh.pub_user) },
+        "utilisateur": {
+            "nom": s3m_protocol::pseudo::display(&[Some(names.pseudo.as_str())], &sh.pub_user),
+            "empreinte": s3m_protocol::pseudo::fingerprint(&sh.pub_user),
+            "user_id": hex::encode(sh.pub_user),
+        },
         "autorisation de secours": { "expire le": *sh.grant_expiry.lock().unwrap() },
         "file d'écriture": queue_status(&sh.config),
         "incidents d'intégrité": h.incidents,
@@ -891,6 +963,20 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
         let _ = sh.dht.set(client.clone());
         // Nouvel appareil : racine relue dans l'entrée User publiée.
         if let Some(plain) = read_user_entry(&client, &priv_user, &sh.pub_user).await {
+            // Nouvel appareil : noms repris de l'entrée User.
+            if !sh.names_known.load(std::sync::atomic::Ordering::SeqCst) {
+                let label = plain
+                    .attachments
+                    .iter()
+                    .find(|a| a.node_id == pub_node)
+                    .map(|a| a.node_label.clone())
+                    .unwrap_or_default();
+                sh.names.lock().unwrap().adopt(&plain.pseudo, &label);
+                if save_names(&sh).is_ok() {
+                    sh.names_known
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
             if let Some(d) = &sh.drive {
                 let adopted = d.lock().unwrap().adopt_root(Root {
                     fs_root_hash: plain.fs_root_hash,
@@ -924,6 +1010,7 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
                 .unwrap()
                 .inactivity_detected_at
                 .unwrap_or(0);
+            let names = sh.names.lock().unwrap().clone();
             let plain = UserPlain {
                 fs_root_hash,
                 encryption_salt,
@@ -933,7 +1020,9 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
                     salt: salt.clone(),
                     timestamp: since,
                     inactivity_detected_at: inactivity,
+                    node_label: names.node_label,
                 }],
+                pseudo: names.pseudo,
             };
             publish_if_changed(
                 &client,
@@ -1350,6 +1439,8 @@ pub async fn start(
         dht: std::sync::OnceLock::new(),
         emergency: Mutex::new(load_emergency(&config)),
         channel: Mutex::new(load_channel(&config)),
+        names_known: load_names(&config).is_some().into(),
+        names: Mutex::new(load_names(&config).unwrap_or_default()),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
         mount_point: Mutex::new(config.mount_point.clone()),
@@ -1377,6 +1468,7 @@ pub async fn start(
             }
             "admin_node" => admin_node(&sh.config.node.addr, &v),
             "send_node_message" | "acknowledge_alert" => channel_action(&sh, name, &v),
+            "set_pseudo" | "set_node_label" => names_action(&sh, name, &v),
             "change_node" => {
                 if v.get("je confirme").and_then(|x| x.as_bool()) != Some(true) {
                     return Err("cochez « je confirme » pour changer de Nœud".into());

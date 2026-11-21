@@ -9,6 +9,35 @@ use s3m_protocol::exchange::Id;
 use s3m_protocol::message::{verify_message, Cursor, Kind, Signed, ALERT_REPUBLISH_S};
 use serde::{Deserialize, Serialize};
 
+/// Noms de l'identité (`deploiement.pseudos`), conservés dans `names.json`
+/// et publiés dans l'entrée User chiffrée.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Names {
+    /// Pseudo de l'identité.
+    pub pseudo: String,
+    /// Nom donné au Nœud par l'Utilisateur.
+    pub node_label: String,
+    /// Nom publié par l'opérateur (entrée Node), dernière lecture.
+    #[serde(default)]
+    pub node_name: Option<String>,
+}
+
+impl Names {
+    /// Adopte les noms lus dans l'entrée User (nouvel appareil).
+    pub fn adopt(&mut self, pseudo: &str, node_label: &str) {
+        self.pseudo = s3m_protocol::pseudo::sanitize(pseudo);
+        self.node_label = s3m_protocol::pseudo::sanitize(node_label);
+    }
+
+    /// Affichage du Nœud : nom local, sinon nom publié, et l'empreinte.
+    pub fn node_display(&self, node_id: &[u8]) -> String {
+        s3m_protocol::pseudo::display(
+            &[Some(self.node_label.as_str()), self.node_name.as_deref()],
+            node_id,
+        )
+    }
+}
+
 /// Messages du Nœud conservés au plus.
 pub const MAX_RECEIVED: usize = 100;
 
