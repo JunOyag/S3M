@@ -437,6 +437,9 @@ pub fn mount(fs: DriveFs, mount_point: &str) -> Result<FileSystemHost<DriveFs>, 
             std::env::var_os("ProgramFiles(x86)")
                 .map(|p| std::path::PathBuf::from(p).join("WinFsp"))
         });
+    let installed = dir
+        .as_ref()
+        .is_some_and(|d| d.join("bin").join("winfsp-x64.dll").exists());
     if let Some(bin) = dir.map(|d| d.join("bin")) {
         let mut paths = vec![bin];
         paths.extend(std::env::split_paths(
@@ -446,8 +449,19 @@ pub fn mount(fs: DriveFs, mount_point: &str) -> Result<FileSystemHost<DriveFs>, 
             std::env::set_var("PATH", joined);
         }
     }
-    let _init =
-        winfsp::winfsp_init().map_err(|e| format!("WinFsp absent ou inutilisable : {e}"))?;
+    let _init = winfsp::winfsp_init().map_err(|e| {
+        if installed {
+            format!(
+                "WinFsp est installé mais inutilisable ({e}) : redémarrez l'ordinateur, \
+                 sinon réinstallez WinFsp avec un compte administrateur"
+            )
+        } else {
+            "WinFsp n'est pas installé sur cet ordinateur : sans lui, le lecteur ne peut \
+             pas être monté. Son installation demande une fois un compte administrateur \
+             (winget install WinFsp.WinFsp, ou https://winfsp.dev), puis relancez S3m."
+                .to_string()
+        }
+    })?;
     let mut params = VolumeParams::new();
     params
         .filesystem_name("S3m")
