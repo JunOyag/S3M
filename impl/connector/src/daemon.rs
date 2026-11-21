@@ -598,7 +598,7 @@ fn channel_status(sh: &Shared, v: &mut Value) {
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
         a.push(json!({ "nom": "send_node_message", "titre": "Écrire à mon Nœud", "libellé": "Envoyer",
             "champs": ["message"],
-            "aide": { "message": "Lu par l'opérateur de votre Nœud (4 096 octets au plus, 10 messages par jour)" } }));
+            "aide": { "message": "Lu par l'opérateur de votre Nœud (4 096 octets au plus, 10 messages par jour) ; chaque message occupe 4 Kio de votre quota pendant 30 jours" } }));
         if c.alert.is_some() && !c.alert_acknowledged {
             a.push(json!({ "nom": "acknowledge_alert", "titre": "Alerte du Nœud", "libellé": "J'ai lu l'alerte", "champs": [] }));
         }
@@ -670,6 +670,9 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
                 .map_err(|e| match e {
                     ExchangeError::Refused(Refusal::RateLimited) => {
                         "10 messages par jour au plus : réessayez demain".to_string()
+                    }
+                    ExchangeError::Refused(Refusal::QuotaExceeded) => {
+                        "quota plein : libérez de l'espace pour écrire à votre Nœud (chaque message occupe 4 Kio pendant 30 jours)".to_string()
                     }
                     e => format!("envoi impossible : {e}"),
                 })?;

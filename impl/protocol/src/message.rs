@@ -30,6 +30,8 @@ pub const RETENTION_S: u64 = 2_592_000;
 /// Messages d'un Utilisateur au plus par fenêtre de [`DAY_S`].
 pub const POSTS_PER_DAY: usize = 10;
 pub const DAY_S: u64 = 86_400;
+/// Part du quota de l'Utilisateur occupée par chacun de ses messages conservés.
+pub const MESSAGE_COST_BYTES: u64 = 4096;
 /// Republication de l'enveloppe d'alerte.
 pub const ALERT_REPUBLISH_S: u64 = 2_592_000;
 /// Lecture de l'alerte dans l'annuaire au moins à cet intervalle.
@@ -270,10 +272,34 @@ impl Inbox {
         Ok(())
     }
 
-    /// Oublie les messages plus vieux que [`RETENTION_S`].
-    pub fn prune(&mut self, now: u64) {
-        self.received
-            .retain(|m| m.timestamp.saturating_add(RETENTION_S) > now);
+    /// Oublie les messages plus vieux que [`RETENTION_S`] ; rend leurs
+    /// auteurs (un par message, pour rendre [`MESSAGE_COST_BYTES`]).
+    pub fn prune(&mut self, now: u64) -> Vec<Id> {
+        let mut gone = Vec::new();
+        self.received.retain(|m| {
+            let keep = m.timestamp.saturating_add(RETENTION_S) > now;
+            if !keep {
+                gone.push(m.user_id);
+            }
+            keep
+        });
+        gone
+    }
+
+    /// Supprime le message de `user_id` reçu à `timestamp` ; rend `true`
+    /// s'il existait.
+    pub fn remove(&mut self, user_id: &Id, timestamp: u64) -> bool {
+        match self
+            .received
+            .iter()
+            .position(|m| &m.user_id == user_id && m.timestamp == timestamp)
+        {
+            Some(i) => {
+                self.received.remove(i);
+                true
+            }
+            None => false,
+        }
     }
 }
 

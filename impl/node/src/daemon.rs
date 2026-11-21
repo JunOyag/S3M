@@ -644,7 +644,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "messages", "titre": "Messages",
           "sections": ["messages des utilisateurs", "messages envoyés", "clé d'annonce"],
-          "actions": ["send_message", "create_announce_key", "send_alert"] },
+          "actions": ["send_message", "delete_user_message", "create_announce_key", "send_alert"] },
         { "id": "secours", "titre": "Espace de secours",
           "sections": ["espace de secours"], "actions": ["set_emergency_policy"] },
         { "id": "reseau", "titre": "Réseau",
@@ -977,7 +977,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         },
         "espace de secours": emergency_status(sh, &s),
         "messages des utilisateurs": s.channel.inbox.received.iter().rev().map(|m| json!({
-            "utilisateur": hx(&m.user_id), "reçu le": m.timestamp, "message": m.text })).collect::<Vec<_>>(),
+            "utilisateur": hx(&m.user_id), "reçu le": m.timestamp, "n°": m.timestamp, "message": m.text })).collect::<Vec<_>>(),
         "messages envoyés": s.channel.outbox.sent.iter().rev().map(|(m, _)| json!({
             "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" } else { "information" },
             "numéro": m.seq, "envoyé le": m.timestamp, "message": m.text,
@@ -994,6 +994,11 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             { "nom": "send_message", "titre": "Écrire aux utilisateurs", "libellé": "Envoyer",
               "champs": ["message"],
               "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (4 096 octets au plus, conservé 30 jours)" } },
+            { "nom": "delete_user_message", "titre": "Supprimer un message reçu", "libellé": "Supprimer",
+              "champs": ["utilisateur", "n°"],
+              "types": { "n°": "number" },
+              "aide": { "utilisateur": "Identifiant de l'utilisateur (colonne « Utilisateur »)",
+                        "n°": "Colonne « N° » du message ; les 4 Kio qu'il occupe sont rendus au quota de l'utilisateur" } },
             { "nom": "create_announce_key", "titre": "Créer la clé d'annonce", "libellé": "Créer",
               "champs": [],
               "aide": {} },
@@ -1490,6 +1495,15 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, St
         let mut s = sh.service.lock().unwrap();
         let node_id = s.node_id();
         match name {
+            "delete_user_message" => (|| {
+                let u = unhex32(field(v, "utilisateur")?.trim())?;
+                let t = number(v, "n°")?;
+                if s.delete_user_message(&u, t) {
+                    Ok(json!({ "ok": true, "message": "Message supprimé, 4 Kio rendus au quota de l'utilisateur" }))
+                } else {
+                    Err("message introuvable".to_string())
+                }
+            })(),
             "send_message" => field(v, "message")
                 .and_then(|t| s.channel.post_info(&sh.priv_node, t, now))
                 .map(|n| json!({ "ok": true, "message": format!("Message n° {n} envoyé") })),
@@ -1895,7 +1909,7 @@ pub async fn start_with(
                 // Canal : conservation des messages, copie de l'alerte dans l'annuaire.
                 let due = {
                     let mut s = sh.service.lock().unwrap();
-                    s.channel.prune(now);
+                    s.prune_channel(now);
                     s.channel.alert_due(now)
                 };
                 if let Some((key, env)) = due {

@@ -945,6 +945,7 @@ pages:
       - message::outbox_reads_since_cursor_prunes_and_inbox_is_rate_limited
       - channel::announce_phrase_roundtrips_and_only_it_signs_alerts
       - channel::attached_user_reads_node_messages_and_posts_within_the_daily_limit
+      - channel::user_messages_take_4_kib_of_quota_until_pruned_or_deleted
       - channel::first_announce_key_is_pinned_and_a_later_one_is_ignored
       - channel::alert_from_the_directory_is_accepted_once_and_republished_unchanged
 

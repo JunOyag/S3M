@@ -147,8 +147,9 @@ impl Channel {
         self.inbox.post(user, text, now)
     }
 
-    pub fn prune(&mut self, now: u64) {
+    /// Conservation ; rend les auteurs des messages reçus oubliés.
+    pub fn prune(&mut self, now: u64) -> Vec<Id> {
         self.outbox.prune(now);
-        self.inbox.prune(now);
+        self.inbox.prune(now)
     }
 }

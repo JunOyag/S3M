@@ -315,6 +315,7 @@ const LABELS = {
   "messages envoyés au nœud": ["Messages envoyés au Nœud", ""],
   "clé d'annonce du nœud": ["Clé d'annonce du Nœud", "Retenue au premier contact : une autre clé publiée ensuite est ignorée."],
   "acquittée": ["Acquittée", ""],
+  "n°": ["N°", "Numéro du message, à reprendre pour le supprimer."],
   "conduite à tenir": ["Conduite à tenir", ""],
   "pointeur de migration": ["Pointeur de migration", "Redirection automatique vers un autre Nœud, ignorée après une alerte."],
 };

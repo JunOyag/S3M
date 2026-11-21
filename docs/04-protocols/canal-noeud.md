@@ -55,11 +55,23 @@ son Nœud, avec `UserCredential` :
 | Requête | Réponse | Règle |
 |---|---|---|
 | `ReadMessages{since_info, since_alert}` | `Messages` | les 64 plus anciens messages de `seq` supérieur, toutes sortes confondues |
-| `PostMessage{text}` | `Ack` | 4 096 o au plus ; 10 messages par Utilisateur et par 86 400 s, au-delà `RateLimited` |
+| `PostMessage{text}` | `Ack` | 4 096 o au plus ; 10 messages par Utilisateur et par 86 400 s, au-delà `RateLimited` ; quota, voir ci-dessous |
 
 Le Connecteur envoie `ReadMessages` à chaque sondage de son Nœud. Le Nœud
 conserve ses messages 2 592 000 s (256 au plus, les plus anciens supprimés
 d'abord) et les messages reçus des Utilisateurs (`UserMessage`) 2 592 000 s.
+### Décompte du quota {: #quota }
+
+Ajout du 2026-11-21. Chaque message conservé d'un Utilisateur occupe
+**4 096 o** de son quota, quelle que soit sa longueur : le coût fixe ôte
+l'intérêt d'une avalanche de messages courts. Un `PostMessage` qui ferait
+dépasser le quota est refusé (`QuotaExceeded`), comme un `PutBlock`. Ces
+4 096 o sont rendus quand le message disparaît (2 592 000 s écoulées, ou
+suppression par l'opérateur). L'occupation communiquée dans `RootState`
+([`protocols.echange-blocs`](echange-blocs.md)) les inclut. Les messages
+du Nœud ne sont décomptés du quota de personne : ils sont adressés à tous,
+et le Nœud les conserve une seule fois sur son propre espace.
+
 La confidentialité des échanges repose sur le chiffrement Noise de la
 connexion : les partenaires ne les voient jamais.
 

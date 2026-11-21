@@ -1327,6 +1327,7 @@ entries:
       - message::outbox_reads_since_cursor_prunes_and_inbox_is_rate_limited
       - channel::announce_phrase_roundtrips_and_only_it_signs_alerts
       - channel::attached_user_reads_node_messages_and_posts_within_the_daily_limit
+      - channel::user_messages_take_4_kib_of_quota_until_pruned_or_deleted
       - channel::first_announce_key_is_pinned_and_a_later_one_is_ignored
       - channel::alert_from_the_directory_is_accepted_once_and_republished_unchanged
     notes: "Livré le 2026-11-21 : protocol (message.rs, ReadMessages/PostMessage), Nœud (channel.rs, page Messages, clé d'annonce en 24 mots non conservée, alerte publiée et republiée dans l'annuaire), Connecteur (channel.rs, épinglage, lecture à chaque sondage, alerte relue dans l'annuaire, carte d'alerte et page Messages du Nœud). Le suivi automatique du pointeur de migration n'est pas branché dans S3m : quand il le sera, il consultera ChannelState::distrusts. Non testé en conditions réelles."

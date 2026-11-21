@@ -292,7 +292,15 @@ impl NodeService {
             }
             Body::PostMessage { text } => {
                 let u = self.user(cred, from, local)?;
+                let cost = s3m_protocol::message::MESSAGE_COST_BYTES;
+                let acc = self.users.get(&u).ok_or(Refusal::Unauthorized)?;
+                if acc.used_bytes + cost > acc.quota_bytes {
+                    return Err(Refusal::QuotaExceeded);
+                }
                 self.channel.receive(&u, &text, now)?;
+                if let Some(acc) = self.users.get_mut(&u) {
+                    acc.used_bytes += cost;
+                }
                 Ok(Response::Ack { freed: 0 })
             }
             Body::PutBlock { data } => {
@@ -598,6 +606,32 @@ impl NodeService {
                 Ok(Response::Ack { freed })
             }
         }
+    }
+
+    /// Rend à chaque auteur la part de quota d'un message reçu disparu.
+    fn refund_messages(&mut self, authors: &[Id]) {
+        for u in authors {
+            if let Some(acc) = self.users.get_mut(u) {
+                acc.used_bytes = acc
+                    .used_bytes
+                    .saturating_sub(s3m_protocol::message::MESSAGE_COST_BYTES);
+            }
+        }
+    }
+
+    /// Conservation des messages du canal, quota rendu aux auteurs.
+    pub fn prune_channel(&mut self, now: u64) {
+        let gone = self.channel.prune(now);
+        self.refund_messages(&gone);
+    }
+
+    /// Suppression par l'opérateur d'un message reçu, quota rendu.
+    pub fn delete_user_message(&mut self, user: &Id, timestamp: u64) -> bool {
+        let found = self.channel.inbox.remove(user, timestamp);
+        if found {
+            self.refund_messages(&[*user]);
+        }
+        found
     }
 
     /// Range un bloc de données de l'Utilisateur `u` dans la limite de son

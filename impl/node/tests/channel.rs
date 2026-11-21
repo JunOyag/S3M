@@ -69,7 +69,7 @@ fn attached_user_reads_node_messages_and_posts_within_the_daily_limit() {
         pk(&USER),
         UserAccount {
             salt: SALT.to_vec(),
-            quota_bytes: 100,
+            quota_bytes: 1 << 20,
             used_bytes: 0,
             root: [0; 32],
         },
@@ -127,4 +127,46 @@ fn attached_user_reads_node_messages_and_posts_within_the_daily_limit() {
         s.handle(b"c", None, b"n", anon, NOW),
         Response::Failure(Refusal::Unauthorized)
     );
+}
+
+#[test]
+fn user_messages_take_4_kib_of_quota_until_pruned_or_deleted() {
+    use s3m_protocol::message::{MESSAGE_COST_BYTES, RETENTION_S};
+    let mut s = NodeService::new(NODE);
+    s.users.insert(
+        pk(&USER),
+        UserAccount {
+            salt: SALT.to_vec(),
+            quota_bytes: 2 * MESSAGE_COST_BYTES + 10,
+            used_bytes: 0,
+            root: [0; 32],
+        },
+    );
+    let post = |s: &mut NodeService, now: u64| {
+        s.handle(
+            b"c",
+            None,
+            b"n",
+            user_req(Body::PostMessage { text: "a".into() }),
+            now,
+        )
+    };
+    let used = |s: &NodeService| s.users[&pk(&USER)].used_bytes;
+    assert_eq!(post(&mut s, NOW), Response::Ack { freed: 0 });
+    assert_eq!(post(&mut s, NOW + 1), Response::Ack { freed: 0 });
+    assert_eq!(used(&s), 2 * MESSAGE_COST_BYTES);
+    // Quota plein : refusé, rien n'est conservé.
+    assert_eq!(
+        post(&mut s, NOW + 2),
+        Response::Failure(Refusal::QuotaExceeded)
+    );
+    assert_eq!(s.channel.inbox.received.len(), 2);
+    // Suppression par l'opérateur : quota rendu.
+    assert!(!s.delete_user_message(&pk(&USER), NOW + 5));
+    assert!(s.delete_user_message(&pk(&USER), NOW));
+    assert_eq!(used(&s), MESSAGE_COST_BYTES);
+    // Expiration : quota rendu.
+    s.prune_channel(NOW + 1 + RETENTION_S);
+    assert_eq!(used(&s), 0);
+    assert!(s.channel.inbox.received.is_empty());
 }
