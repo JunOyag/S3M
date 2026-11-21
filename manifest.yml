@@ -1167,6 +1167,14 @@ pages:
     section: "§7.3"
     refs: [protocols.write-queue, protocols.espace-secours, securite.blacklist-fraude]
 
+
+  - id: deploiement.pseudos
+    kind: narrative
+    path: 07-deploiement/pseudos.md
+    title: "Pseudos et Empreintes"
+    section: "§3.11"
+    refs: [network.NodeEntry, network.UserEntryPlaintext, network.AttachmentRecord, deploiement.packaging]
+    verified_by: []
   - id: deploiement.appairage-admin
     kind: narrative
     path: 07-deploiement/appairage-admin.md

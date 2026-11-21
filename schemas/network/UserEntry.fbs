@@ -15,6 +15,7 @@ table AttachmentRecord {
   key_algorithm: uint8;           // 0 par défaut (§8.4)
   kem_ciphertext: [ubyte];        // vide si key_algorithm = 0 (§8.2)
   wrapped_shared_secret: [ubyte]; // vide si key_algorithm = 0 (§8.2)
+  node_label: string;             // ajout 2026-11-21 (deploiement.pseudos) : nom donné au Nœud par l'Utilisateur, 64 o au plus
 }
 
 /// Clair chiffré sous K_self (§3.9).
@@ -25,6 +26,7 @@ table UserEntryPlaintext {
   attachments: [AttachmentRecord];
   master_key_chain: [S3m.Dispersal.MasterKeyEntry];
   schema_version: uint16;
+  pseudo: string;                 // ajout 2026-11-21 (deploiement.pseudos) : pseudo de l'identité, 64 o au plus
 }
 
 /// Entrée DHT User (§3.9). TTL 315 360 000 s ; republication réactive, ou de secours après 31 536 000 s.

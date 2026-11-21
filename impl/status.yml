@@ -1346,3 +1346,9 @@ entries:
     tests:
       - message::messages_requests_and_response_roundtrip
     notes: ""
+  deploiement.pseudos:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
