@@ -12,10 +12,10 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_REQUEST_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_REQUEST_BODY: u8 = 14;
+pub const ENUM_MAX_REQUEST_BODY: u8 = 17;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 15] = [
+pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 18] = [
   RequestBody::NONE,
   RequestBody::GetBlock,
   RequestBody::PutBlock,
@@ -31,6 +31,9 @@ pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 15] = [
   RequestBody::ProposePartnership,
   RequestBody::Attach,
   RequestBody::OwnershipQuery,
+  RequestBody::EmergencyPut,
+  RequestBody::EmergencyGet,
+  RequestBody::EmergencyRelease,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -53,9 +56,12 @@ impl RequestBody {
   pub const ProposePartnership: Self = Self(12);
   pub const Attach: Self = Self(13);
   pub const OwnershipQuery: Self = Self(14);
+  pub const EmergencyPut: Self = Self(15);
+  pub const EmergencyGet: Self = Self(16);
+  pub const EmergencyRelease: Self = Self(17);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 14;
+  pub const ENUM_MAX: u8 = 17;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::GetBlock,
@@ -72,6 +78,9 @@ impl RequestBody {
     Self::ProposePartnership,
     Self::Attach,
     Self::OwnershipQuery,
+    Self::EmergencyPut,
+    Self::EmergencyGet,
+    Self::EmergencyRelease,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -91,6 +100,9 @@ impl RequestBody {
       Self::ProposePartnership => Some("ProposePartnership"),
       Self::Attach => Some("Attach"),
       Self::OwnershipQuery => Some("OwnershipQuery"),
+      Self::EmergencyPut => Some("EmergencyPut"),
+      Self::EmergencyGet => Some("EmergencyGet"),
+      Self::EmergencyRelease => Some("EmergencyRelease"),
       _ => None,
     }
   }

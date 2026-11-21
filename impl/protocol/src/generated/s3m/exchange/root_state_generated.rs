@@ -27,6 +27,8 @@ impl<'a> flatbuffers::Follow<'a> for RootState<'a> {
 impl<'a> RootState<'a> {
   pub const VT_COMMITTED: flatbuffers::VOffsetT = 4;
   pub const VT_CURRENT_ROOT: flatbuffers::VOffsetT = 6;
+  pub const VT_QUOTA_BYTES: flatbuffers::VOffsetT = 8;
+  pub const VT_USED_BYTES: flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -38,6 +40,8 @@ impl<'a> RootState<'a> {
     args: &'args RootStateArgs<'args>
   ) -> flatbuffers::WIPOffset<RootState<'bldr>> {
     let mut builder = RootStateBuilder::new(_fbb);
+    builder.add_used_bytes(args.used_bytes);
+    builder.add_quota_bytes(args.quota_bytes);
     if let Some(x) = args.current_root { builder.add_current_root(x); }
     builder.add_committed(args.committed);
     builder.finish()
@@ -58,6 +62,20 @@ impl<'a> RootState<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(RootState::VT_CURRENT_ROOT, None)}
   }
+  #[inline]
+  pub fn quota_bytes(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(RootState::VT_QUOTA_BYTES, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn used_bytes(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(RootState::VT_USED_BYTES, Some(0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for RootState<'_> {
@@ -69,6 +87,8 @@ impl flatbuffers::Verifiable for RootState<'_> {
     v.visit_table(pos)?
      .visit_field::<bool>("committed", Self::VT_COMMITTED, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("current_root", Self::VT_CURRENT_ROOT, false)?
+     .visit_field::<u64>("quota_bytes", Self::VT_QUOTA_BYTES, false)?
+     .visit_field::<u64>("used_bytes", Self::VT_USED_BYTES, false)?
      .finish();
     Ok(())
   }
@@ -76,6 +96,8 @@ impl flatbuffers::Verifiable for RootState<'_> {
 pub struct RootStateArgs<'a> {
     pub committed: bool,
     pub current_root: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub quota_bytes: u64,
+    pub used_bytes: u64,
 }
 impl<'a> Default for RootStateArgs<'a> {
   #[inline]
@@ -83,6 +105,8 @@ impl<'a> Default for RootStateArgs<'a> {
     RootStateArgs {
       committed: false,
       current_root: None,
+      quota_bytes: 0,
+      used_bytes: 0,
     }
   }
 }
@@ -99,6 +123,14 @@ impl<'a: 'b, 'b> RootStateBuilder<'a, 'b> {
   #[inline]
   pub fn add_current_root(&mut self, current_root: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RootState::VT_CURRENT_ROOT, current_root);
+  }
+  #[inline]
+  pub fn add_quota_bytes(&mut self, quota_bytes: u64) {
+    self.fbb_.push_slot::<u64>(RootState::VT_QUOTA_BYTES, quota_bytes, 0);
+  }
+  #[inline]
+  pub fn add_used_bytes(&mut self, used_bytes: u64) {
+    self.fbb_.push_slot::<u64>(RootState::VT_USED_BYTES, used_bytes, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> RootStateBuilder<'a, 'b> {
@@ -120,6 +152,8 @@ impl core::fmt::Debug for RootState<'_> {
     let mut ds = f.debug_struct("RootState");
       ds.field("committed", &self.committed());
       ds.field("current_root", &self.current_root());
+      ds.field("quota_bytes", &self.quota_bytes());
+      ds.field("used_bytes", &self.used_bytes());
       ds.finish()
   }
 }

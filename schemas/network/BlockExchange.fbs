@@ -40,7 +40,18 @@ table DelegatedCredential {
   signature: [ubyte];         // Ed25519 par grant_priv sur L("s3m/sig/rescue-delegation/v1") ‖ delegate_node_id ‖ u64be(expires_at)
 }
 
-union Credential { UserCredential, RescueCredential, DelegatedCredential }
+// Ajout du 2026-11-21 (protocols.espace-secours) : Connecteur → partenaire de
+// secours (Nœud injoignable). Preuve d'identité VDF de l'Utilisateur, liée à
+// sa clé de secours et aux deux identités de la connexion.
+table EmergencyCredential {
+  sig_pub_user: [ubyte];      // identité VDF du User (32 o)
+  vdf_y: [ubyte];
+  vdf_pi: [ubyte];
+  emergency_pub: [ubyte];     // sig_pub_emergency (32 o) : identifie le dépôt
+  signature: [ubyte];         // Ed25519 par sig_priv_user sur L("s3m/sig/emergency-deposit/v1") ‖ emergency_pub ‖ L(peer_demandeur) ‖ L(peer_partenaire)
+}
+
+union Credential { UserCredential, RescueCredential, DelegatedCredential, EmergencyCredential }
 
 // Connecteur → Nœud
 table GetBlock {
@@ -113,10 +124,32 @@ table OwnershipQuery {
   hashes: [ubyte];            // SHA-256 concaténés (32 o chacun, 1024 au plus)
 }
 
+// Ajouts du 2026-11-21 (protocols.espace-secours).
+// Connecteur → partenaire de secours (credential EmergencyCredential) :
+// dépôt d'un bloc chiffré K_block.
+table EmergencyPut {
+  data: [ubyte];
+}
+// N'importe quel pair → partenaire de secours, sans credential : relecture
+// d'un bloc déposé sous emergency_pub (Nœud de retour, autre Connecteur).
+table EmergencyGet {
+  emergency_pub: [ubyte];     // 32 o
+  hash: [ubyte];              // 32 o
+}
+// N'importe quel pair → partenaire de secours, sans credential : libération
+// après réconciliation, signée par la clé de secours.
+table EmergencyRelease {
+  emergency_pub: [ubyte];     // 32 o
+  timestamp: uint64;          // strictement croissant par emergency_pub
+  hashes: [ubyte];            // SHA-256 concaténés (32 o chacun, 1024 au plus)
+  signature: [ubyte];         // Ed25519 par sig_priv_emergency sur L("s3m/sig/emergency-release/v1") ‖ emergency_pub ‖ u64be(timestamp) ‖ hashes
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
   StoreFragment, Challenge, FetchFragment, Tombstone,
-  Probe, ProposePartnership, Attach, OwnershipQuery
+  Probe, ProposePartnership, Attach, OwnershipQuery,
+  EmergencyPut, EmergencyGet, EmergencyRelease
 }
 
 // Requête : une par flux libp2p request-response.

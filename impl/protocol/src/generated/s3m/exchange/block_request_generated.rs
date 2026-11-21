@@ -132,6 +132,21 @@ impl<'a> BlockRequest<'a> {
 
   #[inline]
   #[allow(non_snake_case)]
+  pub fn credential_as_emergency_credential(&self) -> Option<EmergencyCredential<'a>> {
+    if self.credential_type() == Credential::EmergencyCredential {
+      self.credential().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { EmergencyCredential::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
   pub fn body_as_get_block(&self) -> Option<GetBlock<'a>> {
     if self.body_type() == RequestBody::GetBlock {
       self.body().map(|t| {
@@ -340,6 +355,51 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_emergency_put(&self) -> Option<EmergencyPut<'a>> {
+    if self.body_type() == RequestBody::EmergencyPut {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { EmergencyPut::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_emergency_get(&self) -> Option<EmergencyGet<'a>> {
+    if self.body_type() == RequestBody::EmergencyGet {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { EmergencyGet::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_emergency_release(&self) -> Option<EmergencyRelease<'a>> {
+    if self.body_type() == RequestBody::EmergencyRelease {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { EmergencyRelease::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -355,6 +415,7 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           Credential::UserCredential => v.verify_union_variant::<flatbuffers::ForwardsUOffset<UserCredential>>("Credential::UserCredential", pos),
           Credential::RescueCredential => v.verify_union_variant::<flatbuffers::ForwardsUOffset<RescueCredential>>("Credential::RescueCredential", pos),
           Credential::DelegatedCredential => v.verify_union_variant::<flatbuffers::ForwardsUOffset<DelegatedCredential>>("Credential::DelegatedCredential", pos),
+          Credential::EmergencyCredential => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyCredential>>("Credential::EmergencyCredential", pos),
           _ => Ok(()),
         }
      })?
@@ -374,6 +435,9 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::ProposePartnership => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ProposePartnership>>("RequestBody::ProposePartnership", pos),
           RequestBody::Attach => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Attach>>("RequestBody::Attach", pos),
           RequestBody::OwnershipQuery => v.verify_union_variant::<flatbuffers::ForwardsUOffset<OwnershipQuery>>("RequestBody::OwnershipQuery", pos),
+          RequestBody::EmergencyPut => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyPut>>("RequestBody::EmergencyPut", pos),
+          RequestBody::EmergencyGet => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyGet>>("RequestBody::EmergencyGet", pos),
+          RequestBody::EmergencyRelease => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyRelease>>("RequestBody::EmergencyRelease", pos),
           _ => Ok(()),
         }
      })?
@@ -463,6 +527,13 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         Credential::DelegatedCredential => {
           if let Some(x) = self.credential_as_delegated_credential() {
+            ds.field("credential", &x)
+          } else {
+            ds.field("credential", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Credential::EmergencyCredential => {
+          if let Some(x) = self.credential_as_emergency_credential() {
             ds.field("credential", &x)
           } else {
             ds.field("credential", &"InvalidFlatbuffer: Union discriminant does not match value.")
@@ -568,6 +639,27 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::OwnershipQuery => {
           if let Some(x) = self.body_as_ownership_query() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::EmergencyPut => {
+          if let Some(x) = self.body_as_emergency_put() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::EmergencyGet => {
+          if let Some(x) = self.body_as_emergency_get() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::EmergencyRelease => {
+          if let Some(x) = self.body_as_emergency_release() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

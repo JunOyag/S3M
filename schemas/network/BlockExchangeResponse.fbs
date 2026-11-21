@@ -17,11 +17,11 @@ enum ErrorCode : ubyte {
 table Failure {
   code: ErrorCode;
 }
-// GetBlock, FetchFragment
+// GetBlock, FetchFragment, EmergencyGet
 table BlockData {
   data: [ubyte];
 }
-// PutBlock
+// PutBlock, EmergencyPut
 table Stored {
   hash: [ubyte];
 }
@@ -29,6 +29,9 @@ table Stored {
 table RootState {
   committed: bool;
   current_root: [ubyte];
+  // Ajouts du 2026-11-21 (taille du lecteur, espace du Connecteur) ; 0 : non communiqué.
+  quota_bytes: uint64;        // quota de l'Utilisateur
+  used_bytes: uint64;         // octets occupés par ses blocs de données
 }
 // StoreFragment
 table FragmentReceipt {
@@ -39,7 +42,7 @@ table FragmentReceipt {
 table ChallengeResponse {
   digest: [ubyte];
 }
-// ReportIncident, Delegate, Tombstone
+// ReportIncident, Delegate, Tombstone, EmergencyRelease
 table Ack {
   freed: uint64;
 }

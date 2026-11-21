@@ -12,14 +12,15 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_CREDENTIAL: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_CREDENTIAL: u8 = 3;
+pub const ENUM_MAX_CREDENTIAL: u8 = 4;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_CREDENTIAL: [Credential; 4] = [
+pub const ENUM_VALUES_CREDENTIAL: [Credential; 5] = [
   Credential::NONE,
   Credential::UserCredential,
   Credential::RescueCredential,
   Credential::DelegatedCredential,
+  Credential::EmergencyCredential,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -31,14 +32,16 @@ impl Credential {
   pub const UserCredential: Self = Self(1);
   pub const RescueCredential: Self = Self(2);
   pub const DelegatedCredential: Self = Self(3);
+  pub const EmergencyCredential: Self = Self(4);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 3;
+  pub const ENUM_MAX: u8 = 4;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::UserCredential,
     Self::RescueCredential,
     Self::DelegatedCredential,
+    Self::EmergencyCredential,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -47,6 +50,7 @@ impl Credential {
       Self::UserCredential => Some("UserCredential"),
       Self::RescueCredential => Some("RescueCredential"),
       Self::DelegatedCredential => Some("DelegatedCredential"),
+      Self::EmergencyCredential => Some("EmergencyCredential"),
       _ => None,
     }
   }

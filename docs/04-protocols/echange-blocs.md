@@ -43,6 +43,8 @@ la spec décrivait *ce qui* circule — voir
 | Nœud → partenaire | `StoreFragment`, `Challenge`, `FetchFragment`, `Tombstone` | aucun : identité Noise du Nœud |
 | Connecteur → partenaire (Nœud injoignable) | `FetchFragment` seulement | `RescueCredential` |
 | Nouveau Nœud → partenaire de l'ancien | `FetchFragment` seulement | `DelegatedCredential` |
+| Connecteur → partenaire de secours | `EmergencyPut` | `EmergencyCredential` |
+| Tout pair → partenaire de secours | `EmergencyGet`, `EmergencyRelease` | aucun (voir [`protocols.espace-secours`](espace-secours.md#depot)) |
 
 Corps des requêtes :
 
@@ -198,11 +200,18 @@ Au-delà, les données ne sont plus garanties (limite résiduelle de
 |---|---|
 | `GetBlock`, `FetchFragment` | `BlockData` — le demandeur recalcule le hash ([`protocols.integrite-lecture`](integrite-lecture.md)) |
 | `PutBlock` | `Stored` (`hash = SHA-256(data)`) |
-| `CommitRoot` | `RootState` : `committed = true` si `base_root` est la racine courante, sinon `false` et la racine courante (conflit, [`protocols.write-queue`](write-queue.md)) |
+| `CommitRoot` | `RootState` : `committed = true` si `base_root` est la racine courante, sinon `false` et la racine courante (conflit, [`protocols.write-queue`](write-queue.md)) ; toujours le quota et l'occupation de l'Utilisateur |
 | `StoreFragment` | `FragmentReceipt` |
 | `Challenge` | `ChallengeResponse` |
-| `ReportIncident`, `Delegate`, `Tombstone` | `Ack` |
+| `ReportIncident`, `Delegate`, `Tombstone`, `EmergencyRelease` | `Ack` |
+| `EmergencyPut` | `Stored` |
+| `EmergencyGet` | `BlockData` |
 | `RenewGrant` | `GrantIssued` |
+
+`RootState.quota_bytes` / `used_bytes` (ajout du 2026-11-21 ; 0 : non
+communiqué par un Nœud plus ancien) donnent la taille du lecteur monté et
+l'espace affiché par le Connecteur. Un `CommitRoot` dont
+`new_root = base_root` ne change rien : il sert à lire cet état.
 
 Toute erreur est une `Failure` portant un `ErrorCode`. Un partenaire qui
 répond `NotFound` à un `FetchFragment` ou `Challenge` portant sur un fragment
@@ -219,11 +228,16 @@ qu'il doit héberger est traité comme un échec PoS
 `OwnershipQuery` (ajout du 2026-11-20), Nœud → partenaire : voir
 [`protocols.gestion-volumes`](gestion-volumes.md#ownership-query).
 
+## Espace de secours
+
+`EmergencyPut`, `EmergencyGet` et `EmergencyRelease` (ajouts du
+2026-11-21) : voir [`protocols.espace-secours`](espace-secours.md#depot).
+
 ## Hors périmètre
 
-Traversée de NAT ([`network.bootstrap`](../01-network-dht/bootstrap.md)),
-ordres de migration entre Nœuds et synchronisation de l'espace de secours :
-ils réutiliseront ce transport et ces identifiants.
+Traversée de NAT ([`network.bootstrap`](../01-network-dht/bootstrap.md)) et
+ordres de migration entre Nœuds : ils réutiliseront ce transport et ces
+identifiants.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 

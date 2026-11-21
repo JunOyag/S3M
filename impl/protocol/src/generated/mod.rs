@@ -81,6 +81,14 @@ pub mod s3m {
     pub use self::delegate_generated::*;
     mod delegated_credential_generated;
     pub use self::delegated_credential_generated::*;
+    mod emergency_credential_generated;
+    pub use self::emergency_credential_generated::*;
+    mod emergency_get_generated;
+    pub use self::emergency_get_generated::*;
+    mod emergency_put_generated;
+    pub use self::emergency_put_generated::*;
+    mod emergency_release_generated;
+    pub use self::emergency_release_generated::*;
     mod error_code_generated;
     pub use self::error_code_generated::*;
     mod failure_generated;
