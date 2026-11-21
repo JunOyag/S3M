@@ -1095,6 +1095,7 @@ fn nat_status(sh: &Shared) -> Value {
     json!({
         "joignabilité": n.status,
         "box (UPnP)": n.upnp,
+        "adresse publique de la box": n.public_ip,
         "adresses externes confirmées": n.external,
         "adresses via relais": n.relayed,
         "perçages réussis": n.hole_punch_ok,
@@ -1197,12 +1198,11 @@ pub fn map_points(sh: &Shared) -> Value {
         .clone()
         .filter(|i| public(i))
         .or_else(|| {
-            sh.nat
-                .lock()
-                .unwrap()
-                .direct_tcp()
+            let n = sh.nat.lock().unwrap();
+            n.direct_tcp()
                 .map(|(ip, _)| ip)
                 .filter(|i| public(i))
+                .or_else(|| n.public_ip.clone())
         });
     let s = sh.service.lock().unwrap();
     let d = sh.dispersal.try_lock().ok();

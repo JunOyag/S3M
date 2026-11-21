@@ -61,8 +61,9 @@ Ajout du 2026-11-20 ([`protocols.partenariat-automatique`](../04-protocols/parte
   téléchargement en arrière-plan et rechargement sans redémarrage) ; adresse publiée dans
   l'entrée DHT pour les Nœuds, adresse de la dernière connexion pour les
   Utilisateurs (enregistrement désactivable) ; une adresse privée (réseau
-  local) est localisée par l'adresse publique de ce Nœud (`public_ip`, ou
-  adresse externe vue par UPnP / AutoNAT) et marquée « réseau local » ;
+  local) est localisée par l'adresse publique de ce Nœud (`public_ip`,
+  adresse externe confirmée, adresse de la box lue par UPnP même si
+  l'ouverture de port est refusée, ou adresse vue par un pair distant) et marquée « réseau local » ;
   adresses inconnues, ou privées sans adresse publique connue, comptées
   « non localisées ».
 

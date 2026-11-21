@@ -97,6 +97,9 @@ pub struct NatState {
     pub relay_circuits_served: u64,
     /// Dernière erreur de réservation de relais.
     pub relay_error: Option<String>,
+    /// Adresse publique de la box (UPnP), même si l'ouverture de port est
+    /// refusée : localisation des pairs du réseau local sur la carte.
+    pub public_ip: Option<String>,
 }
 
 impl NatState {
@@ -478,6 +481,15 @@ async fn run(
                         }
                         if info.protocols.iter().any(|p| p.as_ref() == RELAY_HOP) {
                             relay_capable.insert(peer_id, info.listen_addrs.clone());
+                        }
+                        // Adresse vue par un pair distant : adresse publique
+                        // de la box, à défaut d'UPnP.
+                        if let Some(Protocol::Ip4(v)) = info.observed_addr.iter().next() {
+                            if !(v.is_private() || v.is_loopback() || v.is_link_local()
+                                || v.octets()[0] == 100 && (v.octets()[1] & 0xc0) == 64)
+                            {
+                                nat.lock().unwrap().public_ip.get_or_insert(v.to_string());
+                            }
                         }
                     }
                     NodeBehaviourEvent::Autonat(autonat::Event::StatusChanged { new, .. }) => {

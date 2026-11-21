@@ -84,7 +84,12 @@ pub fn spawn(ports: Vec<u16>, nat: Arc<Mutex<NatState>>, tx: mpsc::Sender<Multia
                 }
             };
             let ext = match gw.get_external_ip().await {
-                Ok(IpAddr::V4(v)) => v,
+                Ok(IpAddr::V4(v)) => {
+                    if !is_private(v) {
+                        nat.lock().unwrap().public_ip = Some(v.to_string());
+                    }
+                    v
+                }
                 Ok(other) => {
                     set(format!("box trouvée, adresse externe non IPv4 ({other})"));
                     tokio::time::sleep(RETRY).await;
