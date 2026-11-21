@@ -247,6 +247,8 @@ pub enum Response {
     ProbeReply {
         nonce: Vec<u8>,
         accepting_partners: bool,
+        /// Nom actuel du Nœud (`deploiement.pseudos`).
+        node_name: Option<String>,
     },
     /// 0 : refusé.
     PartnershipAnswer {
@@ -818,13 +820,20 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
         Response::ProbeReply {
             nonce,
             accepting_partners,
+            node_name,
         } => {
             let n = b.create_vector(nonce);
+            let name = node_name
+                .as_deref()
+                .map(crate::pseudo::sanitize)
+                .filter(|n| !n.is_empty())
+                .map(|n| b.create_string(&n));
             let o = fb::ProbeReply::create(
                 &mut b,
                 &fb::ProbeReplyArgs {
                     nonce: Some(n),
                     accepting_partners: *accepting_partners,
+                    node_name: name,
                 },
             );
             (fb::ResponseBody::ProbeReply, o.as_union_value())
@@ -947,6 +956,10 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
             Response::ProbeReply {
                 nonce: bytes(x.nonce()),
                 accepting_partners: x.accepting_partners(),
+                node_name: x
+                    .node_name()
+                    .map(crate::pseudo::sanitize)
+                    .filter(|n| !n.is_empty()),
             }
         }
         fb::ResponseBody::PartnershipAnswer => Response::PartnershipAnswer {

@@ -49,7 +49,10 @@ tient lieu pour l'opérateur.
   `node_name` de la réponse `Messages`
   ([`protocols.canal-noeud`](../04-protocols/canal-noeud.md#requetes)) quand
   le Nœud est joignable, sinon dans le `name` de son entrée Node : il
-  s'affiche ainsi même quand le Nœud ne peut pas publier son entrée. Le Nœud affiche de même ses
+  s'affiche ainsi même quand le Nœud ne peut pas publier son entrée. Les
+  Nœuds trouvés sur le réseau local
+  ([`network.bootstrap`](../01-network-dht/bootstrap.md)) s'affichent de
+  même, leur nom étant lu dans le champ `node_name` de `ProbeReply`. Le Nœud affiche de même ses
   partenaires (`name` lu dans leur entrée) et ses Utilisateurs (étiquette
   locale).
 - Changer son pseudo, ou le nom de son Nœud, réémet l'entrée User. Changer

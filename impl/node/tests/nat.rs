@@ -125,7 +125,8 @@ async fn one_swarm_carries_dht_blocks_and_relayed_reachability() {
         resp,
         Response::ProbeReply {
             nonce: vec![5; 16],
-            accepting_partners: true
+            accepting_partners: true,
+            node_name: None,
         }
     );
     assert!(

@@ -27,6 +27,7 @@ impl<'a> flatbuffers::Follow<'a> for ProbeReply<'a> {
 impl<'a> ProbeReply<'a> {
   pub const VT_NONCE: flatbuffers::VOffsetT = 4;
   pub const VT_ACCEPTING_PARTNERS: flatbuffers::VOffsetT = 6;
+  pub const VT_NODE_NAME: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -38,6 +39,7 @@ impl<'a> ProbeReply<'a> {
     args: &'args ProbeReplyArgs<'args>
   ) -> flatbuffers::WIPOffset<ProbeReply<'bldr>> {
     let mut builder = ProbeReplyBuilder::new(_fbb);
+    if let Some(x) = args.node_name { builder.add_node_name(x); }
     if let Some(x) = args.nonce { builder.add_nonce(x); }
     builder.add_accepting_partners(args.accepting_partners);
     builder.finish()
@@ -58,6 +60,13 @@ impl<'a> ProbeReply<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(ProbeReply::VT_ACCEPTING_PARTNERS, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn node_name(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(ProbeReply::VT_NODE_NAME, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for ProbeReply<'_> {
@@ -69,6 +78,7 @@ impl flatbuffers::Verifiable for ProbeReply<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("nonce", Self::VT_NONCE, false)?
      .visit_field::<bool>("accepting_partners", Self::VT_ACCEPTING_PARTNERS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("node_name", Self::VT_NODE_NAME, false)?
      .finish();
     Ok(())
   }
@@ -76,6 +86,7 @@ impl flatbuffers::Verifiable for ProbeReply<'_> {
 pub struct ProbeReplyArgs<'a> {
     pub nonce: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub accepting_partners: bool,
+    pub node_name: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for ProbeReplyArgs<'a> {
   #[inline]
@@ -83,6 +94,7 @@ impl<'a> Default for ProbeReplyArgs<'a> {
     ProbeReplyArgs {
       nonce: None,
       accepting_partners: false,
+      node_name: None,
     }
   }
 }
@@ -99,6 +111,10 @@ impl<'a: 'b, 'b> ProbeReplyBuilder<'a, 'b> {
   #[inline]
   pub fn add_accepting_partners(&mut self, accepting_partners: bool) {
     self.fbb_.push_slot::<bool>(ProbeReply::VT_ACCEPTING_PARTNERS, accepting_partners, false);
+  }
+  #[inline]
+  pub fn add_node_name(&mut self, node_name: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(ProbeReply::VT_NODE_NAME, node_name);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> ProbeReplyBuilder<'a, 'b> {
@@ -120,6 +136,7 @@ impl core::fmt::Debug for ProbeReply<'_> {
     let mut ds = f.debug_struct("ProbeReply");
       ds.field("nonce", &self.nonce());
       ds.field("accepting_partners", &self.accepting_partners());
+      ds.field("node_name", &self.node_name());
       ds.finish()
   }
 }

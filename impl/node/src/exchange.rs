@@ -451,6 +451,7 @@ impl NodeService {
             }
             Body::Probe { nonce } => Ok(Response::ProbeReply {
                 nonce,
+                node_name: self.name.clone(),
                 accepting_partners: self.partner_policy.accept
                     && self.partners.len() < self.partner_policy.max_partners,
             }),

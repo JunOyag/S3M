@@ -24,6 +24,8 @@ pub struct FoundNode {
     /// Adresse d'échange de blocs retenue (TCP IPv4 de préférence).
     pub addr: String,
     pub accepting_partners: bool,
+    /// Nom du Nœud (`deploiement.pseudos`), lu dans `ProbeReply`.
+    pub name: Option<String>,
     /// Nœud sous identité temporaire, à configurer par appairage
     /// (`deploiement.appairage-admin`) ; `addr` est alors son adresse
     /// d'administration.
@@ -116,13 +118,16 @@ pub async fn scan(duration: Duration) -> Result<Vec<FoundNode>, String> {
             let r =
                 tokio::time::timeout(Duration::from_secs(3), client.request(a.clone(), req)).await;
             if let Ok(Ok(Response::ProbeReply {
-                accepting_partners, ..
+                accepting_partners,
+                node_name,
+                ..
             })) = r
             {
                 out.push(FoundNode {
                     node_id,
                     addr: a.to_string(),
                     accepting_partners,
+                    name: node_name,
                     to_configure: false,
                 });
                 probed = true;
@@ -142,6 +147,7 @@ pub async fn scan(duration: Duration) -> Result<Vec<FoundNode>, String> {
                         node_id,
                         addr: a.to_string(),
                         accepting_partners: false,
+                        name: None,
                         to_configure: true,
                     });
                 }

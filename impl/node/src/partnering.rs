@@ -367,6 +367,7 @@ pub async fn run_partnering(
             Ok(Ok(Response::ProbeReply {
                 nonce: back,
                 accepting_partners,
+                ..
             })) if back == nonce => {
                 p.accepting = accepting_partners;
                 true

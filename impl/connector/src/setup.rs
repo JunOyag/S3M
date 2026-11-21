@@ -260,7 +260,7 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                     }
                     json!({
                         "numéro": i + 1,
-                        "nœud": format!("{}…", &hex::encode(n.node_id)[..16]),
+                        "nœud": s3m_protocol::pseudo::display(&[n.name.as_deref()], &n.node_id),
                         "adresse": n.addr,
                         "état": if n.accepting_partners { "prêt" } else { "prêt (n'accepte pas de partenaires)" },
                         "_actions": [{ "nom": "choose", "libellé": "Se rattacher",

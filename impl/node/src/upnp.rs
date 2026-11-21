@@ -228,13 +228,24 @@ async fn map_port(
     }
 }
 
+/// Rangs successifs essayés dans chaque quart : plusieurs Nœuds derrière la
+/// même box (même IPv4) prennent chacun le suivant.
+pub const SHARED_IPV4_RANKS: u16 = 16;
+
 /// Ports externes à essayer pour `port` derrière une IPv4 partagée : même
-/// rang dans chacun des quatre quarts (plages de 16384 ports), hors `port`
-/// lui-même et hors ports réservés (< 1024).
+/// rang dans chacun des quatre quarts (plages de 16384 ports), puis les
+/// [`SHARED_IPV4_RANKS`] rangs suivants, hors `port` lui-même et hors ports
+/// réservés (< 1024).
 pub fn shared_ipv4_candidates(port: u16) -> Vec<u16> {
-    let offset = port % 16384;
-    (0..4u16)
-        .map(|k| k * 16384 + offset)
-        .filter(|p| *p != port && *p >= 1024)
-        .collect()
+    let mut out = Vec::new();
+    for d in 0..SHARED_IPV4_RANKS {
+        let offset = (port % 16384 + d) % 16384;
+        for k in 0..4u16 {
+            let p = k * 16384 + offset;
+            if p != port && p >= 1024 && !out.contains(&p) {
+                out.push(p);
+            }
+        }
+    }
+    out
 }

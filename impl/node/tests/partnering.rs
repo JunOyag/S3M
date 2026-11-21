@@ -139,7 +139,8 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
         b.handle(b"x", None, b"b", probe, NOW),
         Response::ProbeReply {
             nonce: vec![7; 16],
-            accepting_partners: false
+            accepting_partners: false,
+            node_name: None,
         }
     );
     let mut b2 = NodeService::new(B);

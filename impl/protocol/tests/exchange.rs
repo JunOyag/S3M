@@ -116,6 +116,12 @@ fn every_request_and_response_roundtrips() {
         Response::ProbeReply {
             nonce: vec![1; 16],
             accepting_partners: true,
+            node_name: None,
+        },
+        Response::ProbeReply {
+            nonce: vec![1; 16],
+            accepting_partners: false,
+            node_name: Some("Cheval".into()),
         },
         Response::PartnershipAnswer { granted_blocks: 42 },
         Response::Attached {
