@@ -39,6 +39,8 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         q_max_bytes: DEFAULT_Q_MAX_BYTES,
         watch_interval_s: DEFAULT_WATCH_INTERVAL_S,
         mount_point: Some("P:".into()),
+        access: None,
+        folder: None,
         dht_bootstrap: vec![],
         auto_attach: true,
         emergency_write: true,

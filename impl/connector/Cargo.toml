@@ -33,6 +33,7 @@ tray-icon = { version = "=0.26.1", optional = true }
 tao = { version = "=0.37.3", optional = true }
 winreg = { version = "=0.56.0", optional = true }
 tauri-winrt-notification = { version = "=0.8.1", optional = true }
+windows = { version = "=0.62.2", optional = true, features = ["Win32_Foundation", "Win32_Storage_CloudFilters", "Win32_Storage_FileSystem", "Win32_System_CorrelationVector", "Win32_System_IO"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winfsp = { version = "=0.13.2", optional = true, default-features = false, features = ["delayload"] }
@@ -46,8 +47,10 @@ default = []
 vdf = ["s3m-core/vdf"]
 # Lecteur monté Windows (WinFsp installé ; LLVM pour la compilation).
 mount = ["dep:winfsp", "dep:widestring"]
+# Mode dossier Windows (Cloud Files), sans WinFsp ni droit d'administration.
+folder = ["dep:windows"]
 # Application de la barre des tâches S3m.exe (Windows).
-tray = ["mount", "dep:tray-icon", "dep:tao", "dep:winreg", "dep:tauri-winrt-notification", "dep:embed-resource"]
+tray = ["mount", "folder", "dep:tray-icon", "dep:tao", "dep:winreg", "dep:tauri-winrt-notification", "dep:embed-resource"]
 
 [[bin]]
 name = "S3m"

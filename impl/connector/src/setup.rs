@@ -173,6 +173,8 @@ pub fn write_config(dir: &Path, prepared: &Prepared, addr: &str) -> Result<PathB
         q_max_bytes: DEFAULT_Q_MAX_BYTES,
         watch_interval_s: DEFAULT_WATCH_INTERVAL_S,
         mount_point: Some(free_drive_letter()),
+        access: None,
+        folder: None,
         // DHT et échange de blocs partagent la pile du Nœud.
         dht_bootstrap: vec![m.to_string()],
         auto_attach: true,

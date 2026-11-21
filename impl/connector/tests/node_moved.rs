@@ -80,6 +80,8 @@ async fn connector_finds_its_node_again_after_an_address_change() {
         q_max_bytes: DEFAULT_Q_MAX_BYTES,
         watch_interval_s: 3600,
         mount_point: None,
+        access: None,
+        folder: None,
         dht_bootstrap: vec![],
         auto_attach: false,
         emergency_write: false,

@@ -136,7 +136,8 @@ configuration de `Q_max` (4 GiO par défaut) et de l'intervalle de
 surveillance (5 minutes par défaut), lettre du lecteur monté (lettre libre
 autre que `C:` ; le lecteur est démonté puis remonté sans redémarrer S3m,
 l'ancienne lettre est rétablie en cas d'échec, les modifications en attente
-sont conservées). Dans les deux dashboards, chaque libellé est explicite et
+sont conservées), accès aux fichiers (lecteur ou dossier, et
+emplacement du dossier). Dans les deux dashboards, chaque libellé est explicite et
 porte une infobulle (marque ⓘ) qui l'explique. État de l'**espace de travail** de
 l'[écriture différée](../04-protocols/ecriture-differee.md) (occupation,
 réserve `workspace_reserve_bytes`), paramètres du délai de synchronisation
@@ -153,7 +154,8 @@ différée, indicateur des synchronisations en attente et action
   l'interface** : le dashboard est un ensemble de fichiers statiques servis
   par le binaire ; aucun runtime JavaScript n'est requis à l'exécution. Le
   lecteur monté ([`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md))
-  nécessite WinFsp ou FUSE.
+  nécessite WinFsp ou FUSE ; sans eux, le [mode dossier](../04-protocols/acces-applicatif.md#mode-dossier)
+  ne demande rien à installer.
 
 ### Application de la barre des tâches (Connecteur, Windows) {: #barre-des-taches }
 

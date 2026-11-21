@@ -20,8 +20,7 @@ derrière un **trait de système de fichiers commun** dans le moteur :
 Le moteur n'a qu'une implémentation de la logique de fichiers ; chaque
 système fournit son backend. **Aucun service réseau n'est exposé pour
 l'accès aux fichiers** (la V2 prévoyait WebDAV, retiré en V3). Prérequis
-d'installation : WinFsp ou FUSE — le Connecteur n'est donc plus un
-exécutable entièrement autonome
+d'installation : WinFsp ou FUSE, sauf en [mode dossier](#mode-dossier)
 ([`deploiement.packaging`](../07-deploiement/packaging.md)).
 
 Les écritures du lecteur se font par plages d'octets sur une copie locale
@@ -58,6 +57,36 @@ l'arborescence et de consulter les fichiers déjà confirmés. Ce chemin reste
 écritures pendant l'indisponibilité passent par
 [`protocols.write-queue`](write-queue.md) (coupure totale) ou
 [`protocols.espace-secours`](espace-secours.md) (Nœud seul injoignable).
+
+## Mode dossier (sans pilote) {: #mode-dossier }
+
+Ajout du 2026-11-22. Installer WinFsp demande un compte administrateur. Sans
+lui, le Connecteur expose les fichiers dans un **dossier synchronisé** du
+système, sans pilote ni droit d'administration : **Cloud Files** sous
+Windows 10 1709 et plus (volume NTFS), **File Provider** sous macOS (plus
+tard ; extension d'application signée). Linux n'en a pas besoin : FUSE y
+monte sans être root.
+
+- **Choix** : réglage « accès aux fichiers » = `lecteur` (lettre, WinFsp)
+  ou `dossier`. Le Connecteur prend `dossier` si WinFsp est absent.
+  Emplacement par défaut : `%USERPROFILE%\S3m`.
+- **Fantômes** : chaque fichier et dossier y apparaît comme un fantôme
+  (taille et dates, aucun contenu). Le contenu d'un dossier est fourni à sa
+  première ouverture, celui d'un fichier à sa première lecture, par les
+  mêmes lectures que le lecteur monté : la récupération reste
+  [paresseuse](#recuperation-paresseuse-lazy). Un fichier lu reste disponible
+  hors ligne jusqu'à « Libérer de l'espace ».
+- **Modifications locales** : écrites par l'application dans le vrai
+  fichier. Le Connecteur les détecte, attend 2 s sans nouvelle écriture,
+  relit le fichier et n'enregistre que les blocs de 64 Kio qui diffèrent,
+  puis le marque synchronisé ; la suite est celle de
+  [`protocols.ecriture-differee`](ecriture-differee.md). Créations,
+  suppressions et renommages suivent le même chemin.
+- **Modifications distantes** (autre appareil) : dans les dossiers déjà
+  ouverts, les fantômes sont créés, supprimés ou remplacés ; un fichier
+  modifié localement et pas encore enregistré n'est pas remplacé.
+- **Limite** : un fichier lu est conservé en clair dans le profil de
+  l'utilisateur, comme la copie locale du lecteur monté.
 
 ## Vérification d'intégrité
 

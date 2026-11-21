@@ -866,6 +866,10 @@ pages:
     section: "§3.12"
     refs: [fs.DirectoryEntry, protocols.write-queue, protocols.espace-secours, protocols.echange-blocs]
     verified_by:
+      - folder_sync::local_file_is_stored_block_by_block
+      - folder_sync::refresh_plan_never_touches_unsaved_local_changes
+      - folder_sync::changes_are_read_after_two_quiet_seconds
+      - cloud_folder::folder_shows_placeholders_hydrates_and_records_local_changes
       - access::paths_resolve_through_directories
       - access::reading_one_file_fetches_only_the_blocks_on_its_path
       - access::missing_node_block_is_served_by_the_rescue_path

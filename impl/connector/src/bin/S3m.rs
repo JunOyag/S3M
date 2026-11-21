@@ -316,8 +316,8 @@ fn main() {
                         open(u);
                     }
                 } else if e.id == open_drive.id() {
-                    if let Some(m) = shared.as_ref().and_then(|s| s.mount_point()) {
-                        open(&format!("{m}\\"));
+                    if let Some(m) = shared.as_ref().and_then(|s| daemon::files_location(s)) {
+                        open(&m);
                     }
                 } else if let Some(sh) = &shared {
                     if e.id == sync.id() {

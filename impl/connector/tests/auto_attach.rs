@@ -63,6 +63,8 @@ async fn unattached_connector_attaches_itself_with_the_node_policy_quota() {
         q_max_bytes: DEFAULT_Q_MAX_BYTES,
         watch_interval_s: 3600,
         mount_point: None,
+        access: None,
+        folder: None,
         dht_bootstrap: vec![],
         auto_attach: true,
         emergency_write: false,

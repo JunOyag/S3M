@@ -7,11 +7,14 @@ pub mod access;
 pub mod admin_client;
 pub mod bootstrap;
 pub mod channel;
+#[cfg(all(windows, feature = "folder"))]
+pub mod cloud_folder;
 pub mod daemon;
 pub mod dht_directory;
 pub mod drive;
 pub mod emergency;
 pub mod exchange;
+pub mod folder_sync;
 pub mod fs;
 pub mod incidents;
 pub mod integrity;

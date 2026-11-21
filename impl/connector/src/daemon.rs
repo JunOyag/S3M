@@ -76,6 +76,14 @@ pub struct Config {
     /// Lettre ou répertoire du lecteur monté.
     #[serde(default)]
     pub mount_point: Option<String>,
+    /// Accès aux fichiers (`protocols.acces-applicatif#mode-dossier`) :
+    /// `lecteur` (WinFsp), `dossier` (Cloud Files), absent = lecteur si
+    /// WinFsp est installé, sinon dossier.
+    #[serde(default)]
+    pub access: Option<String>,
+    /// Emplacement du dossier synchronisé (`%USERPROFILE%\S3m` par défaut).
+    #[serde(default)]
+    pub folder: Option<PathBuf>,
     /// Nœuds d'amorçage DHT (`/ip4/…/tcp/…/p2p/<PeerId>`, adresse « DHT »
     /// du dashboard Nœud). Vide : pas de publication de l'entrée User.
     #[serde(default)]
@@ -445,6 +453,8 @@ impl BlockIo for NodeIo {
 #[derive(Debug, Clone, Default)]
 pub struct DriveStatus {
     pub mounted: bool,
+    /// Mode dossier : emplacement du dossier synchronisé connecté.
+    pub folder: Option<String>,
     pub mount_error: Option<String>,
     pub last_sync: Option<u64>,
     pub last_sync_error: Option<String>,
@@ -577,7 +587,10 @@ fn connector_summary(v: &Value) -> Value {
         ("à jour".to_string(), "ok")
     };
     let mount = p("/lecteur/point de montage");
-    let (drive, drive_state) = if p("/lecteur/monté").as_bool() == Some(true) {
+    let folder = p("/lecteur/dossier synchronisé");
+    let (drive, drive_state) = if let Some(f) = folder.as_str() {
+        (format!("dossier {f}"), "ok")
+    } else if p("/lecteur/monté").as_bool() == Some(true) {
         (format!("{} monté", mount.as_str().unwrap_or("")), "ok")
     } else if !p("/lecteur/erreur de montage").is_null() {
         ("erreur de montage".to_string(), "probleme")
@@ -816,6 +829,8 @@ fn status_base(sh: &Shared) -> Value {
             "Q_max (octets)": sh.config.q_max_bytes,
             "intervalle de surveillance (s)": sh.config.watch_interval_s,
             "lecteur monté": sh.mount_point(),
+            "accès aux fichiers": access_mode(&sh.config),
+            "dossier synchronisé": folder_path(&sh.config).display().to_string(),
         },
         "écriture d'urgence": emergency_status(sh, now),
         "actions": [
@@ -824,6 +839,11 @@ fn status_base(sh: &Shared) -> Value {
               "champs": ["lettre du lecteur"],
               "valeurs": { "lettre du lecteur": sh.mount_point() },
               "aide": { "lettre du lecteur": format!("Lettres libres : {}. S3m redémarre ; les modifications en attente sont conservées.", free_letters().join(", ")) } },
+            { "nom": "set_access", "titre": "Accès aux fichiers", "libellé": "Enregistrer",
+              "champs": ["accès", "dossier"],
+              "valeurs": { "accès": access_mode(&sh.config), "dossier": folder_path(&sh.config).display().to_string() },
+              "aide": { "accès": "« lecteur » : une lettre de lecteur (WinFsp requis, installé par un administrateur) ; « dossier » : un dossier synchronisé, comme OneDrive, sans rien à installer. Pris en compte au prochain lancement de S3m.",
+                        "dossier": "Emplacement du dossier synchronisé, sur un disque local NTFS" } },
             { "nom": "admin_node", "titre": "Administrer mon Nœud à distance",
               "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration"],
               "aide": { "code 2FA": "Code à 6 chiffres de votre application d'authentification",
@@ -923,6 +943,7 @@ fn drive_status(sh: &Shared) -> Value {
     };
     json!({
         "point de montage": sh.mount_point(),
+        "dossier synchronisé": st.folder,
         "monté": st.mounted,
         "erreur de montage": st.mount_error,
         "modifications en attente": pending,
@@ -1437,9 +1458,9 @@ pub async fn start(
         .as_ref()
         .and_then(|g| open_grant(g, clock()).ok())
         .map(|g| g.expires_at);
-    let drive = match &config.mount_point {
-        None => None,
-        Some(_) => Some(Arc::new(Mutex::new(
+    let drive = match config.mount_point.is_some() || config.access.as_deref() == Some("dossier") {
+        false => None,
+        true => Some(Arc::new(Mutex::new(
             Drive::open(
                 Arc::new(NodeIo {
                     session: session.clone(),
@@ -1489,6 +1510,7 @@ pub async fn start(
         let sh = shared.clone();
         Arc::new(move |name, v| match name {
             "set_mount_point" => set_mount_point(&sh, &v),
+            "set_access" => set_access(&sh, &v),
             "sync_now" => {
                 sync_now(&sh);
                 Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
@@ -1560,10 +1582,117 @@ pub async fn start(
     Ok((shared, url))
 }
 
+/// WinFsp installé (dossier standard ou `WINFSP_DIR`) ?
+pub fn winfsp_installed() -> bool {
+    std::env::var_os("WINFSP_DIR")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("ProgramFiles(x86)").map(|p| PathBuf::from(p).join("WinFsp")))
+        .is_some_and(|d| d.join("bin").join("winfsp-x64.dll").exists())
+}
+
+/// Accès aux fichiers retenu : `lecteur` ou `dossier`
+/// (`protocols.acces-applicatif#mode-dossier`).
+pub fn access_mode(c: &Config) -> &'static str {
+    match c.access.as_deref() {
+        Some("dossier") => "dossier",
+        Some("lecteur") => "lecteur",
+        _ if cfg!(windows) && !winfsp_installed() => "dossier",
+        _ => "lecteur",
+    }
+}
+
+/// Emplacement du dossier synchronisé.
+pub fn folder_path(c: &Config) -> PathBuf {
+    c.folder.clone().unwrap_or_else(|| {
+        std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| c.data_dir.clone())
+            .join("S3m")
+    })
+}
+
+/// Où ouvrir les fichiers : dossier synchronisé ou lettre du lecteur.
+pub fn files_location(sh: &Shared) -> Option<String> {
+    let folder = sh.drive_status.lock().unwrap().folder.clone();
+    folder.or_else(|| sh.mount_point().map(|m| format!("{m}\\")))
+}
+
+/// Change l'accès aux fichiers (pris en compte au prochain lancement).
+fn set_access(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let access = v
+        .get("accès")
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_lowercase())
+        .unwrap_or_default();
+    if access != "lecteur" && access != "dossier" {
+        return Err("accès attendu : « lecteur » ou « dossier »".into());
+    }
+    let folder = v
+        .get("dossier")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    if let Some(f) = &folder {
+        if !f.is_absolute() {
+            return Err(
+                "dossier : chemin complet attendu, par exemple C:\\Users\\vous\\S3m".into(),
+            );
+        }
+    }
+    let path = sh
+        .config
+        .source
+        .clone()
+        .ok_or("fichier de configuration inconnu")?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    raw["access"] = json!(access);
+    if let Some(f) = folder {
+        raw["folder"] = json!(f);
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&raw).expect("sérialisable"),
+    )
+    .and_then(|_| std::fs::rename(&tmp, &path))
+    .map_err(|e| e.to_string())?;
+    Ok(json!({ "ok": true, "message": "Enregistré : relancez S3m pour l'appliquer" }))
+}
+
+/// Connecte le dossier synchronisé (mode dossier, Windows).
+#[cfg(all(windows, feature = "folder"))]
+fn mount_folder(sh: &Arc<Shared>) -> bool {
+    let Some(drive) = sh.drive.clone() else {
+        return false;
+    };
+    let sched = sh.scheduler.clone();
+    let clock = sh.clock.clone();
+    let on_write: crate::cloud_folder::WriteHook = Arc::new(move |path, size| {
+        sched.lock().unwrap().on_write(path, size, clock());
+    });
+    let root = folder_path(&sh.config);
+    let r = crate::cloud_folder::start(&root, drive, on_write);
+    let mut st = sh.drive_status.lock().unwrap();
+    st.mounted = r.is_ok();
+    st.folder = r.is_ok().then(|| root.display().to_string());
+    st.mount_error = r.err();
+    true
+}
+
+#[cfg(not(all(windows, feature = "folder")))]
+fn mount_folder(_: &Arc<Shared>) -> bool {
+    false
+}
+
 /// Monte le lecteur (Windows, feature `mount`) dans un fil dédié qui garde
-/// l'hôte WinFsp vivant.
+/// l'hôte WinFsp vivant ; en mode dossier, connecte le dossier synchronisé.
 #[cfg(all(windows, feature = "mount"))]
 fn mount_drive(sh: &Arc<Shared>) {
+    if access_mode(&sh.config) == "dossier" && mount_folder(sh) {
+        return;
+    }
     let (Some(drive), Some(point)) = (sh.drive.clone(), sh.mount_point()) else {
         return;
     };
@@ -1619,6 +1748,9 @@ fn mount_drive(sh: &Arc<Shared>) {
 
 #[cfg(not(all(windows, feature = "mount")))]
 fn mount_drive(sh: &Arc<Shared>) {
+    if access_mode(&sh.config) == "dossier" && mount_folder(sh) {
+        return;
+    }
     sh.drive_status.lock().unwrap().mount_error =
         Some("exécutable compilé sans la feature `mount` (WinFsp)".into());
 }

@@ -682,12 +682,18 @@ entries:
       - drive::files_and_directories_survive_sync_and_are_read_back_from_the_node
       - drive::rename_delete_and_nested_edits_are_copy_on_write
       - drive::concurrent_root_change_is_a_conflict_and_keeps_local_changes
+      - folder_sync::local_file_is_stored_block_by_block
+      - folder_sync::refresh_plan_never_touches_unsaved_local_changes
+      - folder_sync::changes_are_read_after_two_quiet_seconds
+      - cloud_folder::folder_shows_placeholders_hydrates_and_records_local_changes
     notes: >-
       Moteur (access.rs, drive.rs : vue fusionnée distant + modifications
       locales journalisées, synchronisation copy-on-write puis CommitRoot) et
       backend WinFsp (winfsp_backend.rs, feature mount) livrés et essayés de
       bout en bout sous Windows (écriture, déplacement, suppression, relecture
       depuis le Nœud après redémarrage). Transport : protocols.echange-blocs.
+      Mode dossier (2026-11-22) : folder_sync.rs (commun) et cloud_folder.rs
+      (Cloud Files, feature folder), essayé sur un vrai dossier synchronisé.
       FUSE (Linux, macOS) viendra ensuite sans modifier le moteur, comme le
       prévoit la page.
   protocols.dispersion-transactionnelle:

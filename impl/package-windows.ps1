@@ -33,7 +33,7 @@ if (-not (Test-Path (Join-Path $env:LIBCLANG_PATH 'libclang.dll'))) {
     throw "LLVM introuvable ($env:LIBCLANG_PATH) : winget install LLVM.LLVM, ou definissez LIBCLANG_PATH."
 }
 $winfsp = Join-Path ${env:ProgramFiles(x86)} 'WinFsp\bin\winfsp-x64.dll'
-if (-not (Test-Path $winfsp)) { Write-Warning "WinFsp absent : le lecteur ne pourra pas etre monte (winget install WinFsp.WinFsp)." }
+if (-not (Test-Path $winfsp)) { Write-Warning "WinFsp absent sur cette machine de compilation : les tests du lecteur sont ignores ; S3m utilisera le mode dossier la ou WinFsp manque." }
 
 function Build-Bin([string]$crate, [string]$features, [string]$bin) {
     Write-Host "== $bin ($features)"
@@ -45,7 +45,7 @@ function Build-Bin([string]$crate, [string]$features, [string]$bin) {
 }
 
 Build-Bin 'node' 'vdf' 's3m-node'
-Build-Bin 'connector' 'vdf mount' 's3m-connector'
+Build-Bin 'connector' 'vdf mount folder' 's3m-connector'
 Build-Bin 'connector' 'vdf tray' 'S3m'
 
 $dist = Join-Path $here 'dist\windows'
