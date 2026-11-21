@@ -88,6 +88,7 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
         auto_attach: true,
         emergency_write: false,
         n_secours: 4,
+        source: None,
     };
     let (shared, url) = start(config, clock).await.unwrap();
     watch_once(&shared).await;
@@ -117,4 +118,16 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
     let h = shared.health.lock().unwrap();
     assert_eq!(h.reachable, Some(false));
     assert_eq!(h.inactivity_detected_at, Some(NOW));
+}
+
+#[test]
+fn drive_letter_is_normalised_and_system_disk_refused() {
+    use s3m_connector::daemon::parse_drive_letter;
+    for s in ["s", "S:", " s:\\ ", "S:/"] {
+        assert_eq!(parse_drive_letter(s).unwrap(), "S:");
+    }
+    assert!(parse_drive_letter("C").is_err());
+    assert!(parse_drive_letter("SS").is_err());
+    assert!(parse_drive_letter("1").is_err());
+    assert!(parse_drive_letter("").is_err());
 }

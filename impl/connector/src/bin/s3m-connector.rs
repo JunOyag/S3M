@@ -43,6 +43,7 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         auto_attach: true,
         emergency_write: true,
         n_secours: s3m_connector::emergency::DEFAULT_N_SECOURS,
+        source: None,
     };
     let cfg = dir.join("connector.json");
     std::fs::write(&cfg, serde_json::to_string_pretty(&config)?)?;

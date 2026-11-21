@@ -129,7 +129,9 @@ partenaires utilisés, estimation du quota consommé par les autres
 Connecteurs), historique des incidents d'intégrité
 ([`protocols.integrite-lecture`](../04-protocols/integrite-lecture.md)),
 configuration de `Q_max` (4 GiO par défaut) et de l'intervalle de
-surveillance (5 minutes par défaut). État de l'**espace de travail** de
+surveillance (5 minutes par défaut), lettre du lecteur monté (lettre libre
+autre que `C:` ; S3m redémarre pour remonter le lecteur, les modifications
+en attente sont conservées). État de l'**espace de travail** de
 l'[écriture différée](../04-protocols/ecriture-differee.md) (occupation,
 réserve `workspace_reserve_bytes`), paramètres du délai de synchronisation
 différée, indicateur des synchronisations en attente et action

@@ -67,6 +67,7 @@ async fn unattached_connector_attaches_itself_with_the_node_policy_quota() {
         auto_attach: true,
         emergency_write: false,
         n_secours: 4,
+        source: None,
     };
     let (shared, _) = start(config, clock).await.unwrap();
     // Un premier tour peut échouer côté réseau (connexion en cours) : la

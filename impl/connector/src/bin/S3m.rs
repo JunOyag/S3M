@@ -102,6 +102,19 @@ fn set_autostart(on: bool) {
 /// Variable d'environnement du redémarrage « Changer de Nœud ».
 const CHANGE_NODE_ENV: &str = "S3M_CHANGE_NODE";
 
+/// Variable d'environnement d'un simple redémarrage (nouvelle lettre de
+/// lecteur) : attendre la fin de l'instance courante.
+const RESTART_ENV: &str = "S3M_RESTART";
+
+/// Relance S3m telle quelle ; l'instance courante doit ensuite quitter.
+fn restart() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe)
+            .env(RESTART_ENV, "1")
+            .spawn();
+    }
+}
+
 /// Relance S3m sur l'assistant ; l'instance courante doit ensuite quitter.
 fn restart_for_new_node() {
     if let Ok(exe) = std::env::current_exe() {
@@ -170,7 +183,7 @@ fn main() {
     let changing = std::env::var_os(CHANGE_NODE_ENV).is_some();
     let mut lock = single_instance(&dir);
     for _ in 0..60 {
-        if lock.is_some() || !changing {
+        if lock.is_some() || !(changing || std::env::var_os(RESTART_ENV).is_some()) {
             break;
         }
         std::thread::sleep(Duration::from_millis(500));
@@ -333,6 +346,12 @@ fn main() {
             }
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 let Some(sh) = &shared else { return };
+                if sh.restart.load(Ordering::SeqCst) {
+                    log("redémarrage demandé (lettre du lecteur)");
+                    restart();
+                    *flow = ControlFlow::Exit;
+                    return;
+                }
                 if sh.change_node.load(Ordering::SeqCst) {
                     log("changement de Nœud demandé (tableau de bord)");
                     restart_for_new_node();

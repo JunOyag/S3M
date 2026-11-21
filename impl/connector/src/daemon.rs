@@ -91,6 +91,69 @@ pub struct Config {
     /// `n_secours` : partenaires de secours distincts.
     #[serde(default = "default_n_secours")]
     pub n_secours: usize,
+    /// Fichier d'où la configuration a été lue (modifications depuis le
+    /// dashboard).
+    #[serde(skip)]
+    pub source: Option<PathBuf>,
+}
+
+/// Lettre de lecteur saisie (`P`, `p:`, `P:\`) → `P:` ; `A:` à `Z:` sauf
+/// `C:`.
+pub fn parse_drive_letter(s: &str) -> Result<String, String> {
+    let t = s.trim().trim_end_matches(['\\', '/']).trim_end_matches(':');
+    let mut it = t.chars();
+    match (it.next(), it.next()) {
+        (Some(c), None) if c.is_ascii_alphabetic() => {
+            let c = c.to_ascii_uppercase();
+            if c == 'C' {
+                return Err("C: est le disque système".into());
+            }
+            Ok(format!("{c}:"))
+        }
+        _ => Err("lettre attendue, par exemple « S » ou « S: »".into()),
+    }
+}
+
+/// Lettres libres, de D: à Z: (aide du dashboard).
+fn free_letters() -> Vec<String> {
+    ('D'..='Z')
+        .map(|c| format!("{c}:"))
+        .filter(|l| !Path::new(&format!("{l}\\")).exists())
+        .collect()
+}
+
+/// Change la lettre du lecteur dans le fichier de configuration ; S3m
+/// redémarre pour remonter le lecteur (modifications en attente conservées).
+fn set_mount_point(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let raw = v
+        .get("lettre du lecteur")
+        .and_then(|x| x.as_str())
+        .ok_or("champ « lettre du lecteur » manquant")?;
+    let letter = parse_drive_letter(raw)?;
+    if sh.config.mount_point.as_deref() == Some(letter.as_str()) {
+        return Ok(json!({ "ok": true, "message": format!("Le lecteur est déjà {letter}") }));
+    }
+    if Path::new(&format!("{letter}\\")).exists() {
+        return Err(format!("{letter} est déjà utilisé sur ce PC"));
+    }
+    let path = sh
+        .config
+        .source
+        .clone()
+        .ok_or("fichier de configuration inconnu")?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    raw["mount_point"] = json!(letter);
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&raw).expect("sérialisable"),
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    sh.restart.store(true, std::sync::atomic::Ordering::SeqCst);
+    Ok(json!({ "ok": true,
+        "message": format!("S3m redémarre et monte le lecteur sur {letter} (modifications en attente conservées)…") }))
 }
 
 fn default_n_secours() -> usize {
@@ -172,6 +235,7 @@ impl Config {
                 *p = base.join(&*p);
             }
         }
+        c.source = Some(path.to_path_buf());
         Ok(c)
     }
 }
@@ -322,6 +386,8 @@ pub struct Shared {
     pub last_lan_search: Mutex<Option<u64>>,
     /// « Changer de Nœud » demandé (l'application redémarre sur l'assistant).
     pub change_node: std::sync::atomic::AtomicBool,
+    /// Redémarrage demandé (nouvelle lettre de lecteur).
+    pub restart: std::sync::atomic::AtomicBool,
     pub pub_user: [u8; 32],
     pub session: NodeSession,
     pub keeper: tokio::sync::Mutex<GrantKeeper>,
@@ -371,7 +437,7 @@ pub fn status(sh: &Shared) -> Value {
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
-          "sections": ["lecteur", "file d'écriture"], "actions": ["sync_now"] },
+          "sections": ["lecteur", "file d'écriture"], "actions": ["sync_now", "set_mount_point"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["admin_node", "change_node"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
@@ -475,6 +541,10 @@ fn status_base(sh: &Shared) -> Value {
         "écriture d'urgence": emergency_status(sh, now),
         "actions": [
             { "nom": "sync_now", "libellé": "Synchroniser maintenant", "champs": [] },
+            { "nom": "set_mount_point", "titre": "Lettre du lecteur", "libellé": "Changer",
+              "champs": ["lettre du lecteur"],
+              "valeurs": { "lettre du lecteur": sh.config.mount_point },
+              "aide": { "lettre du lecteur": format!("Lettres libres : {}. S3m redémarre ; les modifications en attente sont conservées.", free_letters().join(", ")) } },
             { "nom": "admin_node", "titre": "Administrer mon Nœud à distance",
               "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration"],
               "aide": { "code 2FA": "Code à 6 chiffres de votre application d'authentification",
@@ -1099,6 +1169,7 @@ pub async fn start(
         emergency: Mutex::new(load_emergency(&config)),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
+        restart: Default::default(),
         priv_user,
         pub_node,
         salt: salt.clone(),
@@ -1115,6 +1186,7 @@ pub async fn start(
     let act_fn: ActionFn = {
         let sh = shared.clone();
         Arc::new(move |name, v| match name {
+            "set_mount_point" => set_mount_point(&sh, &v),
             "sync_now" => {
                 sync_now(&sh);
                 Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))

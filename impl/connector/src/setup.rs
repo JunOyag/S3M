@@ -178,6 +178,7 @@ pub fn write_config(dir: &Path, prepared: &Prepared, addr: &str) -> Result<PathB
         auto_attach: true,
         emergency_write: true,
         n_secours: crate::emergency::DEFAULT_N_SECOURS,
+        source: None,
     };
     let path = config_path(dir);
     std::fs::write(
