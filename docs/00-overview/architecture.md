@@ -21,11 +21,12 @@ entre nœuds partenaires, sans organe centralisé de contrôle.
   et [`network.traversee-nat`](../01-network-dht/traversee-nat.md).
 - **Unité de stockage (bloc)** : taille fixe 64 KiO (65 536 octets), chiffré
   de bout en bout, en-tête fixe (version de protocole).
-- **Équité d'échange (Troc 1:1)** : chaque bloc de parité envoyé sur un nœud
-  distant consomme un quota équivalent local. Comptabilité détaillée dans
-  [`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md).
+- **Équité d'échange (Troc 1:1)** : chaque bloc de parité confié à un
+  partenaire est rendu par un bloc de parité hébergé pour lui, sans solde
+  négocié ; l'écart ne dépasse jamais un fragment. Règle dans
+  [`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md#equilibre).
 - **Redondance Reed-Solomon** : k blocs de données → coef×k blocs de parité
-  (coef=3 par défaut) → N = k + coef×k blocs par stripe. Voir
+  (k = 4 et coef = 3, constantes du logiciel) → N = k + coef×k blocs par stripe. Voir
   [`protocols.erasure-coding`](../04-protocols/erasure-coding.md) pour la
   mécanique complète, et [`dispersal.Stripe`](../02-schemas/dispersal/Stripe.md)
   pour la structure.

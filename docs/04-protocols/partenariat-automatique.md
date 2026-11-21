@@ -52,14 +52,21 @@ Chaque candidat et partenaire reçoit un `Probe` toutes les 5 minutes
 ## Établissement d'un partenariat
 
 Tant que le Nœud compte moins de partenaires actifs que la cible (coef×k
-+ 4 par défaut), il propose un partenariat (`ProposePartnership`) aux
++ 4 par défaut, coef×k au moins), il propose un partenariat (`ProposePartnership`) aux
 candidats de meilleur score, au-dessus du seuil de placement, qui
 acceptent des propositions. La proposition porte l'entrée DHT Node signée
 du demandeur, que le destinataire vérifie lui-même (preuve VDF comprise).
 Le destinataire accepte automatiquement si sa politique le permet (nombre
-maximal de partenaires, solde maximal accordé, demandeur hors liste
-noire) et répond le solde accordé (`PartnershipAnswer`, au plus le solde
-demandé ; 0 = refus). Le même solde vaut des deux côtés (troc 1:1).
+maximal de partenaires, demandeur hors liste noire) et répond
+`PartnershipAnswer` : 0 = refus, toute autre valeur = accepté. Depuis le
+2026-11-21, aucun solde n'est négocié : `allowance_blocks` et
+`granted_blocks` valent 1 et ne bornent rien, l'échange suivant la règle
+d'équilibre de [`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md#equilibre).
+
+**Partenaires manquants** : si un stripe ne trouve pas coef×k partenaires
+distincts qui acceptent l'échange, le Nœud relève sa cible du nombre
+manquant et propose de nouveaux partenariats ; la cible revient à sa valeur
+réglée quand les stripes sont placés.
 
 ## Placement et retrait
 

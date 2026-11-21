@@ -46,14 +46,16 @@ Précisions d'implémentation (2026-11-20, `impl/SPEC_GAPS.md`) :
 - **Blocs à disperser** : chaque bloc reçu d'un Utilisateur (`PutBlock`,
   [`protocols.echange-blocs`](echange-blocs.md)) entre dans l'assemblage
   progressif de [`protocols.erasure-coding`](erasure-coding.md#assemblage-progressif)
-  (k par défaut 4, coef 3, padding après `duree_max_idle_seconds`). Un
+  (k = 4, coef = 3, constantes ; padding après `duree_max_idle_seconds`). Un
   stripe partiel est recréé dès l'arrivée de vrais blocs ; l'ancien est
   purgé par tombstones.
 - **Placement** : les coef×k fragments de parité vont à coef×k partenaires
   distincts, choisis par distance XOR entre `node_id` et `stripe_id`
   (`stripe_id` = SHA-256 des hashes de ses k blocs de données) parmi ceux
-  dont le solde de troc le permet ; un partenaire injoignable est remplacé
-  par le suivant. Seul un reçu signé compte comme confirmation.
+  qui acceptent l'échange selon la règle 1:1
+  ([`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md#equilibre)) ;
+  un partenaire injoignable ou qui refuse (`QuotaExceeded`) est remplacé par
+  le suivant. Seul un reçu signé compte comme confirmation.
 - **Arbre d'index** : un `IndexNode` tient dans un bloc chiffré
   ([`crypto.k-dispersal`](../03-crypto/k-dispersal.md)) ; il forme le bloc 0
   d'un stripe complet dont les k−1 autres blocs de données sont du padding,

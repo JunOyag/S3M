@@ -21,9 +21,9 @@ redondance et de l'espace de secours.
 
 ## Notes
 
-- `default_replication_coefficient` (coef, 3 par défaut) détermine N = k +
-  coef×k blocs par stripe — voir
-  [`protocols.erasure-coding`](../../04-protocols/erasure-coding.md).
+- `default_replication_coefficient` est ignoré : coef = 3 est une constante
+  du logiciel — voir
+  [`protocols.erasure-coding`](../../04-protocols/erasure-coding.md#parametres).
 - `duree_max_idle_seconds` gouverne le padding par timeout d'un paquet
   incomplet, également décrit sur cette même page (assemblage progressif).
 - `emergency_reserved_bytes` et `emergency_backup_capacity` dimensionnent la

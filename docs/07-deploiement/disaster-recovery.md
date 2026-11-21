@@ -21,8 +21,8 @@ de signature et l'espace de secours.
 Précisions d'implémentation (2026-11-20, `impl/SPEC_GAPS.md`) :
 
 - **Contenu** : [`node.NodeManifest`](../02-schemas/node/NodeManifest.md)
-  — Utilisateurs rattachés (sel, quota), comptes partenaires (solde accordé
-  inclus, champ additif `allowance_blocks`), liste noire. Les conteneurs
+  — Utilisateurs rattachés (sel, quota), comptes partenaires (fragments
+  confiés et reçus ; `allowance_blocks`, ignoré, vaut 0), liste noire. Les conteneurs
   physiques n'y figurent pas : la restauration réécrit les blocs.
 - **Chiffrement** : `K_node_snapshot = KDF(priv_node, "node-snapshot",
   sel, u32(i))`, sel de 16 o neuf à chaque émission, format de bloc de

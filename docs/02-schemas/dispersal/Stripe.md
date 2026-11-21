@@ -22,7 +22,7 @@ Unité de base de l'erasure coding.
 `blocks` référence des [`dispersal.BlockEntry`](BlockEntry.md), indices 0 à
 k-1 pour les données (toujours locales) et k à N-1 pour la parité
 (dispersée). Le détail de l'algorithme de découpage/reconstruction, du
-coefficient par défaut (coef=3, N=4k) et de la tolérance aux pannes est
+des paramètres fixes (k = 4, coef = 3, N = 16) et de la tolérance aux pannes est
 traité dans [`protocols.erasure-coding`](../../04-protocols/erasure-coding.md)
 — non répété ici.
 

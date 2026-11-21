@@ -22,13 +22,13 @@ table PartnerAccount {
   partner_node_id: [ubyte];
   blocks_hosted_for_partner: uint64;   // blocs de CE nœud stockés chez le partenaire (troc sortant)
   blocks_hosted_by_partner: uint64;    // blocs du partenaire stockés par CE nœud (troc entrant)
-  allowance_blocks: uint64;            // ajout 2026-11-20 : solde de troc accordé (fragments acceptés au plus)
+  allowance_blocks: uint64;            // ajout 2026-11-20, ignoré depuis le 2026-11-21 (troc strict, voir node.PartnerAccount)
 }
 
 /// Configuration opérationnelle du Nœud.
 table NodeConfig {
   volumes: [VolumeConfig];
-  default_replication_coefficient: uint8; // coefficient de redondance = parité / k ; 3 par défaut → N = k + 3k = 4k
+  default_replication_coefficient: uint8; // ignoré depuis le 2026-11-21 : coef = 3 est une constante du logiciel (N = k + 3k = 4k)
   duree_max_idle_seconds: uint32;   // délai avant padding zéro d'un paquet incomplet (§4.1)
   republish_interval: uint32;       // fréquence de republication DHT Node (§3.9)
   emergency_reserved_bytes: uint64; // espace réservé aux dépôts d'urgence de tiers (§3.12.4)

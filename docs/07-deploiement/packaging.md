@@ -47,7 +47,7 @@ espace de secours occupé/réservé pour tiers en détresse
 Ajout du 2026-11-20 ([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md)) :
 
 - liste des partenaires triable : score et composantes, état (actif, en
-  retrait, terminé), fragments confiés et reçus, solde accordé, dernier
+  retrait, terminé), fragments confiés et reçus, dernier
   challenge réussi, latence, pays ;
 - **carte du monde** plein écran : partenaires, Nœuds non partenaires
   (candidats découverts), Nœuds en liste noire, Utilisateurs rattachés —

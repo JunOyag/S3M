@@ -59,7 +59,7 @@ table ProbeReply {
 }
 // ProposePartnership
 table PartnershipAnswer {
-  granted_blocks: uint64;     // 0 : refusé
+  granted_blocks: uint64;     // 0 : refusé ; toute autre valeur : accepté (1 depuis le 2026-11-21, troc strict)
 }
 // Attach
 table Attached {

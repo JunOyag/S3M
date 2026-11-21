@@ -12,7 +12,7 @@ verified_by: []
 ## Découpage & reconstruction
 
 Les données sont découpées en k fragments. Le nœud calcule coef×k fragments
-de parité (3k par défaut), soit N = k + coef×k par
+de parité (3k), soit N = k + coef×k par
 [`dispersal.Stripe`](../02-schemas/dispersal/Stripe.md). La donnée initiale
 est réassemblée dès lors que n'importe quels k fragments sur N sont
 récupérés — y compris, en cas de perte totale du nœud hébergeur, à partir de
@@ -20,9 +20,17 @@ k fragments de parité seuls.
 
 ## Équité 1:1
 
-Seuls les fragments **de parité** consomment un quota d'hébergement —
-[`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md). Les k blocs
+Seuls les fragments **de parité** entrent dans le troc —
+[`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md#equilibre). Les k blocs
 de données restent exclusivement locaux, jamais dans le troc.
+
+## Paramètres fixes {: #parametres }
+
+Ajout du 2026-11-21. **k = 4** et **coef = 3** (N = 16) sont des constantes
+du logiciel : aucune configuration ne les modifie, et une valeur lue
+ailleurs (`default_replication_coefficient` de
+[`node.NodeConfig`](../02-schemas/node/NodeConfig.md), ancien fichier de
+configuration) est ignorée.
 
 ## Dispersion multi-partenaires
 
