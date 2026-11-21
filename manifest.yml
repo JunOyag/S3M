@@ -902,6 +902,15 @@ pages:
       - emergency::emergency_capacity_defaults_to_20_gib
       - emergency::reserve_caps_users_and_bytes
       - emergency::return_integration_uses_emergency_keys_and_timestamp_order_until_quota
+      - emergency::manifest_roundtrips_through_the_signed_encrypted_entry
+      - emergency::merge_keeps_both_connectors_and_drops_a_stale_base
+      - emergency::deposit_and_release_signatures_are_bound_to_their_inputs
+      - emergency::deposits_need_a_bound_vdf_identity_and_respect_the_reserve
+      - emergency::release_replay_is_refused_and_forgotten_deposits_are_purged
+      - emergency::reserve_is_sized_from_u_backup_and_rebuilt_from_storage
+      - emergency::deposit_fetch_and_release_against_a_real_partner
+      - drive::emergency_tree_is_built_offline_and_committed_unchanged_on_return
+      - drive::a_later_change_supersedes_the_emergency_tree
 
   - id: protocols.ecriture-differee
     kind: narrative

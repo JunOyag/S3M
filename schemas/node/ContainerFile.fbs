@@ -18,7 +18,7 @@ table ContainerFile {
   container_id: uint32;          // identifiant unique, compteur global du Nœud
   volume_id: uint32;               // référence VolumeConfig.volume_id — sur quel volume ce conteneur est physiquement placé (un Nœud peut avoir plusieurs volumes, NodeConfig.volumes)
   owner_type: uint8;              // 0 = AttachedUser (blocs de données locaux, jamais dispersés) ; 1 = Partner (parité hébergée en réciprocité, troc entrant) ; 2 = EmergencyDepositor (dépôt de secours temporaire, §3.12.4)
-  owner_id: [ubyte];              // AttachedUser.user_id, PartnerAccount.partner_node_id, ou EmergencyManifest.user_id selon owner_type
+  owner_id: [ubyte];              // AttachedUser.user_id, PartnerAccount.partner_node_id, ou sig_pub_emergency du déposant (protocols.espace-secours) selon owner_type
   sequence_number: uint32;        // rang parmi les conteneurs de ce propriétaire (0, 1, 2, ...) — sert au nommage de fichier
   slot_count: uint32;             // nombre de slots (65536 par défaut = 4 GiO / 64 KiO, correspondance exacte)
   occupied_bitmap: [ubyte];       // 1 bit par slot (8192 octets pour 65536 slots) ; 0 = libre/trou, 1 = occupé

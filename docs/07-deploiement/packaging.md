@@ -111,7 +111,10 @@ sont des boutons sur sa ligne.
 
 ## Dashboard Connecteur
 
-Nœud rattaché et son état de joignabilité, palier d'alerte de migration en
+Nœud rattaché et son état de joignabilité, espace disponible / total et
+pourcentage utilisé (quota et occupation communiqués par le Nœud dans
+`RootState`, [`protocols.echange-blocs`](../04-protocols/echange-blocs.md) —
+c'est aussi la taille du lecteur monté), palier d'alerte de migration en
 cours (ancienneté de `inactivity_detected_at`), état de la
 [`protocols.write-queue`](../04-protocols/write-queue.md) (mutations en
 attente, taille, dernière synchronisation, entrées rejetées pour

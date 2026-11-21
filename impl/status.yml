@@ -278,9 +278,9 @@ entries:
       s3m-connector (init + config JSON, phrase de récupération BIP-39),
       stockage disque du Nœud, état persistant, API locale HTTP/WebSocket
       protégée (local_api), dashboards statiques servis par les binaires, image
-      Docker du Nœud (impl/node/Dockerfile). Restent pour clore : dashboards
-      incomplets (taux de republication DHT, espace de secours,
-      écriture d'urgence non suivis) ; snapshot du Nœud, dispersion, contrôles et
+      Docker du Nœud (impl/node/Dockerfile). 2026-11-21 : dashboards complets
+      (taux de republication DHT, espace de secours, écriture d'urgence,
+      espace de l'Utilisateur et taille réelle du lecteur) ; snapshot du Nœud, dispersion, contrôles et
       publication des entrées DHT Node/User (VDF natif Windows) livrés —
       voir impl/SPEC_GAPS.md.
       2026-11-20 : application de barre des tâches S3m.exe (icône d'état, menu,
@@ -747,15 +747,30 @@ entries:
       - emergency::emergency_capacity_defaults_to_20_gib
       - emergency::reserve_caps_users_and_bytes
       - emergency::return_integration_uses_emergency_keys_and_timestamp_order_until_quota
+      - emergency::manifest_roundtrips_through_the_signed_encrypted_entry
+      - emergency::merge_keeps_both_connectors_and_drops_a_stale_base
+      - emergency::deposit_and_release_signatures_are_bound_to_their_inputs
+      - emergency::deposits_need_a_bound_vdf_identity_and_respect_the_reserve
+      - emergency::release_replay_is_refused_and_forgotten_deposits_are_purged
+      - emergency::reserve_is_sized_from_u_backup_and_rebuilt_from_storage
+      - emergency::deposit_fetch_and_release_against_a_real_partner
+      - drive::emergency_tree_is_built_offline_and_committed_unchanged_on_return
+      - drive::a_later_change_supersedes_the_emergency_tree
     notes: >-
       connector : impl/connector/src/emergency.rs (partenaires les plus
       proches de l'identité Utilisateur au sens XOR hors Nœud hébergeur, parts
       égales plafonnées à Q_max/n_secours, fusion sans perte avec seq+1,
-      réconciliation idempotente refusant tout bloc absent, E_secours). node :
-      impl/node/src/emergency.rs (réserve d'accueil U_backup et octets
-      réservés, clés emergency_dht_key des Utilisateurs rattachés, intégration
-      au retour par timestamp jusqu'au quota). Enveloppe DHT et séquence :
-      network.dht-directory. Transport des blocs : SPEC_GAPS.
+      réconciliation idempotente, E_secours ; découverte par la DHT, dépôt
+      EmergencyPut authentifié par l'identité VDF, relecture EmergencyGet,
+      libération EmergencyRelease) ; lecteur : arborescence construite hors
+      ligne (répertoires en cache), validée telle quelle au retour, adoption
+      par un autre Connecteur ; démon : dépôt après 5 min d'injoignabilité,
+      publication de l'EmergencyManifest, réconciliation et libération. node :
+      impl/node/src/emergency.rs (réserve U_backup, plafond par déposant, une
+      clé de secours par identité VDF, libération sans rejeu, purge à 6 mois,
+      intégration au retour dans la limite du quota) et service d'échange.
+      protocol : impl/protocol/src/emergency.rs (clés, manifeste, entrée DHT)
+      et messages. 2026-11-21.
   protocols.fs-structure:
     kind: narrative
     status: done
@@ -1166,7 +1181,8 @@ entries:
       branchements BlockSource/ReplaySink dans impl/connector. Le
       rafraîchissement des pointeurs de migration depuis la DHT
       (refresh_successors) est à planifier par le binaire
-      (deploiement.packaging).
+      (deploiement.packaging). 2026-11-21 : quota et occupation dans RootState ;
+      EmergencyPut / EmergencyGet / EmergencyRelease (protocols.espace-secours).
   network.BlockRequest:
     kind: schema
     status: done
