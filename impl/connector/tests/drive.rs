@@ -128,3 +128,125 @@ fn concurrent_root_change_is_a_conflict_and_keeps_local_changes() {
     assert_eq!(d.pending(), 1);
     assert_eq!(names(&mut d, "/"), vec!["f"]);
 }
+
+/// Nœud simulé qu'on peut rendre injoignable.
+#[derive(Default)]
+struct FlakyNode {
+    inner: MemNode,
+    offline: std::sync::atomic::AtomicBool,
+}
+
+impl FlakyNode {
+    fn down(&self) -> bool {
+        self.offline.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    fn set_down(&self, v: bool) {
+        self.offline.store(v, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl BlockIo for FlakyNode {
+    fn get(&self, h: &BlockHash) -> Option<Vec<u8>> {
+        if self.down() {
+            return None;
+        }
+        self.inner.get(h)
+    }
+    fn put(&self, h: &BlockHash, frame: Vec<u8>) -> Result<(), String> {
+        if self.down() {
+            return Err("injoignable".into());
+        }
+        self.inner.put(h, frame)
+    }
+    fn commit(&self, base: &BlockHash, new: &BlockHash) -> Result<Option<BlockHash>, String> {
+        if self.down() {
+            return Err("injoignable".into());
+        }
+        self.inner.commit(base, new)
+    }
+}
+
+/// `protocols.espace-secours` : arborescence construite hors ligne
+/// (répertoires relus dans le cache local), validée telle quelle au retour
+/// du Nœud ; un autre lecteur adopte la racine réconciliée.
+#[test]
+fn emergency_tree_is_built_offline_and_committed_unchanged_on_return() {
+    let node = Arc::new(FlakyNode::default());
+    let ws = workspace("emergency");
+    let mut d = Drive::open(node.clone(), [9; 32], ws.clone(), Arc::new(|| 1000)).unwrap();
+    d.create("/docs", true).unwrap();
+    d.create("/docs/a.txt", false).unwrap();
+    d.write("/docs/a.txt", 0, b"avant").unwrap();
+    d.sync().unwrap();
+    let base = d.root_hash();
+    // Parcours en ligne : les blocs de répertoire sont gardés en cache.
+    assert_eq!(names(&mut d, "/docs"), vec!["a.txt"]);
+
+    node.set_down(true);
+    assert!(d.emergency_build().unwrap().is_none(), "rien en attente");
+    d.create("/docs/b.txt", false).unwrap();
+    d.write("/docs/b.txt", 0, b"pendant la panne").unwrap();
+    assert!(d.sync().is_err());
+    let b = d
+        .emergency_build()
+        .unwrap()
+        .expect("arborescence construite hors ligne");
+    assert_eq!(b.base, base);
+    assert!(!b.blocks.is_empty());
+    assert!(!d.emergency_current());
+    d.emergency_confirm(&b).unwrap();
+    assert!(d.emergency_current());
+    assert!(d.emergency_build().unwrap().is_none(), "déjà déposé");
+
+    // Retour du Nœud : la racine déposée est validée telle quelle.
+    node.set_down(false);
+    assert_eq!(d.sync().unwrap(), 1);
+    assert_eq!(d.root_hash(), b.root.fs_root_hash);
+    assert_eq!(*node.inner.root.lock().unwrap(), b.root.fs_root_hash);
+    assert!(!d.emergency_current());
+
+    // Autre lecteur, resté sur l'ancienne racine : adopte la racine réconciliée.
+    let ws2 = workspace("emergency-other");
+    let mut other = Drive::open(node.clone(), [9; 32], ws2, Arc::new(|| 1000)).unwrap();
+    other
+        .adopt_root(s3m_connector::access::Root {
+            fs_root_hash: base,
+            encryption_salt: [0; 16],
+            key_version: 1,
+        })
+        .unwrap();
+    assert!(
+        !other.advance_root(&[7; 32], b.root.clone()).unwrap(),
+        "autre base"
+    );
+    assert!(other.advance_root(&base, b.root.clone()).unwrap());
+    assert_eq!(names(&mut other, "/docs"), vec!["a.txt", "b.txt"]);
+    assert_eq!(
+        other.read("/docs/b.txt", 0, 100).unwrap(),
+        b"pendant la panne"
+    );
+}
+
+/// Une modification après le dépôt l'invalide : la synchronisation
+/// reconstruit normalement ; une racine déjà validée ailleurs n'est pas un
+/// conflit.
+#[test]
+fn a_later_change_supersedes_the_emergency_tree() {
+    let node = Arc::new(FlakyNode::default());
+    let ws = workspace("emergency-later");
+    let mut d = Drive::open(node.clone(), [9; 32], ws, Arc::new(|| 1000)).unwrap();
+    d.create("/a.txt", false).unwrap();
+    d.sync().unwrap();
+    let _ = names(&mut d, "/");
+    d.read("/a.txt", 0, 1).unwrap(); // contenu en cache local
+    node.set_down(true);
+    d.write("/a.txt", 0, b"1").unwrap();
+    let b = d.emergency_build().unwrap().unwrap();
+    d.emergency_confirm(&b).unwrap();
+    d.write("/a.txt", 0, b"2").unwrap();
+    assert!(!d.emergency_current());
+    node.set_down(false);
+    d.sync().unwrap();
+    assert_ne!(d.root_hash(), b.root.fs_root_hash);
+    assert_eq!(d.read("/a.txt", 0, 10).unwrap(), b"2");
+}

@@ -84,6 +84,58 @@ pub struct Config {
     /// (`protocols.partenariat-automatique`).
     #[serde(default = "default_true")]
     pub auto_attach: bool,
+    /// Écriture d'urgence chez des partenaires de secours quand seul le
+    /// Nœud est injoignable (`protocols.espace-secours`).
+    #[serde(default = "default_true")]
+    pub emergency_write: bool,
+    /// `n_secours` : partenaires de secours distincts.
+    #[serde(default = "default_n_secours")]
+    pub n_secours: usize,
+}
+
+fn default_n_secours() -> usize {
+    crate::emergency::DEFAULT_N_SECOURS
+}
+
+/// Délai d'injoignabilité du Nœud avant un dépôt d'urgence (5 minutes).
+pub const EMERGENCY_DELAY_S: u64 = 300;
+
+/// Suivi de l'écriture d'urgence, conservé sur disque (`emergency.json`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EmergencyStatus {
+    /// Blocs déposés à libérer : `(node_id hex, adresse, hashes hex)`.
+    #[serde(default)]
+    pub deposits: Vec<(String, String, Vec<String>)>,
+    pub last_deposit_at: Option<u64>,
+    pub last_attempt: Option<u64>,
+    pub last_error: Option<String>,
+    pub published_seq: Option<u64>,
+    #[serde(default)]
+    pub released_blocks: u64,
+    pub reconciled_at: Option<u64>,
+    /// Dernier horodatage de libération utilisé.
+    #[serde(default)]
+    pub last_release_ts: u64,
+}
+
+fn emergency_path(c: &Config) -> PathBuf {
+    c.data_dir.join("emergency.json")
+}
+
+fn load_emergency(c: &Config) -> EmergencyStatus {
+    std::fs::read(emergency_path(c))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn save_emergency(sh: &Shared) {
+    let st = sh.emergency.lock().unwrap().clone();
+    let p = emergency_path(&sh.config);
+    let tmp = p.with_extension("json.tmp");
+    if std::fs::write(&tmp, serde_json::to_vec_pretty(&st).expect("sérialisable")).is_ok() {
+        let _ = std::fs::rename(tmp, p);
+    }
 }
 
 fn default_true() -> bool {
@@ -288,6 +340,8 @@ pub struct Shared {
     pub attach: Mutex<AttachState>,
     /// Client DHT (si `dht_bootstrap`), pour relire l'entrée du Nœud.
     pub dht: std::sync::OnceLock<DhtClient>,
+    /// Écriture d'urgence (`protocols.espace-secours`).
+    pub emergency: Mutex<EmergencyStatus>,
     priv_user: [u8; 32],
     pub_node: [u8; 32],
     salt: Vec<u8>,
@@ -319,11 +373,13 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
           "sections": ["lecteur", "file d'écriture"], "actions": ["sync_now"] },
         { "id": "noeud", "titre": "Mon Nœud",
-          "sections": ["nœud rattaché", "rattachement automatique"], "actions": ["admin_node", "change_node"] },
+          "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["admin_node", "change_node"] },
+        { "id": "urgence", "titre": "Écriture d'urgence",
+          "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
           "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": [] },
         { "id": "parametres", "titre": "Paramètres", "autres": true,
-          "sections": ["configuration", "non suivi par cet exécutable"], "actions": [] }
+          "sections": ["configuration"], "actions": [] }
     ]);
     v
 }
@@ -357,7 +413,30 @@ fn connector_summary(v: &Value) -> Value {
     let queue = p("/file d'écriture/mutations en attente")
         .as_u64()
         .unwrap_or(0);
+    let (space, space_state) = match (
+        p("/espace/libre (octets)").as_u64(),
+        p("/espace/% utilisé").as_f64(),
+    ) {
+        (Some(free), Some(pct)) => (
+            format!("{} libres ({pct} % utilisé)", gib_text(free)),
+            if pct >= 95.0 {
+                "probleme"
+            } else if pct >= 85.0 {
+                "attention"
+            } else {
+                "ok"
+            },
+        ),
+        _ => ("inconnu".to_string(), "neutre"),
+    };
+    let deposits = p("/écriture d'urgence/blocs déposés à libérer")
+        .as_u64()
+        .unwrap_or(0);
     json!([
+        { "libellé": "Espace", "valeur": space, "état": space_state, "page": "noeud" },
+        { "libellé": "Écriture d'urgence",
+          "valeur": if deposits > 0 { format!("{deposits} bloc(s) chez les partenaires") } else { "aucun dépôt".to_string() },
+          "état": if deposits > 0 { "attention" } else { "ok" }, "page": "urgence" },
         { "libellé": "Mon Nœud", "valeur": node, "état": node_state, "page": "noeud" },
         { "libellé": "Synchronisation", "valeur": sync, "état": sync_state, "page": "fichiers" },
         { "libellé": "Lecteur", "valeur": drive, "état": drive_state, "page": "fichiers" },
@@ -385,6 +464,7 @@ fn status_base(sh: &Shared) -> Value {
         "file d'écriture": queue_status(&sh.config),
         "incidents d'intégrité": h.incidents,
         "lecteur": drive_status(sh),
+        "espace": space_status(sh),
         "annuaire (entrée User)": user_entry_status(sh),
         "rattachement automatique": attach_status(sh),
         "configuration": {
@@ -392,7 +472,7 @@ fn status_base(sh: &Shared) -> Value {
             "intervalle de surveillance (s)": sh.config.watch_interval_s,
             "lecteur monté": sh.config.mount_point,
         },
-        "non suivi par cet exécutable": ["écriture d'urgence"],
+        "écriture d'urgence": emergency_status(sh, now),
         "actions": [
             { "nom": "sync_now", "libellé": "Synchroniser maintenant", "champs": [] },
             { "nom": "admin_node", "titre": "Administrer mon Nœud à distance",
@@ -403,6 +483,83 @@ fn status_base(sh: &Shared) -> Value {
               "libellé": "Changer de Nœud", "champs": ["je confirme"], "types": { "je confirme": "bool" },
               "aide": { "je confirme": "S3m redémarre sur l'assistant (votre identité est conservée). L'ancienne configuration et les données locales sont mises de côté, pas effacées." } }
         ]
+    })
+}
+
+fn gib_text(b: u64) -> String {
+    let g = b as f64 / (1u64 << 30) as f64;
+    if g >= 10.0 {
+        format!("{g:.0} Gio")
+    } else {
+        format!("{g:.1} Gio")
+    }
+}
+
+/// Espace de l'Utilisateur chez son Nœud (`RootState`).
+fn space_status(sh: &Shared) -> Value {
+    match sh.session.space() {
+        None => json!("non communiqué par le Nœud"),
+        Some((quota, used)) => {
+            let pct = (used as f64 * 1000.0 / quota.max(1) as f64).round() / 10.0;
+            json!({
+                "libre (octets)": quota.saturating_sub(used),
+                "total (octets)": quota,
+                "utilisé (octets)": used,
+                "% utilisé": pct,
+            })
+        }
+    }
+}
+
+/// Écriture d'urgence vue du dashboard.
+fn emergency_status(sh: &Shared, now: u64) -> Value {
+    if !sh.config.emergency_write {
+        return json!("désactivée");
+    }
+    let e = sh.emergency.lock().unwrap().clone();
+    let h = sh.health.lock().unwrap().clone();
+    let (pending, deposited) = match &sh.drive {
+        Some(d) => {
+            let d = d.lock().unwrap();
+            (d.pending(), d.emergency_current())
+        }
+        None => (0, false),
+    };
+    let blocks: usize = e.deposits.iter().map(|(_, _, h)| h.len()).sum();
+    let etat = if deposited {
+        "modifications déposées chez les partenaires de secours".to_string()
+    } else if h.reachable == Some(false) && pending > 0 {
+        let since = now.saturating_sub(h.inactivity_detected_at.unwrap_or(now));
+        if since < EMERGENCY_DELAY_S {
+            format!(
+                "Nœud injoignable : dépôt dans {} s",
+                EMERGENCY_DELAY_S - since
+            )
+        } else {
+            "Nœud injoignable : dépôt en cours ou en échec".to_string()
+        }
+    } else if blocks > 0 {
+        "Nœud revenu : libération des partenaires en cours".to_string()
+    } else {
+        "inactive (Nœud joignable)".to_string()
+    };
+    let partners: Vec<Value> = e
+        .deposits
+        .iter()
+        .map(|(n, a, h)| json!({ "partenaire": n, "adresse": a, "blocs": h.len() }))
+        .collect();
+    json!({
+        "état": etat,
+        "partenaires de secours (n_secours)": sh.config.n_secours,
+        "Q_max (octets)": sh.config.q_max_bytes,
+        "dernier dépôt": e.last_deposit_at,
+        "dernière tentative": e.last_attempt,
+        "séquence publiée": e.published_seq,
+        "blocs déposés à libérer": blocks,
+        "partenaires": partners,
+        "blocs libérés": e.released_blocks,
+        "dernière réconciliation": e.reconciled_at,
+        "erreur": e.last_error,
     })
 }
 
@@ -847,6 +1004,13 @@ pub async fn watch_once(sh: &Shared) {
         }
     }
     if ok {
+        // Lecture du quota et de l'occupation : validation sans changement
+        // de racine (`base = new`).
+        let root = sh
+            .drive
+            .as_ref()
+            .map_or([0; 32], |d| d.lock().unwrap().root_hash());
+        let _ = sh.session.commit_root(&root, &root).await;
         let mut k = sh.keeper.lock().await;
         if k.refresh(&sh.session, now).await.is_ok() {
             if let Some(g) = &k.grant {
@@ -932,6 +1096,7 @@ pub async fn start(
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
         dht: std::sync::OnceLock::new(),
+        emergency: Mutex::new(load_emergency(&config)),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
         priv_user,
@@ -1005,6 +1170,7 @@ pub async fn start(
     tokio::spawn(async move {
         loop {
             watch_once(&sh).await;
+            emergency_tick(&sh).await;
             tokio::time::sleep(Duration::from_secs(sh.config.watch_interval_s.max(1))).await;
         }
     });
@@ -1022,11 +1188,13 @@ fn mount_drive(sh: &Arc<Shared>) {
     let clock = sh.clock.clone();
     let sh2 = sh.clone();
     std::thread::spawn(move || {
+        let session = sh2.session.clone();
         let fs = crate::winfsp_backend::DriveFs {
             drive,
             on_write: Arc::new(move |path, size| {
                 sched.lock().unwrap().on_write(path, size, clock());
             }),
+            space: Arc::new(move || session.space()),
         };
         match crate::winfsp_backend::mount(fs, &point) {
             Ok(_host) => {
@@ -1066,4 +1234,318 @@ pub fn admin_node(node_addr: &str, v: &Value) -> Result<Value, String> {
         let url = crate::remote::serve_remote(session).await?;
         Ok(json!({ "ok": true, "message": "Connecté au Nœud : son tableau de bord s'ouvre", "ouvrir": url }))
     })
+}
+
+// ------------------------------------------------- écriture d'urgence
+
+/// Un tour d'écriture d'urgence (`protocols.espace-secours`) : dépôt chez
+/// les partenaires de secours quand le Nœud est injoignable depuis
+/// `EMERGENCY_DELAY_S`, réconciliation et libération à son retour.
+pub async fn emergency_tick(sh: &Arc<Shared>) {
+    if !sh.config.emergency_write {
+        return;
+    }
+    let Some(drive) = sh.drive.clone() else {
+        return;
+    };
+    let now = (sh.clock)();
+    let h = sh.health.lock().unwrap().clone();
+    if h.reachable == Some(true) {
+        reconcile_emergency(sh, &drive, now).await;
+        return;
+    }
+    let Some(since) = h.inactivity_detected_at else {
+        return;
+    };
+    if now.saturating_sub(since) < EMERGENCY_DELAY_S {
+        return;
+    }
+    let d2 = drive.clone();
+    let build =
+        match tokio::task::spawn_blocking(move || d2.lock().unwrap().emergency_build()).await {
+            Ok(Ok(Some(b))) => b,
+            Ok(Ok(None)) | Err(_) => return,
+            Ok(Err(e)) => {
+                let mut e2 = sh.emergency.lock().unwrap();
+                e2.last_attempt = Some(now);
+                e2.last_error = Some(format!("arborescence : {e}"));
+                drop(e2);
+                save_emergency(sh);
+                return;
+            }
+        };
+    sh.emergency.lock().unwrap().last_attempt = Some(now);
+    match deposit(sh, &build, now).await {
+        Ok(seq) => {
+            if let Err(e) = drive.lock().unwrap().emergency_confirm(&build) {
+                sh.emergency.lock().unwrap().last_error = Some(e.to_string());
+            } else {
+                let mut e = sh.emergency.lock().unwrap();
+                e.published_seq = Some(seq);
+                e.last_deposit_at = Some(now);
+                e.last_error = None;
+            }
+        }
+        Err(e) => sh.emergency.lock().unwrap().last_error = Some(e),
+    }
+    save_emergency(sh);
+}
+
+fn deposit_identity(
+    sh: &Shared,
+    proof: s3m_core::vdf::VdfProof,
+) -> Result<crate::emergency::DepositIdentity, String> {
+    let sig_priv_user = s3m_core::keys::derive_sig_priv_user(&sh.priv_user, &sh.pub_user)
+        .map_err(|e| e.to_string())?;
+    Ok(crate::emergency::DepositIdentity {
+        sig_pub_user: s3m_core::keys::derive_sig_pub_user(&sig_priv_user),
+        sig_priv_user,
+        proof,
+        keys: s3m_protocol::emergency::emergency_keys(&sh.session.k_attach())
+            .map_err(|e| e.to_string())?,
+    })
+}
+
+/// Dépose les blocs de `build` et publie l'`EmergencyManifest` fusionné ;
+/// rend la séquence publiée.
+async fn deposit(
+    sh: &Arc<Shared>,
+    build: &crate::drive::EmergencyBuild,
+    now: u64,
+) -> Result<u64, String> {
+    use crate::emergency::{assign_blocks, deposit_block, discover};
+    use s3m_protocol::emergency::{Manifest, RootChange};
+    let dht = sh.dht.get().cloned().ok_or("annuaire DHT indisponible")?;
+    let cache = sh.config.data_dir.join("vdf_proof.bin");
+    let proof = ensure_user_proof(&cache, &sh.priv_user, &sh.pub_user).await?;
+    let id = deposit_identity(sh, proof)?;
+    let n = sh.config.n_secours.max(1);
+    let mut cands = discover(&dht, &sh.pub_user, &sh.pub_node, n + 4).await;
+    if cands.len() < n {
+        return Err(format!(
+            "partenaires de secours : {} trouvé(s), {n} nécessaire(s)",
+            cands.len()
+        ));
+    }
+    let spares = cands.split_off(n);
+    let mut spares = spares.into_iter();
+    let assign =
+        assign_blocks(build.blocks.len(), n, sh.config.q_max_bytes).map_err(|e| e.to_string())?;
+    let client = sh.session.client().clone();
+    let mut placed: Vec<([u8; 32], [u8; 32])> = Vec::new();
+    for ((hash, frame), slot) in build.blocks.iter().zip(assign) {
+        loop {
+            let c = cands[slot].clone();
+            match deposit_block(&client, &c, &id, frame.clone()).await {
+                Ok(()) => {
+                    placed.push((*hash, c.partner.node_id));
+                    record_deposit(sh, &c, hash);
+                    break;
+                }
+                Err(e) => match spares.next() {
+                    Some(s) => cands[slot] = s,
+                    None => return Err(format!("dépôt refusé : {e}")),
+                },
+            }
+        }
+    }
+    let used: Vec<_> = cands
+        .iter()
+        .filter(|c| placed.iter().any(|(_, n)| *n == c.partner.node_id))
+        .map(|c| c.partner.clone())
+        .collect();
+    let mine = Manifest {
+        user_id: sh.pub_user,
+        partners: used,
+        blocks: placed,
+        roots: vec![RootChange {
+            timestamp: now,
+            new_root: build.root.fs_root_hash,
+            encryption_salt: build.root.encryption_salt,
+            key_version: build.root.key_version,
+        }],
+        base_fs_root_hash: build.base,
+        timestamp: now,
+    };
+    publish_manifest(sh, &dht, &mine, now).await
+}
+
+/// Lecture, fusion, publication avec `seq + 1` (un nouvel essai si un
+/// autre Connecteur a publié entre-temps).
+async fn publish_manifest(
+    sh: &Shared,
+    dht: &DhtClient,
+    mine: &s3m_protocol::emergency::Manifest,
+    now: u64,
+) -> Result<u64, String> {
+    use s3m_protocol::emergency::{emergency_entry_envelope, merge_manifest, open_emergency_entry};
+    let k = sh.session.k_attach();
+    let key = s3m_protocol::dht::emergency_dht_key(&k).to_vec();
+    let mut last = String::new();
+    for _ in 0..2 {
+        let current = dht
+            .get(key.clone())
+            .await
+            .ok()
+            .flatten()
+            .and_then(|env| open_emergency_entry(&k, &env).ok());
+        let seq = current.as_ref().map_or(0, |(s, _)| *s) + 1;
+        let merged = merge_manifest(current.as_ref().map(|(_, m)| m), mine);
+        let nonce: [u8; 12] = random32().map_err(|e| e.to_string())?[..12]
+            .try_into()
+            .expect("12 octets");
+        let env =
+            emergency_entry_envelope(&k, seq, now, &nonce, &merged).map_err(|e| e.to_string())?;
+        match dht.put(key.clone(), env).await {
+            Ok(()) => return Ok(seq),
+            Err(e) => last = e.to_string(),
+        }
+    }
+    Err(format!("publication du manifeste de secours : {last}"))
+}
+
+fn record_deposit(sh: &Shared, c: &crate::emergency::Candidate, hash: &[u8; 32]) {
+    let mut e = sh.emergency.lock().unwrap();
+    let n = hex::encode(c.partner.node_id);
+    let h = hex::encode(hash);
+    match e.deposits.iter_mut().find(|(p, _, _)| *p == n) {
+        Some((_, _, v)) => {
+            if !v.contains(&h) {
+                v.push(h);
+            }
+        }
+        None => e.deposits.push((n, c.addr.to_string(), vec![h])),
+    }
+}
+
+/// Nœud revenu : réconcilie un dépôt fait par un autre Connecteur, puis
+/// libère les partenaires une fois les modifications validées.
+async fn reconcile_emergency(sh: &Arc<Shared>, drive: &Arc<Mutex<Drive>>, now: u64) {
+    let (pending, current) = {
+        let d = drive.lock().unwrap();
+        (d.pending(), d.emergency_current())
+    };
+    // Dépôt d'un autre Connecteur, construit sur notre racine.
+    if pending == 0 {
+        adopt_from_manifest(sh, drive, now).await;
+    }
+    // Nos propres dépôts : libérés dès que plus rien ne les attend (validés
+    // par la synchronisation, ou remplacés par des modifications plus
+    // récentes que les copies locales enverront).
+    if current {
+        return;
+    }
+    let deposits = sh.emergency.lock().unwrap().deposits.clone();
+    if deposits.is_empty() {
+        return;
+    }
+    let Ok(keys) = s3m_protocol::emergency::emergency_keys(&sh.session.k_attach()) else {
+        return;
+    };
+    let client = sh.session.client().clone();
+    let mut next = sh.emergency.lock().unwrap().last_release_ts.max(now) + 1;
+    let mut remaining = Vec::new();
+    for (node, addr, hashes) in deposits {
+        let hs: Vec<[u8; 32]> = hashes
+            .iter()
+            .filter_map(|h| hex::decode(h).ok()?.try_into().ok())
+            .collect();
+        let Ok(a) = addr.parse::<Multiaddr>() else {
+            continue;
+        };
+        match crate::emergency::release_blocks(&client, a, &keys, &mut next, &hs).await {
+            Ok(n) => sh.emergency.lock().unwrap().released_blocks += n,
+            Err(_) => remaining.push((node, addr, hashes)),
+        }
+    }
+    {
+        let mut e = sh.emergency.lock().unwrap();
+        e.deposits = remaining;
+        e.last_release_ts = next;
+        e.reconciled_at = Some(now);
+    }
+    save_emergency(sh);
+}
+
+/// Changement de racine déposé par un autre Connecteur sur la racine de
+/// ce lecteur : blocs complétés chez le Nœud, validation, adoption,
+/// libération des partenaires.
+async fn adopt_from_manifest(sh: &Arc<Shared>, drive: &Arc<Mutex<Drive>>, now: u64) {
+    use s3m_protocol::emergency::open_emergency_entry;
+    let Some(dht) = sh.dht.get().cloned() else {
+        return;
+    };
+    let k = sh.session.k_attach();
+    let key = s3m_protocol::dht::emergency_dht_key(&k).to_vec();
+    let Some(env) = dht.get(key).await.ok().flatten() else {
+        return;
+    };
+    let Ok((_, m)) = open_emergency_entry(&k, &env) else {
+        return;
+    };
+    let root = drive.lock().unwrap().root_hash();
+    let Some(change) = m.pending_root(&root).copied() else {
+        return;
+    };
+    let Ok(keys) = s3m_protocol::emergency::emergency_keys(&sh.session.k_attach()) else {
+        return;
+    };
+    let client = sh.session.client().clone();
+    let mut addrs = std::collections::HashMap::new();
+    for p in &m.partners {
+        if let Some(a) = crate::emergency::partner_addr(Some(&dht), p).await {
+            addrs.insert(p.node_id, a);
+        }
+    }
+    for (h, p) in &m.blocks {
+        match sh.session.get_block(h).await {
+            Ok(_) => continue,
+            Err(ExchangeError::Refused(Refusal::NotFound)) => {}
+            Err(_) => return,
+        }
+        let Some(a) = addrs.get(p).cloned() else {
+            return;
+        };
+        let Some(d) = crate::emergency::fetch_block(&client, a, &keys.sig_pub, h).await else {
+            return;
+        };
+        if sh.session.put_block(d).await.is_err() {
+            return;
+        }
+    }
+    let Ok((committed, current)) = sh.session.commit_root(&root, &change.new_root).await else {
+        return;
+    };
+    if !committed && current != change.new_root.to_vec() {
+        return;
+    }
+    let adopted = drive.lock().unwrap().advance_root(
+        &root,
+        Root {
+            fs_root_hash: change.new_root,
+            encryption_salt: change.encryption_salt,
+            key_version: change.key_version,
+        },
+    );
+    if !matches!(adopted, Ok(true)) {
+        return;
+    }
+    let mut next = sh.emergency.lock().unwrap().last_release_ts.max(now) + 1;
+    let mut freed = 0;
+    for p in &m.partners {
+        let Some(a) = addrs.get(&p.node_id).cloned() else {
+            continue;
+        };
+        let hs = m.blocks_at(&p.node_id);
+        freed += crate::emergency::release_blocks(&client, a, &keys, &mut next, &hs)
+            .await
+            .unwrap_or(0);
+    }
+    {
+        let mut e = sh.emergency.lock().unwrap();
+        e.released_blocks += freed;
+        e.last_release_ts = next;
+        e.reconciled_at = Some(now);
+    }
+    save_emergency(sh);
 }

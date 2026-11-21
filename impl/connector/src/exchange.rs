@@ -285,6 +285,9 @@ pub struct NodeSession {
     client: BlockClient,
     node_addr: std::sync::Arc<std::sync::Mutex<Multiaddr>>,
     credential: Credential,
+    k_attach: [u8; 32],
+    /// Dernier `(quota, occupé)` communiqué par le Nœud (`RootState`).
+    space: std::sync::Arc<std::sync::Mutex<Option<(u64, u64)>>>,
 }
 
 impl NodeSession {
@@ -308,7 +311,24 @@ impl NodeSession {
                 user_id: pub_user.to_vec(),
                 proof: proof.to_vec(),
             },
+            k_attach: k,
+            space: Default::default(),
         })
+    }
+
+    /// Client d'échange de la session (requêtes vers d'autres Nœuds).
+    pub fn client(&self) -> &BlockClient {
+        &self.client
+    }
+
+    /// `K_attach` de l'attachement (clés de secours).
+    pub fn k_attach(&self) -> [u8; 32] {
+        self.k_attach
+    }
+
+    /// `(quota, occupé)` en octets, s'il a été communiqué par le Nœud.
+    pub fn space(&self) -> Option<(u64, u64)> {
+        *self.space.lock().unwrap()
     }
 
     async fn call(&self, body: Body) -> Result<Response, ExchangeError> {
@@ -364,7 +384,14 @@ impl NodeSession {
             Response::RootState {
                 committed,
                 current_root,
-            } => Ok((committed, current_root)),
+                quota_bytes,
+                used_bytes,
+            } => {
+                if quota_bytes > 0 {
+                    *self.space.lock().unwrap() = Some((quota_bytes, used_bytes));
+                }
+                Ok((committed, current_root))
+            }
             _ => Err(ExchangeError::Unexpected),
         }
     }

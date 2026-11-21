@@ -86,6 +86,8 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
         mount_point: None,
         dht_bootstrap: vec![],
         auto_attach: true,
+        emergency_write: false,
+        n_secours: 4,
     };
     let (shared, url) = start(config, clock).await.unwrap();
     watch_once(&shared).await;

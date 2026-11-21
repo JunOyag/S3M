@@ -84,6 +84,7 @@ enum Command {
     ),
     Get(Vec<u8>, oneshot::Sender<Option<Vec<u8>>>),
     Listeners(oneshot::Sender<usize>),
+    Closest(Vec<u8>, oneshot::Sender<Vec<PeerId>>),
 }
 
 type PendingGets = HashMap<kad::QueryId, (Vec<u8>, oneshot::Sender<Option<Vec<u8>>>)>;
@@ -166,6 +167,17 @@ impl DhtClient {
         rx.await.map_err(|_| DhtClientError::Stopped)?
     }
 
+    /// Pairs (Nœuds) les plus proches de `key` au sens Kademlia, complétés
+    /// par la table de routage.
+    pub async fn closest_peers(&self, key: Vec<u8>) -> Result<Vec<PeerId>, DhtClientError> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Command::Closest(key, tx))
+            .await
+            .map_err(|_| DhtClientError::Stopped)?;
+        rx.await.map_err(|_| DhtClientError::Stopped)
+    }
+
     /// Lit sur le réseau la première enveloppe valide publiée sous `key`.
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, DhtClientError> {
         let (tx, rx) = oneshot::channel();
@@ -185,6 +197,7 @@ async fn run(
 ) {
     let mut gets: PendingGets = HashMap::new();
     let mut puts: PendingPuts = HashMap::new();
+    let mut closest: HashMap<kad::QueryId, oneshot::Sender<Vec<PeerId>>> = HashMap::new();
     let check = |key: &[u8], env: &[u8], prev: Option<&[u8]>, now| {
         accept_record(key, env, prev, now, &|id, p| vdf(id, p))
     };
@@ -215,6 +228,10 @@ async fn run(
                     let id = swarm.behaviour_mut().kad.get_record(RecordKey::new(&key));
                     gets.insert(id, (key, reply));
                 }
+                Some(Command::Closest(key, reply)) => {
+                    let id = swarm.behaviour_mut().kad.get_closest_peers(key);
+                    closest.insert(id, reply);
+                }
             },
             event = swarm.select_next_some() => {
                 let SwarmEvent::Behaviour(BehaviourEvent::Kad(kad::Event::OutboundQueryProgressed { id, result, step, .. })) = event else { continue };
@@ -230,6 +247,22 @@ async fn run(
                     }
                     QueryResult::GetRecord(_) if step.last => {
                         if let Some((_, reply)) = gets.remove(&id) { let _ = reply.send(None); }
+                    }
+                    QueryResult::GetClosestPeers(r) => {
+                        if let Some(reply) = closest.remove(&id) {
+                            let mut peers: Vec<PeerId> = match r {
+                                Ok(ok) => ok.peers.iter().map(|p| p.peer_id).collect(),
+                                Err(kad::GetClosestPeersError::Timeout { peers, .. }) => {
+                                    peers.iter().map(|p| p.peer_id).collect()
+                                }
+                            };
+                            for b in swarm.behaviour_mut().kad.kbuckets() {
+                                peers.extend(b.iter().map(|e| *e.node.key.preimage()));
+                            }
+                            peers.sort();
+                            peers.dedup();
+                            let _ = reply.send(peers);
+                        }
                     }
                     QueryResult::PutRecord(r) => {
                         if let Some(reply) = puts.remove(&id) {

@@ -94,6 +94,8 @@ pub struct DriveFs {
     pub drive: Arc<Mutex<Drive>>,
     /// Appelé avec `(chemin, taille)` à chaque écriture (écriture différée).
     pub on_write: WriteHook,
+    /// `(quota, occupé)` communiqué par le Nœud, s'il est connu.
+    pub space: Arc<dyn Fn() -> Option<(u64, u64)> + Send + Sync>,
 }
 
 impl DriveFs {
@@ -414,8 +416,11 @@ impl FileSystemContext for DriveFs {
     }
 
     fn get_volume_info(&self, out_volume_info: &mut VolumeInfo) -> winfsp::Result<()> {
-        out_volume_info.total_size = 1 << 40;
-        out_volume_info.free_size = 1 << 40;
+        // Taille du lecteur = quota de l'Utilisateur (`RootState`) ;
+        // inconnue tant que le Nœud ne l'a pas communiquée.
+        let (total, used) = (self.space)().unwrap_or((1 << 40, 0));
+        out_volume_info.total_size = total;
+        out_volume_info.free_size = total.saturating_sub(used);
         out_volume_info.set_volume_label("S3m");
         Ok(())
     }

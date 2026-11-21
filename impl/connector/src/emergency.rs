@@ -136,3 +136,195 @@ pub fn reconcile<'a>(
 pub fn emergency_capacity(u_backup: u64, q_max: u64, n_secours: u64) -> u64 {
     u_backup * (q_max / n_secours)
 }
+
+// ------------------------------------------------------------- réseau
+
+use libp2p::{Multiaddr, PeerId};
+use s3m_protocol::emergency::{EmergencyKeys, Partner};
+use s3m_protocol::exchange::{
+    emergency_deposit_signature, emergency_release, Body, Credential, Request, Response,
+    MAX_RELEASE_HASHES,
+};
+
+use crate::dht_directory::DhtClient;
+use crate::exchange::{BlockClient, ExchangeError};
+
+/// Identité de dépôt : identité VDF de l'Utilisateur et clés de secours.
+pub struct DepositIdentity {
+    pub sig_priv_user: [u8; 32],
+    pub sig_pub_user: [u8; 32],
+    pub proof: s3m_core::vdf::VdfProof,
+    pub keys: EmergencyKeys,
+}
+
+/// Partenaire de secours candidat, joignable à `addr`.
+#[derive(Debug, Clone)]
+pub struct Candidate {
+    pub partner: Partner,
+    pub addr: Multiaddr,
+}
+
+/// `PeerId` d'un Nœud (dérivé de `pub_node`).
+pub fn peer_of_node(node_id: &[u8; 32]) -> Option<PeerId> {
+    let k = libp2p::identity::ed25519::PublicKey::try_from_bytes(node_id).ok()?;
+    Some(PeerId::from(libp2p::identity::PublicKey::from(k)))
+}
+
+/// `pub_node` d'un `PeerId` de Nœud.
+pub fn node_of_peer(peer: &PeerId) -> Option<[u8; 32]> {
+    let mh: &libp2p::multihash::Multihash<64> = peer.as_ref();
+    let k = libp2p::identity::PublicKey::try_decode_protobuf(mh.digest()).ok()?;
+    Some(k.try_into_ed25519().ok()?.to_bytes())
+}
+
+fn with_peer(ip: &str, port: u16, node_id: &[u8; 32]) -> Option<Multiaddr> {
+    let proto = if ip.contains(':') { "ip6" } else { "ip4" };
+    format!("/{proto}/{ip}/tcp/{port}/p2p/{}", peer_of_node(node_id)?)
+        .parse()
+        .ok()
+}
+
+/// Adresses d'un Nœud publiées dans son entrée DHT, directe d'abord.
+pub async fn node_addrs(
+    dht: &DhtClient,
+    node_id: &[u8; 32],
+) -> (Option<(String, u16)>, Vec<Multiaddr>) {
+    let Some(env) = dht.get(node_id.to_vec()).await.ok().flatten() else {
+        return (None, Vec::new());
+    };
+    let Some((addrs, direct)) = s3m_protocol::entries::node_entry_addrs(&env) else {
+        return (None, Vec::new());
+    };
+    let mut out: Vec<Multiaddr> = direct
+        .as_ref()
+        .and_then(|(ip, port)| with_peer(ip, *port, node_id))
+        .into_iter()
+        .collect();
+    out.extend(addrs.iter().filter_map(|a| a.parse().ok()));
+    (direct, out)
+}
+
+/// Candidats les plus proches de `user_identity` (XOR), hors Nœud
+/// hébergeur, avec une adresse publiée ; au plus `max`.
+pub async fn discover(
+    dht: &DhtClient,
+    user_identity: &[u8; 32],
+    host_node: &[u8; 32],
+    max: usize,
+) -> Vec<Candidate> {
+    let peers = dht
+        .closest_peers(user_identity.to_vec())
+        .await
+        .unwrap_or_default();
+    let ids: Vec<[u8; 32]> = peers.iter().filter_map(node_of_peer).collect();
+    let mut all: Vec<[u8; 32]> = ids.iter().filter(|i| *i != host_node).copied().collect();
+    all.sort_by_key(|id| xor_distance(id, user_identity));
+    all.dedup();
+    let mut out = Vec::new();
+    for id in all {
+        if out.len() >= max {
+            break;
+        }
+        let (direct, addrs) = node_addrs(dht, &id).await;
+        let Some(addr) = addrs.into_iter().next() else {
+            continue;
+        };
+        let (ip, port) = direct.unwrap_or_default();
+        out.push(Candidate {
+            partner: Partner {
+                node_id: id,
+                ip,
+                port,
+            },
+            addr,
+        });
+    }
+    out
+}
+
+/// Dépose un bloc chiffré chez `c`.
+pub async fn deposit_block(
+    client: &BlockClient,
+    c: &Candidate,
+    id: &DepositIdentity,
+    data: Vec<u8>,
+) -> Result<(), ExchangeError> {
+    let partner_peer = peer_of_node(&c.partner.node_id).ok_or(ExchangeError::NoPeerId)?;
+    let signature = emergency_deposit_signature(
+        &id.sig_priv_user,
+        &id.keys.sig_pub,
+        &client.peer_id().to_bytes(),
+        &partner_peer.to_bytes(),
+    );
+    let hash = s3m_core::symmetric_suite::hash_sha256(&data);
+    let req = Request {
+        credential: Some(Credential::Emergency {
+            sig_pub_user: id.sig_pub_user.to_vec(),
+            vdf_y: id.proof.y.clone(),
+            vdf_pi: id.proof.pi.clone(),
+            emergency_pub: id.keys.sig_pub.to_vec(),
+            signature,
+        }),
+        body: Body::EmergencyPut { data },
+    };
+    match client.request(c.addr.clone(), req).await? {
+        Response::Stored(h) if h == hash.to_vec() => Ok(()),
+        _ => Err(ExchangeError::Unexpected),
+    }
+}
+
+/// Relit un bloc déposé sous `emergency_pub` (hash vérifié).
+pub async fn fetch_block(
+    client: &BlockClient,
+    addr: Multiaddr,
+    emergency_pub: &[u8; 32],
+    hash: &BlockHash,
+) -> Option<Vec<u8>> {
+    let req = Request {
+        credential: None,
+        body: Body::EmergencyGet {
+            emergency_pub: emergency_pub.to_vec(),
+            hash: hash.to_vec(),
+        },
+    };
+    match client.request(addr, req).await {
+        Ok(Response::BlockData(d)) if s3m_core::symmetric_suite::hash_sha256(&d) == *hash => {
+            Some(d)
+        }
+        _ => None,
+    }
+}
+
+/// Libère `hashes` chez le partenaire `addr` ; `next_ts` : premier
+/// horodatage à utiliser (strictement croissant), mis à jour. Rend le
+/// nombre de blocs libérés.
+pub async fn release_blocks(
+    client: &BlockClient,
+    addr: Multiaddr,
+    keys: &EmergencyKeys,
+    next_ts: &mut u64,
+    hashes: &[BlockHash],
+) -> Result<u64, ExchangeError> {
+    let mut freed = 0;
+    for chunk in hashes.chunks(MAX_RELEASE_HASHES) {
+        let req = Request {
+            credential: None,
+            body: emergency_release(&keys.sig_priv, *next_ts, chunk),
+        };
+        *next_ts += 1;
+        match client.request(addr.clone(), req).await? {
+            Response::Ack { freed: n } => freed += n,
+            _ => return Err(ExchangeError::Unexpected),
+        }
+    }
+    Ok(freed)
+}
+
+/// Adresse d'un partenaire listé dans un manifeste (adresse notée, puis
+/// entrée DHT).
+pub async fn partner_addr(dht: Option<&DhtClient>, p: &Partner) -> Option<Multiaddr> {
+    if let Some(a) = with_peer(&p.ip, p.port, &p.node_id).filter(|_| !p.ip.is_empty()) {
+        return Some(a);
+    }
+    node_addrs(dht?, &p.node_id).await.1.into_iter().next()
+}

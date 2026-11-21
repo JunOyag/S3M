@@ -85,6 +85,10 @@ async fn connector_writes_reads_then_rescues_from_partner_when_node_is_down() {
         session.commit_root(&[0; 32], &[2; 32]).await.unwrap(),
         (false, vec![1; 32])
     );
+    // Taille du lecteur : quota et occupation communiqués par `RootState`.
+    let (quota, used) = session.space().unwrap();
+    assert_eq!(quota, 1 << 20);
+    assert!(used > 0);
     session.report_incident(&h).await.unwrap();
 
     // Session usurpée : preuve calculée pour un autre Nœud.

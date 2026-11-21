@@ -38,11 +38,22 @@ pub trait BlockIo: Send + Sync {
     fn commit(&self, base: &BlockHash, new: &BlockHash) -> Result<Option<BlockHash>, String>;
 }
 
-struct Source<'a>(&'a dyn BlockIo);
+/// `cache` : répertoire où garder les blocs lus (blocs de répertoire,
+/// relus hors ligne pour réémettre l'arborescence — écriture d'urgence).
+struct Source<'a>(&'a dyn BlockIo, Option<PathBuf>);
 
 impl BlockSource for Source<'_> {
     fn fetch_from_node(&self, hash: &BlockHash) -> Option<Vec<u8>> {
-        self.0.get(hash)
+        let Some(dir) = &self.1 else {
+            return self.0.get(hash);
+        };
+        let path = dir.join(hex::encode(hash));
+        if let Ok(b) = std::fs::read(&path) {
+            return Some(b);
+        }
+        let b = self.0.get(hash)?;
+        let _ = std::fs::write(&path, &b);
+        Some(b)
     }
     fn reconstruct(&self, _: &BlockHash) -> Option<Vec<u8>> {
         None
@@ -166,6 +177,17 @@ enum Change {
     Deleted,
 }
 
+/// Arborescence déposée en urgence (`protocols.espace-secours`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+struct SavedEmergency {
+    /// `Journal::revision` au moment du dépôt.
+    revision: u64,
+    base: String,
+    first: String,
+    salt: String,
+    key_version: u16,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 struct Journal {
     fs_root_hash: String,
@@ -173,6 +195,39 @@ struct Journal {
     key_version: u16,
     changes: BTreeMap<String, Change>,
     next_file: u64,
+    /// Incrémenté à chaque modification locale.
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    emergency: Option<SavedEmergency>,
+}
+
+/// Arborescence construite pour un dépôt d'urgence : racine de base,
+/// nouvelle racine et blocs chiffrés à déposer.
+#[derive(Debug, Clone)]
+pub struct EmergencyBuild {
+    pub base: BlockHash,
+    pub root: Root,
+    pub blocks: Vec<(BlockHash, Vec<u8>)>,
+}
+
+/// `BlockIo` qui garde les blocs émis au lieu de les envoyer.
+struct Collector {
+    inner: Arc<dyn BlockIo>,
+    blocks: std::sync::Mutex<Vec<(BlockHash, Vec<u8>)>>,
+}
+
+impl BlockIo for Collector {
+    fn get(&self, hash: &BlockHash) -> Option<Vec<u8>> {
+        self.inner.get(hash)
+    }
+    fn put(&self, hash: &BlockHash, frame: Vec<u8>) -> Result<(), String> {
+        self.blocks.lock().unwrap().push((*hash, frame));
+        Ok(())
+    }
+    fn commit(&self, _: &BlockHash, _: &BlockHash) -> Result<Option<BlockHash>, String> {
+        Err("dépôt d'urgence : pas de validation".into())
+    }
 }
 
 // ---------------------------------------------------------------- chemins
@@ -303,6 +358,12 @@ impl Drive {
         self.journal.changes.len()
     }
 
+    /// Modification locale : nouvelle révision, puis écriture du journal.
+    fn changed(&mut self) -> Result<(), DriveError> {
+        self.journal.revision += 1;
+        self.persist()
+    }
+
     fn persist(&self) -> Result<(), DriveError> {
         let tmp = self.workspace.join("journal.json.tmp");
         std::fs::write(
@@ -318,7 +379,18 @@ impl Drive {
         root: Root,
         f: impl FnOnce(&Volume<'_>) -> Result<T, AccessError>,
     ) -> Result<T, DriveError> {
-        let src = Source(self.io.as_ref());
+        let dirs = self.workspace.join("dirs");
+        let _ = std::fs::create_dir_all(&dirs);
+        let io = self.io.clone();
+        self.with_source(Source(io.as_ref(), Some(dirs)), root, f)
+    }
+
+    fn with_source<T>(
+        &mut self,
+        src: Source<'_>,
+        root: Root,
+        f: impl FnOnce(&Volume<'_>) -> Result<T, AccessError>,
+    ) -> Result<T, DriveError> {
         let v = Volume::new(&src, &self.keys, root);
         let r = f(&v);
         let log = v.integrity.into_inner();
@@ -475,7 +547,10 @@ impl Drive {
             key_version: e.key_version,
         };
         let entry = e.clone();
-        let data = self.with_volume(root, move |v| v.read_entry(&entry))?;
+        let io = self.io.clone();
+        let data = self.with_source(Source(io.as_ref(), None), root, move |v| {
+            v.read_entry(&entry)
+        })?;
         let _ = std::fs::write(&cache, &data);
         Ok(data)
     }
@@ -553,7 +628,7 @@ impl Drive {
         f.write_all(data)?;
         let size = f.metadata()?.len();
         self.touch(&p);
-        self.persist()?;
+        self.changed()?;
         Ok(size)
     }
 
@@ -563,7 +638,7 @@ impl Drive {
         let local = self.ensure_local(&p)?;
         OpenOptions::new().write(true).open(local)?.set_len(size)?;
         self.touch(&p);
-        self.persist()
+        self.changed()
     }
 
     /// Crée un fichier vide ou un répertoire.
@@ -590,7 +665,7 @@ impl Drive {
             }
         };
         self.journal.changes.insert(p, change);
-        self.persist()
+        self.changed()
     }
 
     fn drop_change(&mut self, k: &str) {
@@ -666,7 +741,7 @@ impl Drive {
         if self.remote_entry(&f)?.is_some() {
             self.journal.changes.insert(f, Change::Deleted);
         }
-        self.persist()
+        self.changed()
     }
 
     fn upload(&self, chain: &crate::fs::Chain) -> Result<(), DriveError> {
@@ -789,23 +864,41 @@ impl Drive {
     }
 
     /// Synchronise les modifications : nouveaux blocs puis nouvelle racine.
-    /// Rend le nombre de modifications appliquées.
+    /// Si l'arborescence déposée en urgence est toujours à jour, c'est elle
+    /// qui est validée (mêmes blocs). Rend le nombre de modifications
+    /// appliquées.
     pub fn sync(&mut self) -> Result<usize, DriveError> {
         let n = self.journal.changes.len();
         if n == 0 {
             return Ok(0);
         }
+        if let Some(e) = self.current_emergency() {
+            let dir = self.workspace.join("emergency");
+            for f in std::fs::read_dir(&dir)?.flatten() {
+                let hash: BlockHash = arr(&f.file_name().to_string_lossy());
+                let frame = std::fs::read(f.path())?;
+                self.io.put(&hash, frame).map_err(DriveError::Node)?;
+            }
+            let (first, salt) = (arr(&e.first), arr(&e.salt));
+            return self.commit_new_root(first, salt).map(|_| n);
+        }
         let (first, salt) = self.build_dir("/")?;
+        self.commit_new_root(first, salt).map(|_| n)
+    }
+
+    fn commit_new_root(&mut self, first: BlockHash, salt: [u8; 16]) -> Result<(), DriveError> {
         match self
             .io
             .commit(&self.root.fs_root_hash, &first)
             .map_err(DriveError::Node)?
         {
-            Some(current) => {
+            // Déjà validée par un autre Connecteur (réconciliation d'un
+            // dépôt d'urgence) : même résultat.
+            Some(current) if current != first => {
                 self.conflict = Some(current);
                 Err(DriveError::Conflict)
             }
-            None => {
+            _ => {
                 let keys: Vec<String> = self.journal.changes.keys().cloned().collect();
                 for k in keys {
                     self.drop_change(&k);
@@ -819,9 +912,90 @@ impl Drive {
                 self.journal.encryption_salt = hex::encode(salt);
                 self.journal.key_version = KEY_VERSION;
                 self.conflict = None;
-                self.persist()?;
-                Ok(n)
+                self.clear_emergency();
+                self.persist()
             }
         }
+    }
+
+    /// Dépôt d'urgence encore à jour : rien de modifié depuis, même base.
+    fn current_emergency(&self) -> Option<SavedEmergency> {
+        self.journal
+            .emergency
+            .clone()
+            .filter(|e| e.revision == self.journal.revision)
+            .filter(|e| arr::<32>(&e.base) == self.root.fs_root_hash)
+    }
+
+    fn clear_emergency(&mut self) {
+        self.journal.emergency = None;
+        let _ = std::fs::remove_dir_all(self.workspace.join("emergency"));
+    }
+
+    /// Un dépôt d'urgence couvre-t-il les modifications en attente ?
+    pub fn emergency_current(&self) -> bool {
+        self.current_emergency().is_some()
+    }
+
+    /// Construit l'arborescence à déposer en urgence (Nœud injoignable),
+    /// sans rien envoyer : `None` s'il n'y a rien en attente ou si le
+    /// dernier dépôt couvre déjà les modifications. Les répertoires
+    /// inchangés sont relus dans le cache local.
+    pub fn emergency_build(&mut self) -> Result<Option<EmergencyBuild>, DriveError> {
+        if self.pending() == 0 || self.current_emergency().is_some() {
+            return Ok(None);
+        }
+        let collector = Arc::new(Collector {
+            inner: self.io.clone(),
+            blocks: Default::default(),
+        });
+        let orig = std::mem::replace(&mut self.io, collector.clone());
+        let built = self.build_dir("/");
+        self.io = orig;
+        let (first, salt) = built?;
+        let blocks = std::mem::take(&mut *collector.blocks.lock().unwrap());
+        Ok(Some(EmergencyBuild {
+            base: self.root.fs_root_hash,
+            root: Root {
+                fs_root_hash: first,
+                encryption_salt: salt,
+                key_version: KEY_VERSION,
+            },
+            blocks,
+        }))
+    }
+
+    /// Dépôt réussi : l'arborescence déposée sera validée telle quelle au
+    /// retour du Nœud si rien ne change d'ici là.
+    pub fn emergency_confirm(&mut self, b: &EmergencyBuild) -> Result<(), DriveError> {
+        let dir = self.workspace.join("emergency");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        for (h, frame) in &b.blocks {
+            std::fs::write(dir.join(hex::encode(h)), frame)?;
+        }
+        self.journal.emergency = Some(SavedEmergency {
+            revision: self.journal.revision,
+            base: hex::encode(b.base),
+            first: hex::encode(b.root.fs_root_hash),
+            salt: hex::encode(b.root.encryption_salt),
+            key_version: b.root.key_version,
+        });
+        self.persist()
+    }
+
+    /// Racine validée par un autre Connecteur (réconciliation d'un dépôt
+    /// d'urgence) : adoptée si elle part de la racine courante et
+    /// qu'aucune modification locale n'est en attente.
+    pub fn advance_root(&mut self, base: &BlockHash, root: Root) -> Result<bool, DriveError> {
+        if self.pending() > 0 || self.root.fs_root_hash != *base {
+            return Ok(false);
+        }
+        self.journal.fs_root_hash = hex::encode(root.fs_root_hash);
+        self.journal.encryption_salt = hex::encode(root.encryption_salt);
+        self.journal.key_version = root.key_version;
+        self.root = root;
+        self.persist()?;
+        Ok(true)
     }
 }

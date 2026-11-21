@@ -176,6 +176,8 @@ pub fn write_config(dir: &Path, prepared: &Prepared, addr: &str) -> Result<PathB
         // DHT et échange de blocs partagent la pile du Nœud.
         dht_bootstrap: vec![m.to_string()],
         auto_attach: true,
+        emergency_write: true,
+        n_secours: crate::emergency::DEFAULT_N_SECOURS,
     };
     let path = config_path(dir);
     std::fs::write(

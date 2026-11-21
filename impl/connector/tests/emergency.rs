@@ -106,3 +106,90 @@ fn reconciliation_is_idempotent_and_never_references_missing_blocks() {
 fn emergency_capacity_defaults_to_20_gib() {
     assert_eq!(emergency_capacity(20, 4 * GIB, 4), 20 * GIB);
 }
+
+// --------------------------------------- bout en bout (TCP local)
+
+use std::sync::{Arc, Mutex};
+
+use s3m_connector::emergency::{
+    deposit_block, fetch_block, node_of_peer, peer_of_node, release_blocks, Candidate,
+    DepositIdentity,
+};
+use s3m_connector::exchange::BlockClient;
+use s3m_node::exchange::{BlockServer, NodeService};
+use s3m_protocol::emergency::{emergency_keys, Partner};
+
+const PARTNER: [u8; 32] = [0x20; 32];
+
+fn pk(s: &[u8; 32]) -> [u8; 32] {
+    ed25519_dalek::SigningKey::from_bytes(s)
+        .verifying_key()
+        .to_bytes()
+}
+
+/// `protocols.espace-secours` : dépôt authentifié par l'identité VDF,
+/// relecture par la clé de secours (Nœud de retour), libération signée.
+#[tokio::test(flavor = "multi_thread")]
+async fn deposit_fetch_and_release_against_a_real_partner() {
+    let mut ps = NodeService::new(PARTNER);
+    ps.vdf = Some(Arc::new(|_, _| true));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000_000);
+    let server = BlockServer::start(
+        PARTNER,
+        "/ip4/127.0.0.1/tcp/0".parse().unwrap(),
+        Arc::new(Mutex::new(ps)),
+        clock,
+    )
+    .await
+    .unwrap();
+    let addr = server.listen_addr().await.unwrap();
+    assert_eq!(peer_of_node(&pk(&PARTNER)), Some(server.peer_id()));
+    assert_eq!(node_of_peer(&server.peer_id()), Some(pk(&PARTNER)));
+
+    let sig_priv_user = [3; 32];
+    let id = DepositIdentity {
+        sig_priv_user,
+        sig_pub_user: pk(&sig_priv_user),
+        proof: s3m_core::vdf::VdfProof {
+            y: vec![1],
+            pi: vec![2],
+        },
+        keys: emergency_keys(&[9; 32]).unwrap(),
+    };
+    let c = Candidate {
+        partner: Partner {
+            node_id: pk(&PARTNER),
+            ip: "127.0.0.1".into(),
+            port: 0,
+        },
+        addr: addr.clone(),
+    };
+    let client = BlockClient::start().unwrap();
+    let data = vec![5u8; 65_536];
+    let hash = s3m_core::symmetric_suite::hash_sha256(&data);
+    deposit_block(&client, &c, &id, data.clone()).await.unwrap();
+
+    // Le Nœud de retour (autre client) relit par la clé de secours.
+    let other = BlockClient::start().unwrap();
+    assert_eq!(
+        fetch_block(&other, addr.clone(), &id.keys.sig_pub, &hash).await,
+        Some(data)
+    );
+    assert_eq!(
+        fetch_block(&other, addr.clone(), &[1; 32], &hash).await,
+        None
+    );
+
+    let mut ts = 10;
+    assert_eq!(
+        release_blocks(&other, addr.clone(), &id.keys, &mut ts, &[hash])
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(ts, 11);
+    assert_eq!(
+        fetch_block(&other, addr, &id.keys.sig_pub, &hash).await,
+        None
+    );
+}

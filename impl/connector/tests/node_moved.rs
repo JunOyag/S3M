@@ -82,6 +82,8 @@ async fn connector_finds_its_node_again_after_an_address_change() {
         mount_point: None,
         dht_bootstrap: vec![],
         auto_attach: false,
+        emergency_write: false,
+        n_secours: 4,
     };
     let (shared, _) = start(config, Arc::new(|| 1_000_000)).await.unwrap();
     // L'annonce mDNS d'un Nœud tout juste démarré peut manquer une recherche :
