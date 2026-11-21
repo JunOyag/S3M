@@ -239,13 +239,7 @@ pub async fn recover(
     {
         let mut s = service.lock().unwrap();
         for p in &manifest.partners {
-            s.partners.insert(
-                p.node_id,
-                PartnerState {
-                    allowance: p.allowance,
-                    ..Default::default()
-                },
-            );
+            s.partners.insert(p.node_id, PartnerState::default());
         }
         for u in &manifest.users {
             s.users.insert(

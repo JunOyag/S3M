@@ -297,7 +297,6 @@ pub struct SavedPartner {
     pub node_id: String,
     #[serde(default)]
     pub addr: Option<String>,
-    pub allowance: u64,
     pub hosted_for_partner: u64,
     pub hosted_by_partner: u64,
     pub last_tombstone_at: u64,
@@ -357,7 +356,6 @@ impl SavedState {
             .map(|(id, p)| SavedPartner {
                 node_id: hx(id),
                 addr: addrs.get(id).cloned(),
-                allowance: p.allowance,
                 hosted_for_partner: p.ledger.hosted_for_partner,
                 hosted_by_partner: p.ledger.hosted_by_partner,
                 last_tombstone_at: p.ledger.last_tombstone_at,
@@ -421,7 +419,6 @@ impl SavedState {
             s.partners.insert(
                 id,
                 PartnerState {
-                    allowance: p.allowance,
                     ledger: PartnerLedger {
                         hosted_for_partner: p.hosted_for_partner,
                         hosted_by_partner: p.hosted_by_partner,
@@ -928,7 +925,6 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                     "pays": country(Some(&peer.ip)),
                     "latence (ms)": if peer.answered == 0 { Value::Null } else { json!(peer.latency_ms.round()) },
                     "dernier challenge réussi": pos.2.get(&n),
-                    "solde accordé": p.allowance,
                     "fragments confiés": p.ledger.hosted_for_partner,
                     "fragments reçus": p.ledger.hosted_by_partner,
                     "adresse": addrs.get(id),
@@ -983,7 +979,8 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "activée": sh.config.partnering.enabled,
             "candidats connus": candidates,
             "partenaires visés": if sh.config.partnering.target_partners == 0 {
-                sh.config.dispersal.k * sh.config.dispersal.coef + 4 } else { sh.config.partnering.target_partners },
+                sh.config.dispersal.k * sh.config.dispersal.coef + 4 } else { sh.config.partnering.target_partners }
+                .max(sh.config.dispersal.k * sh.config.dispersal.coef) + s.missing_partners,
             "dernier cycle": last_partnering.map(|(t, r)| json!({ "instant": t, "découverts": r.discovered,
                 "testés": r.probed, "proposés": r.proposed, "acceptés": r.accepted,
                 "mis en retrait": r.retiring, "terminés": r.ended })),
@@ -1043,9 +1040,8 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "types": { "quota (Gio)": "number" },
               "aide": { "user_id": "Affiché par l'assistant de S3m de l'utilisateur", "salt": "Affiché à côté de l'identifiant (32 caractères)" } },
             { "nom": "add_partner", "titre": "Ajouter un partenaire manuellement", "libellé": "Ajouter",
-              "champs": ["node_id", "addr", "allowance"],
-              "libellés": { "node_id": "identifiant du Nœud", "addr": "adresse", "allowance": "solde accordé (fragments)" },
-              "types": { "allowance": "number" },
+              "champs": ["node_id", "addr"],
+              "libellés": { "node_id": "identifiant du Nœud", "addr": "adresse" },
               "aide": { "addr": "/ip4/…/tcp/…/p2p/…" } },
             { "nom": "set_quota", "titre": "Changer le quota d'un utilisateur", "libellé": "Changer",
               "champs": ["user_id", "quota (Gio)"],
@@ -1338,8 +1334,8 @@ pub fn map_points(sh: &Shared) -> Value {
             ip,
             s3m_protocol::pseudo::display(&[s.partner_names.get(id).map(String::as_str)], id),
             format!(
-                "solde {} · confiés {}",
-                p.allowance, p.ledger.hosted_for_partner
+                "confiés {} · reçus {}",
+                p.ledger.hosted_for_partner, p.ledger.hosted_by_partner
             ),
         );
     }
@@ -1453,8 +1449,7 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             }
             let addr = field(&v, "addr")?;
             addr.parse::<Multiaddr>().map_err(|e| e.to_string())?;
-            let allowance = number(&v, "allowance")?;
-            s.partners.entry(id).or_default().allowance = allowance;
+            s.partners.entry(id).or_default();
             sh.addrs.lock().unwrap().insert(id, addr.to_string());
         }
         "set_quota" => {

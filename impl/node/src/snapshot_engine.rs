@@ -53,7 +53,7 @@ pub fn current_desc(
             node_id: *id,
             hosted_for_partner: p.ledger.hosted_for_partner,
             hosted_by_partner: p.ledger.hosted_by_partner,
-            allowance: p.allowance,
+            allowance: 0,
         })
         .collect();
     partners.sort_by_key(|p| p.node_id);

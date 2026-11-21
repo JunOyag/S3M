@@ -91,7 +91,6 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
     b.partner_policy = PartnerPolicy {
         accept: true,
         max_partners: 1,
-        max_allowance_blocks: 300,
     };
     let propose = |allowance, entry: Vec<u8>| Request {
         credential: None,
@@ -112,21 +111,17 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
     let r = b.handle(b"a", Some(pk(&A)), b"b", propose(500, entry(&A)), NOW);
     assert_eq!(
         r,
-        Response::PartnershipAnswer {
-            granted_blocks: 300
-        },
-        "plafonné"
+        Response::PartnershipAnswer { granted_blocks: 1 },
+        "accepté, sans solde"
     );
-    assert_eq!(b.partners[&pk(&A)].allowance, 300);
+    assert!(b.partners.contains_key(&pk(&A)));
     assert_eq!(b.new_partners.len(), 1);
     assert_eq!(b.new_partners[0].0, pk(&A));
     assert!(b.new_partners[0].1[0].starts_with("/ip4/203.0.113.5/tcp/4002/p2p/"));
     let r = b.handle(b"a", Some(pk(&A)), b"b", propose(500, entry(&A)), NOW);
     assert_eq!(
         r,
-        Response::PartnershipAnswer {
-            granted_blocks: 300
-        },
+        Response::PartnershipAnswer { granted_blocks: 1 },
         "idempotent"
     );
     let c = [0x30; 32];

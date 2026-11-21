@@ -55,7 +55,10 @@ async fn connector_writes_reads_then_rescues_from_partner_when_node_is_down() {
     ps.partners.insert(
         pk(&NODE),
         PartnerState {
-            allowance: 10,
+            ledger: s3m_node::tombstones::PartnerLedger {
+                hosted_for_partner: 10,
+                ..Default::default()
+            },
             ..Default::default()
         },
     );
@@ -146,7 +149,10 @@ async fn delegation_reaches_the_new_node_which_reads_old_fragments() {
     ps.partners.insert(
         pk(&NODE),
         PartnerState {
-            allowance: 10,
+            ledger: s3m_node::tombstones::PartnerLedger {
+                hosted_for_partner: 10,
+                ..Default::default()
+            },
             ..Default::default()
         },
     );

@@ -97,7 +97,6 @@ fn saved_state_roundtrips_users_partners_and_addresses() {
     s.partners.insert(
         [6; 32],
         PartnerState {
-            allowance: 7,
             last_seen: 8,
             ..Default::default()
         },
@@ -150,13 +149,7 @@ async fn node_starts_serves_a_guarded_dashboard_and_persists_its_state() {
     // Le service écrit sur disque (blocs de 64 Kio exactement).
     {
         let mut s = shared.service.lock().unwrap();
-        s.partners.insert(
-            [0x33; 32],
-            PartnerState {
-                allowance: 2,
-                ..Default::default()
-            },
-        );
+        s.partners.insert([0x33; 32], PartnerState::default());
         let data = vec![7u8; 65_536];
         let r = s.handle(
             b"x",

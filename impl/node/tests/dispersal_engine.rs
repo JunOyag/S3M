@@ -77,7 +77,10 @@ async fn node_disperses_publishes_and_data_survives_total_node_loss() {
         ps.partners.insert(
             pk(&NODE),
             PartnerState {
-                allowance: 1_000,
+                ledger: s3m_node::tombstones::PartnerLedger {
+                    hosted_for_partner: 1_000,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );

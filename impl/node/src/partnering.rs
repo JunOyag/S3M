@@ -27,8 +27,6 @@ pub struct PartneringConfig {
     pub enabled: bool,
     /// Partenaires actifs visés (0 : coef×k + 4).
     pub target_partners: usize,
-    /// Solde demandé aux nouveaux partenaires (fragments).
-    pub requested_allowance_blocks: u64,
     pub weight_reliability: f64,
     pub weight_availability: f64,
     pub weight_speed: f64,
@@ -48,7 +46,6 @@ impl Default for PartneringConfig {
         Self {
             enabled: true,
             target_partners: 0,
-            requested_allowance_blocks: 50_000,
             weight_reliability: 0.5,
             weight_availability: 0.3,
             weight_speed: 0.2,
@@ -442,11 +439,14 @@ pub async fn run_partnering(
     }
 
     // 4. Recrutement.
-    let target = if cfg.target_partners == 0 {
+    // Cible réglée (coef×k au moins), relevée des partenaires manquants.
+    let base = if cfg.target_partners == 0 {
         target_default
     } else {
         cfg.target_partners
     };
+    let missing = service.lock().unwrap().missing_partners;
+    let target = base.max(crate::dispersal_engine::K * crate::dispersal_engine::COEF) + missing;
     let active = st
         .peers
         .values()
@@ -476,7 +476,7 @@ pub async fn run_partnering(
                 let req = Request {
                     credential: None,
                     body: Body::ProposePartnership {
-                        allowance_blocks: cfg.requested_allowance_blocks,
+                        allowance_blocks: 1,
                         node_entry: entry.clone(),
                     },
                 };
@@ -489,7 +489,6 @@ pub async fn run_partnering(
                         service.lock().unwrap().partners.insert(
                             nid,
                             PartnerState {
-                                allowance: granted_blocks,
                                 last_seen: now,
                                 ..Default::default()
                             },
@@ -497,9 +496,7 @@ pub async fn run_partnering(
                         net.addrs.lock().unwrap().insert(nid, p.addr.clone());
                         p.status = "partenaire".into();
                         report.accepted += 1;
-                        let msg =
-                            format!("nouveau partenaire {}… (solde {granted_blocks})", &n[..12]);
-                        st.log(now, msg);
+                        st.log(now, format!("nouveau partenaire {}…", &n[..12]));
                     }
                 }
             }

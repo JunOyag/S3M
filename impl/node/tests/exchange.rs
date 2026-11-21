@@ -131,13 +131,7 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
 #[test]
 fn partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance() {
     let mut p = NodeService::new(PARTNER);
-    p.partners.insert(
-        pk(&NODE),
-        PartnerState {
-            allowance: 1,
-            ..Default::default()
-        },
-    );
+    p.partners.insert(pk(&NODE), PartnerState::default());
     let me = Some(pk(&NODE));
     let h = hash_sha256(&[9; 40]);
     let r = p.handle(
@@ -161,7 +155,7 @@ fn partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance() {
             NOW
         ),
         Response::Failure(Refusal::QuotaExceeded),
-        "solde de troc épuisé"
+        "troc 1:1 : rien confié en retour"
     );
     let challenge = plain(Body::Challenge {
         hash: h.to_vec(),
@@ -195,12 +189,44 @@ fn partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance() {
     );
 }
 
+/// Troc strict 1:1 (`node.PartnerAccount#equilibre`) : dépôts en alternance,
+/// écart d'un fragment au plus, doublon non recompté.
+#[test]
+fn barter_is_strictly_one_for_one() {
+    let mut p = NodeService::new(PARTNER);
+    p.partners.insert(pk(&NODE), PartnerState::default());
+    let me = Some(pk(&NODE));
+    let store = |p: &mut NodeService, b: u8| {
+        p.handle(
+            b"n",
+            me,
+            b"p",
+            plain(Body::StoreFragment { data: vec![b; 40] }),
+            NOW,
+        )
+    };
+    assert!(matches!(store(&mut p, 1), Response::FragmentReceipt { .. }));
+    assert!(
+        matches!(store(&mut p, 1), Response::FragmentReceipt { .. }),
+        "doublon"
+    );
+    assert_eq!(store(&mut p, 2), Response::Failure(Refusal::QuotaExceeded));
+    // Le partenaire confie à son tour un fragment au Nœud.
+    p.partners
+        .get_mut(&pk(&NODE))
+        .unwrap()
+        .ledger
+        .hosted_for_partner += 1;
+    assert!(matches!(store(&mut p, 2), Response::FragmentReceipt { .. }));
+    assert_eq!(store(&mut p, 3), Response::Failure(Refusal::QuotaExceeded));
+    assert_eq!(p.partners[&pk(&NODE)].ledger.hosted_by_partner, 2);
+}
+
 fn partner_hosting_node_fragment() -> (NodeService, Id) {
     let mut p = NodeService::new(PARTNER);
     p.partners.insert(
         pk(&NODE),
         PartnerState {
-            allowance: 10,
             last_seen: NOW,
             ..Default::default()
         },
@@ -319,7 +345,10 @@ async fn two_nodes_exchange_fragments_over_libp2p() {
     ps.partners.insert(
         pk(&NODE),
         PartnerState {
-            allowance: 5,
+            ledger: s3m_node::tombstones::PartnerLedger {
+                hosted_for_partner: 5,
+                ..Default::default()
+            },
             ..Default::default()
         },
     );

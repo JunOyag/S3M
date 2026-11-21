@@ -55,7 +55,10 @@ async fn fraud_absence_and_local_corruption_are_repaired_automatically() {
         ps.partners.insert(
             pk(&NODE),
             PartnerState {
-                allowance: 1_000,
+                ledger: s3m_node::tombstones::PartnerLedger {
+                    hosted_for_partner: 1_000,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );

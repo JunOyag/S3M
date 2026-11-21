@@ -43,8 +43,6 @@ pub struct UserAccount {
 /// Partenaire de troc (`node.PartnerAccount`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PartnerState {
-    /// Nombre maximal de fragments hébergés pour lui (solde de troc).
-    pub allowance: u64,
     pub ledger: PartnerLedger,
     /// Dernier échange (secondes Unix).
     pub last_seen: u64,
@@ -77,8 +75,6 @@ impl Default for AttachPolicy {
 pub struct PartnerPolicy {
     pub accept: bool,
     pub max_partners: usize,
-    /// Solde maximal accordé à un partenaire (fragments).
-    pub max_allowance_blocks: u64,
 }
 
 impl Default for PartnerPolicy {
@@ -86,7 +82,6 @@ impl Default for PartnerPolicy {
         Self {
             accept: true,
             max_partners: 32,
-            max_allowance_blocks: 100_000,
         }
     }
 }
@@ -157,6 +152,9 @@ pub struct NodeService {
     pub used_attach_identities: std::collections::HashSet<Id>,
     /// Partenariats acceptés à traiter par le démon : `(node_id, adresses)`.
     pub new_partners: Vec<(Id, Vec<String>)>,
+    /// Fragments de parité du dernier stripe restés sans partenaire : la
+    /// recherche de partenaires relève sa cible d'autant.
+    pub missing_partners: usize,
     /// Dernière adresse IP vue par Utilisateur (carte du dashboard).
     pub last_user_ip: HashMap<Id, String>,
     pub record_user_ips: bool,
@@ -225,6 +223,7 @@ impl NodeService {
             user_labels: HashMap::new(),
             partner_names: HashMap::new(),
             emergency_verified: Default::default(),
+            missing_partners: 0,
             limiter: RescueLimiter::default(),
         }
     }
@@ -364,7 +363,8 @@ impl NodeService {
                 let hash = hash_sha256(&data);
                 if !self.store.contains(&hash) {
                     let st = self.partners.get(&p).ok_or(Refusal::Unauthorized)?;
-                    if st.ledger.hosted_by_partner >= st.allowance {
+                    // Troc strict 1:1 (`node.PartnerAccount#equilibre`).
+                    if !barter_allows(&st.ledger) {
                         return Err(Refusal::QuotaExceeded);
                     }
                     self.store
@@ -455,10 +455,10 @@ impl NodeService {
                     && self.partners.len() < self.partner_policy.max_partners,
             }),
             Body::ProposePartnership {
-                allowance_blocks,
+                allowance_blocks: _,
                 node_entry,
             } => Ok(Response::PartnershipAnswer {
-                granted_blocks: self.propose(from_node, allowance_blocks, &node_entry, now),
+                granted_blocks: self.propose(from_node, &node_entry, now),
             }),
             Body::Attach {
                 salt,
@@ -691,14 +691,15 @@ impl NodeService {
         self.emergency.rebuild(&stored, now);
     }
 
-    /// Proposition de partenariat : solde accordé (0 = refus).
-    fn propose(&mut self, from_node: Option<Id>, requested: u64, entry: &[u8], now: u64) -> u64 {
+    /// Proposition de partenariat : 1 = accepté, 0 = refus (aucun solde,
+    /// `node.PartnerAccount#equilibre`).
+    fn propose(&mut self, from_node: Option<Id>, entry: &[u8], now: u64) -> u64 {
         let Some(p) = from_node else { return 0 };
         if self.blacklisted.contains(&p) {
             return 0;
         }
-        if let Some(st) = self.partners.get(&p) {
-            return st.allowance;
+        if self.partners.contains_key(&p) {
+            return 1;
         }
         let pol = self.partner_policy;
         if !pol.accept || self.partners.len() >= pol.max_partners {
@@ -715,20 +716,15 @@ impl NodeService {
         if addrs.is_empty() {
             return 0;
         }
-        let granted = requested.min(pol.max_allowance_blocks);
-        if granted == 0 {
-            return 0;
-        }
         self.partners.insert(
             p,
             PartnerState {
-                allowance: granted,
                 last_seen: now,
                 ..Default::default()
             },
         );
         self.new_partners.push((p, addrs));
-        granted
+        1
     }
 
     fn owned_fragment(&self, hash: &[u8], owner: &Id) -> Result<Vec<u8>, Refusal> {
@@ -1257,4 +1253,11 @@ async fn run(
             }
         }
     }
+}
+
+/// Troc strict 1:1 (`node.PartnerAccount#equilibre`) : un nouveau fragment
+/// du partenaire est accepté si, après dépôt, les fragments reçus de lui ne
+/// dépassent pas de plus de 1 ceux qui lui sont confiés.
+pub fn barter_allows(ledger: &PartnerLedger) -> bool {
+    ledger.hosted_by_partner <= ledger.hosted_for_partner
 }

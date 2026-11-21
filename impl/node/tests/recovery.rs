@@ -66,7 +66,10 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
         ps.partners.insert(
             pk(&NODE),
             PartnerState {
-                allowance: 1_000,
+                ledger: s3m_node::tombstones::PartnerLedger {
+                    hosted_for_partner: 1_000,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );
@@ -82,7 +85,7 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
         service.partners.insert(
             pk(&seed),
             PartnerState {
-                allowance: 500 + i as u64,
+                last_seen: 500 + i as u64,
                 ..Default::default()
             },
         );
@@ -185,10 +188,7 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
     assert_eq!(s.users[&pk(&USER)].salt, vec![7; 16]);
     assert_eq!(s.users[&pk(&USER)].used_bytes, 3 * 65_536);
     assert!(s.adopt_next_root.contains(&pk(&USER)));
-    let allowances: Vec<u64> = (0..4u8)
-        .map(|i| s.partners[&pk(&[0x60 + i; 32])].allowance)
-        .collect();
-    assert_eq!(allowances, vec![500, 501, 502, 503]);
+    assert!((0..4u8).all(|i| s.partners.contains_key(&pk(&[0x60 + i; 32]))));
     assert!(
         s.partners
             .values()

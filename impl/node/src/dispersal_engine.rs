@@ -34,10 +34,27 @@ use crate::chunk_store::Space;
 use crate::exchange::NodeService;
 use crate::tombstones::{apply_acknowledged, TombstoneNotice};
 
-/// Paramètres de dispersion.
+/// Blocs de données par stripe : constante du logiciel
+/// (`protocols.erasure-coding#parametres`).
+pub const K: usize = 4;
+/// Coefficient de redondance (parité = coef×k) : constante du logiciel.
+pub const COEF: usize = 3;
+
+fn const_k() -> usize {
+    K
+}
+fn const_coef() -> usize {
+    COEF
+}
+
+/// Paramètres de dispersion. `k` et `coef` ne sont jamais lus ni écrits dans
+/// la configuration : ils valent [`K`] et [`COEF`] (les tests seuls les
+/// réduisent).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EngineConfig {
+    #[serde(skip, default = "const_k")]
     pub k: usize,
+    #[serde(skip, default = "const_coef")]
     pub coef: usize,
     /// `duree_max_idle_seconds` : délai avant padding d'un paquet incomplet.
     pub idle_timeout_s: u64,
@@ -48,8 +65,8 @@ pub struct EngineConfig {
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
-            k: 4,
-            coef: 3,
+            k: K,
+            coef: COEF,
             idle_timeout_s: 300,
             grace_s: 3_600,
         }
@@ -227,7 +244,7 @@ pub(crate) async fn disperse(
     let mut candidates: Vec<Id> = fabric.partners().iter().map(|p| p.node_id).collect();
     by_xor_distance(&mut candidates, &sid);
     let mut next = 0;
-    let mut placed = Vec::new();
+    let mut placed: Vec<(u16, String, String)> = Vec::new();
     for (i, frag) in parity.into_iter().enumerate() {
         let h = hash_sha256(&frag);
         while next < candidates.len() {
@@ -244,6 +261,10 @@ pub(crate) async fn disperse(
             }
         }
     }
+    // Partenaires manquants (`protocols.partenariat-automatique`) : la
+    // recherche relève sa cible d'autant.
+    service.lock().unwrap().missing_partners =
+        cfg.k * cfg.coef - placed.len().min(cfg.k * cfg.coef);
     let rec = StripeRec {
         id: hx(&sid),
         data: hashes.iter().map(|h| hx(h)).collect(),
