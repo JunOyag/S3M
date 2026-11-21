@@ -271,7 +271,9 @@ pages:
     section: "§3.11, §5.2"
     fbs: "schemas/network/AlertEntry.fbs#AlertEntry"
     refs: [network.dht-directory, protocols.canal-noeud, network.SignedNodeMessage]
-    verified_by: []
+    verified_by:
+      - message::alert_entry_is_bound_to_the_announce_key_and_survives_republication
+      - schemas::dht_entries_carry_distinct_file_identifiers
 
   - id: network.SignedNodeMessage
     kind: schema
@@ -280,7 +282,8 @@ pages:
     section: "§5.2"
     fbs: "schemas/network/NodeMessage.fbs#SignedNodeMessage"
     refs: [protocols.canal-noeud]
-    verified_by: []
+    verified_by:
+      - message::messages_requests_and_response_roundtrip
 
   - id: network.BlockRequest
     kind: schema
@@ -936,7 +939,14 @@ pages:
     title: "Canal Nœud ↔ Utilisateurs"
     section: "§5.2"
     refs: [protocols.echange-blocs, network.NodeEntry, network.AlertEntry, network.SignedNodeMessage, network.dht-directory, securite.incidents-compromissions, protocols.migration-noeud]
-    verified_by: []
+    verified_by:
+      - message::info_is_signed_by_the_node_and_alert_only_by_the_pinned_announce_key
+      - message::cursor_accepts_each_seq_once_per_kind
+      - message::outbox_reads_since_cursor_prunes_and_inbox_is_rate_limited
+      - channel::announce_phrase_roundtrips_and_only_it_signs_alerts
+      - channel::attached_user_reads_node_messages_and_posts_within_the_daily_limit
+      - channel::first_announce_key_is_pinned_and_a_later_one_is_ignored
+      - channel::alert_from_the_directory_is_accepted_once_and_republished_unchanged
 
   - id: protocols.ecriture-differee
     kind: narrative

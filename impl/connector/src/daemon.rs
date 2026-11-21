@@ -217,6 +217,26 @@ fn save_emergency(sh: &Shared) {
     }
 }
 
+fn channel_path(c: &Config) -> PathBuf {
+    c.data_dir.join("channel.json")
+}
+
+fn load_channel(c: &Config) -> crate::channel::ChannelState {
+    std::fs::read(channel_path(c))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn save_channel(sh: &Shared) {
+    let st = sh.channel.lock().unwrap().clone();
+    let p = channel_path(&sh.config);
+    let tmp = p.with_extension("json.tmp");
+    if std::fs::write(&tmp, serde_json::to_vec_pretty(&st).expect("sérialisable")).is_ok() {
+        let _ = std::fs::rename(tmp, p);
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -429,6 +449,8 @@ pub struct Shared {
     pub dht: std::sync::OnceLock<DhtClient>,
     /// Écriture d'urgence (`protocols.espace-secours`).
     pub emergency: Mutex<EmergencyStatus>,
+    /// Canal Nœud ↔ Utilisateurs (`protocols.canal-noeud`).
+    pub channel: Mutex<crate::channel::ChannelState>,
     priv_user: [u8; 32],
     pub_node: [u8; 32],
     salt: Vec<u8>,
@@ -454,6 +476,7 @@ fn queue_status(c: &Config) -> Value {
 /// État présenté par le dashboard Connecteur.
 pub fn status(sh: &Shared) -> Value {
     let mut v = status_base(sh);
+    channel_status(sh, &mut v);
     v["résumé"] = connector_summary(&v);
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
@@ -461,6 +484,9 @@ pub fn status(sh: &Shared) -> Value {
           "sections": ["lecteur", "file d'écriture"], "actions": ["sync_now", "set_mount_point"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["admin_node", "change_node"] },
+        { "id": "messages", "titre": "Messages du Nœud",
+          "sections": ["alerte du nœud", "messages du nœud", "messages envoyés au nœud"],
+          "actions": ["send_node_message", "acknowledge_alert"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
@@ -519,7 +545,15 @@ fn connector_summary(v: &Value) -> Value {
     let deposits = p("/écriture d'urgence/blocs déposés à libérer")
         .as_u64()
         .unwrap_or(0);
-    json!([
+    let alert = p("/alerte du nœud/message");
+    let unread = p("/alerte du nœud/acquittée").as_bool() == Some(false);
+    let mut cards = vec![];
+    if let Some(t) = alert.as_str() {
+        cards.push(json!({ "libellé": "Alerte du Nœud", "valeur": t,
+            "détail": "Votre Nœud signale une compromission : ouvrez « Messages du Nœud »",
+            "état": if unread { "probleme" } else { "attention" }, "page": "messages" }));
+    }
+    let base = json!([
         { "libellé": "Espace", "valeur": space, "état": space_state, "page": "noeud" },
         { "libellé": "Écriture d'urgence",
           "valeur": if deposits > 0 { format!("{deposits} bloc(s) chez les partenaires") } else { "aucun dépôt".to_string() },
@@ -529,7 +563,130 @@ fn connector_summary(v: &Value) -> Value {
         { "libellé": "Lecteur", "valeur": drive, "état": drive_state, "page": "fichiers" },
         { "libellé": "File d'écriture", "valeur": queue, "détail": "modifications hors ligne",
           "état": if queue == 0 { "ok" } else { "attention" }, "page": "fichiers" }
-    ])
+    ]);
+    cards.extend(base.as_array().cloned().unwrap_or_default());
+    Value::Array(cards)
+}
+
+/// Canal Nœud ↔ Utilisateurs : sections du dashboard.
+fn channel_status(sh: &Shared, v: &mut Value) {
+    let c = sh.channel.lock().unwrap();
+    v["alerte du nœud"] = match &c.alert {
+        None => json!({ "état": "aucune alerte" }),
+        Some(a) => json!({
+            "message": a.text, "émise le": a.timestamp, "acquittée": c.alert_acknowledged,
+            "nœud de remplacement": a.successor.map(hex::encode),
+            "conduite à tenir": if a.successor.is_some() {
+                "Votre Nœud est compromis. Utilisez « Changer de Nœud » (page Mon Nœud) avec l'identifiant du Nœud de remplacement."
+            } else {
+                "Votre Nœud est compromis. Choisissez un autre Nœud avec « Changer de Nœud » (page Mon Nœud)."
+            },
+            "pointeur de migration": "ignoré (l'alerte l'emporte)",
+        }),
+    };
+    v["messages du nœud"] = json!(c.received.iter().rev().map(|m| json!({
+        "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" } else { "information" },
+        "reçu le": m.timestamp, "message": m.text })).collect::<Vec<_>>());
+    v["messages envoyés au nœud"] = json!(c
+        .sent
+        .iter()
+        .rev()
+        .map(|(t, m)| json!({
+        "envoyé le": t, "message": m }))
+        .collect::<Vec<_>>());
+    v["clé d'annonce du nœud"] = json!(c.announce.map(hex::encode));
+    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        a.push(json!({ "nom": "send_node_message", "titre": "Écrire à mon Nœud", "libellé": "Envoyer",
+            "champs": ["message"],
+            "aide": { "message": "Lu par l'opérateur de votre Nœud (4 096 octets au plus, 10 messages par jour)" } }));
+        if c.alert.is_some() && !c.alert_acknowledged {
+            a.push(json!({ "nom": "acknowledge_alert", "titre": "Alerte du Nœud", "libellé": "J'ai lu l'alerte", "champs": [] }));
+        }
+    }
+}
+
+/// Un tour du canal : épinglage de la clé d'annonce, lecture des messages
+/// (Nœud joignable), alerte relue dans l'annuaire (Nœud injoignable, ou une
+/// fois par jour) et republiée telle quelle.
+async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
+    use s3m_protocol::message::{alert_key, open_alert_entry, ALERT_POLL_S};
+    let before = sh.channel.lock().unwrap().clone();
+    sh.channel.lock().unwrap().pin(&sh.pub_node, None);
+    let poll_due = {
+        let c = sh.channel.lock().unwrap();
+        !reachable || now >= c.alert_polled_at.saturating_add(ALERT_POLL_S)
+    };
+    let dht = sh.dht.get();
+    if let (true, Some(client)) = (poll_due, dht) {
+        if sh.channel.lock().unwrap().announce.is_none() {
+            if let Ok(Some(env)) = client.get(sh.pub_node.to_vec()).await {
+                let ann = s3m_protocol::entries::node_entry_announce(&env);
+                sh.channel.lock().unwrap().pin(&sh.pub_node, ann);
+            }
+        }
+        let announce = sh.channel.lock().unwrap().announce;
+        if let Some(announce) = announce {
+            if let Ok(Some(env)) = client.get(alert_key(&announce).to_vec()).await {
+                if let Ok((k, alert)) = open_alert_entry(&env, now) {
+                    sh.channel.lock().unwrap().accept_entry(&k, &alert, env);
+                }
+            }
+        }
+        sh.channel.lock().unwrap().alert_polled_at = now;
+    }
+    if reachable {
+        let cur = sh.channel.lock().unwrap().cursor;
+        if let Ok(list) = sh.session.read_messages(cur.info, cur.alert).await {
+            let mut c = sh.channel.lock().unwrap();
+            for s in &list {
+                c.accept(s);
+            }
+        }
+    }
+    let republish = sh.channel.lock().unwrap().republish_due(now);
+    let announce = sh.channel.lock().unwrap().announce;
+    if let (Some(env), Some(announce), Some(client)) = (republish, announce, dht) {
+        if client.put(alert_key(&announce).to_vec(), env).await.is_ok() {
+            sh.channel.lock().unwrap().alert_republished_at = now;
+        }
+    }
+    if *sh.channel.lock().unwrap() != before {
+        save_channel(sh);
+    }
+}
+
+/// Actions du canal (fil bloquant du serveur du dashboard).
+fn channel_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
+    match name {
+        "send_node_message" => {
+            let text = v
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .ok_or("message vide")?;
+            tokio::runtime::Handle::current()
+                .block_on(sh.session.post_message(text))
+                .map_err(|e| match e {
+                    ExchangeError::Refused(Refusal::RateLimited) => {
+                        "10 messages par jour au plus : réessayez demain".to_string()
+                    }
+                    e => format!("envoi impossible : {e}"),
+                })?;
+            sh.channel
+                .lock()
+                .unwrap()
+                .sent
+                .push(((sh.clock)(), text.to_string()));
+            save_channel(sh);
+            Ok(json!({ "ok": true, "message": "Message envoyé à votre Nœud" }))
+        }
+        _ => {
+            sh.channel.lock().unwrap().alert_acknowledged = true;
+            save_channel(sh);
+            Ok(json!({ "ok": true, "message": "Alerte acquittée" }))
+        }
+    }
 }
 
 fn status_base(sh: &Shared) -> Value {
@@ -1094,6 +1251,7 @@ pub async fn watch_once(sh: &Shared) {
             h.last_error = probe.err().map(|e| e.to_string());
         }
     }
+    channel_tick(sh, now, ok).await;
     if ok {
         // Lecture du quota et de l'occupation : validation sans changement
         // de racine (`base = new`).
@@ -1188,6 +1346,7 @@ pub async fn start(
         attach: Mutex::new(AttachState::default()),
         dht: std::sync::OnceLock::new(),
         emergency: Mutex::new(load_emergency(&config)),
+        channel: Mutex::new(load_channel(&config)),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
         mount_point: Mutex::new(config.mount_point.clone()),
@@ -1214,6 +1373,7 @@ pub async fn start(
                 Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
             }
             "admin_node" => admin_node(&sh.config.node.addr, &v),
+            "send_node_message" | "acknowledge_alert" => channel_action(&sh, name, &v),
             "change_node" => {
                 if v.get("je confirme").and_then(|x| x.as_bool()) != Some(true) {
                     return Err("cochez « je confirme » pour changer de Nœud".into());

@@ -49,6 +49,7 @@ fn entry(seed: &[u8; 32]) -> Vec<u8> {
             pub_node_recovery: &[0; 32],
             snapshot_pointer: None,
             addrs: &[],
+            pub_node_announce: None,
         },
         &[1; 12],
     )

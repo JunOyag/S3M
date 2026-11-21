@@ -40,6 +40,7 @@ fn node_entry_is_accepted_with_proof_on_tagged_pub_node() {
             pub_node_recovery: &pk(&[6; 32]),
             snapshot_pointer: Some(b"pointeur"),
             addrs: &[],
+            pub_node_announce: None,
         },
         &[1; 12],
     )
@@ -63,6 +64,7 @@ fn node_entry_is_accepted_with_proof_on_tagged_pub_node() {
             pub_node_recovery: &pk(&[6; 32]),
             snapshot_pointer: None,
             addrs: &relayed,
+            pub_node_announce: None,
         },
         &[1; 12],
     )

@@ -47,6 +47,9 @@ lesquels une session Claude Code se trompe le plus souvent.
 - **Échange de blocs** : spécifié et livré (`protocols.echange-blocs`, 2026-11-20) —
   libp2p requête/réponse `/s3m/blocks/1`, à côté de la DHT (Kademlia). Reste à
   l'assembler dans les binaires (`deploiement.packaging`).
+- **Canal Nœud ↔ Utilisateurs** livré (`protocols.canal-noeud`, 2026-11-21) : messages,
+  clé d'annonce hors seed épinglée par le Connecteur, alerte de compromission
+  copiée dans l'annuaire (`AlertEntry`).
 - **Phase 7 (post-quantique) reportée** : optionnelle pour un MVP et contraire à la V3
   (seul le tag 0 est accepté).
 - L'essai V1 de `network.dht-directory` reste archivé sur `archive/dht-directory-v1`.

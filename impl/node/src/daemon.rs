@@ -326,6 +326,9 @@ pub struct SavedState {
     /// Réserve de secours (limites et déposants accueillis).
     #[serde(default)]
     pub emergency: Option<crate::emergency::EmergencyReserve>,
+    /// Canal Nœud ↔ Utilisateurs (clé d'annonce, messages).
+    #[serde(default)]
+    pub channel: Option<crate::channel::Channel>,
 }
 
 impl SavedState {
@@ -384,6 +387,7 @@ impl SavedState {
                 v
             },
             emergency: Some(s.emergency.clone()),
+            channel: Some(s.channel.clone()),
         }
     }
 
@@ -434,6 +438,9 @@ impl SavedState {
         }
         if let Some(e) = &self.emergency {
             s.emergency = e.clone();
+        }
+        if let Some(c) = &self.channel {
+            s.channel = c.clone();
         }
         for u in &self.auto_attached {
             s.auto_attached.insert(unhex32(u)?);
@@ -635,6 +642,9 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "actions": ["volume_draft_add", "volume_draft_edit", "volume_apply", "volume_draft_clear"] },
         { "id": "stockage", "titre": "Stockage et protection",
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
+        { "id": "messages", "titre": "Messages",
+          "sections": ["messages des utilisateurs", "messages envoyés", "clé d'annonce"],
+          "actions": ["send_message", "create_announce_key", "send_alert"] },
         { "id": "secours", "titre": "Espace de secours",
           "sections": ["espace de secours"], "actions": ["set_emergency_policy"] },
         { "id": "reseau", "titre": "Réseau",
@@ -966,7 +976,31 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "pointeurs de migration connus": s.successors.len(),
         },
         "espace de secours": emergency_status(sh, &s),
+        "messages des utilisateurs": s.channel.inbox.received.iter().rev().map(|m| json!({
+            "utilisateur": hx(&m.user_id), "reçu le": m.timestamp, "message": m.text })).collect::<Vec<_>>(),
+        "messages envoyés": s.channel.outbox.sent.iter().rev().map(|(m, _)| json!({
+            "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" } else { "information" },
+            "numéro": m.seq, "envoyé le": m.timestamp, "message": m.text,
+            "nœud de remplacement": m.successor.map(|x| hx(&x)) })).collect::<Vec<_>>(),
+        "clé d'annonce": {
+            "clé publique": s.channel.announce.map(|k| hx(&k)),
+            "alerte dans l'annuaire": match (&s.channel.alert_envelope, s.channel.alert_published_at) {
+                (None, _) => json!("aucune"),
+                (Some(_), 0) => json!("en attente de publication"),
+                (Some(_), t) => json!(t),
+            },
+        },
         "actions": [
+            { "nom": "send_message", "titre": "Écrire aux utilisateurs", "libellé": "Envoyer",
+              "champs": ["message"],
+              "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (4 096 octets au plus, conservé 30 jours)" } },
+            { "nom": "create_announce_key", "titre": "Créer la clé d'annonce", "libellé": "Créer",
+              "champs": [],
+              "aide": {} },
+            { "nom": "send_alert", "titre": "Alerte : ce Nœud est compromis", "libellé": "Envoyer l'alerte",
+              "champs": ["phrase d'annonce", "message", "nœud de remplacement"],
+              "aide": { "phrase d'annonce": "Les 24 mots remis à la création de la clé d'annonce ; ils ne sont pas conservés",
+                        "nœud de remplacement": "Identifiant du Nœud vers lequel les utilisateurs doivent se rattacher (facultatif)" } },
             { "nom": "attach_user", "titre": "Rattacher un utilisateur manuellement", "libellé": "Rattacher",
               "champs": ["user_id", "salt", "quota (Gio)"],
               "libellés": { "user_id": "identifiant de l'utilisateur", "salt": "sel d'attachement" },
@@ -1348,6 +1382,9 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             "Nouveau 2FA : scannez le nouveau QR code ; l'ancien et les sessions à distance ne valent plus"
         } }));
     }
+    if let Some(r) = channel_action(sh, name, &v) {
+        return r;
+    }
     let mut s = sh.service.lock().unwrap();
     match name {
         "attach_user" => {
@@ -1441,6 +1478,48 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         _ => "Rattachement automatique enregistré",
     };
     Ok(json!({ "ok": true, "message": message }))
+}
+
+/// Actions du canal Nœud ↔ Utilisateurs (`protocols.canal-noeud`).
+fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, String>> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let r = {
+        let mut s = sh.service.lock().unwrap();
+        let node_id = s.node_id();
+        match name {
+            "send_message" => field(v, "message")
+                .and_then(|t| s.channel.post_info(&sh.priv_node, t, now))
+                .map(|n| json!({ "ok": true, "message": format!("Message n° {n} envoyé") })),
+            "create_announce_key" => s.channel.create_announce().map(|phrase| {
+                json!({ "ok": true, "message": format!(
+                    "Clé d'annonce créée. Notez ces 24 mots et rangez-les à part de la phrase de récupération :                      ils ne seront plus jamais affichés.
+
+{phrase}") })
+            }),
+            "send_alert" => (|| {
+                let k = crate::channel::announce_from_phrase(field(v, "phrase d'annonce")?)?;
+                let successor = match field(v, "nœud de remplacement").map(str::trim) {
+                    Ok(x) if !x.is_empty() => Some(unhex32(x)?),
+                    _ => None,
+                };
+                let n = s
+                    .channel
+                    .post_alert(&node_id, &k, field(v, "message")?, successor, now)?;
+                Ok(json!({ "ok": true, "message": format!(
+                    "Alerte n° {n} envoyée : les utilisateurs la verront à leur prochain contact, et dans l'annuaire") }))
+            })(),
+            _ => return None,
+        }
+    };
+    if r.is_ok() {
+        if let Err(e) = save(sh) {
+            return Some(Err(e.to_string()));
+        }
+    }
+    Some(r)
 }
 
 fn state_path(c: &Config) -> PathBuf {
@@ -1698,6 +1777,8 @@ pub async fn start_with(
                     );
                 } else {
                     let snapshot = sh.snapshot_pointer.lock().unwrap().clone();
+                    let announce = sh.service.lock().unwrap().channel.announce;
+                    sh.node_entry.lock().unwrap().announce = announce;
                     publish_entry(
                         &dht,
                         &seed,
@@ -1805,10 +1886,23 @@ pub async fn start_with(
                 let purged = sh.service.lock().unwrap().purge_emergency(now);
                 let mut seen = std::mem::take(&mut sh.emergency_ui.lock().unwrap().seen);
                 let report = crate::emergency::integrate_returns(&fabric, &mut seen).await;
-                let mut ui = sh.emergency_ui.lock().unwrap();
-                ui.seen = seen;
-                ui.purged += purged;
-                ui.last = Some((now, report));
+                {
+                    let mut ui = sh.emergency_ui.lock().unwrap();
+                    ui.seen = seen;
+                    ui.purged += purged;
+                    ui.last = Some((now, report));
+                }
+                // Canal : conservation des messages, copie de l'alerte dans l'annuaire.
+                let due = {
+                    let mut s = sh.service.lock().unwrap();
+                    s.channel.prune(now);
+                    s.channel.alert_due(now)
+                };
+                if let Some((key, env)) = due {
+                    if fabric.dht.put(key.to_vec(), env).await.is_ok() {
+                        sh.service.lock().unwrap().channel.alert_published_at = now;
+                    }
+                }
             }
             if let Err(e) = save(&sh) {
                 eprintln!("sauvegarde de l'état : {e}");

@@ -126,7 +126,11 @@ dépassement de quota — [`protocols.quota-sync`](../04-protocols/quota-sync.md
 état de l'écriture d'urgence
 ([`protocols.espace-secours`](../04-protocols/espace-secours.md) —
 partenaires utilisés, estimation du quota consommé par les autres
-Connecteurs), historique des incidents d'intégrité
+Connecteurs), page « Messages du Nœud » : alerte en tête de la vue
+d'ensemble jusqu'à son acquittement, messages reçus, écriture au Nœud
+([`protocols.canal-noeud`](../04-protocols/canal-noeud.md) ; côté Nœud,
+page « Messages » : messages reçus et envoyés, création de la clé
+d'annonce, envoi d'une alerte avec la phrase d'annonce), historique des incidents d'intégrité
 ([`protocols.integrite-lecture`](../04-protocols/integrite-lecture.md)),
 configuration de `Q_max` (4 GiO par défaut) et de l'intervalle de
 surveillance (5 minutes par défaut), lettre du lecteur monté (lettre libre

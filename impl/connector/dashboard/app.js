@@ -297,6 +297,26 @@ const LABELS = {
   "événements récents": ["Événements récents", ""],
   "instant": ["Instant", ""],
   "heure (s)": ["Heure", ""],
+  // Canal Nœud ↔ Utilisateurs
+  "messages des utilisateurs": ["Messages des utilisateurs", "Messages reçus de vos utilisateurs, conservés 30 jours."],
+  "messages envoyés": ["Messages envoyés", "Messages et alertes envoyés à vos utilisateurs, conservés 30 jours."],
+  "clé d'annonce": ["Clé d'annonce", "Clé séparée de la phrase de récupération : elle seule peut signer une alerte de compromission que vos utilisateurs croiront."],
+  "clé publique": ["Clé publique", "Partie publique, publiée dans l'annuaire ; la phrase de 24 mots n'est pas conservée par le Nœud."],
+  "alerte dans l'annuaire": ["Alerte dans l'annuaire", "Copie de la dernière alerte, lisible même si ce Nœud est éteint."],
+  "sorte": ["Sorte", "Information (signée par le Nœud) ou alerte (signée par la clé d'annonce)."],
+  "envoyé le": ["Envoyé le", ""],
+  "reçu le": ["Reçu le", ""],
+  "émise le": ["Émise le", ""],
+  "message": ["Message", ""],
+  "nœud de remplacement": ["Nœud de remplacement", "Identifiant du Nœud vers lequel se rattacher."],
+  "phrase d'annonce": ["Phrase d'annonce", "Les 24 mots remis à la création de la clé d'annonce."],
+  "alerte du nœud": ["Alerte du Nœud", "Avertissement de compromission signé par la clé d'annonce de votre Nœud."],
+  "messages du nœud": ["Messages du Nœud", "Messages de l'opérateur de votre Nœud, vérifiés."],
+  "messages envoyés au nœud": ["Messages envoyés au Nœud", ""],
+  "clé d'annonce du nœud": ["Clé d'annonce du Nœud", "Retenue au premier contact : une autre clé publiée ensuite est ignorée."],
+  "acquittée": ["Acquittée", ""],
+  "conduite à tenir": ["Conduite à tenir", ""],
+  "pointeur de migration": ["Pointeur de migration", "Redirection automatique vers un autre Nœud, ignorée après une alerte."],
 };
 
 // Texte affiché et infobulle d'une clé.

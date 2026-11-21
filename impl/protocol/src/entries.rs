@@ -74,6 +74,8 @@ pub struct NodeEntryParams<'a> {
     /// Multiaddrs joignables, directes d'abord puis via relais
     /// (`network.traversee-nat`).
     pub addrs: &'a [String],
+    /// Clé d'annonce, hors seed (`protocols.canal-noeud`).
+    pub pub_node_announce: Option<&'a [u8; 32]>,
 }
 
 /// Enveloppe signée de l'entrée Node.
@@ -99,6 +101,7 @@ pub fn node_entry_envelope(
     let ct = blob.map(|x| b.create_vector(&x));
     let addrs: Vec<_> = p.addrs.iter().map(|a| b.create_string(a)).collect();
     let addrs = b.create_vector(&addrs);
+    let announce = p.pub_node_announce.map(|k| b.create_vector(k));
     let e = fb::NodeEntry::create(
         &mut b,
         &fb::NodeEntryArgs {
@@ -110,6 +113,7 @@ pub fn node_entry_envelope(
             migration_pointer: None,
             snapshot_ciphertext: ct,
             addrs: Some(addrs),
+            pub_node_announce: announce,
         },
     );
     fb::finish_node_entry_buffer(&mut b, e);
@@ -280,4 +284,11 @@ pub fn node_entry_addrs(envelope: &[u8]) -> Option<NodeAddrs> {
         .filter(|i| !i.is_empty())
         .map(|i| (i.to_string(), e.port()));
     Some((addrs, direct))
+}
+
+/// Clé d'annonce publiée par une entrée Node (enveloppe déjà vérifiée).
+pub fn node_entry_announce(envelope: &[u8]) -> Option<[u8; 32]> {
+    let env = flatbuffers::root::<fb::DhtEnvelope>(envelope).ok()?;
+    let e = fb::root_as_node_entry(env.payload()?.bytes()).ok()?;
+    e.pub_node_announce()?.bytes().try_into().ok()
 }

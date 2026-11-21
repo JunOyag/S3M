@@ -1319,19 +1319,29 @@ entries:
       : effacer et réutiliser seulement ; effacement limité aux données S3m.
   protocols.canal-noeud:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - message::info_is_signed_by_the_node_and_alert_only_by_the_pinned_announce_key
+      - message::cursor_accepts_each_seq_once_per_kind
+      - message::outbox_reads_since_cursor_prunes_and_inbox_is_rate_limited
+      - channel::announce_phrase_roundtrips_and_only_it_signs_alerts
+      - channel::attached_user_reads_node_messages_and_posts_within_the_daily_limit
+      - channel::first_announce_key_is_pinned_and_a_later_one_is_ignored
+      - channel::alert_from_the_directory_is_accepted_once_and_republished_unchanged
+    notes: "Livré le 2026-11-21 : protocol (message.rs, ReadMessages/PostMessage), Nœud (channel.rs, page Messages, clé d'annonce en 24 mots non conservée, alerte publiée et republiée dans l'annuaire), Connecteur (channel.rs, épinglage, lecture à chaque sondage, alerte relue dans l'annuaire, carte d'alerte et page Messages du Nœud). Le suivi automatique du pointeur de migration n'est pas branché dans S3m : quand il le sera, il consultera ChannelState::distrusts. Non testé en conditions réelles."
   network.AlertEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - message::alert_entry_is_bound_to_the_announce_key_and_survives_republication
+      - schemas::dht_entries_carry_distinct_file_identifiers
+    notes: "file_identifier ALRT ; clé de recherche vérifiée par accept_record."
   network.SignedNodeMessage:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
+    status: done
+    owner: claude-code
+    tests:
+      - message::messages_requests_and_response_roundtrip
     notes: ""

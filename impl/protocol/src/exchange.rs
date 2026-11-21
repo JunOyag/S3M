@@ -204,6 +204,15 @@ pub enum Body {
         hashes: Vec<u8>,
         signature: Vec<u8>,
     },
+    /// Messages du Nœud de `seq` supérieur (`protocols.canal-noeud`).
+    ReadMessages {
+        since_info: u64,
+        since_alert: u64,
+    },
+    /// Message de l'Utilisateur à son Nœud.
+    PostMessage {
+        text: String,
+    },
 }
 
 /// `BlockRequest`.
@@ -250,6 +259,8 @@ pub enum Response {
     OwnershipAnswer {
         owned: Vec<u8>,
     },
+    /// Réponse à `ReadMessages`.
+    Messages(Vec<crate::message::Signed>),
 }
 
 // ------------------------------------------------------------------ codage
@@ -524,6 +535,24 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             );
             (fb::RequestBody::EmergencyRelease, o.as_union_value())
         }
+        Body::ReadMessages {
+            since_info,
+            since_alert,
+        } => {
+            let o = fb::ReadMessages::create(
+                &mut b,
+                &fb::ReadMessagesArgs {
+                    since_info: *since_info,
+                    since_alert: *since_alert,
+                },
+            );
+            (fb::RequestBody::ReadMessages, o.as_union_value())
+        }
+        Body::PostMessage { text } => {
+            let t = b.create_string(text);
+            let o = fb::PostMessage::create(&mut b, &fb::PostMessageArgs { text: Some(t) });
+            (fb::RequestBody::PostMessage, o.as_union_value())
+        }
     };
     let root = fb::BlockRequest::create(
         &mut b,
@@ -697,6 +726,21 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
                 signature: bytes(x.signature()),
             }
         }
+        fb::RequestBody::ReadMessages => {
+            let x = r.body_as_read_messages().ok_or(m)?;
+            Body::ReadMessages {
+                since_info: x.since_info(),
+                since_alert: x.since_alert(),
+            }
+        }
+        fb::RequestBody::PostMessage => Body::PostMessage {
+            text: r
+                .body_as_post_message()
+                .ok_or(m)?
+                .text()
+                .unwrap_or_default()
+                .to_string(),
+        },
         _ => return Err(m),
     };
     Ok(Request { credential, body })
@@ -805,6 +849,25 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             );
             (fb::ResponseBody::Attached, o.as_union_value())
         }
+        Response::Messages(list) => {
+            let items: Vec<_> = list
+                .iter()
+                .map(|s| {
+                    let message = b.create_vector(&s.message);
+                    let signature = b.create_vector(&s.signature);
+                    fb::SignedNodeMessage::create(
+                        &mut b,
+                        &fb::SignedNodeMessageArgs {
+                            message: Some(message),
+                            signature: Some(signature),
+                        },
+                    )
+                })
+                .collect();
+            let v = b.create_vector(&items);
+            let o = fb::Messages::create(&mut b, &fb::MessagesArgs { messages: Some(v) });
+            (fb::ResponseBody::Messages, o.as_union_value())
+        }
     };
     let root = fb::BlockResponse::create(
         &mut b,
@@ -877,6 +940,20 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
         fb::ResponseBody::Attached => Response::Attached {
             quota_bytes: r.body_as_attached().ok_or(m)?.quota_bytes(),
         },
+        fb::ResponseBody::Messages => Response::Messages(
+            r.body_as_messages()
+                .ok_or(m)?
+                .messages()
+                .map(|v| {
+                    v.iter()
+                        .map(|s| crate::message::Signed {
+                            message: bytes(s.message()),
+                            signature: bytes(s.signature()),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        ),
         fb::ResponseBody::GrantIssued => {
             Response::GrantIssued(signed_grant_of(r.body_as_grant_issued().ok_or(m)?.grant())?)
         }

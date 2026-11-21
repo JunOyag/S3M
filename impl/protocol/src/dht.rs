@@ -70,6 +70,8 @@ pub enum EntryKind {
     User,
     Dispersal,
     Emergency,
+    /// Alerte de compromission (`protocols.canal-noeud`).
+    Alert,
 }
 
 impl EntryKind {
@@ -80,6 +82,7 @@ impl EntryKind {
             Self::User => "s3m/sig/user-entry/v1",
             Self::Dispersal => "s3m/sig/dispersal-entry/v1",
             Self::Emergency => "s3m/sig/emergency-entry/v1",
+            Self::Alert => "s3m/sig/alert-entry/v1",
         }
     }
 
@@ -90,6 +93,8 @@ impl EntryKind {
             Self::User => "dht-user-plaintext",
             Self::Dispersal => "dht-dispersal-root",
             Self::Emergency => "dht-emergency-manifest",
+            // L'alerte est en clair : aucun blob chiffré.
+            Self::Alert => "",
         }
     }
 
@@ -100,6 +105,7 @@ impl EntryKind {
             Self::User => dht::USER_ENTRY_IDENTIFIER,
             Self::Dispersal => dht::DISPERSAL_ENTRY_IDENTIFIER,
             Self::Emergency => dht::EMERGENCY_ENTRY_IDENTIFIER,
+            Self::Alert => dht::ALERT_ENTRY_IDENTIFIER,
         }
     }
 
@@ -202,6 +208,11 @@ pub fn dispersal_dht_key(k_attach: &[u8; 32]) -> [u8; 32] {
 /// `emergency_dht_key = SHA-256(K_attach ‖ "emergency")`.
 pub fn emergency_dht_key(k_attach: &[u8; 32]) -> [u8; 32] {
     hash_sha256(&[&k_attach[..], b"emergency"].concat())
+}
+
+/// Clé DHT d'une alerte : `SHA-256(pub_node_announce ‖ "alert")`.
+pub fn alert_dht_key(pub_node_announce: &[u8]) -> [u8; 32] {
+    hash_sha256(&[pub_node_announce, b"alert"].concat())
 }
 
 /// Sérialise une `DhtEnvelope` (tag 0).
@@ -340,6 +351,13 @@ pub fn verify_envelope(
                 return Err(DhtError::StaleSequence);
             }
         }
+        EntryKind::Alert => {
+            let e =
+                dht::root_as_alert_entry(payload).map_err(|_| DhtError::Format("AlertEntry"))?;
+            let key = e.pub_node_announce().ok_or(DhtError::BadSignature)?.bytes();
+            verify_signature(key, label, payload, signature)?;
+            check_ttl(kind, e.timestamp(), ctx.now)?;
+        }
     }
     Ok(payload.to_vec())
 }
@@ -385,6 +403,9 @@ pub fn inspect_envelope(envelope: &[u8]) -> Result<EnvelopeSummary, DhtError> {
     } else if has(EntryKind::Emergency) {
         let e = dht::root_as_emergency_entry(payload).map_err(bad("EmergencyEntry"))?;
         (EntryKind::Emergency, e.timestamp(), Some(e.seq()))
+    } else if has(EntryKind::Alert) {
+        let e = dht::root_as_alert_entry(payload).map_err(bad("AlertEntry"))?;
+        (EntryKind::Alert, e.timestamp(), None)
     } else {
         return Err(DhtError::WrongFileIdentifier);
     };
@@ -408,6 +429,17 @@ pub fn accept_record(
     vdf: VdfVerifier<'_>,
 ) -> Result<u64, DhtError> {
     let summary = inspect_envelope(envelope)?;
+    if summary.kind == EntryKind::Alert {
+        // La clé de recherche est liée à la clé d'annonce : pas d'usurpation.
+        let env = flatbuffers::root::<dht::DhtEnvelope>(envelope)
+            .map_err(|_| DhtError::Format("DhtEnvelope"))?;
+        let payload = env.payload().ok_or(DhtError::Format("payload"))?.bytes();
+        let e = dht::root_as_alert_entry(payload).map_err(|_| DhtError::Format("AlertEntry"))?;
+        let announce = e.pub_node_announce().ok_or(DhtError::BadSignature)?.bytes();
+        if key != alert_dht_key(announce) {
+            return Err(DhtError::Format("clé d'alerte"));
+        }
+    }
     let node_key: Option<[u8; 32]> = match summary.kind {
         EntryKind::Node => Some(key.try_into().map_err(|_| DhtError::Format("clé Node"))?),
         _ => None,

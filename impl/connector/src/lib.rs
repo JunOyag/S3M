@@ -6,6 +6,7 @@
 pub mod access;
 pub mod admin_client;
 pub mod bootstrap;
+pub mod channel;
 pub mod daemon;
 pub mod dht_directory;
 pub mod drive;

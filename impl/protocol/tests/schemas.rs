@@ -5,7 +5,7 @@ use flatbuffers::FlatBufferBuilder;
 use s3m_protocol::fb::{dht, dispersal, emergency, fs, node};
 
 /// Les quatre entrées DHT portent chacune leur `file_identifier`
-/// (`NODE`, `USER`, `DISP`, `EMRG`) : un payload n'est jamais décodé sous
+/// (`NODE`, `USER`, `DISP`, `EMRG`, `ALRT`) : un payload n'est jamais décodé sous
 /// un mauvais type (page network.dht-directory).
 #[test]
 fn dht_entries_carry_distinct_file_identifiers() {
@@ -33,9 +33,10 @@ fn dht_entries_carry_distinct_file_identifiers() {
             dht::NODE_ENTRY_IDENTIFIER,
             dht::USER_ENTRY_IDENTIFIER,
             dht::DISPERSAL_ENTRY_IDENTIFIER,
-            dht::EMERGENCY_ENTRY_IDENTIFIER
+            dht::EMERGENCY_ENTRY_IDENTIFIER,
+            dht::ALERT_ENTRY_IDENTIFIER
         ],
-        ["NODE", "USER", "DISP", "EMRG"]
+        ["NODE", "USER", "DISP", "EMRG", "ALRT"]
     );
 }
 
@@ -76,6 +77,7 @@ fn node_entry_roundtrips_with_vdf_proof_and_migration_pointer() {
             migration_pointer: Some(mp),
             snapshot_ciphertext: None,
             addrs: None,
+            pub_node_announce: None,
         },
     );
     dht::finish_node_entry_buffer(&mut fbb, root);

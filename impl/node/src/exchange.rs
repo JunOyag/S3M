@@ -162,6 +162,8 @@ pub struct NodeService {
     pub record_user_ips: bool,
     /// Réserve de secours pour tiers en détresse (`protocols.espace-secours`).
     pub emergency: crate::emergency::EmergencyReserve,
+    /// Canal Nœud ↔ Utilisateurs (`protocols.canal-noeud`).
+    pub channel: crate::channel::Channel,
     /// Identités VDF déjà vérifiées pour un dépôt d'urgence.
     emergency_verified: std::collections::HashSet<Id>,
     limiter: RescueLimiter,
@@ -212,6 +214,7 @@ impl NodeService {
             last_user_ip: HashMap::new(),
             record_user_ips: true,
             emergency: Default::default(),
+            channel: Default::default(),
             emergency_verified: Default::default(),
             limiter: RescueLimiter::default(),
         }
@@ -277,6 +280,20 @@ impl NodeService {
                     Some((o, d)) if o == u => Ok(Response::BlockData(d)),
                     _ => Err(Refusal::NotFound),
                 }
+            }
+            Body::ReadMessages {
+                since_info,
+                since_alert,
+            } => {
+                self.user(cred, from, local)?;
+                Ok(Response::Messages(
+                    self.channel.read(since_info, since_alert),
+                ))
+            }
+            Body::PostMessage { text } => {
+                let u = self.user(cred, from, local)?;
+                self.channel.receive(&u, &text, now)?;
+                Ok(Response::Ack { freed: 0 })
             }
             Body::PutBlock { data } => {
                 let u = self.user(cred, from, local)?;

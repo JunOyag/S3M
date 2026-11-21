@@ -396,6 +396,37 @@ impl NodeSession {
         }
     }
 
+    /// Messages du Nœud de `seq` supérieur (`protocols.canal-noeud`).
+    pub async fn read_messages(
+        &self,
+        since_info: u64,
+        since_alert: u64,
+    ) -> Result<Vec<s3m_protocol::message::Signed>, ExchangeError> {
+        match self
+            .call(Body::ReadMessages {
+                since_info,
+                since_alert,
+            })
+            .await?
+        {
+            Response::Messages(m) => Ok(m),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
+    /// Message de l'Utilisateur à son Nœud.
+    pub async fn post_message(&self, text: &str) -> Result<(), ExchangeError> {
+        match self
+            .call(Body::PostMessage {
+                text: text.to_string(),
+            })
+            .await?
+        {
+            Response::Ack { .. } => Ok(()),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
     pub async fn report_incident(&self, hash: &BlockHash) -> Result<(), ExchangeError> {
         match self
             .call(Body::ReportIncident {

@@ -7,6 +7,7 @@
 
 pub mod admin;
 pub mod blacklist;
+pub mod channel;
 pub mod chunk_store;
 pub mod daemon;
 pub mod dht_directory;

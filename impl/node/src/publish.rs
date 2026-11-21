@@ -32,6 +32,9 @@ pub struct NodeEntryState {
     /// Dernière enveloppe publiée (jointe aux propositions de partenariat).
     pub last_envelope: Option<Vec<u8>>,
     pub last_error: Option<String>,
+    /// Clé d'annonce à publier (`protocols.canal-noeud`) et celle publiée.
+    pub announce: Option<[u8; 32]>,
+    pub published_announce: Option<[u8; 32]>,
 }
 
 /// Preuve VDF en cache, ou calculée (bloquant, dans un fil dédié) puis
@@ -106,7 +109,9 @@ pub async fn publish_entry(
             || s.published_addr.as_ref() != Some(&addr)
             || s.published_addrs != addrs
             || s.published_snapshot != snapshot
+            || s.published_announce != s.announce
     };
+    let announce = state.lock().unwrap().announce;
     if !due {
         return;
     }
@@ -122,6 +127,7 @@ pub async fn publish_entry(
             pub_node_recovery,
             snapshot_pointer: snapshot.as_deref(),
             addrs: &addrs,
+            pub_node_announce: announce.as_ref(),
         },
         &nonce,
     );
@@ -142,6 +148,7 @@ pub async fn publish_entry(
             s.published_addr = Some(addr);
             s.published_addrs = addrs;
             s.published_snapshot = snapshot;
+            s.published_announce = announce;
             s.last_error = None;
         }
         Err(e) => s.last_error = Some(e),

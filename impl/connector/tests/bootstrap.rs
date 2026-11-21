@@ -159,6 +159,7 @@ fn node_envelope(seed: &[u8; 32], port: u16, to: Option<[u8; 32]>) -> Vec<u8> {
             migration_pointer: mp,
             snapshot_ciphertext: None,
             addrs: None,
+            pub_node_announce: None,
         },
     );
     fb::finish_node_entry_buffer(&mut fbb, e);

@@ -4,6 +4,8 @@ pub mod s3m {
   use super::*;
   pub mod dht {
     use super::*;
+    mod alert_entry_generated;
+    pub use self::alert_entry_generated::*;
     mod attachment_record_generated;
     pub use self::attachment_record_generated::*;
     mod dht_envelope_generated;
@@ -101,12 +103,20 @@ pub mod s3m {
     pub use self::get_block_generated::*;
     mod grant_issued_generated;
     pub use self::grant_issued_generated::*;
+    mod message_kind_generated;
+    pub use self::message_kind_generated::*;
+    mod messages_generated;
+    pub use self::messages_generated::*;
+    mod node_message_generated;
+    pub use self::node_message_generated::*;
     mod ownership_answer_generated;
     pub use self::ownership_answer_generated::*;
     mod ownership_query_generated;
     pub use self::ownership_query_generated::*;
     mod partnership_answer_generated;
     pub use self::partnership_answer_generated::*;
+    mod post_message_generated;
+    pub use self::post_message_generated::*;
     mod probe_generated;
     pub use self::probe_generated::*;
     mod probe_reply_generated;
@@ -115,6 +125,8 @@ pub mod s3m {
     pub use self::propose_partnership_generated::*;
     mod put_block_generated;
     pub use self::put_block_generated::*;
+    mod read_messages_generated;
+    pub use self::read_messages_generated::*;
     mod renew_grant_generated;
     pub use self::renew_grant_generated::*;
     mod report_incident_generated;
@@ -129,6 +141,8 @@ pub mod s3m {
     pub use self::response_body_generated::*;
     mod root_state_generated;
     pub use self::root_state_generated::*;
+    mod signed_node_message_generated;
+    pub use self::signed_node_message_generated::*;
     mod signed_rescue_grant_generated;
     pub use self::signed_rescue_grant_generated::*;
     mod store_fragment_generated;
@@ -139,6 +153,8 @@ pub mod s3m {
     pub use self::tombstone_generated::*;
     mod user_credential_generated;
     pub use self::user_credential_generated::*;
+    mod user_message_generated;
+    pub use self::user_message_generated::*;
   } // exchange
   pub mod fs {
     use super::*;

@@ -400,6 +400,36 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_read_messages(&self) -> Option<ReadMessages<'a>> {
+    if self.body_type() == RequestBody::ReadMessages {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ReadMessages::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_post_message(&self) -> Option<PostMessage<'a>> {
+    if self.body_type() == RequestBody::PostMessage {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { PostMessage::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -438,6 +468,8 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::EmergencyPut => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyPut>>("RequestBody::EmergencyPut", pos),
           RequestBody::EmergencyGet => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyGet>>("RequestBody::EmergencyGet", pos),
           RequestBody::EmergencyRelease => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyRelease>>("RequestBody::EmergencyRelease", pos),
+          RequestBody::ReadMessages => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ReadMessages>>("RequestBody::ReadMessages", pos),
+          RequestBody::PostMessage => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PostMessage>>("RequestBody::PostMessage", pos),
           _ => Ok(()),
         }
      })?
@@ -660,6 +692,20 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::EmergencyRelease => {
           if let Some(x) = self.body_as_emergency_release() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::ReadMessages => {
+          if let Some(x) = self.body_as_read_messages() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::PostMessage => {
+          if let Some(x) = self.body_as_post_message() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
