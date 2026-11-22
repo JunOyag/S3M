@@ -57,6 +57,14 @@ const fn f(
 pub const FIELDS: &[Field] = &[
     f(
         "Réseau",
+        "adresse d'écoute (blocs et annuaire)",
+        "listen",
+        Kind::Text,
+        false,
+        "Échange de blocs et annuaire, TCP et QUIC sur le même port. Par défaut /ip4/0.0.0.0/tcp/4001 ; donnez un port différent à chaque Nœud d'une même machine.",
+    ),
+    f(
+        "Réseau",
         "adresse IP publique",
         "public_ip",
         Kind::Text,
@@ -269,7 +277,7 @@ pub const FIELDS: &[Field] = &[
         "admin_listen",
         Kind::Text,
         false,
-        "Par défaut /ip4/0.0.0.0/tcp/4003.",
+        "Par défaut /ip4/0.0.0.0/tcp/4003 ; donnez un port différent à chaque Nœud d'une même machine.",
     ),
     f(
         "Vie privée",
@@ -421,11 +429,21 @@ pub fn apply(path: &Path, input: &Value) -> Result<Applied, String> {
             continue;
         };
         let new = parse(field, v)?;
+        if field.path == "listen" || field.path == "admin_listen" {
+            check_listen(field.label, &new)?;
+        }
         let old = get(&current, field.path).or_else(|| get(&file, field.path));
         if old == Some(&new) || (new.is_null() && old.is_none_or(Value::is_null)) {
             continue;
         }
         set(&mut file, field.path, new);
+        // Adresse unique : les anciens ports séparés ne priment plus.
+        if field.path == "listen" {
+            if let Some(o) = file.as_object_mut() {
+                o.remove("dht_listen");
+                o.remove("blocks_listen");
+            }
+        }
         if field.live {
             live.push(field.label)
         } else {
@@ -449,6 +467,24 @@ pub fn apply(path: &Path, input: &Value) -> Result<Applied, String> {
         live,
         restart,
     })
+}
+
+/// Adresse d'écoute : multiaddr `/ip4/…/tcp/<port>` (ou `/ip6/…`).
+fn check_listen(label: &str, v: &Value) -> Result<(), String> {
+    let s = v.as_str().unwrap_or_default();
+    let m: libp2p::Multiaddr = s
+        .parse()
+        .map_err(|_| format!("{label} : adresse attendue, par exemple /ip4/0.0.0.0/tcp/4011"))?;
+    let port = m.iter().find_map(|p| match p {
+        libp2p::multiaddr::Protocol::Tcp(p) => Some(p),
+        _ => None,
+    });
+    match port {
+        Some(p) if p > 0 => Ok(()),
+        _ => Err(format!(
+            "{label} : port TCP attendu, par exemple /ip4/0.0.0.0/tcp/4011"
+        )),
+    }
 }
 
 /// Écrit une valeur de premier niveau dans le fichier (écriture atomique).

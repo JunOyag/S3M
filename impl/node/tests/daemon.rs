@@ -222,6 +222,28 @@ fn settings_apply_edits_file() {
     )
     .is_err());
     assert_eq!(Config::load(&path).unwrap().partner_policy.max_partners, 7);
+    // Ports d'écoute réglables (plusieurs Nœuds sur une machine).
+    let a = apply(
+        &path,
+        &serde_json::json!({ "adresse d'écoute (blocs et annuaire)": "/ip4/0.0.0.0/tcp/4011",
+                             "adresse d'écoute": "/ip4/0.0.0.0/tcp/4013" }),
+    )
+    .unwrap();
+    assert_eq!(
+        a.config.listen_addrs(),
+        vec!["/ip4/0.0.0.0/tcp/4011".to_string()]
+    );
+    assert_eq!(a.config.admin_listen, "/ip4/0.0.0.0/tcp/4013");
+    assert!(apply(
+        &path,
+        &serde_json::json!({ "adresse d'écoute (blocs et annuaire)": "4011" })
+    )
+    .is_err());
+    assert!(apply(
+        &path,
+        &serde_json::json!({ "adresse d'écoute": "/ip4/0.0.0.0/udp/4013" })
+    )
+    .is_err());
 }
 
 #[test]

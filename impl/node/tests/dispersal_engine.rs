@@ -213,5 +213,9 @@ fn minimum_confirmations_can_be_lowered_for_local_tests_only_within_bounds() {
     assert_eq!(c(2).min_confirmations(), 2);
     assert_eq!(c(99).min_confirmations(), 6);
     let parsed: EngineConfig = serde_json::from_str(r#"{"idle_timeout_s":1,"grace_s":1}"#).unwrap();
-    assert_eq!(parsed.min_confirmations(), 6, "anciens fichiers : valeur normale");
+    assert_eq!(
+        parsed.min_confirmations(),
+        6,
+        "anciens fichiers : valeur normale"
+    );
 }
