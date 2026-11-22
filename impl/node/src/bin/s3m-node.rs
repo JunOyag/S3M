@@ -68,7 +68,16 @@ async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if !c.seed_file.exists() {
         s3m_node::setup::run(&c, &switch).await?;
     }
-    let shared = start_with(c, &switch).await?;
+    let shared = match start_with(c, &switch).await {
+        Ok(s) => s,
+        Err(e) => {
+            // Le tableau de bord reste ouvert pour expliquer l'arrêt.
+            eprintln!("erreur : {e}");
+            eprintln!("Tableau de bord : {url} (Ctrl+C pour quitter)");
+            let _ = tokio::signal::ctrl_c().await;
+            return Err(e.into());
+        }
+    };
     println!("Nœud {} démarré.", shared.peer_id);
     if let Some(a) = &shared.blocks_addr {
         println!("Échange de blocs : {a}");

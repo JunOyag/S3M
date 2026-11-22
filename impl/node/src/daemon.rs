@@ -690,6 +690,12 @@ fn node_summary(v: &Value) -> Value {
     };
     let entry = v.get("annuaire (entrée Node)");
     let (dir, dir_state) = match entry {
+        Some(e)
+            if e.get("identité peut-être dupliquée")
+                .is_some_and(|x| !x.is_null()) =>
+        {
+            ("identité peut-être dupliquée".to_string(), "attention")
+        }
         Some(e) if e.get("erreur").is_some_and(|x| !x.is_null()) => {
             ("erreur".to_string(), "probleme")
         }
@@ -1235,6 +1241,7 @@ fn node_entry_status(sh: &Shared) -> Value {
         "publiée le": s.published_at,
         "prochaine republication": if s.published_at.is_some() { json!(s.next_republish) } else { Value::Null },
         "erreur": s.last_error,
+        "identité peut-être dupliquée": s.twin_warning,
     })
 }
 
@@ -1669,6 +1676,26 @@ pub async fn start_with(
         .iter()
         .map(|s| parse(s))
         .collect::<Result<Vec<_>, _>>()?;
+    // Identité déjà annoncée sur le réseau local par un autre Nœud :
+    // pas de pile réseau (`securite.incidents-compromissions#identite-dupliquee`).
+    if config.mdns {
+        let me = crate::twin::peer_id_of(seed).map_err(|e| start(&e))?;
+        if let Ok(twins) = crate::twin::scan(me, crate::twin::SCAN).await {
+            if !twins.is_empty() {
+                let msg = crate::twin::message(&twins);
+                let page = json!({
+                    "titre": "Nœud S3m — identité déjà utilisée",
+                    "alerte": { "problème": msg.clone(), "identifiant réseau": me.to_string() },
+                    "actions": [],
+                });
+                let st_fn: crate::local_http::StatusFn = Arc::new(move || page.clone());
+                let act_fn: crate::local_http::ActionFn =
+                    Arc::new(|_, _| Err("Nœud arrêté : identité déjà utilisée".to_string()));
+                switch.set(st_fn, act_fn, None);
+                return Err(DaemonError::Start(msg));
+            }
+        }
+    }
     let node_net = crate::net::start(NetConfig {
         node_seed: seed,
         listen,
@@ -1860,6 +1887,12 @@ pub async fn start_with(
                         clock(),
                     )
                     .await;
+                    // Relecture : entrée étrangère sous notre clé ?
+                    if sh.node_entry.lock().unwrap().published_at.is_some() {
+                        if let Ok(Some(env)) = dht.get(pub_node.to_vec()).await {
+                            sh.node_entry.lock().unwrap().check_readback(&env);
+                        }
+                    }
                 }
                 tokio::time::sleep(Duration::from_secs(60)).await;
             }

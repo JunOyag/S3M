@@ -100,6 +100,25 @@ différences :
   avec repli sur la [`protocols.write-queue`](../04-protocols/write-queue.md)
   si le réseau venait lui aussi à manquer.
 
+## Identité dupliquée {: #identite-dupliquee }
+
+Ajout du 2026-11-22. Deux Nœuds lancés avec la même phrase (dossier d'un
+Nœud copié, même phrase saisie deux fois) se présentent sous la même clé :
+requêtes servies tantôt par l'un, tantôt par l'autre, entrées Node qui se
+remplacent, challenges PoS perdus chez les partenaires (liste noire pour
+fraude), incidents chez les Utilisateurs.
+
+- **Au démarrage**, avant de rejoindre le réseau, le Nœud écoute 3 s les
+  annonces mDNS du réseau local ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)),
+  sous une identité réseau éphémère. Si sa propre identité y est déjà
+  annoncée, il **ne démarre pas sa pile réseau** et son tableau de bord
+  affiche l'alerte et la marche à suivre. Le second lancé s'arrête donc
+  toujours, le premier continue.
+- **En marche**, s'il relit dans l'annuaire, deux fois de suite, une entrée
+  Node sous sa clé qu'il n'a pas publiée et dont les adresses diffèrent des
+  siennes, il l'**avertit** dans son tableau de bord sans s'arrêter : une
+  ancienne entrée peut subsister après un changement d'adresse.
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par

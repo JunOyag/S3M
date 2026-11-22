@@ -31,6 +31,7 @@ pub mod settings;
 pub mod setup;
 pub mod snapshot_engine;
 pub mod tombstones;
+pub mod twin;
 pub mod upkeep;
 pub mod upnp;
 pub mod volatility;

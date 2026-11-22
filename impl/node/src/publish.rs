@@ -38,6 +38,36 @@ pub struct NodeEntryState {
     /// Clé d'annonce à publier (`protocols.canal-noeud`) et celle publiée.
     pub announce: Option<[u8; 32]>,
     pub published_announce: Option<[u8; 32]>,
+    /// Entrée sous notre clé, non publiée par nous et aux adresses
+    /// différentes, relue de suite (`securite.incidents-compromissions#identite-dupliquee`).
+    pub foreign_seen: u32,
+    pub twin_warning: Option<String>,
+}
+
+impl NodeEntryState {
+    /// Relecture de l'entrée sous notre clé : avertissement à la deuxième
+    /// relecture de suite d'une entrée étrangère.
+    pub fn check_readback(&mut self, env: &[u8]) {
+        let mine = self.last_envelope.as_deref() == Some(env);
+        let foreign = !mine
+            && s3m_protocol::entries::node_entry_addrs(env).is_some_and(|(addrs, _)| {
+                !addrs.is_empty() && addrs.iter().all(|a| !self.published_addrs.contains(a))
+            });
+        if foreign {
+            self.foreign_seen += 1;
+            if self.foreign_seen >= 2 {
+                self.twin_warning = Some(
+                    "Une autre entrée de l'annuaire porte l'identité de ce Nœud avec d'autres adresses : \
+                     un autre Nœud utilise peut-être la même phrase (dossier copié ?). \
+                     Si ce n'est qu'un ancien emplacement de ce Nœud, l'avertissement disparaîtra."
+                        .into(),
+                );
+            }
+        } else {
+            self.foreign_seen = 0;
+            self.twin_warning = None;
+        }
+    }
 }
 
 /// Preuve VDF en cache, ou calculée (bloquant, dans un fil dédié) puis
