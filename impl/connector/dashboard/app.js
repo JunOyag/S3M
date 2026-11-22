@@ -128,6 +128,8 @@ const LABELS = {
   "numéro": ["Numéro", ""],
   "numéro ou adresse": ["Numéro ou adresse", "Numéro du Nœud dans la liste, ou son adresse /ip4/…/p2p/…"],
   "2. nœuds trouvés sur le réseau local": ["Nœuds trouvés sur le réseau local", ""],
+  "4. accès aux fichiers": ["Accès aux fichiers", "Lettre de lecteur (WinFsp requis) ou dossier synchronisé, comme OneDrive."],
+  "accès choisi": ["Accès choisi", "Modifiable ensuite dans le tableau de bord (relance de S3m)."],
   "code d'appairage": ["Code d'appairage", "Code affiché par le Nœud à configurer."],
   "code de récupération ou phrase": ["Code de récupération ou phrase", "Code S3M1:… ou phrase de 24 mots d'une identité existante."],
   "24 mots": ["Phrase de récupération (24 mots)", "À noter et garder en lieu sûr : elle permet de tout restaurer."],
@@ -442,6 +444,7 @@ function fmt(k, v) {
 // QR code : SVG fourni par le moteur, affiché comme image (jamais inséré).
 // Objet imbriqué : sous-tableau.
 function valueNode(v, k) {
+  if (k === "24 mots" && typeof v === "string" && v.trim().split(/\s+/).length === 24) return wordGrid(v);
   if (v !== null && typeof v === "object" && !(Array.isArray(v) && v.every((x) => x === null || typeof x !== "object"))) {
     return render(v);
   }
@@ -457,11 +460,33 @@ function valueNode(v, k) {
 function rowActions(list) {
   const td = el("td", undefined, "row-actions");
   for (const a of list || []) {
+    // `champs` : zones de saisie dans la ligne, envoyées avec `valeurs`.
+    const inputs = (a["champs"] || []).map((name) => {
+      const i = el("input", undefined, "row-input");
+      i.name = name;
+      i.autocomplete = "off";
+      i.placeholder = lab(name).text;
+      i.title = lab(name).tip || lab(name).text;
+      td.appendChild(i);
+      return i;
+    });
     const b = el("button", a["libellé"], "small");
-    b.addEventListener("click", () => runAction(a["nom"], a["valeurs"] || {}, b, a["libellé"]));
+    b.addEventListener("click", () => {
+      const v = Object.assign({}, a["valeurs"] || {});
+      inputs.forEach((i) => (v[i.name] = i.value));
+      runAction(a["nom"], v, b, a["libellé"]);
+    });
     td.appendChild(b);
   }
   return td;
+}
+
+// Phrase de récupération : grille alignée de 6 lignes × 4 colonnes, numérotée.
+function wordGrid(text) {
+  const words = text.trim().split(/\s+/);
+  const g = el("ol", undefined, "words");
+  words.forEach((w) => g.appendChild(el("li", w)));
+  return g;
 }
 
 // Tableaux : 25 lignes par page, export CSV (séparateur « ; », Excel).

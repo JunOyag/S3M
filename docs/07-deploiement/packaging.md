@@ -191,8 +191,11 @@ synchronisation courantes :
   adresse, puis démarrage normal et ouverture du tableau de bord ; le
   rattachement est demandé automatiquement
   ([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md)).
-  Un Nœud « à configurer » trouvé se configure depuis l'assistant avec son
-  code d'appairage ; le dashboard du Connecteur permet ensuite
+  Un Nœud « à configurer » trouvé se configure depuis sa ligne de la liste
+  (saisie du code d'appairage, bouton « Ouvrir son assistant ») ; la phrase
+  de 24 mots s'affiche en grille numérotée de 6 lignes × 4 colonnes ;
+  l'accès aux fichiers (lecteur ou [dossier](../04-protocols/acces-applicatif.md#mode-dossier))
+  se choisit dès l'assistant, le dossier seul si WinFsp est absent ; le dashboard du Connecteur permet ensuite
   d'administrer son Nœud à distance avec le code 2FA
   ([`deploiement.appairage-admin`](appairage-admin.md)).
 - **Changer de Nœud** (menu de l'icône, ou tableau de bord avec

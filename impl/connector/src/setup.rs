@@ -151,7 +151,12 @@ pub fn free_drive_letter() -> String {
 }
 
 /// Écrit la configuration pour le Nœud `addr` (`…/p2p/<PeerId>`).
-pub fn write_config(dir: &Path, prepared: &Prepared, addr: &str) -> Result<PathBuf, String> {
+pub fn write_config(
+    dir: &Path,
+    prepared: &Prepared,
+    addr: &str,
+    access: Option<&str>,
+) -> Result<PathBuf, String> {
     let m: Multiaddr = addr
         .trim()
         .parse()
@@ -173,7 +178,7 @@ pub fn write_config(dir: &Path, prepared: &Prepared, addr: &str) -> Result<PathB
         q_max_bytes: DEFAULT_Q_MAX_BYTES,
         watch_interval_s: DEFAULT_WATCH_INTERVAL_S,
         mount_point: Some(free_drive_letter()),
-        access: None,
+        access: access.map(str::to_string),
         folder: None,
         // DHT et échange de blocs partagent la pile du Nœud.
         dht_bootstrap: vec![m.to_string()],
@@ -195,7 +200,8 @@ pub fn write_config(dir: &Path, prepared: &Prepared, addr: &str) -> Result<PathB
 struct SetupState {
     found: Vec<FoundNode>,
     scanning: bool,
-    message: Option<String>,
+    /// Accès aux fichiers choisi (`lecteur` ou `dossier`), sinon automatique.
+    access: Option<String>,
     done: Option<PathBuf>,
     notify: Option<oneshot::Sender<PathBuf>>,
 }
@@ -258,6 +264,9 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                             "nœud": format!("{}…", &hex::encode(n.node_id)[..16]),
                             "adresse": n.addr,
                             "état": "à configurer (code d'appairage)",
+                            "_actions": [{ "nom": "configure_node", "libellé": "Ouvrir son assistant",
+                                           "champs": ["code d'appairage"],
+                                           "valeurs": { "numéro ou adresse": (i + 1).to_string() } }],
                         });
                     }
                     json!({
@@ -283,17 +292,29 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                     "user_id": p.user_id,
                     "salt": p.salt,
                 },
-                "message": s.message,
+                "4. accès aux fichiers": {
+                    "accès choisi": match s.access.as_deref() {
+                        Some("dossier") => "dossier synchronisé (comme OneDrive)",
+                        Some(_) => "lecteur (lettre)",
+                        None if crate::daemon::winfsp_installed() => "automatique : lecteur (lettre), WinFsp est installé",
+                        None => "automatique : dossier synchronisé (WinFsp n'est pas installé)",
+                    },
+                },
                 "actions": [
                     { "nom": "restore", "titre": "J'ai déjà une identité S3m",
                       "libellé": "Reprendre cette identité", "champs": ["code de récupération ou phrase"],
                       "aide": { "code de récupération ou phrase": "Code S3M1:U:… (QR code) ou les 24 mots" } },
-                    { "nom": "configure_node", "titre": "Configurer un Nœud « à configurer »",
-                      "libellé": "Ouvrir son assistant", "champs": ["numéro ou adresse", "code d'appairage"],
-                      "aide": { "numéro ou adresse": "Numéro dans la liste, ou adresse d'administration affichée par le Nœud",
-                                "code d'appairage": "Affiché par le Nœud (console, journaux ou son tableau de bord)" } },
+                    { "nom": "set_access", "titre": "Accès aux fichiers",
+                      "libellé": "Choisir", "champs": ["accès"],
+                      "valeurs": { "accès": s.access.clone().unwrap_or_else(|| if crate::daemon::winfsp_installed() { "lecteur".into() } else { "dossier".into() }) },
+                      "aide": { "accès": if crate::daemon::winfsp_installed() {
+                          "« lecteur » : une lettre de lecteur dans l'Explorateur ; « dossier » : un dossier synchronisé, comme OneDrive. Modifiable ensuite dans le tableau de bord."
+                      } else {
+                          "WinFsp n'est pas installé : seul « dossier » (dossier synchronisé, comme OneDrive) est possible sur cet ordinateur."
+                      } } },
                     { "nom": "manual", "titre": "Nœud absent de la liste : saisir son adresse",
-                      "libellé": "Se rattacher", "champs": ["adresse"] },
+                      "libellé": "Se rattacher", "champs": ["adresse"],
+                      "aide": { "adresse": "Pour un Nœud joignable mais non trouvé ci-dessus (autre réseau, annonce locale désactivée) : son adresse /ip4/…/tcp/…/p2p/… figure dans son tableau de bord. S3m lui demande le rattachement automatiquement ; s'il le refuse, transmettez d'abord à son opérateur votre identifiant et votre sel (section 3)." } },
                     { "nom": "scan", "libellé": "Rechercher à nouveau", "champs": [] }
                 ]
             })
@@ -348,6 +369,24 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                         Ok(json!({ "ok": true, "message": "Nœud appairé : son assistant s'ouvre", "ouvrir": url }))
                     });
                 }
+                "set_access" => {
+                    let a = v
+                        .get("accès")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x.trim().to_lowercase())
+                        .unwrap_or_default();
+                    if a != "lecteur" && a != "dossier" {
+                        return Err("accès attendu : « lecteur » ou « dossier »".into());
+                    }
+                    if a == "lecteur" && !crate::daemon::winfsp_installed() {
+                        return Err(
+                            "WinFsp n'est pas installé sur cet ordinateur : choisissez « dossier »"
+                                .into(),
+                        );
+                    }
+                    state.lock().unwrap().access = Some(a);
+                    return Ok(json!({ "ok": true, "message": "Accès aux fichiers choisi" }));
+                }
                 "scan" => {
                     rescan(state.clone());
                     return Ok(
@@ -381,7 +420,8 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                 _ => return Err(format!("action inconnue : {name}")),
             };
             let p = p.lock().unwrap().clone();
-            match write_config(&dir, &p, &addr) {
+            let access = state.lock().unwrap().access.clone();
+            match write_config(&dir, &p, &addr, access.as_deref()) {
                 Ok(path) => {
                     let mut s = state.lock().unwrap();
                     s.done = Some(path.clone());
