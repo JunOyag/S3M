@@ -19,6 +19,7 @@ pub mod k_self;
 pub mod keys;
 pub mod labels;
 pub mod master_key_chain;
+pub mod share;
 pub mod symmetric_suite;
 pub mod vdf;
 pub mod version;

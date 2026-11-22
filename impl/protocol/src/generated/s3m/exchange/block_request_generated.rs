@@ -147,6 +147,21 @@ impl<'a> BlockRequest<'a> {
 
   #[inline]
   #[allow(non_snake_case)]
+  pub fn credential_as_share_credential(&self) -> Option<ShareCredential<'a>> {
+    if self.credential_type() == Credential::ShareCredential {
+      self.credential().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ShareCredential::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
   pub fn body_as_get_block(&self) -> Option<GetBlock<'a>> {
     if self.body_type() == RequestBody::GetBlock {
       self.body().map(|t| {
@@ -430,6 +445,21 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_revoke_share(&self) -> Option<RevokeShare<'a>> {
+    if self.body_type() == RequestBody::RevokeShare {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { RevokeShare::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -446,6 +476,7 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           Credential::RescueCredential => v.verify_union_variant::<flatbuffers::ForwardsUOffset<RescueCredential>>("Credential::RescueCredential", pos),
           Credential::DelegatedCredential => v.verify_union_variant::<flatbuffers::ForwardsUOffset<DelegatedCredential>>("Credential::DelegatedCredential", pos),
           Credential::EmergencyCredential => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyCredential>>("Credential::EmergencyCredential", pos),
+          Credential::ShareCredential => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ShareCredential>>("Credential::ShareCredential", pos),
           _ => Ok(()),
         }
      })?
@@ -470,6 +501,7 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::EmergencyRelease => v.verify_union_variant::<flatbuffers::ForwardsUOffset<EmergencyRelease>>("RequestBody::EmergencyRelease", pos),
           RequestBody::ReadMessages => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ReadMessages>>("RequestBody::ReadMessages", pos),
           RequestBody::PostMessage => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PostMessage>>("RequestBody::PostMessage", pos),
+          RequestBody::RevokeShare => v.verify_union_variant::<flatbuffers::ForwardsUOffset<RevokeShare>>("RequestBody::RevokeShare", pos),
           _ => Ok(()),
         }
      })?
@@ -566,6 +598,13 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         Credential::EmergencyCredential => {
           if let Some(x) = self.credential_as_emergency_credential() {
+            ds.field("credential", &x)
+          } else {
+            ds.field("credential", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Credential::ShareCredential => {
+          if let Some(x) = self.credential_as_share_credential() {
             ds.field("credential", &x)
           } else {
             ds.field("credential", &"InvalidFlatbuffer: Union discriminant does not match value.")
@@ -706,6 +745,13 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::PostMessage => {
           if let Some(x) = self.body_as_post_message() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::RevokeShare => {
+          if let Some(x) = self.body_as_revoke_share() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

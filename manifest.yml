@@ -693,6 +693,9 @@ pages:
     section: "§3.8"
     refs: [fs.DirectoryEntry, crypto.master-key-chain]
     verified_by:
+      - share_keys::element_key_and_derived_block_key_match_vectors
+      - share_keys::child_keys_are_wrapped_under_the_directory_key
+      - fs_structure::a_directory_key_alone_reads_its_files
       - k_block_vectors::k_block_matches_generated_vector
       - k_block_vectors::k_block_differs_per_block_index
       - k_block_vectors::k_block_differs_per_encryption_salt

@@ -278,6 +278,7 @@ fn encode_entry<'a>(
             encryption_salt: Some(s),
             key_version: e.key_version,
             metadata: None,
+            wrapped_key: None,
         },
     )
 }
@@ -300,6 +301,7 @@ fn decode_entry(e: fb::DirectoryEntry<'_>) -> Result<Entry, QueueError> {
         permissions: a.map_or(0, |a| a.permissions()),
         created_at: a.map_or(0, |a| a.created_at()),
         modified_at: a.map_or(0, |a| a.modified_at()),
+        wrapped_key: Vec::new(),
     })
 }
 

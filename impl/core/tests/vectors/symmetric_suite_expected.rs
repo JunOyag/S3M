@@ -35,9 +35,13 @@ mod generated {
     pub const K_NODE_SELF_HEX: &str = "3e3ec315534b7bd44f5ef157fb710ad0e8d01a5ea77ac2d9562c2b74574f55d6";
     pub const USER_DHT_KEY_HEX: &str = "eef7eae2817c308fd37d940af9da5dd2140c46d72f90864b0b6fffaf2a5631d7";
     pub const SIG_PRIV_USER_SEED_HEX: &str = "e223b3e4e1e9818fdd7d8742e8f1dc88a6730b7a06ae448c79a6a62056886f6c";
-    pub const K_BLOCK_HEX: &str = "12c6e971a1550730262a2b0948cc7f3269723202a4bd6f8443904eda5e53d011";
-    pub const BLOCK_FRAME_SHA256_HEX: &str = "b0126eeb8188ada1543d78144e3b3767d97e8e042b68a709cf145dd368f2e2a4";
-    pub const BLOCK_FRAME_TAIL_HEX: &str = "69bbb70f5718efe45734306438e96f0b219d372f932b200133be935a386783ea2d637cfd94807aaac37ccbaa5c652988";
+    pub const K_ELEM_HEX: &str = "1ba2fdc6f09b163d1420531b50583c30d8b5e202008320b74cc12dcff4ac9720";
+    pub const K_BLOCK_HEX: &str = "78df98ad679d22e19e20e11195c4124d1b4a71ce5658a325682a5c04c267d415";
+    pub const K_CHILD_WRAP_HEX: &str = "d94763555d23ad983867df2936f379ed101de6e7acac85189a33b8db874c7774";
+    pub const SHARE_ID_HEX: &str = "1f394a2030a9e31f663b55d42316031e649e84a041b27a6b288d748412dca466";
+    pub const K_SHARE_CONTENT_HEX: &str = "29d29c25604b484ca145bf77f160505431dc5a11a6f722bbe769589b3d60bf66";
+    pub const BLOCK_FRAME_SHA256_HEX: &str = "33db2ab76ab62305820ac2350641ec59ea5455161fd919e7ee41898891fa32e6";
+    pub const BLOCK_FRAME_TAIL_HEX: &str = "e1dce730ecd76a54bbe659c3000a539e564f57d4d5b95f0951dcfd14272ab7696effbbb3700254d9bc57b8c432d84aca";
 }
 #[allow(unused_imports)]
 use generated::*;

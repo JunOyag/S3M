@@ -36,8 +36,18 @@ pub const NODE_RECOVERY: &str = "node-recovery";
 pub const DHT_LOOKUP: &str = "dht-lookup";
 /// graine de `sig_priv_user` — network.dht-directory.
 pub const DHT_SIGNING: &str = "dht-signing";
+/// `K_elem` (clé d'élément) — crypto.k-block, protocols.partage.
+pub const ELEMENT: &str = "element";
 /// `K_block` — crypto.k-block.
 pub const BLOCK: &str = "block";
+/// `K_child_wrap` (clés des enfants d'un répertoire) — protocols.partage.
+pub const CHILD_WRAP: &str = "child-wrap";
+/// `K_share_content` — protocols.partage.
+pub const SHARE_CONTENT: &str = "share-content";
+/// graine de `sig_priv_share` — protocols.partage.
+pub const SHARE_SIGNING: &str = "share-signing";
+/// Clé d'une invitation de partage — protocols.partage.
+pub const SHARE_INVITE: &str = "share-invite";
 /// `K_wrap` — crypto.symmetric-suite.
 pub const MASTER_KEY_WRAP: &str = "master-key-wrap";
 /// Preuve d'authentification Connecteur → Nœud — protocols.echange-blocs.
@@ -47,8 +57,13 @@ pub const NODE_SNAPSHOT: &str = "node-snapshot";
 /// Secret TOTP de l'administration à distance — deploiement.appairage-admin.
 pub const ADMIN_TOTP: &str = "admin-totp";
 
-/// Les 15 étiquettes KDF du registre — source du test d'unicité.
-pub const ALL_KDF_LABELS: [&str; 15] = [
+/// Les 20 étiquettes KDF du registre — source du test d'unicité.
+pub const ALL_KDF_LABELS: [&str; 20] = [
+    ELEMENT,
+    CHILD_WRAP,
+    SHARE_CONTENT,
+    SHARE_SIGNING,
+    SHARE_INVITE,
     ATTACH,
     DISPERSAL_SIGNING,
     DISPERSAL_CONTENT,

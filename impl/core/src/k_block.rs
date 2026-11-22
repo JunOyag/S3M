@@ -2,7 +2,9 @@
 //! (Phase 0, spec V3). Réf. spec : docs/03-crypto/k-block.md (§3.8).
 //!
 //! ```text
-//! K_block = KDF(master_key[version], "block", encryption_salt, u32(index_du_bloc))
+//! K_elem  = KDF(master_key[version], "element", encryption_salt)
+//! K_block = KDF(K_elem, "block", —, u32(index_du_bloc))
+//! wrapped_key = Encrypt(KDF(K_elem du répertoire, "child-wrap"), K_elem de l'enfant)
 //! trame   = version (2 o) ‖ nonce (12 o, aléatoire) ‖ chiffré ‖ tag (16 o) = 65 536 o
 //! AAD     = en-tête de version (2 o)
 //! ```
@@ -29,11 +31,15 @@ pub const BLOCK_PLAINTEXT_LEN: usize =
 /// Taille de `encryption_salt`.
 pub const ENCRYPTION_SALT_LEN: usize = 16;
 
-/// `K_block = KDF(master_key[version], "block", encryption_salt, u32(index))`.
-pub fn derive_k_block(
+/// Taille d'une clé d'enfant chiffrée (`wrapped_key`) : nonce ‖ clé ‖ tag.
+pub const WRAPPED_KEY_LEN: usize = AEAD_NONCE_LEN + 32 + AEAD_TAG_LEN;
+const CHILD_KEY_AAD: &[u8] = b"s3m/child-key";
+
+/// `K_elem = KDF(master_key[version], "element", encryption_salt)` : clé
+/// d'une version de fichier ou de répertoire (protocols.partage).
+pub fn derive_k_elem(
     master_key_version: &[u8; 32],
     encryption_salt: &[u8],
-    block_index: u32,
 ) -> Result<[u8; 32], CoreError> {
     if encryption_salt.len() != ENCRYPTION_SALT_LEN {
         return Err(CoreError::InvalidSaltLength {
@@ -41,12 +47,62 @@ pub fn derive_k_block(
             got: encryption_salt.len(),
         });
     }
-    kdf(
-        master_key_version,
-        labels::BLOCK,
-        encryption_salt,
-        &[&block_index.to_be_bytes()],
+    kdf(master_key_version, labels::ELEMENT, encryption_salt, &[])
+}
+
+/// `K_block = KDF(K_elem, "block", —, u32(index))`.
+pub fn derive_k_block_from_elem(
+    k_elem: &[u8; 32],
+    block_index: u32,
+) -> Result<[u8; 32], CoreError> {
+    kdf(k_elem, labels::BLOCK, &[], &[&block_index.to_be_bytes()])
+}
+
+/// `K_block` depuis la clé maîtresse (propriétaire) : `K_elem` puis
+/// [`derive_k_block_from_elem`].
+pub fn derive_k_block(
+    master_key_version: &[u8; 32],
+    encryption_salt: &[u8],
+    block_index: u32,
+) -> Result<[u8; 32], CoreError> {
+    derive_k_block_from_elem(
+        &derive_k_elem(master_key_version, encryption_salt)?,
+        block_index,
     )
+}
+
+fn child_aad(child_salt: &[u8]) -> Vec<u8> {
+    crate::symmetric_suite::canonical_encode(&[CHILD_KEY_AAD, child_salt])
+}
+
+/// Chiffre la clé d'élément d'un enfant sous celle de son répertoire :
+/// `nonce ‖ chiffré ‖ tag` ([`WRAPPED_KEY_LEN`] o), AAD liée au sel de
+/// l'enfant. `nonce` : 12 o aléatoires tirés par l'appelant.
+pub fn wrap_child_key(
+    parent_k_elem: &[u8; 32],
+    child_k_elem: &[u8; 32],
+    child_salt: &[u8],
+    nonce: &[u8; AEAD_NONCE_LEN],
+) -> Result<Vec<u8>, CoreError> {
+    let k = kdf(parent_k_elem, labels::CHILD_WRAP, &[], &[])?;
+    let mut out = nonce.to_vec();
+    out.extend(aead_seal(&k, nonce, &child_aad(child_salt), child_k_elem)?);
+    Ok(out)
+}
+
+/// Inverse de [`wrap_child_key`].
+pub fn unwrap_child_key(
+    parent_k_elem: &[u8; 32],
+    wrapped: &[u8],
+    child_salt: &[u8],
+) -> Result<[u8; 32], CoreError> {
+    if wrapped.len() != WRAPPED_KEY_LEN {
+        return Err(CoreError::AeadFailure);
+    }
+    let k = kdf(parent_k_elem, labels::CHILD_WRAP, &[], &[])?;
+    let (nonce, ct) = wrapped.split_at(AEAD_NONCE_LEN);
+    let key = aead_open(&k, nonce, &child_aad(child_salt), ct)?;
+    key.try_into().map_err(|_| CoreError::AeadFailure)
 }
 
 /// Chiffre un bloc : `header ‖ nonce ‖ chiffré ‖ tag`, exactement

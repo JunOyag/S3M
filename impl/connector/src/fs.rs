@@ -11,7 +11,10 @@
 //!   déchiffrement ; `size_bytes` fait foi pour retirer le padding.
 
 use flatbuffers::FlatBufferBuilder;
-use s3m_core::k_block::{derive_k_block, open_block, seal_block, BLOCK_PLAINTEXT_LEN};
+use s3m_core::k_block::{
+    derive_k_block, derive_k_block_from_elem, derive_k_elem, open_block, seal_block,
+    unwrap_child_key, wrap_child_key, BLOCK_PLAINTEXT_LEN, WRAPPED_KEY_LEN,
+};
 use s3m_core::symmetric_suite::hash_sha256;
 use s3m_core::CoreError;
 use s3m_protocol::fb::fs;
@@ -88,8 +91,7 @@ type NextOf<'a> = dyn Fn(&[u8]) -> Result<Option<BlockHash>, FsError> + 'a;
 /// `next_hash` du bloc déchiffré.
 fn open_chain(
     first: &BlockHash,
-    master_key: &[u8; 32],
-    salt: &[u8; 16],
+    k_elem: &[u8; 32],
     get: &dyn Fn(&BlockHash) -> Option<Vec<u8>>,
     next_of: &NextOf<'_>,
 ) -> Result<Vec<Vec<u8>>, FsError> {
@@ -100,7 +102,7 @@ fn open_chain(
         if hash_sha256(&frame) != h {
             return Err(FsError::HashMismatch);
         }
-        let k = derive_k_block(master_key, salt, out.len() as u32)?;
+        let k = derive_k_block_from_elem(k_elem, out.len() as u32)?;
         let clear = open_block(&k, &BLOCK_HEADER, &frame)?;
         cursor = next_of(&clear)?;
         out.push(clear);
@@ -155,12 +157,23 @@ pub fn read_file(
     salt: &[u8; 16],
     get: &dyn Fn(&BlockHash) -> Option<Vec<u8>>,
 ) -> Result<Vec<u8>, FsError> {
+    read_file_elem(first, size_bytes, &derive_k_elem(master_key, salt)?, get)
+}
+
+/// Lit un fichier avec sa seule clé d'élément (destinataire d'un partage,
+/// `protocols.partage`).
+pub fn read_file_elem(
+    first: &BlockHash,
+    size_bytes: u64,
+    k_elem: &[u8; 32],
+    get: &dyn Fn(&BlockHash) -> Option<Vec<u8>>,
+) -> Result<Vec<u8>, FsError> {
     let parse = |clear: &[u8]| -> Result<Option<BlockHash>, FsError> {
         let b =
             flatbuffers::root::<fs::FileBlock>(clear).map_err(|_| FsError::Format("FileBlock"))?;
         next_hash_of(b.next_hash())
     };
-    let blocks = open_chain(first, master_key, salt, get, &parse)?;
+    let blocks = open_chain(first, k_elem, get, &parse)?;
     let mut out = Vec::new();
     for clear in &blocks {
         let b =
@@ -174,8 +187,9 @@ pub fn read_file(
     Ok(out)
 }
 
-/// Entrée de répertoire (fichier ou sous-répertoire).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Entrée de répertoire (fichier ou sous-répertoire). L'égalité ignore
+/// `wrapped_key`, donnée dérivée recalculée à chaque écriture.
+#[derive(Debug, Clone, Default)]
 pub struct Entry {
     pub name: String,
     pub size_bytes: u64,
@@ -186,7 +200,26 @@ pub struct Entry {
     pub permissions: u16,
     pub created_at: u64,
     pub modified_at: u64,
+    /// Clé d'élément de l'entrée chiffrée sous celle du répertoire
+    /// (`protocols.partage`) : lue telle quelle, recalculée à l'écriture.
+    pub wrapped_key: Vec<u8>,
 }
+
+impl PartialEq for Entry {
+    fn eq(&self, o: &Self) -> bool {
+        self.name == o.name
+            && self.size_bytes == o.size_bytes
+            && self.mime_type == o.mime_type
+            && self.first_block_hash == o.first_block_hash
+            && self.encryption_salt == o.encryption_salt
+            && self.key_version == o.key_version
+            && self.permissions == o.permissions
+            && self.created_at == o.created_at
+            && self.modified_at == o.modified_at
+    }
+}
+
+impl Eq for Entry {}
 
 fn directory_block_bytes(entries: &[Entry], next: Option<&BlockHash>) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::with_capacity(BLOCK_PLAINTEXT_LEN);
@@ -197,6 +230,7 @@ fn directory_block_bytes(entries: &[Entry], next: Option<&BlockHash>) -> Vec<u8>
             let mime = fbb.create_string(&e.mime_type);
             let h = fbb.create_vector(&e.first_block_hash);
             let s = fbb.create_vector(&e.encryption_salt);
+            let w = (!e.wrapped_key.is_empty()).then(|| fbb.create_vector(&e.wrapped_key));
             let a = fs::Attributes::create(
                 &mut fbb,
                 &fs::AttributesArgs {
@@ -216,6 +250,7 @@ fn directory_block_bytes(entries: &[Entry], next: Option<&BlockHash>) -> Vec<u8>
                     encryption_salt: Some(s),
                     key_version: e.key_version,
                     metadata: None,
+                    wrapped_key: w,
                 },
             )
         })
@@ -237,6 +272,15 @@ fn directory_block_bytes(entries: &[Entry], next: Option<&BlockHash>) -> Vec<u8>
 /// sérialisation (avec un `next_hash` de 32 o) tient dans 65 506 o.
 pub fn pack_directory(entries: &[Entry]) -> Result<Vec<std::ops::Range<usize>>, FsError> {
     let probe = [0u8; 32];
+    // Taille comptée avec une clé d'enfant chiffrée par entrée.
+    let sized: Vec<Entry> = entries
+        .iter()
+        .map(|e| Entry {
+            wrapped_key: vec![0; WRAPPED_KEY_LEN],
+            ..e.clone()
+        })
+        .collect();
+    let entries = &sized[..];
     let mut ranges = Vec::new();
     let mut start = 0;
     while start < entries.len() || ranges.is_empty() {
@@ -261,6 +305,14 @@ pub fn pack_directory(entries: &[Entry]) -> Result<Vec<std::ops::Range<usize>>, 
 
 /// Encode un répertoire en chaîne de `DirectoryBlock` chiffrés.
 pub fn write_directory(entries: &[Entry], sealing: &mut Sealing<'_>) -> Result<Chain, FsError> {
+    // Clé de chaque enfant chiffrée sous celle de ce répertoire.
+    let parent = derive_k_elem(sealing.master_key, sealing.encryption_salt)?;
+    let mut keyed = entries.to_vec();
+    for e in &mut keyed {
+        let child = derive_k_elem(sealing.master_key, &e.encryption_salt)?;
+        e.wrapped_key = wrap_child_key(&parent, &child, &e.encryption_salt, &(sealing.nonce)())?;
+    }
+    let entries = &keyed[..];
     let ranges = pack_directory(entries)?;
     seal_chain(ranges.len(), sealing, &|i, next| {
         directory_block_bytes(&entries[ranges[i].clone()], next)
@@ -274,12 +326,31 @@ pub fn read_directory(
     salt: &[u8; 16],
     get: &dyn Fn(&BlockHash) -> Option<Vec<u8>>,
 ) -> Result<Vec<Entry>, FsError> {
+    read_directory_elem(first, &derive_k_elem(master_key, salt)?, get)
+}
+
+/// Clé d'élément d'une entrée lue avec la clé de son répertoire
+/// (destinataire d'un partage).
+pub fn child_key(dir_k_elem: &[u8; 32], e: &Entry) -> Result<[u8; 32], FsError> {
+    Ok(unwrap_child_key(
+        dir_k_elem,
+        &e.wrapped_key,
+        &e.encryption_salt,
+    )?)
+}
+
+/// Lit un répertoire avec sa seule clé d'élément.
+pub fn read_directory_elem(
+    first: &BlockHash,
+    k_elem: &[u8; 32],
+    get: &dyn Fn(&BlockHash) -> Option<Vec<u8>>,
+) -> Result<Vec<Entry>, FsError> {
     let parse = |clear: &[u8]| -> Result<Option<BlockHash>, FsError> {
         let b = flatbuffers::root::<fs::DirectoryBlock>(clear)
             .map_err(|_| FsError::Format("DirectoryBlock"))?;
         next_hash_of(b.next_hash())
     };
-    let blocks = open_chain(first, master_key, salt, get, &parse)?;
+    let blocks = open_chain(first, k_elem, get, &parse)?;
     let mut out = Vec::new();
     for clear in &blocks {
         let b = flatbuffers::root::<fs::DirectoryBlock>(clear)
@@ -302,6 +373,10 @@ pub fn read_directory(
                 permissions: attrs.map_or(0, |a| a.permissions()),
                 created_at: attrs.map_or(0, |a| a.created_at()),
                 modified_at: attrs.map_or(0, |a| a.modified_at()),
+                wrapped_key: e
+                    .wrapped_key()
+                    .map(|w| w.bytes().to_vec())
+                    .unwrap_or_default(),
             });
         }
     }

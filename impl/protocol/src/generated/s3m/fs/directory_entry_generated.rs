@@ -34,6 +34,7 @@ impl<'a> DirectoryEntry<'a> {
   pub const VT_ENCRYPTION_SALT: flatbuffers::VOffsetT = 14;
   pub const VT_KEY_VERSION: flatbuffers::VOffsetT = 16;
   pub const VT_METADATA: flatbuffers::VOffsetT = 18;
+  pub const VT_WRAPPED_KEY: flatbuffers::VOffsetT = 20;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -46,6 +47,7 @@ impl<'a> DirectoryEntry<'a> {
   ) -> flatbuffers::WIPOffset<DirectoryEntry<'bldr>> {
     let mut builder = DirectoryEntryBuilder::new(_fbb);
     builder.add_size_bytes(args.size_bytes);
+    if let Some(x) = args.wrapped_key { builder.add_wrapped_key(x); }
     if let Some(x) = args.metadata { builder.add_metadata(x); }
     if let Some(x) = args.encryption_salt { builder.add_encryption_salt(x); }
     if let Some(x) = args.attributes { builder.add_attributes(x); }
@@ -113,6 +115,13 @@ impl<'a> DirectoryEntry<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Metadata>>>>(DirectoryEntry::VT_METADATA, None)}
   }
+  #[inline]
+  pub fn wrapped_key(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(DirectoryEntry::VT_WRAPPED_KEY, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for DirectoryEntry<'_> {
@@ -130,6 +139,7 @@ impl flatbuffers::Verifiable for DirectoryEntry<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("encryption_salt", Self::VT_ENCRYPTION_SALT, false)?
      .visit_field::<u16>("key_version", Self::VT_KEY_VERSION, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Metadata>>>>("metadata", Self::VT_METADATA, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("wrapped_key", Self::VT_WRAPPED_KEY, false)?
      .finish();
     Ok(())
   }
@@ -143,6 +153,7 @@ pub struct DirectoryEntryArgs<'a> {
     pub encryption_salt: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub key_version: u16,
     pub metadata: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Metadata<'a>>>>>,
+    pub wrapped_key: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
 }
 impl<'a> Default for DirectoryEntryArgs<'a> {
   #[inline]
@@ -156,6 +167,7 @@ impl<'a> Default for DirectoryEntryArgs<'a> {
       encryption_salt: None,
       key_version: 0,
       metadata: None,
+      wrapped_key: None,
     }
   }
 }
@@ -198,6 +210,10 @@ impl<'a: 'b, 'b> DirectoryEntryBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(DirectoryEntry::VT_METADATA, metadata);
   }
   #[inline]
+  pub fn add_wrapped_key(&mut self, wrapped_key: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(DirectoryEntry::VT_WRAPPED_KEY, wrapped_key);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> DirectoryEntryBuilder<'a, 'b> {
     let start = _fbb.start_table();
     DirectoryEntryBuilder {
@@ -223,6 +239,7 @@ impl core::fmt::Debug for DirectoryEntry<'_> {
       ds.field("encryption_salt", &self.encryption_salt());
       ds.field("key_version", &self.key_version());
       ds.field("metadata", &self.metadata());
+      ds.field("wrapped_key", &self.wrapped_key());
       ds.finish()
   }
 }

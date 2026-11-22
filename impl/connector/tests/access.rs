@@ -45,6 +45,7 @@ fn entry(name: &str, mime: &str, first: BlockHash, salt: [u8; 16], size: u64) ->
         permissions: 0o644,
         created_at: 1,
         modified_at: 1,
+        wrapped_key: Vec::new(),
     }
 }
 

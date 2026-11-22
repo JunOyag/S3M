@@ -50,8 +50,9 @@ de `mime_type = "inode/directory"` dont `first_block_hash` pointe vers un
 ## Capacité
 
 Mesure (Phase 1, `impl/protocol`, test `layout::directory_block_reference_capacity_is_measured`) :
-avec un nom de 32 o, un type MIME de 24 o et sans métadonnée libre, **333
-entrées** tiennent dans un `DirectoryBlock` (65 506 o de clair, `next_hash`
+avec un nom de 32 o, un type MIME de 24 o, la clé d'enfant chiffrée de
+60 o (`wrapped_key`, révision du 2026-11-22) et sans métadonnée libre,
+**251 entrées** (333 avant cette révision) tiennent dans un `DirectoryBlock` (65 506 o de clair, `next_hash`
 compris). La capacité réelle dépend des longueurs : le Connecteur mesure
 chaque bloc avant émission et chaîne par `next_hash` au-delà.
 

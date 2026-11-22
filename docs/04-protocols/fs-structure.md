@@ -40,7 +40,7 @@ pour distinguer contenu réel et padding.
 
 La capacité d'un `DirectoryBlock` est réduite d'un peu plus de 30 octets
 par l'en-tête, le nonce et le tag du format de bloc ; mesure de
-référence : 333 entrées (voir [`fs.DirectoryEntry`](../02-schemas/fs/DirectoryEntry.md)).
+référence : 251 entrées, clé d'enfant chiffrée comprise (voir [`fs.DirectoryEntry`](../02-schemas/fs/DirectoryEntry.md)).
 
 ## Immuabilité & modification {: #immuabilite }
 

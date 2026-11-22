@@ -14,6 +14,7 @@ fn entry(name: &str, first: u8, modified_at: u64) -> Entry {
         permissions: 0o644,
         created_at: 1,
         modified_at,
+        wrapped_key: Vec::new(),
     }
 }
 

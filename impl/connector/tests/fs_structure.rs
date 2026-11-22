@@ -120,6 +120,7 @@ fn entry(i: usize) -> Entry {
         permissions: 0o644,
         created_at: 1,
         modified_at: 2,
+        wrapped_key: Vec::new(),
     }
 }
 
@@ -154,4 +155,57 @@ fn large_directory_spans_chained_blocks_and_roundtrips() {
             .unwrap()
             .is_empty()
     );
+}
+
+/// Partage (`protocols.partage`) : avec la seule clé d'un répertoire, ses
+/// entrées et le contenu de ses fichiers se lisent, sans la clé maîtresse.
+#[test]
+fn a_directory_key_alone_reads_its_files() {
+    let mut n = 0u8;
+    let mut nonce = || {
+        n = n.wrapping_add(1);
+        [n; 12]
+    };
+    let data = b"contenu partage".to_vec();
+    let file = write_file(
+        &data,
+        &mut Sealing {
+            master_key: &MK,
+            encryption_salt: &[5; 16],
+            nonce: &mut nonce,
+        },
+    )
+    .unwrap();
+    let mut e = entry(0);
+    e.first_block_hash = file.first;
+    e.encryption_salt = [5; 16];
+    e.size_bytes = data.len() as u64;
+    let dir = write_directory(
+        &[e],
+        &mut Sealing {
+            master_key: &MK,
+            encryption_salt: &[6; 16],
+            nonce: &mut nonce,
+        },
+    )
+    .unwrap();
+    let mut s = store(&dir);
+    s.extend(store(&file));
+    let get = |h: &BlockHash| s.get(h).cloned();
+    // Clé d'élément du répertoire seule (ce que reçoit le destinataire).
+    let dir_key = s3m_core::k_block::derive_k_elem(&MK, &[6; 16]).unwrap();
+    let listed = read_directory_elem(&dir.first, &dir_key, &get).unwrap();
+    let file_key = child_key(&dir_key, &listed[0]).unwrap();
+    assert_eq!(
+        read_file_elem(
+            &listed[0].first_block_hash,
+            listed[0].size_bytes,
+            &file_key,
+            &get
+        )
+        .unwrap(),
+        data
+    );
+    // Une autre clé ne lit rien.
+    assert!(read_directory_elem(&dir.first, &[9; 32], &get).is_err());
 }

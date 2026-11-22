@@ -155,6 +155,7 @@ impl From<&SavedEntry> for Entry {
             permissions: e.permissions,
             created_at: e.created_at,
             modified_at: e.modified_at,
+            wrapped_key: Vec::new(),
         }
     }
 }
@@ -810,6 +811,7 @@ impl Drive {
                             permissions: 0o644,
                             created_at,
                             modified_at,
+                            wrapped_key: Vec::new(),
                         },
                     );
                 }
@@ -829,6 +831,7 @@ impl Drive {
                             permissions: 0o755,
                             created_at,
                             modified_at: created_at,
+                            wrapped_key: Vec::new(),
                         },
                     );
                 }

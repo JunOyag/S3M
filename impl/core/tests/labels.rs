@@ -9,9 +9,9 @@ use std::collections::HashSet;
 
 use s3m_core::labels::{
     AAD_CONTEXT_MASTER_KEY_WRAP, ALL_AAD_CONTEXTS, ALL_KDF_LABELS, ATTACH, ATTACHMENT_RECOVERY,
-    BLOCK, CONNECTOR_AUTH, DHT_LOOKUP, DHT_SIGNING, DISPERSAL_BLOCK, DISPERSAL_CONTENT,
-    DISPERSAL_SIGNING, EMERGENCY_CONTENT, EMERGENCY_SIGNING, KDF_PREFIX, MASTER_KEY_WRAP,
-    NODE_RECOVERY, NODE_SNAPSHOT, RETIRED_LABELS,
+    BLOCK, CHILD_WRAP, CONNECTOR_AUTH, DHT_LOOKUP, DHT_SIGNING, DISPERSAL_BLOCK, DISPERSAL_CONTENT,
+    DISPERSAL_SIGNING, ELEMENT, EMERGENCY_CONTENT, EMERGENCY_SIGNING, KDF_PREFIX, MASTER_KEY_WRAP,
+    NODE_RECOVERY, NODE_SNAPSHOT, RETIRED_LABELS, SHARE_CONTENT, SHARE_INVITE, SHARE_SIGNING,
 };
 
 #[test]
@@ -53,10 +53,15 @@ fn labels_match_the_spec_registry() {
         (MASTER_KEY_WRAP, "master-key-wrap"),
         (CONNECTOR_AUTH, "connector-auth"),
         (NODE_SNAPSHOT, "node-snapshot"),
+        (ELEMENT, "element"),
+        (CHILD_WRAP, "child-wrap"),
+        (SHARE_CONTENT, "share-content"),
+        (SHARE_SIGNING, "share-signing"),
+        (SHARE_INVITE, "share-invite"),
     ];
     for (got, want) in expected {
         assert_eq!(got, want);
     }
-    assert_eq!(ALL_KDF_LABELS.len(), 15);
+    assert_eq!(ALL_KDF_LABELS.len(), 20);
     assert_eq!(AAD_CONTEXT_MASTER_KEY_WRAP, "master-key-wrap");
 }

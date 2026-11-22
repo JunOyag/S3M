@@ -88,7 +88,11 @@ V["K_SELF"] = kdf(FX["PRIV_USER"], "attachment-recovery")
 V["K_NODE_SELF"] = kdf(FX["PRIV_NODE"], "node-recovery")
 V["USER_DHT_KEY"] = kdf(FX["PRIV_USER"], "dht-lookup", b"", FX["PUB_USER"])
 V["SIG_PRIV_USER_SEED"] = kdf(FX["PRIV_USER"], "dht-signing", b"", FX["PUB_USER"])
-V["K_BLOCK"] = kdf(FX["MASTER_KEY"], "block", FX["ENC_SALT"], u32(BLOCK_INDEX))
+V["K_ELEM"] = kdf(FX["MASTER_KEY"], "element", FX["ENC_SALT"])
+V["K_BLOCK"] = kdf(V["K_ELEM"], "block", b"", u32(BLOCK_INDEX))
+V["K_CHILD_WRAP"] = kdf(V["K_ELEM"], "child-wrap")
+V["SHARE_ID"] = sha256(L(b"s3m/share-id") + FX["SECRET"]).digest()
+V["K_SHARE_CONTENT"] = kdf(FX["SECRET"], "share-content")
 
 clear = BLOCK_PREFIX + b"\x00" * (BLOCK_CLEAR_LEN - len(BLOCK_PREFIX))
 frame = FX["PROTO_HEADER"] + FX["BLOCK_NONCE"] + ChaCha20Poly1305(V["K_BLOCK"]).encrypt(

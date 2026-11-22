@@ -77,7 +77,7 @@ entries:
       tâche network.dht-directory.
   crypto.k-block:
     kind: narrative
-    status: in_progress
+    status: done
     owner: claude-code
     tests:
       - k_block_vectors::k_block_matches_generated_vector
@@ -88,9 +88,12 @@ entries:
       - k_block_vectors::block_frame_matches_generated_vector_and_is_65536_octets
       - k_block_vectors::block_rejects_oversized_plaintext_and_wrong_frame_size
       - k_block_vectors::block_tampering_is_rejected
+      - share_keys::element_key_and_derived_block_key_match_vectors
+      - share_keys::child_keys_are_wrapped_under_the_directory_key
+      - fs_structure::a_directory_key_alone_reads_its_files
     notes: >-
-      Révision du 2026-11-22 (protocols.partage) à implémenter : K_elem
-      intermédiaire, K_block dérivée de K_elem.
+      Révision du 2026-11-22 (protocols.partage) implémentée : K_elem
+      intermédiaire, K_block dérivée de K_elem, wrapped_key des entrées.
       Spec V3 : K_block = KDF(master_key, "block", encryption_salt 16 o,
       u32(index)) ; seal_block/open_block : trame exacte de 65 536 o (en-tête
       2 o ‖ nonce 12 o ‖ chiffré ‖ tag), AAD = en-tête, padding zéro jusqu'à

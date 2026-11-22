@@ -24,7 +24,7 @@ pub const FILE_BLOCK_DATA_BYTES: usize = 65_440;
 /// Mesuré par `tests/layout.rs` ; la capacité réelle dépend de la longueur
 /// des noms et des métadonnées — le Connecteur mesure chaque bloc avant
 /// émission.
-pub const DIRECTORY_BLOCK_REFERENCE_ENTRIES: usize = 333;
+pub const DIRECTORY_BLOCK_REFERENCE_ENTRIES: usize = 251;
 
 /// Longueur sérialisée d'un `FileBlock` portant `data_len` octets et un
 /// `next_hash` (ou aucun si `with_next_hash` est faux).
@@ -61,6 +61,8 @@ pub fn reference_directory_entry<'a>(
             modified_at: u64::MAX,
         },
     );
+    // Clé d'élément chiffrée (`protocols.partage`) : 60 o.
+    let wrapped = fbb.create_vector(&[0u8; 60]);
     DirectoryEntry::create(
         fbb,
         &DirectoryEntryArgs {
@@ -72,6 +74,7 @@ pub fn reference_directory_entry<'a>(
             encryption_salt: Some(salt),
             key_version: u16::MAX,
             metadata: None,
+            wrapped_key: Some(wrapped),
         },
     )
 }
