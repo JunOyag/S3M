@@ -158,6 +158,8 @@ struct Ident {
     offline_notified: bool,
     after_setup: bool,
     remove_armed: Option<Instant>,
+    /// Nom affiché du sous-menu (pseudo · empreinte), suivi à chaque tour.
+    label: String,
 }
 
 impl Ident {
@@ -168,7 +170,9 @@ impl Ident {
         let sync = MenuItem::new("Synchroniser maintenant", false, None);
         let pause = MenuItem::new("Suspendre la synchronisation", false, None);
         let change = MenuItem::new("Changer de Nœud…", true, None);
-        let remove = (num > 1).then(|| MenuItem::new("Retirer cette identité…", true, None));
+        // L'identité d'origine ne se retire que s'il en reste une autre
+        // (activé à chaque tour).
+        let remove = Some(MenuItem::new("Retirer cette identité…", num > 1, None));
         let sub = Submenu::new(format!("Identité {num}"), true);
         let _ = sub.append_items(&[
             &status,
@@ -202,6 +206,7 @@ impl Ident {
             offline_notified: false,
             after_setup: false,
             remove_armed: None,
+            label: String::new(),
         }
     }
 
@@ -504,7 +509,18 @@ fn main() {
                             r.set_text("Retirer cette identité…");
                         }
                     }
+                    if id.num == 1 {
+                        if let Some(r) = &id.remove {
+                            r.set_enabled(many);
+                        }
+                    }
                     let Some(sh) = id.shared.clone() else { continue };
+                    // Pseudo changé depuis le tableau de bord : nom du sous-menu.
+                    let name = id.name();
+                    if name != id.label {
+                        id.sub.set_text(&name);
+                        id.label = name;
+                    }
                     if sh.change_node.load(Ordering::SeqCst) {
                         log(&format!("changement de Nœud demandé (tableau de bord, identité {})", id.num));
                         restart_with(CHANGE_NODE_ENV, &id.dir);

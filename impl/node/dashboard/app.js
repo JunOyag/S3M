@@ -139,6 +139,9 @@ const LABELS = {
   "de": ["De", "Utilisateur auteur du message."],
   "non lus": ["Non lus", "Messages pas encore ouverts ; ouvrir la conversation les marque lus."],
   "lu": ["Lu", "Ouvrir le message le marque lu."],
+  "écrire à mon nœud": ["Écrire à mon Nœud", "Message lu par l'opérateur de votre Nœud."],
+  "messages restants sur 24 h": ["Messages restants sur 24 h", "Votre Nœud accepte 10 messages par période glissante de 24 h."],
+  "quota réinitialisé le": ["Un message de plus possible le", "Date à laquelle le plus ancien de vos messages des dernières 24 h ne compte plus."],
   "dernier reçu le": ["Dernier reçu le", ""],
   "taille (octets)": ["Taille", "Taille du message ; chacun occupe 4 Kio du quota de son auteur."],
   "emplacement": ["Emplacement", "Lettre ou point de montage du lecteur."],
@@ -465,13 +468,51 @@ function modal(title, closable = true) {
 
 // Panneau d'édition d'une ligne : formulaires préremplis ; fermé après une
 // modification réussie.
+// Panneau ouvert dont la description porte une `clé` : son contenu est
+// redessiné à chaque mise à jour (ex. message supprimé), fermé s'il disparaît.
+let livePanel = null;
+
+function panelBody(p) {
+  const box = el("div", undefined, "panel-body");
+  // `contenu` : valeurs affichées (ex. le message ouvert), `message` en bloc.
+  if (p["contenu"]) box.appendChild(render(p["contenu"], p["clé"] ? "panneau:" + p["clé"] : undefined));
+  if (p["message"] !== undefined) box.appendChild(el("blockquote", p["message"], "message"));
+  return box;
+}
+
+function findPanel(v, key) {
+  if (v === null || typeof v !== "object") return null;
+  if (!Array.isArray(v) && v["clé"] === key && "titre" in v) return v;
+  for (const x of Array.isArray(v) ? v : Object.values(v)) {
+    const f = findPanel(x, key);
+    if (f) return f;
+  }
+  return null;
+}
+
+function refreshPanel(status) {
+  if (!livePanel || !livePanel.d.open) return (livePanel = null);
+  const p = findPanel(status, livePanel.key);
+  if (!p) {
+    livePanel.close();
+    livePanel = null;
+    return;
+  }
+  const json = JSON.stringify([p["contenu"], p["message"]]);
+  if (json === livePanel.json) return;
+  livePanel.json = json;
+  const body = panelBody(p);
+  livePanel.body.replaceWith(body);
+  livePanel.body = body;
+}
+
 function openPanel(p) {
   const { d, close } = modal(p["titre"] || "Modifier");
   const texts = Array.isArray(p["texte"]) ? p["texte"] : p["texte"] ? [p["texte"]] : [];
   texts.forEach((t) => d.appendChild(el("p", t, "muted")));
-  // `contenu` : valeurs affichées (ex. le message ouvert), `message` en bloc.
-  if (p["contenu"]) d.appendChild(render(p["contenu"]));
-  if (p["message"] !== undefined) d.appendChild(el("blockquote", p["message"], "message"));
+  const body = panelBody(p);
+  d.appendChild(body);
+  if (p["clé"]) livePanel = { key: p["clé"], d, close, body, json: JSON.stringify([p["contenu"], p["message"]]) };
   (p["formulaires"] || []).forEach((a) => d.appendChild(actionForm(a, close)));
   d.showModal();
   // `ouverture` : action silencieuse à l'ouverture (ex. marquer lu).
@@ -892,7 +933,44 @@ function actionForm(a, done) {
       .forEach((i) => (body[i.name] = i.type === "checkbox" ? i.checked : i.value.trim()));
     // `confirmer` : fenêtre de confirmation avant l'envoi.
     if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
-    runAction(a["nom"], body, b, a["libellé"]).then((ok) => ok && done && done());
+    const send = () =>
+      runAction(a["nom"], body, b, a["libellé"]).then((ok) => {
+        if (!ok) return;
+        // Zone de texte vidée : le même message ne part pas deux fois.
+        f.querySelectorAll("textarea").forEach((t) => (t.value = ""));
+        if (done) done();
+      });
+    // `différer` : envoi après n secondes, annulable.
+    const delay = Number(a["différer"] || 0);
+    if (!delay) return send();
+    const fields = [...f.querySelectorAll("input, textarea, select")];
+    fields.forEach((x) => (x.disabled = true));
+    b.hidden = true;
+    const bar = el("span", undefined, "send-delay");
+    const info = el("span", "", "muted");
+    const cancel = el("button", "Annuler l'envoi", "secondary");
+    cancel.type = "button";
+    bar.append(info, cancel);
+    f.appendChild(bar);
+    let left = delay;
+    const tick = () => (info.textContent = `Envoi dans ${left} s…`);
+    tick();
+    const timer = setInterval(() => {
+      left -= 1;
+      if (left > 0) return tick();
+      clearInterval(timer);
+      bar.remove();
+      b.hidden = false;
+      fields.forEach((x) => (x.disabled = false));
+      send();
+    }, 1000);
+    cancel.addEventListener("click", () => {
+      clearInterval(timer);
+      bar.remove();
+      b.hidden = false;
+      fields.forEach((x) => (x.disabled = false));
+      toast("Envoi annulé", "ok");
+    });
   });
   return f;
 }
@@ -1080,6 +1158,7 @@ function cards(list) {
 
 function show(status) {
   lastStatus = status;
+  refreshPanel(status);
   if (!signaled) {
     signaled = true;
     if (status["à signaler"]) toast(status["à signaler"], "ok");

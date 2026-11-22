@@ -643,9 +643,16 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "en attente de redémarrage": if pending.is_empty() { json!("rien") } else { json!(pending) },
     });
     v["résumé"] = node_summary(&v);
-    // Signalé une fois à l'ouverture du tableau de bord.
+    // Signalé une fois à l'ouverture du tableau de bord, et en bandeau sur
+    // la page Messages.
     let unread = sh.service.lock().unwrap().channel.inbox.unread(None);
     if unread > 0 {
+        if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+            a.push(json!({ "nom": "mark_all_user_messages_read", "mise_en_avant": true,
+                "titre": format!("{unread} message{} d'utilisateur non lu{}", if unread > 1 { "s" } else { "" }, if unread > 1 { "s" } else { "" }),
+                "texte": "Cliquez sur une conversation pour la lire, ou marquez tout comme lu.",
+                "libellé": "Tout marquer comme lu", "style": "secondary", "champs": [] }));
+        }
         v["à signaler"] = json!(format!(
             "{unread} message{} d'utilisateur non lu{} : page Messages",
             if unread > 1 { "s" } else { "" },
@@ -668,7 +675,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "messages", "titre": "Messages",
           "sections": ["messages des utilisateurs", "messages envoyés", "clé d'annonce"],
-          "actions": ["send_message", "create_announce_key", "replace_announce_key", "send_alert"] },
+          "actions": ["mark_all_user_messages_read", "send_message", "create_announce_key", "replace_announce_key", "send_alert"] },
         { "id": "secours", "titre": "Espace de secours",
           "sections": ["espace de secours"], "actions": ["set_emergency_policy"] },
         { "id": "reseau", "titre": "Réseau",
@@ -712,13 +719,15 @@ fn user_conversations(s: &NodeService) -> Vec<Value> {
             }));
             thread.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
             let panel = json!({
+                // `clé` : le panneau ouvert suit les mises à jour (suppression).
+                "clé": format!("conversation:{}", hx(&u)),
                 "titre": format!("Conversation avec {who}"),
                 "contenu": thread.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
                 "ouverture": { "nom": "mark_user_messages_read", "valeurs": { "utilisateur": hx(&u) } },
                 "formulaires": [
                     { "nom": "send_user_message", "titre": "Répondre", "libellé": "Envoyer la réponse",
                       "champs": ["message"], "libellés": { "message": "réponse" }, "types": { "message": "texte" },
-                      "fixes": { "utilisateur": hx(&u) },
+                      "fixes": { "utilisateur": hx(&u) }, "différer": 5,
                       "aide": { "message": "Lue par cet utilisateur seul à son prochain contact" } },
                 ] });
             (last, json!({
@@ -988,14 +997,14 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                               "valeurs": { "étiquette": s.user_labels.get(id).cloned().unwrap_or_default() },
                               "aide": { "étiquette": "Visible par vous seul ; vide pour l'effacer" } },
                             { "nom": "send_user_message", "titre": "Message à cet utilisateur", "libellé": "Envoyer",
-                              "champs": ["message"], "fixes": { "utilisateur": hx(id) }, "types": { "message": "texte" },
+                              "champs": ["message"], "fixes": { "utilisateur": hx(id) }, "types": { "message": "texte" }, "différer": 5,
                               "aide": { "message": "Lu par cet utilisateur seul à son prochain contact (4 096 octets au plus, conservé 30 jours)" } },
                         ] } },
                         { "nom": "write_user", "libellé": "Écrire", "style": "secondary", "panneau": {
                             "titre": format!("Message à {name}"),
                             "formulaires": [
                                 { "nom": "send_user_message", "libellé": "Envoyer",
-                                  "champs": ["message"], "fixes": { "utilisateur": hx(id) }, "types": { "message": "texte" },
+                                  "champs": ["message"], "fixes": { "utilisateur": hx(id) }, "types": { "message": "texte" }, "différer": 5,
                                   "aide": { "message": "Lu par cet utilisateur seul à son prochain contact (4 096 octets au plus, conservé 30 jours)" } },
                             ] } }] })
         })
@@ -1134,7 +1143,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "champs": ["nom"], "valeurs": { "nom": s.name.clone().unwrap_or_default() },
               "aide": { "nom": "Publié dans l'annuaire et affiché par les connecteurs avec l'empreinte du Nœud (64 octets au plus) ; vide pour aucun nom" } },
             { "nom": "send_message", "titre": "Écrire à tous les utilisateurs", "libellé": "Envoyer à tous",
-              "champs": ["message"], "types": { "message": "texte" },
+              "champs": ["message"], "types": { "message": "texte" }, "différer": 5,
               "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (4 096 octets au plus, conservé 30 jours). Pour un seul utilisateur : bouton « Écrire » de sa ligne (page Utilisateurs) ou « Répondre » sur son message." } },
             { "nom": "create_announce_key", "titre": "Créer la clé d'annonce", "libellé": "Créer",
               "champs": [],
@@ -1668,6 +1677,11 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, St
                     Err("message introuvable".to_string())
                 }
             })(),
+            "mark_all_user_messages_read" => {
+                let users: Vec<[u8; 32]> = s.channel.inbox.received.iter().map(|m| m.user_id).collect();
+                let n: usize = users.iter().map(|u| s.channel.inbox.mark_read(u)).sum();
+                Ok(json!({ "ok": true, "message": format!("{n} message(s) marqué(s) lu(s)") }))
+            }
             "mark_user_messages_read" => (|| {
                 let u = unhex32(field(v, "utilisateur")?.trim())?;
                 let n = s.channel.inbox.mark_read(&u);

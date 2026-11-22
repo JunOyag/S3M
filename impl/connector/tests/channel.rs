@@ -142,3 +142,20 @@ fn node_messages_are_unread_until_opened() {
     .unwrap();
     assert!(old.read, "ancien message : lu");
 }
+
+/// Compteur quotidien des messages au Nœud : fenêtre glissante de 24 h,
+/// un message de plus possible quand le plus ancien sort de la fenêtre.
+#[test]
+fn daily_message_quota_slides_over_24_hours() {
+    use s3m_connector::daemon::daily_quota;
+    let now = 1_000_000;
+    assert_eq!(daily_quota(&[], now), (10, None));
+    let sent: Vec<(u64, String)> = vec![
+        (now - 90_000, "trop vieux".into()),
+        (now - 3_600, "a".into()),
+        (now - 60, "b".into()),
+    ];
+    assert_eq!(daily_quota(&sent, now), (8, Some(now - 3_600 + 86_400)));
+    let full: Vec<(u64, String)> = (0..12).map(|i| (now - i, String::new())).collect();
+    assert_eq!(daily_quota(&full, now).0, 0);
+}

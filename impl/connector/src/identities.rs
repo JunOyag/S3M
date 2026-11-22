@@ -14,7 +14,6 @@ pub fn identities_dir(app: &Path) -> PathBuf {
 /// Identités à lancer : l'identité d'origine (`app`, configurée ou non),
 /// puis les identités ajoutées configurées, par numéro croissant.
 pub fn list(app: &Path) -> Vec<(u32, PathBuf)> {
-    let mut out = vec![(1, app.to_path_buf())];
     let mut added: Vec<(u32, PathBuf)> = std::fs::read_dir(identities_dir(app))
         .into_iter()
         .flatten()
@@ -26,9 +25,20 @@ pub fn list(app: &Path) -> Vec<(u32, PathBuf)> {
         })
         .collect();
     added.sort();
+    // L'identité d'origine est lancée si elle est configurée, ou s'il n'y a
+    // aucune autre identité (premier lancement) ; retirée, son dossier reste
+    // vide.
+    let mut out = Vec::new();
+    if config_path(app).exists() || added.is_empty() {
+        out.push((1, app.to_path_buf()));
+    }
     out.extend(added);
     out
 }
+
+/// Fichiers propres à l'application dans son dossier, qui restent quand
+/// l'identité d'origine est retirée.
+const APP_FILES: &[&str] = &["logs", "s3m.lock", "identites", "setup.url"];
 
 /// Dossier d'une nouvelle identité : premier numéro (à partir de 2) libre,
 /// ou dont l'assistant n'a pas été terminé. Le dossier est créé.
@@ -44,13 +54,30 @@ pub fn next_dir(app: &Path) -> std::io::Result<(u32, PathBuf)> {
     unreachable!()
 }
 
-/// Retrait d'une identité ajoutée : son dossier est renommé
-/// `<n>.retiree-<horodatage>`, jamais effacé. L'identité d'origine ne se
-/// retire pas.
+/// Retrait d'une identité : son dossier est renommé
+/// `<n>.retiree-<horodatage>`, jamais effacé ; l'identité d'origine ne se
+/// retire que s'il en reste une autre.
 pub fn set_aside(app: &Path, dir: &Path, stamp: u64) -> Result<PathBuf, String> {
     let base = identities_dir(app);
+    if dir == app {
+        // Identité d'origine : seulement s'il en reste une autre ; ses
+        // fichiers vont dans `identites\1.retiree-<horodatage>`.
+        if !list(app).iter().any(|(n, _)| *n > 1) {
+            return Err("c'est la seule identité : elle ne peut pas être retirée".into());
+        }
+        let to = base.join(format!("1.retiree-{stamp}"));
+        std::fs::create_dir_all(&to).map_err(|e| e.to_string())?;
+        for e in std::fs::read_dir(app).map_err(|e| e.to_string())?.flatten() {
+            let name = e.file_name();
+            if APP_FILES.iter().any(|f| name == *f) {
+                continue;
+            }
+            std::fs::rename(e.path(), to.join(&name)).map_err(|e| e.to_string())?;
+        }
+        return Ok(to);
+    }
     if dir.parent() != Some(base.as_path()) {
-        return Err("seule une identité ajoutée peut être retirée".into());
+        return Err("dossier d'identité inattendu".into());
     }
     let name = dir
         .file_name()

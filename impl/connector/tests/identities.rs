@@ -14,7 +14,11 @@ fn app(name: &str) -> std::path::PathBuf {
 #[test]
 fn identities_are_listed_added_and_set_aside() {
     let a = app("list");
+    // Premier lancement : l'origine seule, même non configurée (assistant).
     assert_eq!(list(&a), vec![(1, a.clone())]);
+    std::fs::write(a.join("connector.json"), "{}").unwrap();
+    std::fs::write(a.join("user.seed"), "mots").unwrap();
+    std::fs::create_dir_all(a.join("logs")).unwrap();
     let (n, d2) = next_dir(&a).unwrap();
     assert_eq!(n, 2);
     // Assistant pas terminé : pas listée, numéro réutilisé.
@@ -28,12 +32,25 @@ fn identities_are_listed_added_and_set_aside() {
         list(&a),
         vec![(1, a.clone()), (2, d2.clone()), (3, d3.clone())]
     );
-    // Retrait : renommé, jamais effacé ; l'origine ne se retire pas.
+    // Retrait d'une identité ajoutée : renommée, jamais effacée.
     let to = set_aside(&a, &d2, 77).unwrap();
     assert!(to.ends_with("2.retiree-77") && to.join("connector.json").exists());
-    assert_eq!(list(&a), vec![(1, a.clone()), (3, d3)]);
-    assert!(set_aside(&a, &a, 1).is_err());
+    assert_eq!(list(&a), vec![(1, a.clone()), (3, d3.clone())]);
     assert_eq!(next_dir(&a).unwrap().0, 2);
+    // Retrait de l'origine (il en reste une autre) : ses fichiers sont mis de
+    // côté, ceux de l'application restent, elle n'est plus lancée.
+    let to = set_aside(&a, &a, 78).unwrap();
+    assert!(
+        to.ends_with("1.retiree-78")
+            && to.join("connector.json").exists()
+            && to.join("user.seed").exists()
+    );
+    assert!(a.join("logs").exists() && !a.join("connector.json").exists());
+    assert_eq!(list(&a), vec![(3, d3.clone())]);
+    // Dernière identité : l'origine ne se retire pas seule.
+    let solo = app("solo");
+    std::fs::write(solo.join("connector.json"), "{}").unwrap();
+    assert!(set_aside(&solo, &solo, 1).is_err());
 }
 
 #[test]

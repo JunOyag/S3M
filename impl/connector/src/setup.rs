@@ -498,14 +498,17 @@ pub fn access_form(c: &AccessChoice, dir: &Path) -> Value {
         "options": { "accès": choices, "lettre": s3m_protocol::local_fs::free_letters() },
         "visible_si": { "dossier": ["accès", "dossier"], mount_field: ["accès", "lecteur"] },
         "valeurs": { "accès": access,
-                     "dossier": c.folder.clone().unwrap_or_else(|| default_folder(dir)).display().to_string(),
+                     // Jamais un chemin inexistant : vide tant qu'aucun dossier
+                     // existant n'est choisi.
+                     "dossier": c.folder.clone().or_else(|| Some(default_folder(dir)))
+                         .filter(|f| f.is_dir()).map(|f| f.display().to_string()).unwrap_or_default(),
                      mount_field: c.mount.clone().unwrap_or_else(|| if cfg!(windows) { free_drive_letter() } else { String::new() }) },
         "aide": { "accès": if drive_possible() {
                       "Dossier : vos fichiers dans un dossier synchronisé ; Périphérique : un lecteur à part dans l'Explorateur. Modifiable ensuite dans le tableau de bord."
                   } else {
                       "WinFsp n'est pas installé : seul le dossier synchronisé est possible sur cet ordinateur."
                   },
-                  "dossier": "Dossier vide ou nouveau, sur un disque local (NTFS sous Windows) ; « Parcourir… » permet d'en créer un",
+                  "dossier": "Choisissez avec « Parcourir… » un dossier vide, ou créez-en un (par exemple « S3m » dans votre dossier personnel), sur un disque local (NTFS sous Windows)",
                   "lettre": "Lettre libre, par exemple P:",
                   "point de montage": "Dossier vide où le lecteur sera monté" } })
 }

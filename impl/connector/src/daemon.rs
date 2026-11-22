@@ -557,8 +557,8 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "messages", "titre": "Messages du Nœud",
-          "sections": ["remplacement de la clé d'alerte", "alerte du nœud", "messages du nœud", "messages envoyés au nœud"],
-          "actions": ["mark_all_read", "accept_announce_replacement", "refuse_announce_replacement", "send_node_message", "acknowledge_alert"] },
+          "sections": ["remplacement de la clé d'alerte", "alerte du nœud", "messages du nœud", "écrire à mon nœud", "messages envoyés au nœud"],
+          "actions": ["mark_all_read", "accept_announce_replacement", "refuse_announce_replacement", "acknowledge_alert"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
@@ -660,8 +660,51 @@ fn connector_summary(v: &Value) -> Value {
 }
 
 /// Canal Nœud ↔ Utilisateurs : sections du dashboard.
+/// Messages envoyés au Nœud dans les dernières 24 h (fenêtre glissante du
+/// Nœud, `protocols.canal-noeud`) : `(restants, prochaine remise à zéro)`.
+pub fn daily_quota(sent: &[(u64, String)], now: u64) -> (usize, Option<u64>) {
+    use s3m_protocol::message::{DAY_S, POSTS_PER_DAY};
+    let recent: Vec<u64> = sent
+        .iter()
+        .map(|(t, _)| *t)
+        .filter(|t| t.saturating_add(DAY_S) > now)
+        .collect();
+    let left = POSTS_PER_DAY.saturating_sub(recent.len());
+    (left, recent.iter().min().map(|t| t + DAY_S))
+}
+
 fn channel_status(sh: &Shared, v: &mut Value) {
+    let now = (sh.clock)();
     let c = sh.channel.lock().unwrap();
+    let (left, reset) = daily_quota(&c.sent, now);
+    let quota_text = match reset {
+        Some(_) => format!(
+            "{left} message(s) sur {} encore possibles sur 24 h",
+            s3m_protocol::message::POSTS_PER_DAY
+        ),
+        None => format!(
+            "{} messages possibles sur 24 h",
+            s3m_protocol::message::POSTS_PER_DAY
+        ),
+    };
+    // Envoi différé de 5 s (annulable), zone vidée après l'envoi.
+    let send_form = |titre: Option<&str>, libelle: &str| {
+        let mut f = json!({ "nom": "send_node_message", "libellé": libelle,
+            "champs": ["message"], "types": { "message": "texte" }, "différer": 5,
+            "texte": quota_text,
+            "aide": { "message": "Lu par l'opérateur de votre Nœud (4 096 octets au plus) ; chaque message occupe 4 Kio de votre quota pendant 30 jours" } });
+        if let Some(t) = titre {
+            f["titre"] = json!(t);
+        }
+        f
+    };
+    v["écrire à mon nœud"] = json!({
+        "_contenu": {
+            "messages restants sur 24 h": format!("{left} sur {}", s3m_protocol::message::POSTS_PER_DAY),
+            "quota réinitialisé le": reset,
+        },
+        "_formulaires": [send_form(None, "Envoyer")],
+    });
     v["alerte du nœud"] = match &c.alert {
         None => json!({ "état": "aucune alerte" }),
         Some(a) => json!({
@@ -679,14 +722,14 @@ fn channel_status(sh: &Shared, v: &mut Value) {
         let kind = if m.kind == s3m_protocol::message::Kind::Alert { "alerte" }
             else if m.announce_replacement.is_some() { "remplacement de la clé d'alerte" } else { "information" };
         let alert = m.kind == s3m_protocol::message::Kind::Alert;
+        let mut reply_form = send_form(Some("Répondre"), "Envoyer la réponse");
+        reply_form["libellés"] = json!({ "message": "réponse" });
         let reply = json!({
             "titre": format!("Message de votre Nœud ({kind})"),
             "contenu": { "reçu le": m.timestamp, "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" } },
             "message": m.text,
             "ouverture": { "nom": "mark_message_read", "valeurs": { "sorte": if alert { "alerte" } else { "info" }, "n°": m.seq } },
-            "formulaires": [{ "nom": "send_node_message", "titre": "Répondre", "libellé": "Envoyer la réponse",
-                "champs": ["message"], "libellés": { "message": "réponse" }, "types": { "message": "texte" },
-                "aide": { "message": "Lue par l'opérateur de votre Nœud ; occupe 4 Kio de votre quota pendant 30 jours" } }],
+            "formulaires": [reply_form],
         });
         json!({
             "sorte": kind,
@@ -715,9 +758,6 @@ fn channel_status(sh: &Shared, v: &mut Value) {
         .collect::<Vec<_>>());
     v["clé d'annonce du nœud"] = json!(c.announce.map(hex::encode));
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
-        a.push(json!({ "nom": "send_node_message", "titre": "Écrire à mon Nœud", "libellé": "Envoyer",
-            "champs": ["message"], "types": { "message": "texte" },
-            "aide": { "message": "Lu par l'opérateur de votre Nœud (4 096 octets au plus, 10 messages par jour) ; chaque message occupe 4 Kio de votre quota pendant 30 jours" } }));
         let unread = c.unread();
         if unread > 0 {
             a.push(json!({ "nom": "mark_all_read", "mise_en_avant": true,
@@ -931,7 +971,7 @@ fn status_base(sh: &Shared) -> Value {
         "configuration": {
             "Q_max (octets)": sh.config.q_max_bytes,
             "intervalle de surveillance (s)": sh.config.watch_interval_s,
-            "lecteur monté": sh.mount_point(),
+            "lecteur monté": drive_letter(sh),
             "accès aux fichiers": access_mode(&sh.config),
             "dossier synchronisé": folder_path(&sh.config).display().to_string(),
         },
@@ -1040,7 +1080,7 @@ fn drive_status(sh: &Shared) -> Value {
         None => (None, None),
     };
     json!({
-        "point de montage": sh.mount_point(),
+        "point de montage": drive_letter(sh),
         "dossier synchronisé": st.folder,
         "monté": st.mounted,
         "erreur de montage": st.mount_error,
@@ -1297,7 +1337,7 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         attached_quota: a.attached_quota,
         attach_error: a.last_error,
         mounted: ds.mounted,
-        mount_point: sh.mount_point(),
+        mount_point: drive_letter(sh),
         messages_received,
         unread_messages,
         last_message,
@@ -1772,6 +1812,17 @@ pub fn identity_label(sh: &Shared) -> String {
 pub fn files_location(sh: &Shared) -> Option<String> {
     let folder = sh.drive_status.lock().unwrap().folder.clone();
     folder.or_else(|| sh.mount_point().map(|m| format!("{m}\\")))
+}
+
+/// Lettre ou point de montage du lecteur, seulement en accès « lecteur »
+/// (en accès « dossier », rien n'est monté).
+fn drive_letter(sh: &Shared) -> Option<String> {
+    let folder = sh.drive_status.lock().unwrap().folder.is_some();
+    if folder || access_mode(&sh.config) == "dossier" {
+        None
+    } else {
+        sh.mount_point()
+    }
 }
 
 /// Dossier de l'identité (celui de sa configuration).

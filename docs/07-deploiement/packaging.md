@@ -246,9 +246,12 @@ identités Utilisateur, chacune comme un Connecteur complet et indépendant.
   un sous-menu par identité, nommé `pseudo · empreinte` (ouvrir les
   fichiers, le tableau de bord — un par identité, sur son propre port —,
   synchroniser, suspendre, changer de Nœud, retirer l'identité).
-- **Retrait** (identité ajoutée seulement, second clic de confirmation) :
-  S3m redémarre sans elle ; son dossier est renommé `<n>.retiree-<horodatage>`,
-  jamais effacé, et son dossier synchronisé déconnecté.
+- **Retrait** (second clic de confirmation ; l'identité d'origine seulement
+  s'il en reste une autre) : S3m redémarre sans elle ; son dossier est
+  renommé `<n>.retiree-<horodatage>` (pour l'origine, ses fichiers vont
+  dans `identites.retiree-<horodatage>`, le dossier de l'application
+  gardant journaux et identités), jamais effacé, et son dossier synchronisé
+  déconnecté. Le nom du sous-menu suit le pseudo de l'identité.
 - Deux identités peuvent être rattachées au même Nœud (deux Utilisateurs
   distincts pour lui) ou à des Nœuds différents.
 

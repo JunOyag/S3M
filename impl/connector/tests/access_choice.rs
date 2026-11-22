@@ -23,3 +23,24 @@ fn access_choice_is_validated_and_the_form_fits_the_platform() {
     }
     assert_eq!(f["visible_si"]["dossier"], json!(["accès", "dossier"]));
 }
+
+/// Le dossier proposé par défaut existe toujours, sinon le champ est vide.
+#[test]
+fn default_folder_is_never_a_missing_path() {
+    let dir = std::env::temp_dir().join(format!("p2p-access-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let missing = AccessChoice {
+        access: Some("dossier".into()),
+        folder: Some(dir.join("absent")),
+        mount: None,
+    };
+    assert_eq!(access_form(&missing, &dir)["valeurs"]["dossier"], "");
+    let present = AccessChoice {
+        folder: Some(dir.clone()),
+        ..missing
+    };
+    assert_eq!(
+        access_form(&present, &dir)["valeurs"]["dossier"],
+        dir.display().to_string()
+    );
+}
