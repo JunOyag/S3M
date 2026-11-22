@@ -24,6 +24,7 @@ fn m(seq: u64, kind: Kind, successor: Option<Id>) -> NodeMessage {
         kind,
         text: "texte".into(),
         successor,
+        ..Default::default()
     }
 }
 
@@ -36,18 +37,21 @@ fn first_announce_key_is_pinned_and_a_later_one_is_ignored() {
     c.pin(&node, Some(pk(&PRIV_THIEF)));
     assert_eq!(c.announce, Some(pk(&PRIV_ANNOUNCE)));
     // Alerte du voleur (seed volée) : signée par la clé du Nœud ou par sa propre clé.
-    assert!(!c.accept(&sign_message(&PRIV_NODE, &m(1, Kind::Alert, Some([9; 32])))));
-    assert!(!c.accept(&sign_message(
-        &PRIV_THIEF,
-        &m(1, Kind::Alert, Some([9; 32]))
-    )));
+    assert!(!c.accept(
+        &sign_message(&PRIV_NODE, &m(1, Kind::Alert, Some([9; 32]))),
+        None
+    ));
+    assert!(!c.accept(
+        &sign_message(&PRIV_THIEF, &m(1, Kind::Alert, Some([9; 32]))),
+        None
+    ));
     assert!(!c.distrusts(&node));
-    assert!(c.accept(&sign_message(&PRIV_NODE, &m(1, Kind::Info, None))));
-    assert!(!c.accept(&sign_message(&PRIV_NODE, &m(1, Kind::Info, None))));
-    assert!(c.accept(&sign_message(
-        &PRIV_ANNOUNCE,
-        &m(1, Kind::Alert, Some([9; 32]))
-    )));
+    assert!(c.accept(&sign_message(&PRIV_NODE, &m(1, Kind::Info, None)), None));
+    assert!(!c.accept(&sign_message(&PRIV_NODE, &m(1, Kind::Info, None)), None));
+    assert!(c.accept(
+        &sign_message(&PRIV_ANNOUNCE, &m(1, Kind::Alert, Some([9; 32]))),
+        None
+    ));
     assert!(c.distrusts(&node) && !c.alert_acknowledged);
     assert_eq!(c.successor(), Some([9; 32]));
     assert_eq!(c.received.len(), 2);
@@ -75,4 +79,42 @@ fn alert_from_the_directory_is_accepted_once_and_republished_unchanged() {
     c.alert_republished_at = 200;
     assert_eq!(c.republish_due(201), None);
     assert_eq!(c.republish_due(200 + 2_592_000), Some(env));
+}
+
+/// Message adressé à un autre Utilisateur rejeté ; remplacement de la clé
+/// d'annonce jamais appliqué sans accord, refus = ancienne clé gardée.
+#[test]
+fn addressed_messages_and_announce_replacement_need_the_user() {
+    let node = pk(&PRIV_NODE);
+    let me = [0xa1; 32];
+    let mut c = ChannelState::default();
+    c.pin(&node, Some(pk(&PRIV_ANNOUNCE)));
+    let mut other = m(1, Kind::Info, None);
+    other.recipient = Some([0xb2; 32]);
+    assert!(!c.accept(&sign_message(&PRIV_NODE, &other), Some(&me)));
+    let mut mine = m(2, Kind::Info, None);
+    mine.recipient = Some(me);
+    assert!(c.accept(&sign_message(&PRIV_NODE, &mine), Some(&me)));
+    assert!(c.received.last().unwrap().personal);
+    // Remplacement proposé (seed volée ou opérateur) : en attente.
+    let mut rep = m(3, Kind::Info, None);
+    rep.announce_replacement = Some(pk(&PRIV_THIEF));
+    assert!(c.accept(&sign_message(&PRIV_NODE, &rep), Some(&me)));
+    assert_eq!(c.announce, Some(pk(&PRIV_ANNOUNCE)));
+    assert_eq!(c.pending_announce, Some((pk(&PRIV_THIEF), 3)));
+    assert_eq!(c.decide_replacement(false), Some(pk(&PRIV_ANNOUNCE)));
+    assert!(c.pending_announce.is_none());
+    // Nouvelle demande, acceptée : la nouvelle clé signe désormais les alertes.
+    let mut rep2 = m(4, Kind::Info, None);
+    rep2.announce_replacement = Some(pk(&PRIV_THIEF));
+    assert!(c.accept(&sign_message(&PRIV_NODE, &rep2), Some(&me)));
+    assert_eq!(c.decide_replacement(true), Some(pk(&PRIV_THIEF)));
+    assert!(c.accept(
+        &sign_message(&PRIV_THIEF, &m(1, Kind::Alert, None)),
+        Some(&me)
+    ));
+    assert!(!c.accept(
+        &sign_message(&PRIV_ANNOUNCE, &m(2, Kind::Alert, None)),
+        Some(&me)
+    ));
 }

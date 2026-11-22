@@ -16,6 +16,9 @@ table NodeMessage {
   kind: MessageKind;
   text: string;               // UTF-8, 4 096 o au plus
   successor_node_id: [ubyte]; // Alert seulement, optionnel : Nœud de remplacement (32 o)
+  // Ajouts du 2026-11-22 (Info seulement, optionnels) :
+  recipient: [ubyte];         // pub_user du seul destinataire (32 o) ; absent : tous les Utilisateurs
+  announce_replacement: [ubyte]; // nouvelle pub_node_announce proposée (32 o), acceptée par chaque Utilisateur
 }
 
 // Info : Ed25519 par priv_node sur L("s3m/sig/node-message/v1") ‖ message.

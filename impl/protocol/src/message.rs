@@ -38,14 +38,15 @@ pub const ALERT_REPUBLISH_S: u64 = 2_592_000;
 pub const ALERT_POLL_S: u64 = 86_400;
 
 /// Sorte de message (`MessageKind`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Kind {
+    #[default]
     Info,
     Alert,
 }
 
 /// `NodeMessage`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeMessage {
     pub node_id: Id,
     pub seq: u64,
@@ -54,6 +55,10 @@ pub struct NodeMessage {
     pub text: String,
     /// Alerte seulement : Nœud de remplacement.
     pub successor: Option<Id>,
+    /// `Info` seulement : seul destinataire (`pub_user`), sinon tous.
+    pub recipient: Option<Id>,
+    /// `Info` seulement : nouvelle `pub_node_announce` proposée.
+    pub announce_replacement: Option<Id>,
 }
 
 /// `SignedNodeMessage`.
@@ -76,6 +81,8 @@ pub fn encode_message(m: &NodeMessage) -> Vec<u8> {
     let node_id = b.create_vector(&m.node_id);
     let text = b.create_string(&m.text);
     let successor = m.successor.map(|s| b.create_vector(&s));
+    let recipient = m.recipient.map(|s| b.create_vector(&s));
+    let replacement = m.announce_replacement.map(|s| b.create_vector(&s));
     let o = fb::NodeMessage::create(
         &mut b,
         &fb::NodeMessageArgs {
@@ -88,6 +95,8 @@ pub fn encode_message(m: &NodeMessage) -> Vec<u8> {
             },
             text: Some(text),
             successor_node_id: successor,
+            recipient,
+            announce_replacement: replacement,
         },
     );
     b.finish_minimal(o);
@@ -118,6 +127,14 @@ pub fn decode_message(buf: &[u8]) -> Result<NodeMessage, Refusal> {
             Some(v) => Some(id(Some(v))?),
             None => None,
         },
+        recipient: match m.recipient() {
+            Some(v) => Some(id(Some(v))?),
+            None => None,
+        },
+        announce_replacement: match m.announce_replacement() {
+            Some(v) => Some(id(Some(v))?),
+            None => None,
+        },
     })
 }
 
@@ -144,6 +161,9 @@ pub fn verify_message(
     }
     let key: &[u8] = match m.kind {
         Kind::Info if m.successor.is_some() => return Err(Refusal::Malformed),
+        Kind::Alert if m.recipient.is_some() || m.announce_replacement.is_some() => {
+            return Err(Refusal::Malformed)
+        }
         Kind::Info => node_id,
         Kind::Alert => announce.ok_or(Refusal::Unauthorized)?,
     };
@@ -214,13 +234,16 @@ impl Outbox {
 
     /// Réponse à `ReadMessages` : les [`MAX_READ`] plus anciens messages
     /// de `seq` supérieur, toutes sortes confondues.
-    pub fn since(&self, info: u64, alert: u64) -> Vec<Signed> {
+    /// Messages de `seq` supérieur destinés à `user` (sans destinataire, ou
+    /// adressés à lui).
+    pub fn since(&self, info: u64, alert: u64, user: &Id) -> Vec<Signed> {
         self.sent
             .iter()
             .filter(|(m, _)| match m.kind {
                 Kind::Info => m.seq > info,
                 Kind::Alert => m.seq > alert,
             })
+            .filter(|(m, _)| m.recipient.is_none_or(|r| &r == user))
             .take(MAX_READ)
             .map(|(_, s)| s.clone())
             .collect()

@@ -31,6 +31,15 @@ extérieure à la seed peut encore authentifier un avertissement.
   l'entrée Node qui en porte une. Il ignore toute autre valeur publiée
   ensuite. L'épinglage est perdu au changement de Nœud et refait sur le
   nouveau.
+- **Remplacement** (ajout du 2026-11-22, phrase d'annonce perdue) :
+  l'opérateur crée une nouvelle clé d'annonce, remise comme la première ;
+  le Nœud la publie dans son entrée Node et envoie un `Info` portant
+  `announce_replacement` (nouvelle `pub_node_announce`), signé par
+  `priv_node`. Le Connecteur ne l'applique **jamais seul** : il demande à
+  l'Utilisateur d'accepter, après confirmation de l'opérateur par un autre
+  moyen, et garde l'ancienne clé tant qu'il n'a pas accepté (refus ou
+  silence). Un voleur de la seed peut ainsi demander un remplacement, pas
+  l'imposer.
 
 ## Messages {: #messages }
 
@@ -45,7 +54,15 @@ Le Connecteur rejette un message dont `node_id` n'est pas son Nœud, dont
 la signature ne vérifie pas (`pub_node`, ou `pub_node_announce` épinglée),
 dont `text` dépasse 4 096 o, ou dont `seq` n'est pas strictement supérieur
 au dernier `seq` accepté pour la même sorte. Un `successor_node_id` n'est
-pris en compte que dans une `Alert`.
+pris en compte que dans une `Alert` ; `recipient` et `announce_replacement`
+que dans un `Info`.
+
+**Message à un seul Utilisateur** (ajout du 2026-11-22) : un `Info` qui
+porte `recipient` n'est remis par `ReadMessages` qu'à cet Utilisateur ; le
+Connecteur rejette un `Info` dont `recipient` n'est pas son `pub_user`. Le
+destinataire étant signé, un message ne peut pas être réadressé. Les
+numéros (`seq`) restent communs à tous les messages `Info` : un Utilisateur
+voit des numéros manquants, ceux des messages adressés à d'autres.
 
 ## Requêtes {: #requetes }
 
@@ -54,7 +71,7 @@ son Nœud, avec `UserCredential` :
 
 | Requête | Réponse | Règle |
 |---|---|---|
-| `ReadMessages{since_info, since_alert}` | `Messages` | les 64 plus anciens messages de `seq` supérieur, toutes sortes confondues ; `node_name` : nom actuel du Nœud ([`deploiement.pseudos`](../07-deploiement/pseudos.md#regles)) |
+| `ReadMessages{since_info, since_alert}` | `Messages` | les 64 plus anciens messages de `seq` supérieur destinés au demandeur (sans `recipient`, ou `recipient` = son `pub_user`), toutes sortes confondues ; `node_name` : nom actuel du Nœud ([`deploiement.pseudos`](../07-deploiement/pseudos.md#regles)) |
 | `PostMessage{text}` | `Ack` | 4 096 o au plus ; 10 messages par Utilisateur et par 86 400 s, au-delà `RateLimited` ; quota, voir ci-dessous |
 
 Le Connecteur envoie `ReadMessages` à chaque sondage de son Nœud. Le Nœud

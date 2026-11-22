@@ -293,9 +293,9 @@ impl NodeService {
                 since_info,
                 since_alert,
             } => {
-                self.user(cred, from, local)?;
+                let u = self.user(cred, from, local)?;
                 Ok(Response::Messages {
-                    messages: self.channel.read(since_info, since_alert),
+                    messages: self.channel.read(&u, since_info, since_alert),
                     node_name: self.name.clone(),
                 })
             }

@@ -147,8 +147,14 @@ async fn node_starts_serves_a_guarded_dashboard_and_persists_its_state() {
     assert!(http(port, post).await.starts_with("HTTP/1.1 200"));
     // Ligne d'utilisateur : bouton « Éditer » et panneau (quota, étiquette).
     let st = http(port, get(port, "/api/status", &auth)).await;
-    assert!(st.contains("edit_user") && st.contains("panneau") && st.contains("set_user_label"), "{st}");
-    assert!(!st.contains("Changer le quota d'un utilisateur"), "formulaire en doublon retiré");
+    assert!(
+        st.contains("edit_user") && st.contains("panneau") && st.contains("set_user_label"),
+        "{st}"
+    );
+    assert!(
+        !st.contains("Changer le quota d'un utilisateur"),
+        "formulaire en doublon retiré"
+    );
 
     // Le service écrit sur disque (blocs de 64 Kio exactement).
     {

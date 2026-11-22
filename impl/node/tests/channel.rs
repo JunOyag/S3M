@@ -182,3 +182,28 @@ fn user_messages_take_4_kib_of_quota_until_pruned_or_deleted() {
     assert_eq!(used(&s), 0);
     assert!(s.channel.inbox.received.is_empty());
 }
+
+/// Message à un seul utilisateur et remplacement de la clé d'annonce
+/// (`protocols.canal-noeud`).
+#[test]
+fn addressed_message_and_announce_replacement() {
+    use s3m_node::channel::Channel;
+    let mut c = Channel::default();
+    let (alice, bob) = ([0xa1; 32], [0xb2; 32]);
+    c.post_info_to(&NODE, &alice, "votre quota augmente", NOW)
+        .unwrap();
+    c.post_info(&NODE, "à tous", NOW).unwrap();
+    assert_eq!(c.read(&alice, 0, 0).len(), 2);
+    assert_eq!(c.read(&bob, 0, 0).len(), 1);
+    // Sans clé d'annonce : rien à remplacer.
+    assert!(c.replace_announce(&NODE, NOW).is_err());
+    c.create_announce().unwrap();
+    let old = c.announce;
+    let phrase = c.replace_announce(&NODE, NOW).unwrap();
+    assert_eq!(phrase.split(' ').count(), 24);
+    assert_ne!(c.announce, old);
+    let last = c.read(&bob, 2, 0);
+    assert_eq!(last.len(), 1);
+    let m = verify_message(&last[0], &pk(&NODE), None).unwrap();
+    assert_eq!(m.announce_replacement, c.announce);
+}

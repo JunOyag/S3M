@@ -49,6 +49,12 @@ pub struct Received {
     pub timestamp: u64,
     pub text: String,
     pub successor: Option<Id>,
+    /// Adressé à cet Utilisateur seul.
+    #[serde(default)]
+    pub personal: bool,
+    /// Remplacement de la clé d'annonce proposé.
+    #[serde(default)]
+    pub announce_replacement: Option<Id>,
 }
 
 /// État du canal, conservé dans `channel.json`.
@@ -70,6 +76,10 @@ pub struct ChannelState {
     pub alert_polled_at: u64,
     /// Messages envoyés au Nœud : `(instant, texte)`.
     pub sent: Vec<(u64, String)>,
+    /// Remplacement de clé d'annonce proposé, en attente de l'accord de
+    /// l'Utilisateur : `(nouvelle clé, seq)`.
+    #[serde(default)]
+    pub pending_announce: Option<(Id, u64)>,
 }
 
 impl ChannelState {
@@ -89,13 +99,17 @@ impl ChannelState {
     }
 
     /// Vérifie et retient un message du Nœud ; rend `true` s'il est nouveau.
-    pub fn accept(&mut self, s: &Signed) -> bool {
+    /// `me` : `pub_user` ; un message adressé à un autre est rejeté.
+    pub fn accept(&mut self, s: &Signed, me: Option<&Id>) -> bool {
         let Some(node_id) = self.node_id else {
             return false;
         };
         let Ok(m) = verify_message(s, &node_id, self.announce.as_ref()) else {
             return false;
         };
+        if m.recipient.is_some() && m.recipient.as_ref() != me {
+            return false;
+        }
         if !self.cursor.accept(&m) {
             return false;
         }
@@ -105,7 +119,15 @@ impl ChannelState {
             timestamp: m.timestamp,
             text: m.text,
             successor: m.successor,
+            personal: m.recipient.is_some(),
+            announce_replacement: m.announce_replacement,
         };
+        // Remplacement de clé : jamais appliqué sans l'accord de l'Utilisateur.
+        if let Some(k) = m.announce_replacement {
+            if self.announce != Some(k) {
+                self.pending_announce = Some((k, m.seq));
+            }
+        }
         if r.kind == Kind::Alert {
             self.alert = Some(r.clone());
             self.alert_acknowledged = false;
@@ -122,7 +144,7 @@ impl ChannelState {
         if self.announce.as_ref() != Some(announce) {
             return false;
         }
-        let fresh = self.accept(alert);
+        let fresh = self.accept(alert, None);
         let newer = self.alert.as_ref().is_some_and(|a| {
             s3m_protocol::message::decode_message(&alert.message).is_ok_and(|m| m.seq == a.seq)
         });
@@ -131,6 +153,20 @@ impl ChannelState {
             self.alert_republished_at = 0;
         }
         fresh
+    }
+
+    /// L'Utilisateur accepte (`true`) ou refuse le remplacement de clé
+    /// d'annonce proposé ; rend la clé désormais épinglée.
+    pub fn decide_replacement(&mut self, accept: bool) -> Option<Id> {
+        if let Some((k, _)) = self.pending_announce.take() {
+            if accept {
+                self.announce = Some(k);
+                self.alert_envelope = None;
+                self.alert_republished_at = 0;
+                self.alert_polled_at = 0;
+            }
+        }
+        self.announce
     }
 
     /// Le Nœud courant a émis une alerte : son pointeur de migration n'est

@@ -556,8 +556,8 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "messages", "titre": "Messages du Nœud",
-          "sections": ["alerte du nœud", "messages du nœud", "messages envoyés au nœud"],
-          "actions": ["send_node_message", "acknowledge_alert"] },
+          "sections": ["remplacement de la clé d'alerte", "alerte du nœud", "messages du nœud", "messages envoyés au nœud"],
+          "actions": ["accept_announce_replacement", "refuse_announce_replacement", "send_node_message", "acknowledge_alert"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
@@ -622,6 +622,11 @@ fn connector_summary(v: &Value) -> Value {
     let alert = p("/alerte du nœud/message");
     let unread = p("/alerte du nœud/acquittée").as_bool() == Some(false);
     let mut cards = vec![];
+    if !p("/remplacement de la clé d'alerte/nouvelle clé").is_null() {
+        cards.push(json!({ "libellé": "Clé d'alerte du Nœud", "valeur": "remplacement à accepter",
+            "détail": "Votre Nœud demande à remplacer sa clé d'alerte : ouvrez « Messages du Nœud »",
+            "état": "attention", "page": "messages" }));
+    }
     if let Some(t) = alert.as_str() {
         cards.push(json!({ "libellé": "Alerte du Nœud", "valeur": t,
             "détail": "Votre Nœud signale une compromission : ouvrez « Messages du Nœud »",
@@ -659,8 +664,18 @@ fn channel_status(sh: &Shared, v: &mut Value) {
         }),
     };
     v["messages du nœud"] = json!(c.received.iter().rev().map(|m| json!({
-        "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" } else { "information" },
+        "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" }
+            else if m.announce_replacement.is_some() { "remplacement de la clé d'alerte" } else { "information" },
+        "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" },
         "reçu le": m.timestamp, "message": m.text })).collect::<Vec<_>>());
+    if let Some((k, seq)) = c.pending_announce {
+        v["remplacement de la clé d'alerte"] = json!({
+            "nouvelle clé": s3m_protocol::pseudo::fingerprint(&k),
+            "clé actuelle": c.announce.map(|a| s3m_protocol::pseudo::fingerprint(&a)),
+            "message n°": seq,
+            "à savoir": "Votre Nœud demande à remplacer la clé qui signe ses alertes de compromission (sa phrase d'annonce a été perdue). Acceptez seulement si son opérateur vous l'a confirmé par un autre moyen (téléphone, courriel…) : un pirate qui aurait volé l'identité du Nœud pourrait faire la même demande. Tant que vous n'acceptez pas, l'ancienne clé reste retenue.",
+        });
+    }
     v["messages envoyés au nœud"] = json!(c
         .sent
         .iter()
@@ -673,6 +688,12 @@ fn channel_status(sh: &Shared, v: &mut Value) {
         a.push(json!({ "nom": "send_node_message", "titre": "Écrire à mon Nœud", "libellé": "Envoyer",
             "champs": ["message"],
             "aide": { "message": "Lu par l'opérateur de votre Nœud (4 096 octets au plus, 10 messages par jour) ; chaque message occupe 4 Kio de votre quota pendant 30 jours" } }));
+        if c.pending_announce.is_some() {
+            a.push(json!({ "nom": "accept_announce_replacement", "titre": "Remplacement de la clé d'alerte",
+                "libellé": "Accepter la nouvelle clé", "champs": [],
+                "confirmer": "Accepter la nouvelle clé d'alerte de votre Nœud ?\n\nFaites-le seulement si son opérateur vous a confirmé ce remplacement par un autre moyen." }));
+            a.push(json!({ "nom": "refuse_announce_replacement", "libellé": "Refuser (garder l'ancienne clé)", "champs": [] }));
+        }
         if c.alert.is_some() && !c.alert_acknowledged {
             a.push(json!({ "nom": "acknowledge_alert", "titre": "Alerte du Nœud", "libellé": "J'ai lu l'alerte", "champs": [] }));
         }
@@ -741,7 +762,7 @@ async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
             {
                 let mut c = sh.channel.lock().unwrap();
                 for s in &list {
-                    c.accept(s);
+                    c.accept(s, Some(&sh.pub_user));
                 }
             }
             set_node_name(sh, node_name);
@@ -787,6 +808,20 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
                 .push(((sh.clock)(), text.to_string()));
             save_channel(sh);
             Ok(json!({ "ok": true, "message": "Message envoyé à votre Nœud" }))
+        }
+        "accept_announce_replacement" | "refuse_announce_replacement" => {
+            let accept = name == "accept_announce_replacement";
+            let pending = sh.channel.lock().unwrap().pending_announce.is_some();
+            if !pending {
+                return Err("aucun remplacement de clé en attente".into());
+            }
+            sh.channel.lock().unwrap().decide_replacement(accept);
+            save_channel(sh);
+            Ok(json!({ "ok": true, "message": if accept {
+                "Nouvelle clé d'alerte retenue"
+            } else {
+                "Remplacement refusé : l'ancienne clé d'alerte reste retenue"
+            } }))
         }
         _ => {
             sh.channel.lock().unwrap().alert_acknowledged = true;
@@ -1516,7 +1551,10 @@ pub async fn start(
                 Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
             }
             "admin_node" => admin_node(&sh.config.node.addr, &v),
-            "send_node_message" | "acknowledge_alert" => channel_action(&sh, name, &v),
+            "send_node_message"
+            | "acknowledge_alert"
+            | "accept_announce_replacement"
+            | "refuse_announce_replacement" => channel_action(&sh, name, &v),
             "set_pseudo" | "set_node_label" => names_action(&sh, name, &v),
             "change_node" => {
                 if v.get("je confirme").and_then(|x| x.as_bool()) != Some(true) {

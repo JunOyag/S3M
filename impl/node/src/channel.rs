@@ -73,8 +73,55 @@ impl Channel {
         Ok(phrase)
     }
 
-    /// Message courant signé par `priv_node` ; rend son numéro.
+    /// Remplace la clé d'annonce (phrase perdue) : nouvelle clé publiée et
+    /// demande de remplacement envoyée aux Utilisateurs, qui l'acceptent un
+    /// à un. Rend la nouvelle phrase.
+    pub fn replace_announce(&mut self, priv_node: &[u8; 32], now: u64) -> Result<String, String> {
+        if self.announce.is_none() {
+            return Err(
+                "ce Nœud n'a pas encore de clé d'annonce : « Créer la clé d'annonce »".into(),
+            );
+        }
+        let (k, phrase) = new_announce_key();
+        let new = pub_of(&k);
+        self.post(
+            priv_node,
+            "Votre Nœud remplace sa clé d'alerte (phrase d'annonce perdue). Acceptez ce remplacement seulement si son opérateur vous l'a confirmé par un autre moyen.",
+            None,
+            Some(new),
+            now,
+        )?;
+        self.announce = Some(new);
+        // Une alerte de l'ancienne clé ne se republie plus sous la nouvelle.
+        self.alert_envelope = None;
+        self.alert_published_at = 0;
+        Ok(phrase)
+    }
+
+    /// Message courant signé par `priv_node`, à tous ; rend son numéro.
     pub fn post_info(&mut self, priv_node: &[u8; 32], text: &str, now: u64) -> Result<u64, String> {
+        self.post(priv_node, text, None, None, now)
+    }
+
+    /// Message courant à un seul Utilisateur ; rend son numéro.
+    pub fn post_info_to(
+        &mut self,
+        priv_node: &[u8; 32],
+        user: &Id,
+        text: &str,
+        now: u64,
+    ) -> Result<u64, String> {
+        self.post(priv_node, text, Some(*user), None, now)
+    }
+
+    fn post(
+        &mut self,
+        priv_node: &[u8; 32],
+        text: &str,
+        recipient: Option<Id>,
+        announce_replacement: Option<Id>,
+        now: u64,
+    ) -> Result<u64, String> {
         check_text(text)?;
         let node_id = pub_of(priv_node);
         let seq = self.outbox.next_seq(Kind::Info);
@@ -85,6 +132,8 @@ impl Channel {
             kind: Kind::Info,
             text: text.to_string(),
             successor: None,
+            recipient,
+            announce_replacement,
         };
         self.outbox
             .push(sign_message(priv_node, &m), &node_id, None)
@@ -118,6 +167,7 @@ impl Channel {
             kind: Kind::Alert,
             text: text.to_string(),
             successor,
+            ..Default::default()
         };
         let s = sign_message(priv_announce, &m);
         self.alert_envelope = Some(alert_entry_envelope(priv_announce, &s, now));
@@ -138,8 +188,13 @@ impl Channel {
     }
 
     /// `ReadMessages`.
-    pub fn read(&self, since_info: u64, since_alert: u64) -> Vec<s3m_protocol::message::Signed> {
-        self.outbox.since(since_info, since_alert)
+    pub fn read(
+        &self,
+        user: &Id,
+        since_info: u64,
+        since_alert: u64,
+    ) -> Vec<s3m_protocol::message::Signed> {
+        self.outbox.since(since_info, since_alert, user)
     }
 
     /// `PostMessage`.

@@ -1326,6 +1326,9 @@ entries:
     status: done
     owner: claude-code
     tests:
+      - message::addressed_info_reaches_only_its_recipient_and_alerts_cannot_carry_it
+      - channel::addressed_messages_and_announce_replacement_need_the_user
+      - channel::addressed_message_and_announce_replacement
       - message::info_is_signed_by_the_node_and_alert_only_by_the_pinned_announce_key
       - message::cursor_accepts_each_seq_once_per_kind
       - message::outbox_reads_since_cursor_prunes_and_inbox_is_rate_limited

@@ -659,7 +659,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "messages", "titre": "Messages",
           "sections": ["messages des utilisateurs", "messages envoyés", "clé d'annonce"],
-          "actions": ["send_message", "delete_user_message", "create_announce_key", "send_alert"] },
+          "actions": ["send_message", "delete_user_message", "create_announce_key", "replace_announce_key", "send_alert"] },
         { "id": "secours", "titre": "Espace de secours",
           "sections": ["espace de secours"], "actions": ["set_emergency_policy"] },
         { "id": "reseau", "titre": "Réseau",
@@ -919,6 +919,9 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                               "champs": ["étiquette"], "fixes": { "utilisateur": hx(id) },
                               "valeurs": { "étiquette": s.user_labels.get(id).cloned().unwrap_or_default() },
                               "aide": { "étiquette": "Visible par vous seul ; vide pour l'effacer" } },
+                            { "nom": "send_user_message", "titre": "Message à cet utilisateur", "libellé": "Envoyer",
+                              "champs": ["message"], "fixes": { "utilisateur": hx(id) },
+                              "aide": { "message": "Lu par cet utilisateur seul à son prochain contact (4 096 octets au plus, conservé 30 jours)" } },
                         ] } }] })
         })
         .collect();
@@ -1020,7 +1023,10 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         "messages des utilisateurs": s.channel.inbox.received.iter().rev().map(|m| json!({
             "utilisateur": hx(&m.user_id), "reçu le": m.timestamp, "n°": m.timestamp, "message": m.text })).collect::<Vec<_>>(),
         "messages envoyés": s.channel.outbox.sent.iter().rev().map(|(m, _)| json!({
-            "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" } else { "information" },
+            "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" }
+                else if m.announce_replacement.is_some() { "remplacement de la clé d'annonce" } else { "information" },
+            "destinataire": m.recipient.map(|u| s3m_protocol::pseudo::display(&[s.user_labels.get(&u).map(String::as_str)], &u))
+                .unwrap_or_else(|| "tous les utilisateurs".into()),
             "numéro": m.seq, "envoyé le": m.timestamp, "message": m.text,
             "nœud de remplacement": m.successor.map(|x| hx(&x)) })).collect::<Vec<_>>(),
         "clé d'annonce": {
@@ -1046,6 +1052,9 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             { "nom": "create_announce_key", "titre": "Créer la clé d'annonce", "libellé": "Créer",
               "champs": [],
               "aide": {} },
+            { "nom": "replace_announce_key", "titre": "Phrase d'annonce perdue : remplacer la clé", "libellé": "Remplacer la clé d'annonce",
+              "champs": [],
+              "confirmer": "Remplacer la clé d'annonce ?\n\nUne nouvelle phrase de 24 mots vous sera remise. Chaque utilisateur devra accepter le remplacement dans son application : prévenez-les par un autre moyen (téléphone, courriel…) pour qu'ils sachent que la demande vient bien de vous. Tant qu'un utilisateur n'a pas accepté, une alerte signée par la nouvelle clé ne l'atteint pas." },
             { "nom": "send_alert", "titre": "Alerte : ce Nœud est compromis", "libellé": "Envoyer l'alerte",
               "champs": ["phrase d'annonce", "message", "nœud de remplacement"],
               "aide": { "phrase d'annonce": "Les 24 mots remis à la création de la clé d'annonce ; ils ne sont pas conservés",
@@ -1564,6 +1573,28 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, St
                     Err("message introuvable".to_string())
                 }
             })(),
+            "send_user_message" => (|| {
+                let u = unhex32(field(v, "utilisateur")?.trim())?;
+                if !s.users.contains_key(&u) {
+                    return Err("utilisateur inconnu".to_string());
+                }
+                let n = s.channel.post_info_to(&sh.priv_node, &u, field(v, "message")?, now)?;
+                Ok(json!({ "ok": true, "message": format!("Message n° {n} envoyé à cet utilisateur") }))
+            })(),
+            "replace_announce_key" => s.channel.replace_announce(&sh.priv_node, now).map(|phrase| {
+                json!({ "ok": true, "message": "Nouvelle clé d'annonce créée ; demande de remplacement envoyée aux utilisateurs",
+                        "révéler": {
+                            "titre": "Nouvelle phrase d'annonce : à noter maintenant",
+                            "texte": [
+                                "Ces 24 mots ne seront plus jamais affichés : le Nœud ne les conserve pas.",
+                                "Notez-les sur papier (ne les photographiez pas) et rangez-les à part de la phrase de récupération du Nœud, ailleurs que sur cette machine.",
+                                "Prévenez vos utilisateurs par un autre moyen (téléphone, courriel…) : leur application leur demande d'accepter le remplacement de la clé d'alerte, et ils ne doivent accepter que si vous le leur avez confirmé.",
+                                "Tant qu'un utilisateur n'a pas accepté, une alerte signée par cette nouvelle clé ne l'atteint pas."
+                            ],
+                            "24 mots": phrase,
+                            "fermer": "J'ai noté les 24 mots"
+                        } })
+            }),
             "send_message" => field(v, "message")
                 .and_then(|t| s.channel.post_info(&sh.priv_node, t, now))
                 .map(|n| json!({ "ok": true, "message": format!("Message n° {n} envoyé") })),

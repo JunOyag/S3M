@@ -31,6 +31,8 @@ impl<'a> NodeMessage<'a> {
   pub const VT_KIND: flatbuffers::VOffsetT = 10;
   pub const VT_TEXT: flatbuffers::VOffsetT = 12;
   pub const VT_SUCCESSOR_NODE_ID: flatbuffers::VOffsetT = 14;
+  pub const VT_RECIPIENT: flatbuffers::VOffsetT = 16;
+  pub const VT_ANNOUNCE_REPLACEMENT: flatbuffers::VOffsetT = 18;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -44,6 +46,8 @@ impl<'a> NodeMessage<'a> {
     let mut builder = NodeMessageBuilder::new(_fbb);
     builder.add_timestamp(args.timestamp);
     builder.add_seq(args.seq);
+    if let Some(x) = args.announce_replacement { builder.add_announce_replacement(x); }
+    if let Some(x) = args.recipient { builder.add_recipient(x); }
     if let Some(x) = args.successor_node_id { builder.add_successor_node_id(x); }
     if let Some(x) = args.text { builder.add_text(x); }
     if let Some(x) = args.node_id { builder.add_node_id(x); }
@@ -94,6 +98,20 @@ impl<'a> NodeMessage<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(NodeMessage::VT_SUCCESSOR_NODE_ID, None)}
   }
+  #[inline]
+  pub fn recipient(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(NodeMessage::VT_RECIPIENT, None)}
+  }
+  #[inline]
+  pub fn announce_replacement(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(NodeMessage::VT_ANNOUNCE_REPLACEMENT, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for NodeMessage<'_> {
@@ -109,6 +127,8 @@ impl flatbuffers::Verifiable for NodeMessage<'_> {
      .visit_field::<MessageKind>("kind", Self::VT_KIND, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("text", Self::VT_TEXT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("successor_node_id", Self::VT_SUCCESSOR_NODE_ID, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("recipient", Self::VT_RECIPIENT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("announce_replacement", Self::VT_ANNOUNCE_REPLACEMENT, false)?
      .finish();
     Ok(())
   }
@@ -120,6 +140,8 @@ pub struct NodeMessageArgs<'a> {
     pub kind: MessageKind,
     pub text: Option<flatbuffers::WIPOffset<&'a str>>,
     pub successor_node_id: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub recipient: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub announce_replacement: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
 }
 impl<'a> Default for NodeMessageArgs<'a> {
   #[inline]
@@ -131,6 +153,8 @@ impl<'a> Default for NodeMessageArgs<'a> {
       kind: MessageKind::Info,
       text: None,
       successor_node_id: None,
+      recipient: None,
+      announce_replacement: None,
     }
   }
 }
@@ -165,6 +189,14 @@ impl<'a: 'b, 'b> NodeMessageBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeMessage::VT_SUCCESSOR_NODE_ID, successor_node_id);
   }
   #[inline]
+  pub fn add_recipient(&mut self, recipient: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeMessage::VT_RECIPIENT, recipient);
+  }
+  #[inline]
+  pub fn add_announce_replacement(&mut self, announce_replacement: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(NodeMessage::VT_ANNOUNCE_REPLACEMENT, announce_replacement);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> NodeMessageBuilder<'a, 'b> {
     let start = _fbb.start_table();
     NodeMessageBuilder {
@@ -188,6 +220,8 @@ impl core::fmt::Debug for NodeMessage<'_> {
       ds.field("kind", &self.kind());
       ds.field("text", &self.text());
       ds.field("successor_node_id", &self.successor_node_id());
+      ds.field("recipient", &self.recipient());
+      ds.field("announce_replacement", &self.announce_replacement());
       ds.finish()
   }
 }

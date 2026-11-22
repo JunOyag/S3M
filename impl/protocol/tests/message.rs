@@ -18,6 +18,7 @@ fn msg(node: &Id, seq: u64, kind: Kind, successor: Option<Id>) -> NodeMessage {
         kind,
         text: "maintenance".into(),
         successor,
+        ..Default::default()
     }
 }
 
@@ -83,7 +84,7 @@ fn outbox_reads_since_cursor_prunes_and_inbox_is_rate_limited() {
     assert_eq!(o.push(replay, &node, None), Err(Refusal::Replayed));
     assert_eq!(o.next_seq(Kind::Info), 4);
     assert_eq!(o.next_seq(Kind::Alert), 1);
-    assert_eq!(o.since(1, 0).len(), 2);
+    assert_eq!(o.since(1, 0, &[0; 32]).len(), 2);
     o.prune(1_002 + RETENTION_S);
     assert_eq!(o.sent.len(), 1);
 
@@ -159,4 +160,52 @@ fn messages_requests_and_response_roundtrip() {
             node_name: None
         }
     );
+}
+
+/// Message à un seul Utilisateur et remplacement de clé d'annonce
+/// (`protocols.canal-noeud`) : champs signés, réservés aux `Info`, et
+/// remise filtrée par destinataire.
+#[test]
+fn addressed_info_reaches_only_its_recipient_and_alerts_cannot_carry_it() {
+    let priv_node = [1u8; 32];
+    let node = pk(&priv_node);
+    let (alice, bob) = ([0xa1; 32], [0xb2; 32]);
+    let mut to_alice = msg(&node, 1, Kind::Info, None);
+    to_alice.recipient = Some(alice);
+    let mut replace = msg(&node, 2, Kind::Info, None);
+    replace.announce_replacement = Some([0xcc; 32]);
+    let s = sign_message(&priv_node, &to_alice);
+    let back = verify_message(&s, &node, None).unwrap();
+    assert_eq!(back.recipient, Some(alice));
+    assert_eq!(
+        verify_message(&sign_message(&priv_node, &replace), &node, None)
+            .unwrap()
+            .announce_replacement,
+        Some([0xcc; 32])
+    );
+    // Destinataire signé : le changer invalide la signature.
+    let mut forged = to_alice.clone();
+    forged.recipient = Some(bob);
+    let tampered = Signed {
+        message: encode_message(&forged),
+        signature: s.signature.clone(),
+    };
+    assert!(verify_message(&tampered, &node, None).is_err());
+    // Une alerte ne porte ni destinataire ni remplacement.
+    let priv_announce = [2u8; 32];
+    let mut bad = msg(&node, 1, Kind::Alert, None);
+    bad.recipient = Some(alice);
+    assert!(verify_message(
+        &sign_message(&priv_announce, &bad),
+        &node,
+        Some(&pk(&priv_announce))
+    )
+    .is_err());
+    // Remise : Alice voit le sien et le message général, Bob seulement ce dernier.
+    let mut o = Outbox::default();
+    o.push(s, &node, None).unwrap();
+    o.push(sign_message(&priv_node, &replace), &node, None)
+        .unwrap();
+    assert_eq!(o.since(0, 0, &alice).len(), 2);
+    assert_eq!(o.since(0, 0, &bob).len(), 1);
 }
