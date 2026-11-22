@@ -1602,13 +1602,37 @@ pub fn access_mode(c: &Config) -> &'static str {
 }
 
 /// Emplacement du dossier synchronisé.
+/// Par défaut `%USERPROFILE%\S3m`, ou `%USERPROFILE%\S3m <n>` pour une
+/// identité ajoutée (`…\identites\<n>\connector.json`) : Windows refuse
+/// un dossier synchronisé dans un autre (`deploiement.packaging#plusieurs-identites`).
 pub fn folder_path(c: &Config) -> PathBuf {
     c.folder.clone().unwrap_or_else(|| {
+        let name = c
+            .source
+            .as_deref()
+            .and_then(identity_number)
+            .map(|n| format!("S3m {n}"))
+            .unwrap_or_else(|| "S3m".into());
         std::env::var_os("USERPROFILE")
             .map(PathBuf::from)
             .unwrap_or_else(|| c.data_dir.clone())
-            .join("S3m")
+            .join(name)
     })
+}
+
+/// Numéro d'une identité ajoutée d'après le chemin de sa configuration
+/// (`…\identites\<n>\connector.json`) ; `None` pour l'identité d'origine.
+pub fn identity_number(config_file: &Path) -> Option<u32> {
+    let dir = config_file.parent()?;
+    (dir.parent()?.file_name()? == "identites")
+        .then(|| dir.file_name()?.to_str()?.parse().ok())
+        .flatten()
+}
+
+/// Nom affiché d'une identité : `pseudo · empreinte`.
+pub fn identity_label(sh: &Shared) -> String {
+    let pseudo = sh.names.lock().unwrap().pseudo.clone();
+    s3m_protocol::pseudo::display(&[Some(pseudo.as_str())], &sh.pub_user)
 }
 
 /// Où ouvrir les fichiers : dossier synchronisé ou lettre du lecteur.

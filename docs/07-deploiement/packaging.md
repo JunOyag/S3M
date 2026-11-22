@@ -200,6 +200,33 @@ synchronisation courantes :
   récupération, sel d'attachement) est conservée ; `connector.json` et les
   données locales sont renommés avec un suffixe horodaté, jamais effacés.
 
+### Plusieurs identités {: #plusieurs-identites }
+
+Ajout du 2026-11-22 (étape 2 de l'usage de plusieurs identités, après les
+[pseudos](pseudos.md)). `S3m.exe` fait tourner en même temps plusieurs
+identités Utilisateur, chacune comme un Connecteur complet et indépendant.
+
+- **Rangement** : l'identité d'origine reste dans `%APPDATA%\S3m` ; chaque
+  identité ajoutée a son dossier `%APPDATA%\S3m\identites\<n>` (n = 2, 3…)
+  avec sa configuration, sa phrase de récupération, ses données et sa clé
+  d'appareil. Rien ne relie deux identités vues de l'extérieur.
+- **Ajout** : menu « Ajouter une identité… » : assistant de premier
+  lancement dans ce dossier (nouvelle phrase de 24 mots, ou phrase
+  existante). Une identité n'est jamais dérivée d'une autre phrase.
+- **Accès aux fichiers** : une lettre de lecteur libre par identité, ou un
+  [dossier synchronisé](../04-protocols/acces-applicatif.md#mode-dossier) :
+  `%USERPROFILE%\S3m` pour l'identité d'origine, `%USERPROFILE%\S3m <n>`
+  pour les autres (Windows refuse un dossier synchronisé dans un autre).
+- **Une icône** : sa couleur suit l'identité dans le pire état ; le menu a
+  un sous-menu par identité, nommé `pseudo · empreinte` (ouvrir les
+  fichiers, le tableau de bord — un par identité, sur son propre port —,
+  synchroniser, suspendre, changer de Nœud, retirer l'identité).
+- **Retrait** (identité ajoutée seulement, second clic de confirmation) :
+  S3m redémarre sans elle ; son dossier est renommé `<n>.retiree-<horodatage>`,
+  jamais effacé, et son dossier synchronisé déconnecté.
+- Deux identités peuvent être rattachées au même Nœud (deux Utilisateurs
+  distincts pour lui) ou à des Nœuds différents.
+
 ## API locale {: #api-locale }
 
 Chaque dashboard dialogue avec son moteur par une **API locale** (HTTP et

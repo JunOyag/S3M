@@ -16,6 +16,7 @@ pub mod emergency;
 pub mod exchange;
 pub mod folder_sync;
 pub mod fs;
+pub mod identities;
 pub mod incidents;
 pub mod integrity;
 pub mod lan;
