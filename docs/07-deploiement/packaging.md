@@ -58,7 +58,11 @@ Ajout du 2026-11-20 ([`protocols.partenariat-automatique`](../04-protocols/parte
 - localisation par adresse IP avec une base locale au format MMDB (DB-IP
   « City Lite », CC BY 4.0, attribution affichée), téléchargée à la demande
   de l'opérateur (`s3m-node geoip-update`, ou bouton du dashboard :
-  téléchargement en arrière-plan et rechargement sans redémarrage) ; adresse publiée dans
+  téléchargement en arrière-plan et rechargement sans redémarrage) ; si cette
+  base n'est pas téléchargeable, **repli automatique sur le pays** d'après
+  les données publiques des cinq registres Internet régionaux (fichier
+  local `rir-country.bin`, point au centre approximatif du pays, source
+  affichée) ; adresse publiée dans
   l'entrée DHT pour les Nœuds, adresse de la dernière connexion pour les
   Utilisateurs (enregistrement désactivable) ; une adresse privée (réseau
   local) est localisée par l'adresse publique de ce Nœud (`public_ip`,

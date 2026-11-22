@@ -22,20 +22,50 @@ pub struct Place {
     pub city: String,
 }
 
-/// Base ouverte (ou absente).
-pub struct Geo(Option<maxminddb::Reader<Vec<u8>>>);
+/// Bases ouvertes : DB-IP (ville), sinon repli sur le pays d'après les
+/// registres Internet ([`crate::rir`]).
+pub struct Geo(
+    Option<maxminddb::Reader<Vec<u8>>>,
+    Option<crate::rir::Countries>,
+);
 
 impl Geo {
     pub fn open(path: &Path) -> Self {
-        Self(maxminddb::Reader::open_readfile(path).ok())
+        Self(maxminddb::Reader::open_readfile(path).ok(), None)
+    }
+
+    /// Bases du répertoire de données : DB-IP et, en repli, les registres.
+    pub fn open_dir(dir: &Path) -> Self {
+        Self(
+            maxminddb::Reader::open_readfile(dir.join(DB_FILE)).ok(),
+            crate::rir::Countries::open(dir),
+        )
     }
 
     pub fn none() -> Self {
-        Self(None)
+        Self(None, None)
     }
 
     pub fn available(&self) -> bool {
-        self.0.is_some()
+        self.0.is_some() || self.1.is_some()
+    }
+
+    /// Précision disponible.
+    pub fn mode(&self) -> &'static str {
+        match (&self.0, &self.1) {
+            (Some(_), _) => "ville (DB-IP)",
+            (None, Some(_)) => "pays seulement (registres Internet, repli)",
+            (None, None) => "absente (carte sans positions)",
+        }
+    }
+
+    /// Source à citer.
+    pub fn source(&self) -> &'static str {
+        if self.0.is_none() && self.1.is_some() {
+            crate::rir::RIR_SOURCE
+        } else {
+            ATTRIBUTION
+        }
     }
 
     /// Position d'une adresse ; `None` si privée, inconnue ou base absente.
@@ -44,7 +74,17 @@ impl Geo {
         if is_private(&ip) {
             return None;
         }
-        let r = self.0.as_ref()?;
+        let Some(r) = self.0.as_ref() else {
+            // Repli : pays d'après les registres, au centre du pays.
+            let cc = self.1.as_ref()?.country(&ip)?;
+            let (lat, lon) = crate::rir::centroid(&cc)?;
+            return Some(Place {
+                lat,
+                lon,
+                country: cc,
+                city: String::new(),
+            });
+        };
         let c: maxminddb::geoip2::City = r.lookup(ip).ok()?;
         let loc = c.location?;
         let en = |n: Option<std::collections::BTreeMap<&str, &str>>| {
@@ -97,6 +137,21 @@ pub fn year_month(unix_s: u64) -> (i64, u32) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
     (y, m)
+}
+
+/// Met à jour la géolocalisation : base DB-IP du mois ; si elle n'est pas
+/// téléchargeable, repli automatique sur les registres Internet (pays
+/// seulement). Rend le message à afficher.
+pub fn update_with_fallback(dir: &Path, now: u64) -> Result<String, String> {
+    match update(dir, now) {
+        Ok(_) => Ok("base DB-IP à jour (précision : ville)".into()),
+        Err(e) => match crate::rir::update(dir) {
+            Ok(_) => Ok(format!(
+                "base DB-IP indisponible ({e}) : repli sur les registres Internet (précision : pays)"
+            )),
+            Err(r) => Err(format!("{e} ; repli : {r}")),
+        },
+    }
 }
 
 /// Télécharge la base du mois (ou du mois précédent) dans `dir`.

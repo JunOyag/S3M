@@ -25,7 +25,7 @@ use crate::dispersal_engine::{
 };
 use crate::exchange::{refresh_successors, NodeService, PartnerState, UserAccount};
 use crate::exchange::{AttachPolicy, PartnerPolicy, VdfCheck};
-use crate::geo::{Geo, ATTRIBUTION, DB_FILE};
+use crate::geo::Geo;
 use crate::local_http::{ActionFn, Asset, StatusFn};
 use crate::net::{NatState, NetConfig, RelayLimits};
 use crate::partnering::{excluded, run_partnering, score, Net, PartneringConfig, PartneringReport};
@@ -545,6 +545,8 @@ pub struct GeoipState {
     pub running: bool,
     /// Dernier résultat : `None` = réussie, `Some(erreur)` sinon.
     pub last: Option<Option<String>>,
+    /// Précision obtenue lors de la dernière réussite (repli éventuel).
+    pub note: Option<String>,
 }
 
 /// Espace de secours vu du dashboard (`protocols.espace-secours`).
@@ -878,9 +880,12 @@ fn geoip_status(sh: &Shared) -> Value {
         (false, Some(Some(e))) => format!("échec : {e}"),
     };
     json!({
-        "base": if sh.geo.read().unwrap().available() { "présente" } else { "absente (carte sans positions)" },
-        "dernière mise à jour": state,
-        "source": ATTRIBUTION,
+        "précision": sh.geo.read().unwrap().mode(),
+        "dernière mise à jour": match (&g.note, state.as_str()) {
+            (Some(n), "réussie") => n.clone(),
+            _ => state.clone(),
+        },
+        "source": sh.geo.read().unwrap().source(),
     })
 }
 
@@ -910,12 +915,13 @@ pub fn geoip_update(sh: Arc<Shared>) -> Result<Value, String> {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let r = crate::geo::update(&sh.config.data_dir, now);
-        if let Ok(p) = &r {
-            *sh.geo.write().unwrap() = Geo::open(p);
+        let r = crate::geo::update_with_fallback(&sh.config.data_dir, now);
+        if r.is_ok() {
+            *sh.geo.write().unwrap() = Geo::open_dir(&sh.config.data_dir);
         }
         let mut g = sh.geoip.lock().unwrap();
         g.running = false;
+        g.note = r.as_ref().ok().cloned();
         g.last = Some(r.err());
     });
     Ok(json!({ "ok": true,
@@ -1484,7 +1490,7 @@ pub fn map_points(sh: &Shared) -> Value {
             },
         );
     }
-    json!({ "points": points, "non_localises": unlocated, "geoip": sh.geo.read().unwrap().available(), "attribution": ATTRIBUTION })
+    json!({ "points": points, "non_localises": unlocated, "geoip": sh.geo.read().unwrap().available(), "attribution": sh.geo.read().unwrap().source() })
 }
 
 fn dispersal_path(c: &Config) -> PathBuf {
@@ -1920,7 +1926,7 @@ pub async fn start_with(
         addrs: Arc::new(Mutex::new(addrs)),
         excluded: Arc::new(Mutex::new(Default::default())),
         nat: nat.clone(),
-        geo: std::sync::RwLock::new(Geo::open(&config.data_dir.join(DB_FILE))),
+        geo: std::sync::RwLock::new(Geo::open_dir(&config.data_dir)),
         geoip: Mutex::new(GeoipState::default()),
         last_partnering: Mutex::new(None),
         dispersal: tokio::sync::Mutex::new(dispersal),

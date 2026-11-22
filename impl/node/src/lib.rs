@@ -26,6 +26,7 @@ pub mod publish;
 pub mod quota_sync;
 pub mod recovery;
 pub mod restore;
+pub mod rir;
 pub mod self_repair;
 pub mod settings;
 pub mod setup;

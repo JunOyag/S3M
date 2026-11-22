@@ -97,9 +97,9 @@ async fn main() {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            match s3m_node::geo::update(Path::new(dir), now) {
-                Ok(p) => {
-                    println!("Base de géolocalisation : {} ({})", p.display(), s3m_node::geo::ATTRIBUTION);
+            match s3m_node::geo::update_with_fallback(Path::new(dir), now) {
+                Ok(m) => {
+                    println!("Géolocalisation : {m}");
                     Ok(())
                 }
                 Err(e) => Err(e.into()),
