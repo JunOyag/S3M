@@ -663,11 +663,25 @@ fn channel_status(sh: &Shared, v: &mut Value) {
             "pointeur de migration": "ignoré (l'alerte l'emporte)",
         }),
     };
-    v["messages du nœud"] = json!(c.received.iter().rev().map(|m| json!({
-        "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" }
-            else if m.announce_replacement.is_some() { "remplacement de la clé d'alerte" } else { "information" },
-        "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" },
-        "reçu le": m.timestamp, "message": m.text })).collect::<Vec<_>>());
+    v["messages du nœud"] = json!(c.received.iter().rev().map(|m| {
+        let kind = if m.kind == s3m_protocol::message::Kind::Alert { "alerte" }
+            else if m.announce_replacement.is_some() { "remplacement de la clé d'alerte" } else { "information" };
+        let reply = json!({
+            "titre": format!("Message de votre Nœud ({kind})"),
+            "contenu": { "reçu le": m.timestamp, "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" } },
+            "message": m.text,
+            "formulaires": [{ "nom": "send_node_message", "titre": "Répondre", "libellé": "Envoyer la réponse",
+                "champs": ["message"], "libellés": { "message": "réponse" }, "types": { "message": "texte" },
+                "aide": { "message": "Lue par l'opérateur de votre Nœud ; occupe 4 Kio de votre quota pendant 30 jours" } }],
+        });
+        json!({
+            "sorte": kind,
+            "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" },
+            "reçu le": m.timestamp,
+            "_ouvrir": reply.clone(),
+            "_actions": [{ "nom": "reply_node", "libellé": "Répondre", "panneau": reply }],
+        })
+    }).collect::<Vec<_>>());
     if let Some((k, seq)) = c.pending_announce {
         v["remplacement de la clé d'alerte"] = json!({
             "nouvelle clé": s3m_protocol::pseudo::fingerprint(&k),
@@ -686,7 +700,7 @@ fn channel_status(sh: &Shared, v: &mut Value) {
     v["clé d'annonce du nœud"] = json!(c.announce.map(hex::encode));
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
         a.push(json!({ "nom": "send_node_message", "titre": "Écrire à mon Nœud", "libellé": "Envoyer",
-            "champs": ["message"],
+            "champs": ["message"], "types": { "message": "texte" },
             "aide": { "message": "Lu par l'opérateur de votre Nœud (4 096 octets au plus, 10 messages par jour) ; chaque message occupe 4 Kio de votre quota pendant 30 jours" } }));
         if c.pending_announce.is_some() {
             a.push(json!({ "nom": "accept_announce_replacement", "titre": "Remplacement de la clé d'alerte",
@@ -876,6 +890,9 @@ fn status_base(sh: &Shared) -> Value {
               "aide": { "lettre du lecteur": format!("Lettres libres : {}. S3m redémarre ; les modifications en attente sont conservées.", free_letters().join(", ")) } },
             { "nom": "set_access", "titre": "Accès aux fichiers", "libellé": "Enregistrer",
               "champs": ["accès", "dossier"],
+              "types": { "accès": "choix", "dossier": "chemin" },
+              "options": { "accès": [["dossier", "Dossier synchronisé (comme OneDrive)"], ["lecteur", "Périphérique (lettre de lecteur, WinFsp)"]] },
+              "visible_si": { "dossier": ["accès", "dossier"] },
               "valeurs": { "accès": access_mode(&sh.config), "dossier": folder_path(&sh.config).display().to_string() },
               "aide": { "accès": "« lecteur » : une lettre de lecteur (WinFsp requis, installé par un administrateur) ; « dossier » : un dossier synchronisé, comme OneDrive, sans rien à installer. Pris en compte au prochain lancement de S3m.",
                         "dossier": "Emplacement du dossier synchronisé, sur un disque local NTFS" } },
@@ -1556,6 +1573,8 @@ pub async fn start(
             | "accept_announce_replacement"
             | "refuse_announce_replacement" => channel_action(&sh, name, &v),
             "set_pseudo" | "set_node_label" => names_action(&sh, name, &v),
+            "fs_browse" => s3m_protocol::local_fs::browse(&v),
+            "fs_mkdir" => s3m_protocol::local_fs::mkdir(&v),
             "change_node" => {
                 if v.get("je confirme").and_then(|x| x.as_bool()) != Some(true) {
                     return Err("cochez « je confirme » pour changer de Nœud".into());

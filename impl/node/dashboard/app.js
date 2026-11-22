@@ -124,6 +124,24 @@ const LABELS = {
   "numéro": ["Numéro", ""],
   "numéro ou adresse": ["Numéro ou adresse", "Numéro du Nœud dans la liste, ou son adresse /ip4/…/p2p/…"],
   "2. nœuds trouvés sur le réseau local": ["Nœuds trouvés sur le réseau local", ""],
+  "dossier synchronisé": ["Dossier synchronisé", "Dossier où vos fichiers apparaissent en mode dossier, comme OneDrive : ils ne sont téléchargés qu'à l'ouverture."],
+  "accès aux fichiers": ["Accès aux fichiers", "« lecteur » : une lettre de lecteur (WinFsp requis) ; « dossier » : un dossier synchronisé, sans rien à installer."],
+  "accès": ["Accès", "« lecteur » ou « dossier » ; pris en compte au prochain lancement de S3m."],
+  "dossier": ["Dossier", "Emplacement du dossier synchronisé, sur un disque local."],
+  "remplacement de la clé d'alerte": ["Remplacement de la clé d'alerte", "Demande de votre Nœud, à accepter seulement après confirmation de son opérateur par un autre moyen."],
+  "nouvelle clé": ["Nouvelle clé", "Empreinte de la clé d'alerte proposée."],
+  "clé actuelle": ["Clé actuelle", "Empreinte de la clé d'alerte retenue jusqu'ici."],
+  "pour": ["Pour", "Message adressé à vous seul, ou à tous les utilisateurs du Nœud."],
+  "4. accès aux fichiers": ["Accès aux fichiers", "Lettre de lecteur (WinFsp requis) ou dossier synchronisé, comme OneDrive."],
+  "accès choisi": ["Accès choisi", "Modifiable ensuite dans le tableau de bord (relance de S3m)."],
+  "texte": ["Message", ""],
+  "de": ["De", "Utilisateur auteur du message."],
+  "taille (octets)": ["Taille", "Taille du message ; chacun occupe 4 Kio du quota de son auteur."],
+  "emplacement": ["Emplacement", "Lettre ou point de montage du lecteur."],
+  "réponse": ["Réponse", "Votre réponse, lue par cet utilisateur seul à son prochain contact."],
+  "espace": ["Espace", ""],
+  "lettre": ["Lettre du lecteur", "Lettre libre sous laquelle vos fichiers apparaîtront dans l'Explorateur."],
+  "point de montage": ["Point de montage", "Dossier vide où le lecteur sera monté."],
   "code d'appairage": ["Code d'appairage", "Code affiché par le Nœud à configurer."],
   "phrase de récupération": ["Phrase de récupération", "Les 24 mots d'une identité existante, séparés par des espaces."],
   "24 mots": ["Phrase de récupération (24 mots)", "À noter et garder en lieu sûr : elle permet de tout restaurer."],
@@ -375,6 +393,17 @@ function toast(message, kind = "ok", href) {
 
 // ---------------------------------------------------------------- actions
 
+// Appel sans message : rend la réponse JSON, ou lève l'erreur du moteur.
+async function callAction(nom, body) {
+  const r = await fetch("/api/action/" + encodeURIComponent(nom), {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json().catch(() => ({}));
+}
+
 // Rend `true` si l'action a réussi.
 async function runAction(nom, body, button, label) {
   let ok = false;
@@ -436,8 +465,13 @@ function openPanel(p) {
   const { d, close } = modal(p["titre"] || "Modifier");
   const texts = Array.isArray(p["texte"]) ? p["texte"] : p["texte"] ? [p["texte"]] : [];
   texts.forEach((t) => d.appendChild(el("p", t, "muted")));
+  // `contenu` : valeurs affichées (ex. le message ouvert), `message` en bloc.
+  if (p["contenu"]) d.appendChild(render(p["contenu"]));
+  if (p["message"] !== undefined) d.appendChild(el("blockquote", p["message"], "message"));
   (p["formulaires"] || []).forEach((a) => d.appendChild(actionForm(a, close)));
   d.showModal();
+  const first = d.querySelector("textarea, input:not([type=hidden])");
+  if (first) first.focus();
 }
 
 // Secret affiché une seule fois (24 mots en grille 6 × 4) et démarche.
@@ -516,18 +550,39 @@ function valueNode(v, k) {
 function rowActions(list) {
   const td = el("td", undefined, "row-actions");
   for (const a of list || []) {
-    const b = el("button", a["libellé"], "small");
-    // `panneau` : le bouton ouvre un panneau d'édition (formulaires).
-    b.addEventListener("click", () =>
-      a["panneau"] ? openPanel(a["panneau"]) : runAction(a["nom"], a["valeurs"] || {}, b, a["libellé"]));
+    // `champs` : zones de saisie dans la ligne, envoyées avec `valeurs`.
+    const inputs = (a["panneau"] ? [] : a["champs"] || []).map((name) => {
+      const i = el("input", undefined, "row-input");
+      i.name = name;
+      i.autocomplete = "off";
+      i.placeholder = lab(name).text;
+      i.title = lab(name).tip || lab(name).text;
+      td.appendChild(i);
+      return i;
+    });
+    const b = el("button", a["libellé"], "small" + (a["style"] ? " " + a["style"] : ""));
+    b.type = "button";
+    // `panneau` : le bouton ouvre un panneau (formulaires) ; `confirmer` :
+    // confirmation avant l'envoi.
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (a["panneau"]) return openPanel(a["panneau"]);
+      if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
+      const v = Object.assign({}, a["valeurs"] || {});
+      inputs.forEach((i) => (v[i.name] = i.value));
+      runAction(a["nom"], v, b, a["libellé"]);
+    });
     td.appendChild(b);
   }
   return td;
 }
 
-// Tableaux : 25 lignes par page, export CSV (séparateur « ; », Excel).
-const PAGE = 25;
+// Tableaux : filtre, tri, 10 / 50 / 100 lignes par page (ou un nombre
+// saisi), export CSV (séparateur « ; », Excel). Une ligne qui porte
+// `_ouvrir` s'ouvre dans un panneau au clic.
+const PAGE_SIZES = [10, 50, 100];
 const tableState = {};
+const HIDDEN_COLS = new Set(["_actions", "_ouvrir"]);
 
 function csvOf(cols, rows) {
   const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
@@ -552,19 +607,61 @@ function render(value, key) {
       value.forEach((v) => ul.appendChild(el("li", cell(v))));
       return ul;
     }
-    const cols = [...new Set(value.flatMap((o) => Object.keys(o)))].filter((c) => c !== "_actions");
+    const cols = [...new Set(value.flatMap((o) => Object.keys(o)))].filter((c) => !HIDDEN_COLS.has(c));
     const withActions = value.some((o) => o["_actions"]);
     const box = el("div", undefined, "table-box");
     const t = el("table");
     const head = t.createTHead().insertRow();
     const body = t.createTBody();
     // Tri et page conservés d'un rafraîchissement à l'autre (par section).
-    const st = key ? (tableState[key] = tableState[key] || { sortCol: null, asc: true, page: 0 }) : { sortCol: null, asc: true, page: 0 };
+    const fresh = () => ({ sortCol: null, asc: true, page: 0, size: 10, filter: "" });
+    const st = key ? (tableState[key] = tableState[key] || fresh()) : fresh();
     const foot = el("div", undefined, "table-foot");
+    // Barre d'outils : filtre et nombre de lignes par page.
+    const tools = el("div", undefined, "table-tools");
+    if (value.length > 5) {
+      const q = el("input", undefined, "table-filter");
+      q.type = "search";
+      q.placeholder = "Filtrer…";
+      q.value = st.filter;
+      q.dataset.filterKey = key || "";
+      q.addEventListener("input", () => { st.filter = q.value; st.page = 0; fill(); });
+      tools.appendChild(q);
+    }
+    if (value.length > PAGE_SIZES[0]) {
+      const sizeBox = el("label", undefined, "page-size");
+      sizeBox.appendChild(el("span", "Lignes par page"));
+      const sel = el("select");
+      [...PAGE_SIZES, "autre"].forEach((n) => {
+        const o = el("option", n === "autre" ? "Autre…" : String(n));
+        o.value = String(n);
+        sel.appendChild(o);
+      });
+      sel.value = PAGE_SIZES.includes(st.size) ? String(st.size) : "autre";
+      const other = el("input", undefined, "page-size-other");
+      other.type = "number";
+      other.min = "1";
+      other.value = String(st.size);
+      other.hidden = sel.value !== "autre";
+      sel.addEventListener("change", () => {
+        other.hidden = sel.value !== "autre";
+        if (sel.value !== "autre") { st.size = Number(sel.value); st.page = 0; fill(); } else other.focus();
+      });
+      other.addEventListener("change", () => {
+        const n = Math.max(1, Math.floor(Number(other.value) || 10));
+        st.size = n; st.page = 0; fill();
+      });
+      sizeBox.append(sel, other);
+      tools.appendChild(sizeBox);
+    }
+    const matches = (o) => {
+      const f = st.filter.trim().toLowerCase();
+      return !f || cols.some((c) => fmt(c, o[c]).toLowerCase().includes(f));
+    };
     const sorted = () =>
       st.sortCol === null
-        ? value
-        : [...value].sort((a, b) => {
+        ? value.filter(matches)
+        : value.filter(matches).sort((a, b) => {
             const x = a[st.sortCol], y = b[st.sortCol];
             const r = typeof x === "number" && typeof y === "number" ? x - y : cell(x).localeCompare(cell(y), "fr", { numeric: true });
             return st.asc ? r : -r;
@@ -572,10 +669,25 @@ function render(value, key) {
     const fill = () => {
       body.replaceChildren();
       const rows = sorted();
-      const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+      const size = st.size || 10;
+      const pages = Math.max(1, Math.ceil(rows.length / size));
       st.page = Math.min(st.page, pages - 1);
-      rows.slice(st.page * PAGE, (st.page + 1) * PAGE).forEach((o) => {
+      if (!rows.length) {
         const r = body.insertRow();
+        const c = el("td", st.filter ? "Aucune ligne ne correspond au filtre" : "Aucun", "empty");
+        c.colSpan = cols.length + (withActions ? 1 : 0);
+        r.appendChild(c);
+      }
+      rows.slice(st.page * size, (st.page + 1) * size).forEach((o) => {
+        const r = body.insertRow();
+        if (o["_ouvrir"]) {
+          r.classList.add("clickable");
+          r.tabIndex = 0;
+          r.title = "Ouvrir";
+          const open = () => openPanel(o["_ouvrir"]);
+          r.addEventListener("click", open);
+          r.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
+        }
         cols.forEach((c) => {
           const text = fmt(c, o[c]);
           // Valeur longue (chemin, identifiant) : largeur minimale lisible.
@@ -592,6 +704,8 @@ function render(value, key) {
         prev.addEventListener("click", () => { st.page--; fill(); });
         next.addEventListener("click", () => { st.page++; fill(); });
         foot.append(prev, el("span", `page ${st.page + 1} / ${pages} · ${rows.length} lignes`, "muted"), next);
+      } else if (rows.length) {
+        foot.append(el("span", `${rows.length} ligne${rows.length > 1 ? "s" : ""}`, "muted"));
       }
       if (key) {
         const csv = el("button", "Exporter en CSV", "small");
@@ -621,6 +735,7 @@ function render(value, key) {
     });
     if (withActions) head.appendChild(el("th", ""));
     fill();
+    if (tools.childNodes.length) box.append(tools);
     box.append(t, foot);
     return box;
   }
@@ -646,17 +761,76 @@ function actionForm(a, done) {
   const values = a["valeurs"] || {};
   const types = a["types"] || {};
   const help = a["aide"] || {};
+  // `options` : choix d'un champ `choix` ([valeur, libellé]) ou suggestions
+  // d'un champ `lettre` ; `visible_si` : { champ: [autre champ, valeur] }.
+  const options = a["options"] || {};
+  const visibleIf = a["visible_si"] || {};
+  const labelsOf = {};
   // `libellés` : texte affiché d'un champ (le nom envoyé reste `champs`).
   const labels = a["libellés"] || {};
   if (a["titre"]) f.appendChild(el("h3", a["titre"]));
   const inputs = (a["champs"] || []).map((name) => {
     const l = el("label");
-    const i = el("input");
+    labelsOf[name] = l;
+    const type = types[name];
+    const i = type === "texte" ? el("textarea") : type === "choix" ? el("select") : el("input");
     i.name = name;
     i.autocomplete = "off";
     const text = labels[name] ? labels[name].charAt(0).toUpperCase() + labels[name].slice(1) : lab(name).text;
     const tip = help[name] || lab(name).tip;
-    if (types[name] === "bool") {
+    if (type === "texte") {
+      i.rows = 5;
+      if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
+      l.classList.add("wide");
+      l.append(el("span", text), i);
+      if (tip) l.firstChild.appendChild(el("span", " ⓘ", "tip"));
+    } else if (type === "choix") {
+      (options[name] || []).forEach(([v, t]) => {
+        const o = el("option", t);
+        o.value = v;
+        i.appendChild(o);
+      });
+      if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
+      l.append(el("span", text), i);
+      if (tip) l.firstChild.appendChild(el("span", " ⓘ", "tip"));
+    } else if (type === "chemin") {
+      // Chemin saisissable, ou choisi avec l'explorateur ; espace du disque.
+      if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
+      const row = el("span", undefined, "path-row");
+      const browse = el("button", "Parcourir…", "small secondary");
+      browse.type = "button";
+      const space = el("span", "", "muted path-space");
+      const showSpace = async () => {
+        if (!i.value.trim()) { space.textContent = ""; return; }
+        try {
+          const r = await callAction("fs_browse", { chemin: i.value.trim(), "espace seul": true });
+          space.textContent = spaceText(r["données"] && r["données"]["espace"]);
+        } catch (_) {
+          space.textContent = "";
+        }
+      };
+      browse.addEventListener("click", () => openBrowser(i.value.trim(), (p) => { i.value = p; showSpace(); }));
+      i.addEventListener("change", showSpace);
+      row.append(i, browse);
+      l.classList.add("wide");
+      l.append(el("span", text), row, space);
+      if (tip) l.firstChild.appendChild(el("span", " ⓘ", "tip"));
+      showSpace();
+    } else if (type === "lettre") {
+      // Lettre saisissable, avec les lettres libres en suggestion.
+      const list = el("datalist");
+      list.id = "dl-" + Math.random().toString(36).slice(2);
+      (options[name] || []).forEach((v) => {
+        const o = el("option");
+        o.value = Array.isArray(v) ? v[0] : v;
+        list.appendChild(o);
+      });
+      i.setAttribute("list", list.id);
+      i.classList.add("short-input");
+      if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
+      l.append(el("span", text), i, list);
+      if (tip) l.firstChild.appendChild(el("span", " ⓘ", "tip"));
+    } else if (type === "bool") {
       i.type = "checkbox";
       i.checked = values[name] === true;
       l.classList.add("check");
@@ -672,18 +846,113 @@ function actionForm(a, done) {
     f.appendChild(l);
     return i;
   });
-  const b = el("button", a["libellé"]);
+  // Visibilité conditionnelle des champs.
+  const sync = () => {
+    Object.entries(visibleIf).forEach(([name, [other, want]]) => {
+      const o = inputs.find((x) => x.name === other);
+      if (labelsOf[name] && o) labelsOf[name].hidden = o.value !== want;
+    });
+  };
+  inputs.forEach((x) => x.addEventListener("change", sync));
+  sync();
+  const b = el("button", a["libellé"], a["style"]);
   b.type = "submit";
   f.appendChild(b);
   f.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const body = Object.assign({}, a["fixes"] || {}, a["valeurs"] && !(a["champs"] || []).length ? a["valeurs"] : {});
-    inputs.forEach((i) => (body[i.name] = i.type === "checkbox" ? i.checked : i.value.trim()));
+    inputs
+      .filter((i) => !(labelsOf[i.name] && labelsOf[i.name].hidden))
+      .forEach((i) => (body[i.name] = i.type === "checkbox" ? i.checked : i.value.trim()));
     // `confirmer` : fenêtre de confirmation avant l'envoi.
     if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
     runAction(a["nom"], body, b, a["libellé"]).then((ok) => ok && done && done());
   });
   return f;
+}
+
+// --------------------------------------------------------- explorateur
+
+function spaceText(e) {
+  if (!e || !e["total (octets)"]) return "";
+  const t = e["total (octets)"], f = e["disponible (octets)"];
+  return `Espace : ${bytes(f)} disponibles sur ${bytes(t)} (${Math.round((f * 100) / t)} % restant)`;
+}
+
+// Choix d'un dossier : racines (disques, points de montage), dossier parent,
+// sous-dossiers, création d'un dossier, chemin saisissable ; espace affiché.
+function openBrowser(start, pick) {
+  const { d, close } = modal("Choisir un dossier");
+  const bar = el("form", undefined, "browser-bar");
+  const path = el("input");
+  path.value = start || "";
+  path.placeholder = "Chemin du dossier";
+  const go = el("button", "Aller", "small");
+  go.type = "submit";
+  bar.append(path, go);
+  const roots = el("div", undefined, "browser-roots");
+  const space = el("p", "", "muted");
+  const list = el("ul", undefined, "browser-list");
+  const mk = el("form", undefined, "browser-new");
+  const name = el("input");
+  name.placeholder = "Nom du nouveau dossier";
+  const mkb = el("button", "Créer le dossier", "small secondary");
+  mkb.type = "submit";
+  mk.append(name, mkb);
+  const choose = el("button", "Choisir ce dossier");
+  choose.type = "button";
+  const err = el("p", "", "error");
+  d.append(bar, roots, space, list, mk, err, choose);
+  let current = "";
+  const load = async (p) => {
+    err.textContent = "";
+    try {
+      const r = (await callAction("fs_browse", { chemin: p }))["données"] || {};
+      current = r["chemin"] || "";
+      path.value = current;
+      space.textContent = spaceText(r["espace"]);
+      roots.replaceChildren();
+      (r["racines"] || []).forEach((x) => {
+        const b = el("button", x, "small secondary");
+        b.type = "button";
+        b.addEventListener("click", () => load(x));
+        roots.appendChild(b);
+      });
+      list.replaceChildren();
+      if (r["parent"]) {
+        const li = el("li", "⬑ Dossier parent", "up");
+        li.tabIndex = 0;
+        li.addEventListener("click", () => load(r["parent"]));
+        list.appendChild(li);
+      }
+      (r["dossiers"] || []).forEach((n) => {
+        const li = el("li", "📁 " + n);
+        li.tabIndex = 0;
+        li.addEventListener("click", () => load(r["séparateur"] ? current.replace(/[\\/]$/, "") + r["séparateur"] + n : n));
+        li.addEventListener("keydown", (e) => { if (e.key === "Enter") li.click(); });
+        list.appendChild(li);
+      });
+      if (!(r["dossiers"] || []).length) list.appendChild(el("li", "Aucun sous-dossier", "empty"));
+      choose.disabled = !current;
+    } catch (e) {
+      err.textContent = e.message;
+    }
+  };
+  bar.addEventListener("submit", (e) => { e.preventDefault(); load(path.value.trim()); });
+  mk.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!name.value.trim()) return;
+    try {
+      const r = await callAction("fs_mkdir", { chemin: current, nom: name.value.trim() });
+      name.value = "";
+      load((r["données"] || {})["chemin"] || current);
+    } catch (x) {
+      err.textContent = x.message;
+    }
+  });
+  choose.addEventListener("click", () => { pick(current); close(); });
+  d.showModal();
+  load(start || "");
 }
 
 // --------------------------------------------------------------- affichage
@@ -692,6 +961,7 @@ function actionForm(a, done) {
 // `résumé` (indicateurs de la vue d'ensemble). Sans `pages`, un seul écran.
 const RESERVED = new Set(["titre", "actions", "carte", "pages", "résumé"]);
 let actionsKey = "";
+const tabState = {};
 let lastStatus = null;
 let page = null;
 
@@ -770,6 +1040,16 @@ function cards(list) {
 
 function show(status) {
   lastStatus = status;
+  // Pas de redessin pendant qu'un panneau est ouvert, ni de perte de saisie
+  // dans un filtre de tableau.
+  const focused = document.activeElement;
+  const filterKey = focused && focused.dataset ? focused.dataset.filterKey : undefined;
+  const caret = filterKey !== undefined ? focused.selectionStart : 0;
+  setTimeout(() => {
+    if (filterKey === undefined) return;
+    const q = [...document.querySelectorAll("input.table-filter")].find((x) => x.dataset.filterKey === filterKey);
+    if (q) { q.focus(); q.setSelectionRange(caret, caret); }
+  }, 0);
   document.getElementById("title").textContent = status["titre"] || "S3m";
   document.title = status["titre"] || "S3m";
   const pages = pagesOf(status);
@@ -843,7 +1123,38 @@ function show(status) {
     const s = el("section");
     s.id = "actions";
     s.appendChild(el("h2", "Actions"));
-    actions.forEach((a) => s.appendChild(actionForm(a)));
+    if (p["onglets"] && actions.length > 1) {
+      // Une sous-section par onglet ; l'onglet ouvert est retenu.
+      const tabs = el("div", undefined, "tabs");
+      tabs.setAttribute("role", "tablist");
+      const panes = actions.map((a) => {
+        const pane = actionForm(a);
+        pane.hidden = true;
+        return pane;
+      });
+      const name = (a) => (a["titre"] || a["libellé"] || a["nom"]).replace(/^Configuration — /, "");
+      const pick = (n) => {
+        tabState[page] = n;
+        [...tabs.children].forEach((b, j) => b.setAttribute("aria-selected", String(j === n)));
+        panes.forEach((x, j) => (x.hidden = j !== n));
+      };
+      actions.forEach((a, n) => {
+        const b = el("button", name(a), "tab");
+        b.type = "button";
+        b.setAttribute("role", "tab");
+        b.addEventListener("click", () => pick(n));
+        tabs.appendChild(b);
+      });
+      s.appendChild(tabs);
+      panes.forEach((x) => {
+        const h = x.querySelector("h3");
+        if (h) h.remove();
+        s.appendChild(x);
+      });
+      pick(Math.min(tabState[page] || 0, actions.length - 1));
+    } else {
+      actions.forEach((a) => s.appendChild(actionForm(a)));
+    }
     main.appendChild(s);
     actionsKey = key;
   }

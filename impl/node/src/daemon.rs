@@ -659,14 +659,14 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "messages", "titre": "Messages",
           "sections": ["messages des utilisateurs", "messages envoyés", "clé d'annonce"],
-          "actions": ["send_message", "delete_user_message", "create_announce_key", "replace_announce_key", "send_alert"] },
+          "actions": ["send_message", "create_announce_key", "replace_announce_key", "send_alert"] },
         { "id": "secours", "titre": "Espace de secours",
           "sections": ["espace de secours"], "actions": ["set_emergency_policy"] },
         { "id": "reseau", "titre": "Réseau",
           "sections": ["traversée de NAT", "annuaire (entrée Node)", "republication DHT", "géolocalisation"], "actions": ["geoip_update"] },
         { "id": "distance", "titre": "Administration à distance",
           "sections": ["administration à distance"], "actions": ["show_totp", "regenerate_totp"] },
-        { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config"] },
+        { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config"], "onglets": true },
         { "id": "diagnostic", "titre": "Diagnostic", "autres": true,
           "sections": ["migration"], "actions": [] }
     ]);
@@ -920,9 +920,16 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                               "valeurs": { "étiquette": s.user_labels.get(id).cloned().unwrap_or_default() },
                               "aide": { "étiquette": "Visible par vous seul ; vide pour l'effacer" } },
                             { "nom": "send_user_message", "titre": "Message à cet utilisateur", "libellé": "Envoyer",
-                              "champs": ["message"], "fixes": { "utilisateur": hx(id) },
+                              "champs": ["message"], "fixes": { "utilisateur": hx(id) }, "types": { "message": "texte" },
                               "aide": { "message": "Lu par cet utilisateur seul à son prochain contact (4 096 octets au plus, conservé 30 jours)" } },
-                        ] } }] })
+                        ] } },
+                        { "nom": "write_user", "libellé": "Écrire", "style": "secondary", "panneau": {
+                            "titre": format!("Message à {name}"),
+                            "formulaires": [
+                                { "nom": "send_user_message", "libellé": "Envoyer",
+                                  "champs": ["message"], "fixes": { "utilisateur": hx(id) }, "types": { "message": "texte" },
+                                  "aide": { "message": "Lu par cet utilisateur seul à son prochain contact (4 096 octets au plus, conservé 30 jours)" } },
+                            ] } }] })
         })
         .collect();
     users.sort_by_key(|v| v["utilisateur"].to_string());
@@ -1020,8 +1027,31 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "pointeurs de migration connus": s.successors.len(),
         },
         "espace de secours": emergency_status(sh, &s),
-        "messages des utilisateurs": s.channel.inbox.received.iter().rev().map(|m| json!({
-            "utilisateur": hx(&m.user_id), "reçu le": m.timestamp, "n°": m.timestamp, "message": m.text })).collect::<Vec<_>>(),
+        "messages des utilisateurs": s.channel.inbox.received.iter().rev().map(|m| {
+            let who = s3m_protocol::pseudo::display(&[s.user_labels.get(&m.user_id).map(String::as_str)], &m.user_id);
+            let reply = json!({
+                "titre": format!("Message de {who}"),
+                "contenu": { "de": who, "reçu le": m.timestamp },
+                "message": m.text,
+                "formulaires": [
+                    { "nom": "send_user_message", "titre": "Répondre", "libellé": "Envoyer la réponse",
+                      "champs": ["message"], "libellés": { "message": "réponse" }, "types": { "message": "texte" },
+                      "fixes": { "utilisateur": hx(&m.user_id) },
+                      "aide": { "message": "Lue par cet utilisateur seul à son prochain contact" } },
+                    { "nom": "delete_user_message", "libellé": "Supprimer ce message", "champs": [], "style": "danger",
+                      "valeurs": { "utilisateur": hx(&m.user_id), "n°": m.timestamp },
+                      "confirmer": "Supprimer ce message ? Les 4 Kio qu'il occupe sont rendus au quota de l'utilisateur." },
+                ] });
+            json!({
+                "de": who, "reçu le": m.timestamp, "taille (octets)": m.text.len(),
+                "_ouvrir": reply.clone(),
+                "_actions": [
+                    { "nom": "reply_user", "libellé": "Répondre", "panneau": reply },
+                    { "nom": "delete_user_message", "libellé": "Supprimer", "style": "danger",
+                      "valeurs": { "utilisateur": hx(&m.user_id), "n°": m.timestamp },
+                      "confirmer": "Supprimer ce message ? Les 4 Kio qu'il occupe sont rendus au quota de l'utilisateur." },
+                ] })
+        }).collect::<Vec<_>>(),
         "messages envoyés": s.channel.outbox.sent.iter().rev().map(|(m, _)| json!({
             "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" }
                 else if m.announce_replacement.is_some() { "remplacement de la clé d'annonce" } else { "information" },
@@ -1041,14 +1071,9 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             { "nom": "set_node_name", "titre": "Nom du Nœud", "libellé": "Enregistrer",
               "champs": ["nom"], "valeurs": { "nom": s.name.clone().unwrap_or_default() },
               "aide": { "nom": "Publié dans l'annuaire et affiché par les connecteurs avec l'empreinte du Nœud (64 octets au plus) ; vide pour aucun nom" } },
-            { "nom": "send_message", "titre": "Écrire aux utilisateurs", "libellé": "Envoyer",
-              "champs": ["message"],
-              "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (4 096 octets au plus, conservé 30 jours)" } },
-            { "nom": "delete_user_message", "titre": "Supprimer un message reçu", "libellé": "Supprimer",
-              "champs": ["utilisateur", "n°"],
-              "types": { "n°": "number" },
-              "aide": { "utilisateur": "Identifiant de l'utilisateur (colonne « Utilisateur »)",
-                        "n°": "Colonne « N° » du message ; les 4 Kio qu'il occupe sont rendus au quota de l'utilisateur" } },
+            { "nom": "send_message", "titre": "Écrire à tous les utilisateurs", "libellé": "Envoyer à tous",
+              "champs": ["message"], "types": { "message": "texte" },
+              "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (4 096 octets au plus, conservé 30 jours). Pour un seul utilisateur : bouton « Écrire » de sa ligne (page Utilisateurs) ou « Répondre » sur son message." } },
             { "nom": "create_announce_key", "titre": "Créer la clé d'annonce", "libellé": "Créer",
               "champs": [],
               "aide": {} },
@@ -1057,6 +1082,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "confirmer": "Remplacer la clé d'annonce ?\n\nUne nouvelle phrase de 24 mots vous sera remise. Chaque utilisateur devra accepter le remplacement dans son application : prévenez-les par un autre moyen (téléphone, courriel…) pour qu'ils sachent que la demande vient bien de vous. Tant qu'un utilisateur n'a pas accepté, une alerte signée par la nouvelle clé ne l'atteint pas." },
             { "nom": "send_alert", "titre": "Alerte : ce Nœud est compromis", "libellé": "Envoyer l'alerte",
               "champs": ["phrase d'annonce", "message", "nœud de remplacement"],
+              "types": { "message": "texte" },
               "aide": { "phrase d'annonce": "Les 24 mots remis à la création de la clé d'annonce ; ils ne sont pas conservés",
                         "nœud de remplacement": "Identifiant du Nœud vers lequel les utilisateurs doivent se rattacher (facultatif)" } },
             { "nom": "attach_user", "titre": "Rattacher un utilisateur manuellement", "libellé": "Rattacher",
@@ -1420,6 +1446,13 @@ fn number(v: &Value, k: &str) -> Result<u64, String> {
 pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
     if name == "set_config" {
         return set_config(sh, &v);
+    }
+    // Explorateur de dossiers (volumes) : machine du Nœud.
+    if name == "fs_browse" {
+        return s3m_protocol::local_fs::browse(&v);
+    }
+    if name == "fs_mkdir" {
+        return s3m_protocol::local_fs::mkdir(&v);
     }
     if name.starts_with("volume_") {
         return volume_action(sh, name, &v);
@@ -2086,7 +2119,7 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
                 "champs": ["nouveau chemin", "nouvelle capacité (Go)"], "fixes": { "volume": id },
                 "valeurs": { "nouveau chemin": u.mount_path.display().to_string(),
                              "nouvelle capacité (Go)": (u.max_capacity_bytes as f64 / (1u64 << 30) as f64 * 100.0).round() / 100.0 },
-                "types": { "nouvelle capacité (Go)": "number" },
+                "types": { "nouveau chemin": "chemin", "nouvelle capacité (Go)": "number" },
                 "aide": { "nouveau chemin": "Les données doivent déjà s'y trouver",
                           "nouvelle capacité (Go)": "Capacité réservée sur ce disque" } })];
             if u.draining {
@@ -2171,7 +2204,7 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
         a.push(json!({ "nom": "volume_draft_add", "titre": "Ajouter un volume", "libellé": "Ajouter à la liste",
             "champs": ["chemin", "capacité (Go)", "effacer et réutiliser"],
-            "types": { "capacité (Go)": "number", "effacer et réutiliser": "bool" },
+            "types": { "chemin": "chemin", "capacité (Go)": "number", "effacer et réutiliser": "bool" },
             "aide": { "chemin": "Dossier sur le disque (créé s'il n'existe pas)",
                       "effacer et réutiliser": "Seulement pour un disque d'un autre Nœud : ses données S3m seront effacées" } }));
         a.push(json!({ "nom": "volume_apply", "titre": "Appliquer la liste des actions", "libellé": "Appliquer",

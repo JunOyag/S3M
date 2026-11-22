@@ -4130,12 +4130,14 @@ dependencies = [
  "ed25519-dalek",
  "flatbuffers",
  "hmac",
+ "libc",
  "s3m-core",
  "serde",
  "serde_json",
  "sha2",
  "spake2",
  "thiserror 1.0.69",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

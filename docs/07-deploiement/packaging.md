@@ -121,6 +121,21 @@ la page ne répète pas ces formulaires. Un secret remis une seule fois
 un panneau qui ne se ferme qu'après confirmation, en grille de 6 × 4 mots,
 avec la démarche à suivre — jamais dans un message éphémère.
 
+Ergonomie commune (ajout du 2026-11-22) : les deux dashboards partagent
+le même moteur d'affichage (celui du Connecteur sert aussi le Nœud
+administré à distance). Tableaux : filtre, tri, 10 / 50 / 100 lignes par
+page ou un nombre saisi, export CSV ; une ligne de message s'ouvre dans un
+panneau au clic (texte complet, réponse en zone de texte multiligne,
+suppression), et porte aussi ses boutons (Répondre, Supprimer, Écrire,
+Éditer). Les longs textes se saisissent en zone multiligne. Un chemin
+(volume du Nœud, dossier synchronisé) se saisit ou se choisit avec un
+explorateur (disques sous Windows, `/`, dossier personnel et points de
+montage `/media`, `/run/media`, `/mnt` ou `/Volumes` ailleurs ; création
+d'un dossier) qui affiche l'espace total, disponible et le pourcentage
+restant du disque. Les sous-sections de la Configuration du Nœud sont des
+onglets. L'assistant du Connecteur propose l'accès « Dossier » (chemin) ou
+« Périphérique » (lettre libre sous Windows, point de montage ailleurs).
+
 ## Dashboard Connecteur
 
 Nœud rattaché et son état de joignabilité, espace disponible / total et

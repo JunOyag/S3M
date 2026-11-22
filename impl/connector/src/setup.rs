@@ -118,12 +118,84 @@ pub fn free_drive_letter() -> String {
     "P:".into()
 }
 
+/// Accès aux fichiers choisi dans l'assistant
+/// (`protocols.acces-applicatif#mode-dossier`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AccessChoice {
+    /// `lecteur` ou `dossier` ; absent : automatique.
+    pub access: Option<String>,
+    /// Emplacement du dossier synchronisé.
+    pub folder: Option<PathBuf>,
+    /// Lettre (Windows) ou point de montage (Linux, macOS) du lecteur.
+    pub mount: Option<String>,
+}
+
+/// Dossier synchronisé proposé pour l'identité rangée dans `dir`.
+pub fn default_folder(dir: &Path) -> PathBuf {
+    let name = crate::daemon::identity_number(&config_path(dir))
+        .map(|n| format!("S3m {n}"))
+        .unwrap_or_else(|| "S3m".into());
+    s3m_protocol::local_fs::home().join(name)
+}
+
+/// Lecteur ou dossier possibles sur cette machine.
+pub fn drive_possible() -> bool {
+    !cfg!(windows) || crate::daemon::winfsp_installed()
+}
+
+/// Valide le choix saisi dans l'assistant.
+pub fn parse_access(v: &Value) -> Result<AccessChoice, String> {
+    let text = |k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .unwrap_or("")
+            .to_string()
+    };
+    let access = text("accès").to_lowercase();
+    match access.as_str() {
+        "dossier" => {
+            let f = PathBuf::from(text("dossier"));
+            if !f.is_absolute() {
+                return Err("dossier : chemin complet attendu (bouton « Parcourir… »)".into());
+            }
+            Ok(AccessChoice {
+                access: Some(access),
+                folder: Some(f),
+                mount: None,
+            })
+        }
+        "lecteur" => {
+            if !drive_possible() {
+                return Err(
+                    "WinFsp n'est pas installé sur cet ordinateur : choisissez « Dossier »".into(),
+                );
+            }
+            let mount = if cfg!(windows) {
+                crate::daemon::parse_drive_letter(&text("lettre"))?
+            } else {
+                let p = text("point de montage");
+                if !Path::new(&p).is_absolute() {
+                    return Err("point de montage : chemin complet attendu".into());
+                }
+                p
+            };
+            Ok(AccessChoice {
+                access: Some(access),
+                folder: None,
+                mount: Some(mount),
+            })
+        }
+        _ => Err("accès attendu : « Dossier » ou « Périphérique »".into()),
+    }
+}
+
 /// Écrit la configuration pour le Nœud `addr` (`…/p2p/<PeerId>`).
 pub fn write_config(
     dir: &Path,
     prepared: &Prepared,
     addr: &str,
-    access: Option<&str>,
+    choice: &AccessChoice,
 ) -> Result<PathBuf, String> {
     let m: Multiaddr = addr
         .trim()
@@ -145,9 +217,9 @@ pub fn write_config(
         api_port: 0,
         q_max_bytes: DEFAULT_Q_MAX_BYTES,
         watch_interval_s: DEFAULT_WATCH_INTERVAL_S,
-        mount_point: Some(free_drive_letter()),
-        access: access.map(str::to_string),
-        folder: None,
+        mount_point: Some(choice.mount.clone().unwrap_or_else(free_drive_letter)),
+        access: choice.access.clone(),
+        folder: choice.folder.clone(),
         // DHT et échange de blocs partagent la pile du Nœud.
         dht_bootstrap: vec![m.to_string()],
         auto_attach: true,
@@ -168,8 +240,8 @@ pub fn write_config(
 struct SetupState {
     found: Vec<FoundNode>,
     scanning: bool,
-    /// Accès aux fichiers choisi (`lecteur` ou `dossier`), sinon automatique.
-    access: Option<String>,
+    /// Accès aux fichiers choisi, sinon automatique.
+    access: AccessChoice,
     done: Option<PathBuf>,
     notify: Option<oneshot::Sender<PathBuf>>,
 }
@@ -213,7 +285,7 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
     }));
     rescan(state.clone());
     let st_fn: StatusFn = {
-        let (state, p) = (state.clone(), prepared.clone());
+        let (state, p, dir) = (state.clone(), prepared.clone(), dir.clone());
         Arc::new(move || {
             let p = p.lock().unwrap().clone();
             let s = state.lock().unwrap();
@@ -258,26 +330,18 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                     "user_id": p.user_id,
                     "salt": p.salt,
                 },
-                "4. accès aux fichiers": {
-                    "accès choisi": match s.access.as_deref() {
-                        Some("dossier") => "dossier synchronisé (comme OneDrive)",
-                        Some(_) => "lecteur (lettre)",
-                        None if crate::daemon::winfsp_installed() => "automatique : lecteur (lettre), WinFsp est installé",
-                        None => "automatique : dossier synchronisé (WinFsp n'est pas installé)",
-                    },
+                "4. accès aux fichiers": match (s.access.access.as_deref(), &s.access.folder, &s.access.mount) {
+                    (Some("dossier"), Some(f), _) => json!({ "accès choisi": "dossier synchronisé (comme OneDrive)", "dossier": f.display().to_string() }),
+                    (Some(_), _, Some(m)) => json!({ "accès choisi": if cfg!(windows) { "périphérique (lettre de lecteur)" } else { "périphérique (point de montage)" },
+                                                      "emplacement": m }),
+                    _ if drive_possible() => json!({ "accès choisi": "automatique : périphérique (lettre de lecteur), WinFsp est installé" }),
+                    _ => json!({ "accès choisi": "automatique : dossier synchronisé (WinFsp n'est pas installé)", "dossier": default_folder(&dir).display().to_string() }),
                 },
                 "actions": [
                     { "nom": "restore", "titre": "J'ai déjà une identité S3m",
                       "libellé": "Reprendre cette identité", "champs": ["phrase de récupération"],
                       "aide": { "phrase de récupération": "Vos 24 mots, séparés par des espaces" } },
-                    { "nom": "set_access", "titre": "Accès aux fichiers",
-                      "libellé": "Choisir", "champs": ["accès"],
-                      "valeurs": { "accès": s.access.clone().unwrap_or_else(|| if crate::daemon::winfsp_installed() { "lecteur".into() } else { "dossier".into() }) },
-                      "aide": { "accès": if crate::daemon::winfsp_installed() {
-                          "« lecteur » : une lettre de lecteur dans l'Explorateur ; « dossier » : un dossier synchronisé, comme OneDrive. Modifiable ensuite dans le tableau de bord."
-                      } else {
-                          "WinFsp n'est pas installé : seul « dossier » (dossier synchronisé, comme OneDrive) est possible sur cet ordinateur."
-                      } } },
+                    access_form(&s.access, &dir),
                     { "nom": "manual", "titre": "Nœud absent de la liste : saisir son adresse",
                       "libellé": "Se rattacher", "champs": ["adresse"],
                       "aide": { "adresse": "Pour un Nœud joignable mais non trouvé ci-dessus (autre réseau, annonce locale désactivée) : son adresse /ip4/…/tcp/…/p2p/… figure dans son tableau de bord. S3m lui demande le rattachement automatiquement ; s'il le refuse, transmettez d'abord à son opérateur votre identifiant et votre sel (section 3)." } },
@@ -335,22 +399,10 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                         Ok(json!({ "ok": true, "message": "Nœud appairé : son assistant s'ouvre", "ouvrir": url }))
                     });
                 }
+                "fs_browse" => return s3m_protocol::local_fs::browse(&v),
+                "fs_mkdir" => return s3m_protocol::local_fs::mkdir(&v),
                 "set_access" => {
-                    let a = v
-                        .get("accès")
-                        .and_then(|x| x.as_str())
-                        .map(|x| x.trim().to_lowercase())
-                        .unwrap_or_default();
-                    if a != "lecteur" && a != "dossier" {
-                        return Err("accès attendu : « lecteur » ou « dossier »".into());
-                    }
-                    if a == "lecteur" && !crate::daemon::winfsp_installed() {
-                        return Err(
-                            "WinFsp n'est pas installé sur cet ordinateur : choisissez « dossier »"
-                                .into(),
-                        );
-                    }
-                    state.lock().unwrap().access = Some(a);
+                    state.lock().unwrap().access = parse_access(&v)?;
                     return Ok(json!({ "ok": true, "message": "Accès aux fichiers choisi" }));
                 }
                 "scan" => {
@@ -387,7 +439,7 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
             };
             let p = p.lock().unwrap().clone();
             let access = state.lock().unwrap().access.clone();
-            match write_config(&dir, &p, &addr, access.as_deref()) {
+            match write_config(&dir, &p, &addr, &access) {
                 Ok(path) => {
                     let mut s = state.lock().unwrap();
                     s.done = Some(path.clone());
@@ -405,4 +457,51 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
         .await
         .map_err(|e| e.to_string())?;
     Ok((url, rx))
+}
+
+/// Formulaire « Accès aux fichiers » : Dossier (chemin et espace) ou
+/// Périphérique (lettre libre sous Windows, point de montage ailleurs).
+fn access_form(c: &AccessChoice, dir: &Path) -> Value {
+    let mount_field = if cfg!(windows) {
+        "lettre"
+    } else {
+        "point de montage"
+    };
+    let mut choices = vec![json!([
+        "dossier",
+        "Dossier synchronisé (comme OneDrive, rien à installer)"
+    ])];
+    if drive_possible() {
+        choices.push(json!([
+            "lecteur",
+            if cfg!(windows) {
+                "Périphérique (lettre de lecteur, WinFsp)"
+            } else {
+                "Périphérique (point de montage)"
+            }
+        ]));
+    }
+    let access = c.access.clone().unwrap_or_else(|| {
+        if drive_possible() {
+            "lecteur".into()
+        } else {
+            "dossier".into()
+        }
+    });
+    json!({ "nom": "set_access", "titre": "Accès aux fichiers", "libellé": "Choisir",
+        "champs": ["accès", "dossier", mount_field],
+        "types": { "accès": "choix", "dossier": "chemin", mount_field: if cfg!(windows) { "lettre" } else { "chemin" } },
+        "options": { "accès": choices, "lettre": s3m_protocol::local_fs::free_letters() },
+        "visible_si": { "dossier": ["accès", "dossier"], mount_field: ["accès", "lecteur"] },
+        "valeurs": { "accès": access,
+                     "dossier": c.folder.clone().unwrap_or_else(|| default_folder(dir)).display().to_string(),
+                     mount_field: c.mount.clone().unwrap_or_else(|| if cfg!(windows) { free_drive_letter() } else { String::new() }) },
+        "aide": { "accès": if drive_possible() {
+                      "Dossier : vos fichiers dans un dossier synchronisé ; Périphérique : un lecteur à part dans l'Explorateur. Modifiable ensuite dans le tableau de bord."
+                  } else {
+                      "WinFsp n'est pas installé : seul le dossier synchronisé est possible sur cet ordinateur."
+                  },
+                  "dossier": "Dossier vide ou nouveau, sur un disque local (NTFS sous Windows) ; « Parcourir… » permet d'en créer un",
+                  "lettre": "Lettre libre, par exemple P:",
+                  "point de montage": "Dossier vide où le lecteur sera monté" } })
 }
