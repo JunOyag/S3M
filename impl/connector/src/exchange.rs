@@ -396,6 +396,19 @@ impl NodeSession {
         }
     }
 
+    /// Retire un partage chez son Nœud (`protocols.partage#retrait`).
+    pub async fn revoke_share(&self, share_id: &[u8; 32]) -> Result<(), ExchangeError> {
+        match self
+            .call(Body::RevokeShare {
+                share_id: share_id.to_vec(),
+            })
+            .await?
+        {
+            Response::Ack { .. } => Ok(()),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
     /// Messages du Nœud de `seq` supérieur (`protocols.canal-noeud`) et nom
     /// actuel du Nœud (`deploiement.pseudos`).
     pub async fn read_messages(

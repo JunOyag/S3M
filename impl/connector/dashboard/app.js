@@ -139,6 +139,15 @@ const LABELS = {
   "de": ["De", "Utilisateur auteur du message."],
   "non lus": ["Non lus", "Messages pas encore ouverts ; ouvrir la conversation les marque lus."],
   "lu": ["Lu", "Ouvrir le message le marque lu."],
+  "partages donnés": ["Partages donnés", "Vos fichiers et dossiers confiés en lecture à un utilisateur S3m ou par un lien."],
+  "partages reçus": ["Partages reçus", "Partages ajoutés avec leur lien ou leur invitation ; visibles dans le dossier « Partagés avec moi »."],
+  "élément": ["Élément", "Fichier ou dossier de votre espace S3m."],
+  "destinataire": ["Destinataire", "Identifiant de l'utilisateur S3m ; vide pour un lien."],
+  "expiration (jours)": ["Expiration (jours)", "Vide ou 0 : sans expiration."],
+  "lien ou invitation": ["Lien ou invitation", "Lien s3m://partage#… ou invitation S3MS1:…"],
+  "ajouté le": ["Ajouté le", ""],
+  "expire le": ["Expire le", ""],
+  "créé le": ["Créé le", ""],
   "écrire à mon nœud": ["Écrire à mon Nœud", "Message lu par l'opérateur de votre Nœud."],
   "messages restants sur 24 h": ["Messages restants sur 24 h", "Votre Nœud accepte 10 messages par période glissante de 24 h."],
   "quota réinitialisé le": ["Un message de plus possible le", "Date à laquelle le plus ancien de vos messages des dernières 24 h ne compte plus."],
@@ -526,10 +535,28 @@ function showReveal(r) {
   const { d, close } = modal(r["titre"] || "À noter", false);
   (r["texte"] || []).forEach((t, i) => d.appendChild(el("p", `${i + 1}. ${t}`)));
   if (r["24 mots"]) d.appendChild(wordGrid(r["24 mots"]));
+  // `à copier` : texte à transmettre (lien, invitation), avec bouton de copie.
+  if (r["à copier"]) {
+    const t = el("textarea", undefined, "to-copy");
+    t.readOnly = true;
+    t.value = r["à copier"];
+    const c = el("button", "Copier", "secondary");
+    c.type = "button";
+    c.addEventListener("click", async () => {
+      t.select();
+      try {
+        await navigator.clipboard.writeText(t.value);
+      } catch (_) {
+        document.execCommand("copy");
+      }
+      toast("Copié dans le presse-papiers", "ok");
+    });
+    d.append(t, c);
+  }
   const b = el("button", r["fermer"] || "Fermer");
   b.type = "button";
   b.addEventListener("click", () => {
-    if (window.confirm("Avez-vous bien noté les 24 mots ? Ils ne seront plus affichés.")) close();
+    if (!r["24 mots"] || window.confirm("Avez-vous bien noté les 24 mots ? Ils ne seront plus affichés.")) close();
   });
   d.appendChild(b);
   d.showModal();
@@ -866,9 +893,11 @@ function actionForm(a, done) {
       const row = el("span", undefined, "path-row");
       const browse = el("button", "Parcourir…", "small secondary");
       browse.type = "button";
+      // `explorateurs` : action d'exploration du champ (par défaut, disque local).
+      const explorer = (a["explorateurs"] || {})[name] || "fs_browse";
       const space = el("span", "", "muted path-space");
       const showSpace = async () => {
-        if (!i.value.trim()) { space.textContent = ""; return; }
+        if (!i.value.trim() || explorer !== "fs_browse") { space.textContent = ""; return; }
         try {
           const r = await callAction("fs_browse", { chemin: i.value.trim(), "espace seul": true });
           space.textContent = spaceText(r["données"] && r["données"]["espace"]);
@@ -876,7 +905,7 @@ function actionForm(a, done) {
           space.textContent = "";
         }
       };
-      browse.addEventListener("click", () => openBrowser(i.value.trim(), (p) => { i.value = p; showSpace(); }));
+      browse.addEventListener("click", () => openBrowser(i.value.trim(), (p) => { i.value = p; showSpace(); }, explorer));
       i.addEventListener("change", showSpace);
       row.append(i, browse);
       l.classList.add("wide");
@@ -996,7 +1025,7 @@ function spaceText(e) {
 
 // Choix d'un dossier : racines (disques, points de montage), dossier parent,
 // sous-dossiers, création d'un dossier, chemin saisissable ; espace affiché.
-function openBrowser(start, pick) {
+function openBrowser(start, pick, explorer = "fs_browse") {
   const { d, close } = modal("Choisir un dossier");
   const bar = el("form", undefined, "browser-bar");
   const path = el("input");
@@ -1022,7 +1051,8 @@ function openBrowser(start, pick) {
   const load = async (p) => {
     err.textContent = "";
     try {
-      const r = (await callAction("fs_browse", { chemin: p }))["données"] || {};
+      const r = (await callAction(explorer, { chemin: p }))["données"] || {};
+      mk.hidden = r["création"] === false;
       current = r["chemin"] || "";
       path.value = current;
       space.textContent = spaceText(r["espace"]);
@@ -1047,7 +1077,18 @@ function openBrowser(start, pick) {
         li.addEventListener("keydown", (e) => { if (e.key === "Enter") li.click(); });
         list.appendChild(li);
       });
-      if (!(r["dossiers"] || []).length) list.appendChild(el("li", "Aucun sous-dossier", "empty"));
+      // `fichiers` : un clic choisit le fichier (ex. élément à partager).
+      (r["fichiers"] || []).forEach((n) => {
+        const li = el("li", "📄 " + n, "file");
+        li.tabIndex = 0;
+        li.addEventListener("click", () => {
+          pick(current.replace(/[\/]$/, "") + (r["séparateur"] || "/") + n);
+          close();
+        });
+        li.addEventListener("keydown", (e) => { if (e.key === "Enter") li.click(); });
+        list.appendChild(li);
+      });
+      if (!(r["dossiers"] || []).length && !(r["fichiers"] || []).length) list.appendChild(el("li", "Aucun sous-dossier", "empty"));
       choose.disabled = !current;
     } catch (e) {
       err.textContent = e.message;

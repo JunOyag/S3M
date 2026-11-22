@@ -505,9 +505,13 @@ pub struct Shared {
     pub names_known: std::sync::atomic::AtomicBool,
     /// Dernière lecture de l'entrée du Nœud (0 : jamais).
     pub node_entry_read_at: Mutex<u64>,
-    priv_user: [u8; 32],
-    pub_node: [u8; 32],
+    pub(crate) priv_user: [u8; 32],
+    pub(crate) pub_node: [u8; 32],
     salt: Vec<u8>,
+    /// Partages donnés et reçus (`protocols.partage`).
+    pub shares: Arc<Mutex<crate::shares::ShareStore>>,
+    /// Client des Nœuds des propriétaires de partages reçus.
+    pub share_client: Option<Arc<crate::exchange::BlockClient>>,
 }
 
 fn queue_status(c: &Config) -> Value {
@@ -531,6 +535,7 @@ fn queue_status(c: &Config) -> Value {
 pub fn status(sh: &Shared) -> Value {
     let mut v = status_base(sh);
     channel_status(sh, &mut v);
+    crate::share_ops::status(sh, &mut v);
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
         let n = sh.names.lock().unwrap().clone();
         a.push(json!({ "nom": "set_pseudo", "titre": "Pseudo de cette identité", "libellé": "Enregistrer",
@@ -556,6 +561,8 @@ pub fn status(sh: &Shared) -> Value {
           "sections": ["accès aux fichiers", "lecteur", "file d'écriture"], "actions": ["sync_now"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
+        { "id": "partages", "titre": "Partages",
+          "sections": ["partages donnés", "partages reçus"], "actions": ["create_share", "add_received"] },
         { "id": "messages", "titre": "Messages du Nœud",
           "sections": ["remplacement de la clé d'alerte", "alerte du nœud", "messages du nœud", "écrire à mon nœud", "messages envoyés au nœud"],
           "actions": ["mark_all_read", "accept_announce_replacement", "refuse_announce_replacement", "acknowledge_alert"] },
@@ -1643,6 +1650,8 @@ pub async fn start(
         channel: Mutex::new(load_channel(&config)),
         names_known: load_names(&config).is_some().into(),
         names: Mutex::new(load_names(&config).unwrap_or_default()),
+        shares: crate::share_ops::load(&config.data_dir),
+        share_client: crate::exchange::BlockClient::start().ok().map(Arc::new),
         node_entry_read_at: Mutex::new(0),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
@@ -1657,40 +1666,46 @@ pub async fn start(
         health: Mutex::new(Health::default()),
         clock,
     });
+    crate::share_ops::install_tree(&shared);
     let st_fn: StatusFn = {
         let sh = shared.clone();
         Arc::new(move || status(&sh))
     };
     let act_fn: ActionFn = {
         let sh = shared.clone();
-        Arc::new(move |name, v| match name {
-            "set_mount_point" => set_mount_point(&sh, &v),
-            "set_access" => set_access(&sh, &v),
-            "sync_now" => {
-                sync_now(&sh);
-                Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
+        Arc::new(move |name, v| {
+            if let Some(r) = crate::share_ops::action(&sh, name, &v) {
+                return r;
             }
-            "admin_node" => admin_node(&sh.config.node.addr, &v),
-            "send_node_message"
-            | "mark_message_read"
-            | "mark_all_read"
-            | "acknowledge_alert"
-            | "accept_announce_replacement"
-            | "refuse_announce_replacement" => channel_action(&sh, name, &v),
-            "set_pseudo" | "set_node_label" => names_action(&sh, name, &v),
-            "fs_browse" => s3m_protocol::local_fs::browse(&v),
-            "fs_mkdir" => s3m_protocol::local_fs::mkdir(&v),
-            "change_node" => {
-                if v.get("je confirme").and_then(|x| x.as_bool()) != Some(true) {
-                    return Err("cochez « je confirme » pour changer de Nœud".into());
+            match name {
+                "set_mount_point" => set_mount_point(&sh, &v),
+                "set_access" => set_access(&sh, &v),
+                "sync_now" => {
+                    sync_now(&sh);
+                    Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
                 }
-                sh.change_node
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                Ok(
-                    json!({ "ok": true, "message": "S3m redémarre et ouvre l'assistant de choix du Nœud…" }),
-                )
+                "admin_node" => admin_node(&sh.config.node.addr, &v),
+                "send_node_message"
+                | "mark_message_read"
+                | "mark_all_read"
+                | "acknowledge_alert"
+                | "accept_announce_replacement"
+                | "refuse_announce_replacement" => channel_action(&sh, name, &v),
+                "set_pseudo" | "set_node_label" => names_action(&sh, name, &v),
+                "fs_browse" => s3m_protocol::local_fs::browse(&v),
+                "fs_mkdir" => s3m_protocol::local_fs::mkdir(&v),
+                "change_node" => {
+                    if v.get("je confirme").and_then(|x| x.as_bool()) != Some(true) {
+                        return Err("cochez « je confirme » pour changer de Nœud".into());
+                    }
+                    sh.change_node
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    Ok(
+                        json!({ "ok": true, "message": "S3m redémarre et ouvre l'assistant de choix du Nœud…" }),
+                    )
+                }
+                _ => Err(format!("action inconnue : {name}")),
             }
-            _ => Err(format!("action inconnue : {name}")),
         })
     };
     let url = local_http::serve(
@@ -1738,6 +1753,7 @@ pub async fn start(
         loop {
             watch_once(&sh).await;
             emergency_tick(&sh).await;
+            crate::share_ops::tick(&sh).await;
             tokio::time::sleep(Duration::from_secs(sh.config.watch_interval_s.max(1))).await;
         }
     });

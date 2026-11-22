@@ -75,6 +75,8 @@ pub enum DriveError {
     NotEmpty,
     #[error("conflit : la racine a changé chez le Nœud")]
     Conflict,
+    #[error("en lecture seule (partage reçu)")]
+    ReadOnly,
     #[error("Nœud : {0}")]
     Node(String),
     #[error(transparent)]
@@ -95,7 +97,7 @@ pub struct Meta {
 }
 
 impl Meta {
-    fn of(e: &Entry) -> Self {
+    pub fn of(e: &Entry) -> Self {
         Meta {
             is_dir: e.mime_type == DIRECTORY_MIME,
             size: e.size_bytes,
@@ -270,7 +272,41 @@ fn is_under(path: &str, ancestor: &str) -> bool {
 // ------------------------------------------------------------------ lecteur
 
 /// Lecteur : vue fusionnée (distant + modifications locales).
+/// Dossier virtuel des partages reçus (`protocols.partage#connecteur`).
+pub const SHARED_DIR: &str = "/Partagés avec moi";
+
+/// Source des partages reçus, en lecture seule ; chemins relatifs à
+/// [`SHARED_DIR`] (`/` : sa racine).
+pub trait SharedTree: Send + Sync {
+    fn stat(&self, rel: &str) -> Result<Option<Meta>, DriveError>;
+    fn list(&self, rel: &str) -> Result<Vec<(String, Meta)>, DriveError>;
+    fn read(&self, rel: &str, offset: u64, len: usize) -> Result<Vec<u8>, DriveError>;
+}
+
+/// Élément de son propre espace à partager : version synchronisée.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedElement {
+    pub is_dir: bool,
+    pub name: String,
+    pub size_bytes: u64,
+    pub modified_at: u64,
+    pub first_block_hash: BlockHash,
+    pub element_key: [u8; 32],
+}
+
+/// Chemin sous [`SHARED_DIR`] : relatif (`/…`), sinon `None`.
+fn shared_rel(p: &str) -> Option<String> {
+    if p == SHARED_DIR {
+        return Some("/".into());
+    }
+    p.strip_prefix(SHARED_DIR)
+        .filter(|r| r.starts_with('/'))
+        .map(str::to_string)
+}
+
 pub struct Drive {
+    /// Partages reçus, montés sous [`SHARED_DIR`].
+    pub shared: Option<Arc<dyn SharedTree>>,
     io: Arc<dyn BlockIo>,
     keys: HashMap<u16, [u8; 32]>,
     root: Root,
@@ -317,6 +353,7 @@ impl Drive {
             key_version: journal.key_version,
         };
         Ok(Self {
+            shared: None,
             io,
             keys: [(KEY_VERSION, master_key)].into(),
             root,
@@ -437,9 +474,45 @@ impl Drive {
         }
     }
 
+    /// Élément synchronisé de `path` et sa clé d'élément, à confier par un
+    /// partage (`protocols.partage`) ; `/` : la racine.
+    pub fn shared_element(&mut self, path: &str) -> Result<Option<SharedElement>, DriveError> {
+        let p = norm(path);
+        let key = *self.keys.get(&KEY_VERSION).ok_or(DriveError::NotFound)?;
+        if p == "/" {
+            if self.root.fs_root_hash == NO_ROOT {
+                return Ok(None);
+            }
+            return Ok(Some(SharedElement {
+                is_dir: true,
+                name: "Mes fichiers".into(),
+                size_bytes: 0,
+                modified_at: 0,
+                first_block_hash: self.root.fs_root_hash,
+                element_key: s3m_core::k_block::derive_k_elem(&key, &self.root.encryption_salt)
+                    .map_err(crate::fs::FsError::from)?,
+            }));
+        }
+        let Some(e) = self.remote_entry(&p)? else {
+            return Ok(None);
+        };
+        Ok(Some(SharedElement {
+            is_dir: e.mime_type == DIRECTORY_MIME,
+            name: e.name.clone(),
+            size_bytes: e.size_bytes,
+            modified_at: e.modified_at,
+            first_block_hash: e.first_block_hash,
+            element_key: s3m_core::k_block::derive_k_elem(&key, &e.encryption_salt)
+                .map_err(crate::fs::FsError::from)?,
+        }))
+    }
+
     /// Attributs de `path` (`None` : absent).
     pub fn stat(&mut self, path: &str) -> Result<Option<Meta>, DriveError> {
         let p = norm(path);
+        if let (Some(rel), Some(t)) = (shared_rel(&p), self.shared.clone()) {
+            return t.stat(&rel);
+        }
         if p == "/" {
             return Ok(Some(Meta {
                 is_dir: true,
@@ -503,6 +576,9 @@ impl Drive {
     /// Liste le répertoire `path` : `(nom, attributs)`.
     pub fn list(&mut self, path: &str) -> Result<Vec<(String, Meta)>, DriveError> {
         let p = norm(path);
+        if let (Some(rel), Some(t)) = (shared_rel(&p), self.shared.clone()) {
+            return t.list(&rel);
+        }
         match self.stat(&p)? {
             None => return Err(DriveError::NotFound),
             Some(m) if !m.is_dir => return Err(DriveError::NotADirectory),
@@ -526,6 +602,15 @@ impl Drive {
                 Some(m) => out.insert(name, m),
                 None => out.remove(&name),
             };
+        }
+        if p == "/" && self.shared.is_some() {
+            out.entry(base_name(SHARED_DIR).to_string())
+                .or_insert(Meta {
+                    is_dir: true,
+                    size: 0,
+                    created_at: 0,
+                    modified_at: 0,
+                });
         }
         Ok(out.into_iter().collect())
     }
@@ -572,6 +657,9 @@ impl Drive {
     /// Lit `len` octets à partir de `offset`.
     pub fn read(&mut self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>, DriveError> {
         let p = norm(path);
+        if let (Some(rel), Some(t)) = (shared_rel(&p), self.shared.clone()) {
+            return t.read(&rel, offset, len);
+        }
         if let Some(Change::File { cache, .. }) = self.journal.changes.get(&p) {
             let mut f = std::fs::File::open(self.workspace.join("files").join(cache))?;
             f.seek(SeekFrom::Start(offset))?;
@@ -623,6 +711,9 @@ impl Drive {
     /// Écrit `data` à `offset` (plage d'octets) ; rend la nouvelle taille.
     pub fn write(&mut self, path: &str, offset: u64, data: &[u8]) -> Result<u64, DriveError> {
         let p = norm(path);
+        if shared_rel(&p).is_some() && self.shared.is_some() {
+            return Err(DriveError::ReadOnly);
+        }
         let local = self.ensure_local(&p)?;
         let mut f = OpenOptions::new().write(true).open(local)?;
         f.seek(SeekFrom::Start(offset))?;
@@ -636,6 +727,9 @@ impl Drive {
     /// Fixe la taille du fichier.
     pub fn set_size(&mut self, path: &str, size: u64) -> Result<(), DriveError> {
         let p = norm(path);
+        if shared_rel(&p).is_some() && self.shared.is_some() {
+            return Err(DriveError::ReadOnly);
+        }
         let local = self.ensure_local(&p)?;
         OpenOptions::new().write(true).open(local)?.set_len(size)?;
         self.touch(&p);
@@ -645,6 +739,9 @@ impl Drive {
     /// Crée un fichier vide ou un répertoire.
     pub fn create(&mut self, path: &str, is_dir: bool) -> Result<(), DriveError> {
         let p = norm(path);
+        if shared_rel(&p).is_some() && self.shared.is_some() {
+            return Err(DriveError::ReadOnly);
+        }
         if p == "/" || self.stat(&p)?.is_some() {
             return Err(DriveError::Exists);
         }
@@ -678,6 +775,9 @@ impl Drive {
     /// Supprime un fichier ou un répertoire vide.
     pub fn remove(&mut self, path: &str) -> Result<(), DriveError> {
         let p = norm(path);
+        if shared_rel(&p).is_some() && self.shared.is_some() {
+            return Err(DriveError::ReadOnly);
+        }
         let m = self.stat(&p)?.ok_or(DriveError::NotFound)?;
         if m.is_dir && !self.list(&p)?.is_empty() {
             return Err(DriveError::NotEmpty);
@@ -701,6 +801,11 @@ impl Drive {
 
     /// Déplace / renomme `from` vers `to` (`replace` : écrase la cible).
     pub fn rename(&mut self, from: &str, to: &str, replace: bool) -> Result<(), DriveError> {
+        if self.shared.is_some()
+            && (shared_rel(&norm(from)).is_some() || shared_rel(&norm(to)).is_some())
+        {
+            return Err(DriveError::ReadOnly);
+        }
         let (f, t) = (norm(from), norm(to));
         if f == t {
             return Ok(());

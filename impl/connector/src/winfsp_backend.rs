@@ -23,6 +23,7 @@ const STATUS_OBJECT_NAME_NOT_FOUND: i32 = 0xC000_0034_u32 as i32;
 const STATUS_OBJECT_NAME_COLLISION: i32 = 0xC000_0035_u32 as i32;
 const STATUS_FILE_IS_A_DIRECTORY: i32 = 0xC000_00BA_u32 as i32;
 const STATUS_DIRECTORY_NOT_EMPTY: i32 = 0xC000_0101_u32 as i32;
+const STATUS_ACCESS_DENIED: i32 = 0xC000_0022_u32 as i32;
 const STATUS_NOT_A_DIRECTORY: i32 = 0xC000_0103_u32 as i32;
 const STATUS_IO_DEVICE_ERROR: i32 = 0xC000_0185_u32 as i32;
 
@@ -48,6 +49,7 @@ fn ntstatus(e: DriveError) -> FspError {
         DriveError::NotADirectory => STATUS_NOT_A_DIRECTORY,
         DriveError::IsADirectory => STATUS_FILE_IS_A_DIRECTORY,
         DriveError::NotEmpty => STATUS_DIRECTORY_NOT_EMPTY,
+        DriveError::ReadOnly => STATUS_ACCESS_DENIED,
         _ => STATUS_IO_DEVICE_ERROR,
     })
 }

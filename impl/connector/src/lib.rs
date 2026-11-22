@@ -25,6 +25,8 @@ pub mod migration;
 pub mod publish;
 pub mod remote;
 pub mod setup;
+pub mod share_ops;
+pub mod shares;
 #[cfg(all(windows, feature = "mount"))]
 pub mod winfsp_backend;
 pub mod write_back;

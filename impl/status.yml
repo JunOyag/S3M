@@ -1335,7 +1335,7 @@ entries:
     notes: "Entrée DHT Share (protocol/src/share.rs, dht.rs : liaison clé ↔ sig_pub_share)."
   protocols.partage:
     kind: narrative
-    status: in_progress
+    status: done
     owner: claude-code
     tests:
       - share_keys::share_keys_match_vectors_and_invites_open_only_for_their_recipient
@@ -1343,10 +1343,15 @@ entries:
       - share::links_and_invites_carry_the_token
       - share::share_requests_roundtrip
       - share::share_grant_reads_only_the_owner_blocks_until_revoked
+      - shares::shared_folder_is_readable_by_the_recipient_and_read_only
+      - shares::pointer_is_republished_when_the_element_changes_or_monthly
+      - fs_structure::a_directory_key_alone_reads_its_files
     notes: >-
-      Spécifié le 2026-11-22 (étape 1 : lecture seule, Utilisateur S3m ou
-      lien S3m). Suppose la révision de crypto.k-block (clés d'élément,
-      wrapped_key des entrées de répertoire).
+      Étape 1 livrée le 2026-11-22 (lecture seule, Utilisateur S3m ou lien
+      S3m) : core::share, protocol::share, Nœud (ShareCredential,
+      RevokeShare, débit), Connecteur (shares.rs, share_ops.rs, page
+      Partages, dossier « Partagés avec moi »). Pas encore essayé de bout en
+      bout sur le réseau réel (annuaire + Nœud du propriétaire).
   protocols.canal-noeud:
     kind: narrative
     status: done

@@ -956,7 +956,14 @@ pages:
     title: "Partage de Fichiers et de Dossiers"
     section: "§3.12.6"
     refs: [crypto.k-block, fs.DirectoryEntry, network.ShareEntry, network.dht-directory, protocols.echange-blocs, crypto.k-attach, protocols.acces-applicatif, protocols.integrite-lecture, deploiement.packaging]
-    verified_by: []
+    verified_by:
+      - share_keys::share_keys_match_vectors_and_invites_open_only_for_their_recipient
+      - share::grant_is_signed_by_its_owner
+      - share::links_and_invites_carry_the_token
+      - share::share_requests_roundtrip
+      - share::share_grant_reads_only_the_owner_blocks_until_revoked
+      - shares::shared_folder_is_readable_by_the_recipient_and_read_only
+      - shares::pointer_is_republished_when_the_element_changes_or_monthly
 
   - id: protocols.canal-noeud
     kind: narrative
