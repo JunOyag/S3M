@@ -76,7 +76,16 @@ son Nœud, avec `UserCredential` :
 
 Le Connecteur envoie `ReadMessages` à chaque sondage de son Nœud et, quand
 le Nœud est joignable, toutes les 30 s (ajout du 2026-11-22) ; chaque
-nouveau message est signalé par une notification de la barre des tâches. Le Nœud
+nouveau message est signalé par une notification de la barre des tâches.
+
+**Lu / non lu** (ajout du 2026-11-22, état local, hors protocole) : le
+Nœud regroupe les messages reçus par Utilisateur (une conversation par
+Utilisateur, avec ses réponses adressées) et les tient non lus jusqu'à
+l'ouverture de la conversation ; le Connecteur tient chaque message du
+Nœud non lu jusqu'à son ouverture, ou « Tout marquer comme lu ». Les
+messages non lus sont comptés dans la vue d'ensemble et signalés à
+l'ouverture du tableau de bord ; S3m les signale aussi par une
+notification à son démarrage. Le Nœud
 conserve ses messages 2 592 000 s (256 au plus, les plus anciens supprimés
 d'abord) et les messages reçus des Utilisateurs (`UserMessage`) 2 592 000 s.
 ### Décompte du quota {: #quota }

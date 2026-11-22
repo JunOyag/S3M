@@ -209,3 +209,23 @@ fn addressed_info_reaches_only_its_recipient_and_alerts_cannot_carry_it() {
     assert_eq!(o.since(0, 0, &alice).len(), 2);
     assert_eq!(o.since(0, 0, &bob).len(), 1);
 }
+
+/// Messages non lus du Nœud : nouveaux non lus, marqués lus par
+/// utilisateur ; un message conservé avant cette notion compte comme lu.
+#[test]
+fn user_messages_are_unread_until_their_conversation_is_opened() {
+    let (alice, bob) = ([0xa1; 32], [0xb2; 32]);
+    let mut inbox = Inbox::default();
+    inbox.post(&alice, "bonjour", 10).unwrap();
+    inbox.post(&alice, "encore", 11).unwrap();
+    inbox.post(&bob, "salut", 12).unwrap();
+    assert_eq!(inbox.unread(None), 3);
+    assert_eq!(inbox.unread(Some(&alice)), 2);
+    assert_eq!(inbox.mark_read(&alice), 2);
+    assert_eq!(inbox.unread(None), 1);
+    assert_eq!(inbox.mark_read(&alice), 0);
+    let old: UserMessage =
+        serde_json::from_str(r#"{"user_id":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"timestamp":1,"text":"x"}"#)
+            .unwrap();
+    assert!(old.read, "ancien message : lu");
+}

@@ -643,6 +643,15 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "en attente de redémarrage": if pending.is_empty() { json!("rien") } else { json!(pending) },
     });
     v["résumé"] = node_summary(&v);
+    // Signalé une fois à l'ouverture du tableau de bord.
+    let unread = sh.service.lock().unwrap().channel.inbox.unread(None);
+    if unread > 0 {
+        v["à signaler"] = json!(format!(
+            "{unread} message{} d'utilisateur non lu{} : page Messages",
+            if unread > 1 { "s" } else { "" },
+            if unread > 1 { "s" } else { "" }
+        ));
+    }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
           "sections": ["alertes d'intégrité signalées", "identité"], "actions": ["set_node_name"] },
@@ -674,6 +683,56 @@ pub fn status(sh: &Shared, now: u64) -> Value {
 }
 
 /// Indicateurs de la vue d'ensemble (`état` : ok, attention, probleme, neutre).
+/// Messages reçus regroupés par utilisateur : une ligne par conversation,
+/// ouverte en panneau (messages reçus et réponses adressées, réponse,
+/// suppression) ; l'ouverture marque la conversation lue.
+fn user_conversations(s: &NodeService) -> Vec<Value> {
+    use std::collections::BTreeMap;
+    let mut by_user: BTreeMap<[u8; 32], Vec<&s3m_protocol::message::UserMessage>> = BTreeMap::new();
+    for m in &s.channel.inbox.received {
+        by_user.entry(m.user_id).or_default().push(m);
+    }
+    let mut rows: Vec<(u64, Value)> = by_user
+        .into_iter()
+        .map(|(u, msgs)| {
+            let who = s3m_protocol::pseudo::display(&[s.user_labels.get(&u).map(String::as_str)], &u);
+            let unread = msgs.iter().filter(|m| !m.read).count();
+            let last = msgs.iter().map(|m| m.timestamp).max().unwrap_or(0);
+            let delete = |t: u64| json!({ "nom": "delete_user_message", "libellé": "Supprimer", "style": "danger",
+                "valeurs": { "utilisateur": hx(&u), "n°": t },
+                "confirmer": "Supprimer ce message ? Les 4 Kio qu'il occupe sont rendus au quota de l'utilisateur." });
+            // Fil : messages reçus et réponses adressées à cet utilisateur.
+            let mut thread: Vec<(u64, Value)> = msgs
+                .iter()
+                .map(|m| (m.timestamp, json!({ "date": m.timestamp, "de": who, "message": m.text,
+                    "_gras": !m.read, "_actions": [delete(m.timestamp)] })))
+                .collect();
+            thread.extend(s.channel.outbox.sent.iter().filter(|(m, _)| m.recipient == Some(u)).map(|(m, _)| {
+                (m.timestamp, json!({ "date": m.timestamp, "de": "vous (Nœud)", "message": m.text }))
+            }));
+            thread.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
+            let panel = json!({
+                "titre": format!("Conversation avec {who}"),
+                "contenu": thread.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+                "ouverture": { "nom": "mark_user_messages_read", "valeurs": { "utilisateur": hx(&u) } },
+                "formulaires": [
+                    { "nom": "send_user_message", "titre": "Répondre", "libellé": "Envoyer la réponse",
+                      "champs": ["message"], "libellés": { "message": "réponse" }, "types": { "message": "texte" },
+                      "fixes": { "utilisateur": hx(&u) },
+                      "aide": { "message": "Lue par cet utilisateur seul à son prochain contact" } },
+                ] });
+            (last, json!({
+                "de": who, "messages": msgs.len(), "non lus": unread, "dernier reçu le": last,
+                "_gras": unread > 0,
+                "_ouvrir": panel.clone(),
+                "_actions": [{ "nom": "open_conversation", "libellé": "Ouvrir", "panneau": panel }],
+            }))
+        })
+        .collect();
+    rows.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
+    rows.into_iter().map(|(_, v)| v).collect()
+}
+
 fn node_summary(v: &Value) -> Value {
     let len = |k: &str| v.get(k).and_then(|x| x.as_array()).map_or(0, |a| a.len());
     let nat = v
@@ -722,6 +781,10 @@ fn node_summary(v: &Value) -> Value {
             .sum()
     });
     let alerts = len("alertes d'intégrité signalées");
+    let unread: u64 = v
+        .get("messages des utilisateurs")
+        .and_then(|x| x.as_array())
+        .map_or(0, |a| a.iter().filter_map(|r| r["non lus"].as_u64()).sum());
     json!([
         { "libellé": "Joignabilité", "valeur": nat, "état": nat_state, "page": "reseau" },
         { "libellé": "Annuaire", "valeur": dir, "état": dir_state, "page": "reseau" },
@@ -734,7 +797,9 @@ fn node_summary(v: &Value) -> Value {
           "état": if partners == 0 { "attention" } else { "ok" }, "page": "partenaires" },
         { "libellé": "Capacité", "valeur": capacity, "unité": "octets", "état": "neutre", "page": "stockage" },
         { "libellé": "Alertes d'intégrité", "valeur": alerts,
-          "état": if alerts == 0 { "ok" } else { "probleme" }, "page": "accueil" }
+          "état": if alerts == 0 { "ok" } else { "probleme" }, "page": "accueil" },
+        { "libellé": "Messages non lus", "valeur": unread,
+          "état": if unread == 0 { "neutre" } else { "attention" }, "page": "messages" }
     ])
 }
 
@@ -1045,31 +1110,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "pointeurs de migration connus": s.successors.len(),
         },
         "espace de secours": emergency_status(sh, &s),
-        "messages des utilisateurs": s.channel.inbox.received.iter().rev().map(|m| {
-            let who = s3m_protocol::pseudo::display(&[s.user_labels.get(&m.user_id).map(String::as_str)], &m.user_id);
-            let reply = json!({
-                "titre": format!("Message de {who}"),
-                "contenu": { "de": who, "reçu le": m.timestamp },
-                "message": m.text,
-                "formulaires": [
-                    { "nom": "send_user_message", "titre": "Répondre", "libellé": "Envoyer la réponse",
-                      "champs": ["message"], "libellés": { "message": "réponse" }, "types": { "message": "texte" },
-                      "fixes": { "utilisateur": hx(&m.user_id) },
-                      "aide": { "message": "Lue par cet utilisateur seul à son prochain contact" } },
-                    { "nom": "delete_user_message", "libellé": "Supprimer ce message", "champs": [], "style": "danger",
-                      "valeurs": { "utilisateur": hx(&m.user_id), "n°": m.timestamp },
-                      "confirmer": "Supprimer ce message ? Les 4 Kio qu'il occupe sont rendus au quota de l'utilisateur." },
-                ] });
-            json!({
-                "de": who, "reçu le": m.timestamp, "taille (octets)": m.text.len(),
-                "_ouvrir": reply.clone(),
-                "_actions": [
-                    { "nom": "reply_user", "libellé": "Répondre", "panneau": reply },
-                    { "nom": "delete_user_message", "libellé": "Supprimer", "style": "danger",
-                      "valeurs": { "utilisateur": hx(&m.user_id), "n°": m.timestamp },
-                      "confirmer": "Supprimer ce message ? Les 4 Kio qu'il occupe sont rendus au quota de l'utilisateur." },
-                ] })
-        }).collect::<Vec<_>>(),
+        "messages des utilisateurs": user_conversations(&s),
         "messages envoyés": s.channel.outbox.sent.iter().rev().map(|(m, _)| json!({
             "sorte": if m.kind == s3m_protocol::message::Kind::Alert { "alerte" }
                 else if m.announce_replacement.is_some() { "remplacement de la clé d'annonce" } else { "information" },
@@ -1623,6 +1664,11 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, St
                 } else {
                     Err("message introuvable".to_string())
                 }
+            })(),
+            "mark_user_messages_read" => (|| {
+                let u = unhex32(field(v, "utilisateur")?.trim())?;
+                let n = s.channel.inbox.mark_read(&u);
+                Ok(json!({ "ok": true, "message": format!("{n} message(s) marqué(s) lu(s)") }))
             })(),
             "send_user_message" => (|| {
                 let u = unhex32(field(v, "utilisateur")?.trim())?;

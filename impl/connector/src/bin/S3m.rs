@@ -530,6 +530,12 @@ fn main() {
                         if v.sync_error.is_some() && prev.as_ref().is_none_or(|p| p.sync_error.is_none()) {
                             say(id, &format!("Erreur de synchronisation : {}", v.sync_error.clone().unwrap_or_default()));
                         }
+                        // Au démarrage : messages non lus en attente.
+                        if prev.is_none() && v.unread_messages > 0 {
+                            let n = v.unread_messages;
+                            say(id, &format!("Vous avez {n} message{} non lu{} de votre Nœud.",
+                                if n > 1 { "s" } else { "" }, if n > 1 { "s" } else { "" }));
+                        }
                         if prev.as_ref().is_some_and(|p| v.messages_received > p.messages_received) {
                             let text: String = v.last_message.clone().unwrap_or_default().chars().take(120).collect();
                             say(id, &format!("Nouveau message de votre Nœud : {text}"));

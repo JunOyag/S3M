@@ -119,3 +119,26 @@ fn addressed_messages_and_announce_replacement_need_the_user() {
     ));
     assert_eq!(c.received_total, 4, "compteur des notifications");
 }
+
+/// Messages non lus du Connecteur : nouveaux non lus, marqués lus un à un
+/// ou tous ; un message conservé avant cette notion compte comme lu.
+#[test]
+fn node_messages_are_unread_until_opened() {
+    let node = pk(&PRIV_NODE);
+    let mut c = ChannelState::default();
+    c.pin(&node, None);
+    assert!(c.accept(&sign_message(&PRIV_NODE, &m(1, Kind::Info, None)), None));
+    assert!(c.accept(&sign_message(&PRIV_NODE, &m(2, Kind::Info, None)), None));
+    assert_eq!(c.unread(), 2);
+    assert!(c.mark_read(Kind::Info, 1));
+    assert!(!c.mark_read(Kind::Info, 1));
+    assert!(!c.mark_read(Kind::Alert, 2), "autre sorte");
+    assert_eq!(c.unread(), 1);
+    assert_eq!(c.mark_all_read(), 1);
+    assert_eq!(c.unread(), 0);
+    let old: Received = serde_json::from_str(
+        r#"{"kind":"Info","seq":1,"timestamp":1,"text":"x","successor":null}"#,
+    )
+    .unwrap();
+    assert!(old.read, "ancien message : lu");
+}

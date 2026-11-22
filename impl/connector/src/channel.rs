@@ -55,6 +55,14 @@ pub struct Received {
     /// Remplacement de la clé d'annonce proposé.
     #[serde(default)]
     pub announce_replacement: Option<Id>,
+    /// Lu par l'Utilisateur (un message conservé avant cette notion compte
+    /// comme lu).
+    #[serde(default = "already_read")]
+    pub read: bool,
+}
+
+fn already_read() -> bool {
+    true
 }
 
 /// État du canal, conservé dans `channel.json`.
@@ -124,6 +132,7 @@ impl ChannelState {
             successor: m.successor,
             personal: m.recipient.is_some(),
             announce_replacement: m.announce_replacement,
+            read: false,
         };
         // Remplacement de clé : jamais appliqué sans l'accord de l'Utilisateur.
         if let Some(k) = m.announce_replacement {
@@ -157,6 +166,36 @@ impl ChannelState {
             self.alert_republished_at = 0;
         }
         fresh
+    }
+
+    /// Marque lu le message `(kind, seq)` ; rend `true` s'il ne l'était pas.
+    pub fn mark_read(&mut self, kind: Kind, seq: u64) -> bool {
+        match self
+            .received
+            .iter_mut()
+            .find(|m| m.kind == kind && m.seq == seq && !m.read)
+        {
+            Some(m) => {
+                m.read = true;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Marque tous les messages lus ; rend leur nombre.
+    pub fn mark_all_read(&mut self) -> usize {
+        let mut n = 0;
+        for m in self.received.iter_mut().filter(|m| !m.read) {
+            m.read = true;
+            n += 1;
+        }
+        n
+    }
+
+    /// Messages non lus.
+    pub fn unread(&self) -> usize {
+        self.received.iter().filter(|m| !m.read).count()
     }
 
     /// L'Utilisateur accepte (`true`) ou refuse le remplacement de clé

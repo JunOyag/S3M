@@ -265,6 +265,14 @@ pub struct UserMessage {
     pub user_id: Id,
     pub timestamp: u64,
     pub text: String,
+    /// Lu par l'opérateur (état local du Nœud ; un message conservé avant
+    /// cette notion compte comme lu).
+    #[serde(default = "already_read")]
+    pub read: bool,
+}
+
+fn already_read() -> bool {
+    true
 }
 
 /// Messages reçus par le Nœud.
@@ -291,6 +299,7 @@ impl Inbox {
             user_id: *user_id,
             timestamp: now,
             text: text.to_string(),
+            read: false,
         });
         Ok(())
     }
@@ -307,6 +316,28 @@ impl Inbox {
             keep
         });
         gone
+    }
+
+    /// Marque lus les messages de `user_id` ; rend leur nombre.
+    pub fn mark_read(&mut self, user_id: &Id) -> usize {
+        let mut n = 0;
+        for m in self
+            .received
+            .iter_mut()
+            .filter(|m| &m.user_id == user_id && !m.read)
+        {
+            m.read = true;
+            n += 1;
+        }
+        n
+    }
+
+    /// Messages non lus (de `user_id`, ou de tous).
+    pub fn unread(&self, user_id: Option<&Id>) -> usize {
+        self.received
+            .iter()
+            .filter(|m| !m.read && user_id.is_none_or(|u| &m.user_id == u))
+            .count()
     }
 
     /// Supprime le message de `user_id` reçu à `timestamp` ; rend `true`

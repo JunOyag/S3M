@@ -1326,6 +1326,8 @@ entries:
     status: done
     owner: claude-code
     tests:
+      - message::user_messages_are_unread_until_their_conversation_is_opened
+      - channel::node_messages_are_unread_until_opened
       - message::addressed_info_reaches_only_its_recipient_and_alerts_cannot_carry_it
       - channel::addressed_messages_and_announce_replacement_need_the_user
       - channel::addressed_message_and_announce_replacement

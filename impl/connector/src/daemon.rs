@@ -549,6 +549,15 @@ pub fn status(sh: &Shared) -> Value {
             "aide": { "nom": "Remplace pour vous le nom choisi par l'opérateur ; l'empreinte reste toujours affichée" } }));
     }
     v["résumé"] = connector_summary(&v);
+    // Signalé une fois à l'ouverture du tableau de bord.
+    let unread = sh.channel.lock().unwrap().unread();
+    if unread > 0 {
+        v["à signaler"] = json!(format!(
+            "{unread} message{} de votre Nœud non lu{} : page « Messages du Nœud »",
+            if unread > 1 { "s" } else { "" },
+            if unread > 1 { "s" } else { "" }
+        ));
+    }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
@@ -557,7 +566,7 @@ pub fn status(sh: &Shared) -> Value {
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "messages", "titre": "Messages du Nœud",
           "sections": ["remplacement de la clé d'alerte", "alerte du nœud", "messages du nœud", "messages envoyés au nœud"],
-          "actions": ["accept_announce_replacement", "refuse_announce_replacement", "send_node_message", "acknowledge_alert"] },
+          "actions": ["mark_all_read", "accept_announce_replacement", "refuse_announce_replacement", "send_node_message", "acknowledge_alert"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
@@ -622,6 +631,17 @@ fn connector_summary(v: &Value) -> Value {
     let alert = p("/alerte du nœud/message");
     let unread = p("/alerte du nœud/acquittée").as_bool() == Some(false);
     let mut cards = vec![];
+    let unread_messages = v
+        .get("messages du nœud")
+        .and_then(|x| x.as_array())
+        .map_or(0, |a| a.iter().filter(|m| m["lu"] == json!(false)).count());
+    if unread_messages > 0 {
+        cards.push(
+            json!({ "libellé": "Messages non lus", "valeur": unread_messages,
+            "détail": "Messages de votre Nœud : ouvrez « Messages du Nœud »",
+            "état": "attention", "page": "messages" }),
+        );
+    }
     if !p("/remplacement de la clé d'alerte/nouvelle clé").is_null() {
         cards.push(json!({ "libellé": "Clé d'alerte du Nœud", "valeur": "remplacement à accepter",
             "détail": "Votre Nœud demande à remplacer sa clé d'alerte : ouvrez « Messages du Nœud »",
@@ -666,10 +686,12 @@ fn channel_status(sh: &Shared, v: &mut Value) {
     v["messages du nœud"] = json!(c.received.iter().rev().map(|m| {
         let kind = if m.kind == s3m_protocol::message::Kind::Alert { "alerte" }
             else if m.announce_replacement.is_some() { "remplacement de la clé d'alerte" } else { "information" };
+        let alert = m.kind == s3m_protocol::message::Kind::Alert;
         let reply = json!({
             "titre": format!("Message de votre Nœud ({kind})"),
             "contenu": { "reçu le": m.timestamp, "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" } },
             "message": m.text,
+            "ouverture": { "nom": "mark_message_read", "valeurs": { "sorte": if alert { "alerte" } else { "info" }, "n°": m.seq } },
             "formulaires": [{ "nom": "send_node_message", "titre": "Répondre", "libellé": "Envoyer la réponse",
                 "champs": ["message"], "libellés": { "message": "réponse" }, "types": { "message": "texte" },
                 "aide": { "message": "Lue par l'opérateur de votre Nœud ; occupe 4 Kio de votre quota pendant 30 jours" } }],
@@ -678,6 +700,8 @@ fn channel_status(sh: &Shared, v: &mut Value) {
             "sorte": kind,
             "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" },
             "reçu le": m.timestamp,
+            "lu": m.read,
+            "_gras": !m.read,
             "_ouvrir": reply.clone(),
             "_actions": [{ "nom": "reply_node", "libellé": "Répondre", "panneau": reply }],
         })
@@ -702,6 +726,13 @@ fn channel_status(sh: &Shared, v: &mut Value) {
         a.push(json!({ "nom": "send_node_message", "titre": "Écrire à mon Nœud", "libellé": "Envoyer",
             "champs": ["message"], "types": { "message": "texte" },
             "aide": { "message": "Lu par l'opérateur de votre Nœud (4 096 octets au plus, 10 messages par jour) ; chaque message occupe 4 Kio de votre quota pendant 30 jours" } }));
+        let unread = c.unread();
+        if unread > 0 {
+            a.push(json!({ "nom": "mark_all_read", "mise_en_avant": true,
+                "titre": format!("{unread} message{} de votre Nœud non lu{}", if unread > 1 { "s" } else { "" }, if unread > 1 { "s" } else { "" }),
+                "texte": "Cliquez sur un message pour le lire, ou marquez-les tous comme lus.",
+                "libellé": "Tout marquer comme lu", "style": "secondary", "champs": [] }));
+        }
         if c.pending_announce.is_some() {
             a.push(json!({ "nom": "accept_announce_replacement", "titre": "Remplacement de la clé d'alerte",
                 "libellé": "Accepter la nouvelle clé", "champs": [],
@@ -834,6 +865,25 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
                 .push(((sh.clock)(), text.to_string()));
             save_channel(sh);
             Ok(json!({ "ok": true, "message": "Message envoyé à votre Nœud" }))
+        }
+        "mark_message_read" => {
+            let kind = match v.get("sorte").and_then(Value::as_str) {
+                Some("alerte") => s3m_protocol::message::Kind::Alert,
+                _ => s3m_protocol::message::Kind::Info,
+            };
+            let seq = v
+                .get("n°")
+                .and_then(Value::as_u64)
+                .ok_or("numéro manquant")?;
+            if sh.channel.lock().unwrap().mark_read(kind, seq) {
+                save_channel(sh);
+            }
+            Ok(json!({ "ok": true, "message": "Message lu" }))
+        }
+        "mark_all_read" => {
+            let n = sh.channel.lock().unwrap().mark_all_read();
+            save_channel(sh);
+            Ok(json!({ "ok": true, "message": format!("{n} message(s) marqué(s) lu(s)") }))
         }
         "accept_announce_replacement" | "refuse_announce_replacement" => {
             let accept = name == "accept_announce_replacement";
@@ -1187,8 +1237,9 @@ pub struct TrayView {
     pub attach_error: Option<String>,
     pub mounted: bool,
     pub mount_point: Option<String>,
-    /// Messages du Nœud reçus depuis toujours, et le dernier.
+    /// Messages du Nœud reçus depuis toujours, et le dernier ; non lus.
     pub messages_received: u64,
+    pub unread_messages: usize,
     pub last_message: Option<String>,
 }
 
@@ -1254,6 +1305,7 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         mounted: ds.mounted,
         mount_point: sh.mount_point(),
         messages_received: sh.channel.lock().unwrap().received_total,
+        unread_messages: sh.channel.lock().unwrap().unread(),
         last_message: sh
             .channel
             .lock()
@@ -1592,6 +1644,8 @@ pub async fn start(
             }
             "admin_node" => admin_node(&sh.config.node.addr, &v),
             "send_node_message"
+            | "mark_message_read"
+            | "mark_all_read"
             | "acknowledge_alert"
             | "accept_announce_replacement"
             | "refuse_announce_replacement" => channel_action(&sh, name, &v),

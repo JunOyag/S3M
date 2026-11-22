@@ -137,6 +137,9 @@ const LABELS = {
   "accès choisi": ["Accès choisi", "Modifiable ensuite dans le tableau de bord (relance de S3m)."],
   "texte": ["Message", ""],
   "de": ["De", "Utilisateur auteur du message."],
+  "non lus": ["Non lus", "Messages pas encore ouverts ; ouvrir la conversation les marque lus."],
+  "lu": ["Lu", "Ouvrir le message le marque lu."],
+  "dernier reçu le": ["Dernier reçu le", ""],
   "taille (octets)": ["Taille", "Taille du message ; chacun occupe 4 Kio du quota de son auteur."],
   "emplacement": ["Emplacement", "Lettre ou point de montage du lecteur."],
   "réponse": ["Réponse", "Votre réponse, lue par cet utilisateur seul à son prochain contact."],
@@ -471,6 +474,8 @@ function openPanel(p) {
   if (p["message"] !== undefined) d.appendChild(el("blockquote", p["message"], "message"));
   (p["formulaires"] || []).forEach((a) => d.appendChild(actionForm(a, close)));
   d.showModal();
+  // `ouverture` : action silencieuse à l'ouverture (ex. marquer lu).
+  if (p["ouverture"]) callAction(p["ouverture"]["nom"], p["ouverture"]["valeurs"] || {}).then(refresh, () => {});
   const first = d.querySelector("textarea, input:not([type=hidden])");
   if (first) first.focus();
 }
@@ -583,7 +588,7 @@ function rowActions(list) {
 // `_ouvrir` s'ouvre dans un panneau au clic.
 const PAGE_SIZES = [10, 50, 100];
 const tableState = {};
-const HIDDEN_COLS = new Set(["_actions", "_ouvrir"]);
+const HIDDEN_COLS = new Set(["_actions", "_ouvrir", "_gras"]);
 
 function csvOf(cols, rows) {
   const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
@@ -681,6 +686,8 @@ function render(value, key) {
       }
       rows.slice(st.page * size, (st.page + 1) * size).forEach((o) => {
         const r = body.insertRow();
+        // `_gras` : ligne mise en évidence (ex. message non lu).
+        if (o["_gras"]) r.classList.add("unread");
         if (o["_ouvrir"]) {
           r.classList.add("clickable");
           r.tabIndex = 0;
@@ -980,7 +987,9 @@ function openBrowser(start, pick) {
 
 // Écrans : le moteur décrit `pages` (sections et actions de chacune) et
 // `résumé` (indicateurs de la vue d'ensemble). Sans `pages`, un seul écran.
-const RESERVED = new Set(["titre", "actions", "carte", "pages", "résumé"]);
+const RESERVED = new Set(["titre", "actions", "carte", "pages", "résumé", "à signaler"]);
+// `à signaler` : message affiché une fois, au premier chargement.
+let signaled = false;
 let actionsKey = "";
 const tabState = {};
 let lastStatus = null;
@@ -1061,6 +1070,10 @@ function cards(list) {
 
 function show(status) {
   lastStatus = status;
+  if (!signaled) {
+    signaled = true;
+    if (status["à signaler"]) toast(status["à signaler"], "ok");
+  }
   // Pas de redessin pendant qu'un panneau est ouvert, ni de perte de saisie
   // dans un filtre de tableau.
   const focused = document.activeElement;
