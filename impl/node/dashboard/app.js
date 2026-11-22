@@ -123,7 +123,8 @@ const LABELS = {
   "je confirme": ["Je confirme", ""],
   "numéro": ["Numéro", ""],
   "numéro ou adresse": ["Numéro ou adresse", "Numéro du Nœud dans la liste, ou son adresse /ip4/…/p2p/…"],
-  "2. nœuds trouvés sur le réseau local": ["Nœuds trouvés sur le réseau local", ""],
+  "nœuds trouvés sur le réseau local": ["Nœuds trouvés sur le réseau local", "Nœuds S3m annoncés sur votre réseau ; « Se rattacher » choisit le vôtre."],
+  "j'ai déjà une identité S3m": ["J'ai déjà une identité S3m", "Reprendre une identité existante avec sa phrase de 24 mots."],
   "dossier synchronisé": ["Dossier synchronisé", "Dossier où vos fichiers apparaissent en mode dossier, comme OneDrive : ils ne sont téléchargés qu'à l'ouverture."],
   "accès aux fichiers": ["Accès aux fichiers", "« lecteur » : une lettre de lecteur (WinFsp requis) ; « dossier » : un dossier synchronisé, sans rien à installer."],
   "accès": ["Accès", "« lecteur » ou « dossier » ; pris en compte au prochain lancement de S3m."],
@@ -132,7 +133,7 @@ const LABELS = {
   "nouvelle clé": ["Nouvelle clé", "Empreinte de la clé d'alerte proposée."],
   "clé actuelle": ["Clé actuelle", "Empreinte de la clé d'alerte retenue jusqu'ici."],
   "pour": ["Pour", "Message adressé à vous seul, ou à tous les utilisateurs du Nœud."],
-  "4. accès aux fichiers": ["Accès aux fichiers", "Lettre de lecteur (WinFsp requis) ou dossier synchronisé, comme OneDrive."],
+
   "accès choisi": ["Accès choisi", "Modifiable ensuite dans le tableau de bord (relance de S3m)."],
   "texte": ["Message", ""],
   "de": ["De", "Utilisateur auteur du message."],
@@ -739,6 +740,12 @@ function render(value, key) {
     box.append(t, foot);
     return box;
   }
+  if (value !== null && typeof value === "object" && ("_contenu" in value || "_formulaires" in value)) {
+    const box = el("div", undefined, "section-body");
+    if (value["_contenu"] !== undefined) box.appendChild(render(value["_contenu"], key));
+    (value["_formulaires"] || []).forEach((a) => box.appendChild(cachedForm(a)));
+    return box;
+  }
   if (value !== null && typeof value === "object") {
     const t = el("table", undefined, "kv");
     Object.entries(value).forEach(([k, v]) => {
@@ -769,6 +776,9 @@ function actionForm(a, done) {
   // `libellés` : texte affiché d'un champ (le nom envoyé reste `champs`).
   const labels = a["libellés"] || {};
   if (a["titre"]) f.appendChild(el("h3", a["titre"]));
+  // `texte` : explication (une ligne ou une liste) sous le titre.
+  (Array.isArray(a["texte"]) ? a["texte"] : a["texte"] ? [a["texte"]] : []).forEach((t) =>
+    f.appendChild(el("p", t, "form-text")));
   const inputs = (a["champs"] || []).map((name) => {
     const l = el("label");
     labelsOf[name] = l;
@@ -868,6 +878,17 @@ function actionForm(a, done) {
     if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
     runAction(a["nom"], body, b, a["libellé"]).then((ok) => ok && done && done());
   });
+  return f;
+}
+
+// Formulaire d'une section : le même élément est réutilisé tant que sa
+// description ne change pas (saisie et focus conservés).
+let formCache = new Map();
+let formCacheNext = new Map();
+function cachedForm(a) {
+  const k = JSON.stringify(a);
+  const f = formCache.get(k) || actionForm(a);
+  formCacheNext.set(k, f);
   return f;
 }
 
@@ -1066,7 +1087,14 @@ function show(status) {
   menu(pages);
   const p = pages.find((x) => x.id === page);
   const wanted = p.actions === null ? null : [...(p.actions || []), ...(p.extra || [])];
-  const actions = (status["actions"] || []).filter((a) => wanted === null || wanted.includes(a["nom"]));
+  const pageActions = (status["actions"] || []).filter((a) => wanted === null || wanted.includes(a["nom"]));
+  // `mise_en_avant` : en bandeau en haut de l'écran (ex. modifications en
+  // attente à appliquer), pas avec les autres actions.
+  const highlighted = pageActions.filter((a) => a["mise_en_avant"]);
+  const actions = pageActions.filter((a) => !a["mise_en_avant"]);
+  // Défilement horizontal des sections conservé d'un rafraîchissement à l'autre.
+  const scrolls = {};
+  main.querySelectorAll("[data-scroll-key]").forEach((x) => (scrolls[x.dataset.scrollKey] = x.scrollLeft));
   // Les formulaires ne sont reconstruits que s'ils changent, et restent dans
   // la page entre deux rafraîchissements : saisie et focus préservés.
   const key = page + JSON.stringify(actions);
@@ -1085,6 +1113,13 @@ function show(status) {
   [...main.children].forEach((c) => c !== keep && c !== frame && c.remove());
   const frag = document.createDocumentFragment();
   if (pages.length > 1) frag.appendChild(el("h2", p.titre, "page-title"));
+  if (highlighted.length) {
+    const b = el("section", undefined, "callout");
+    const row = el("div", undefined, "callout-forms");
+    highlighted.forEach((a) => row.appendChild(actionForm(a)));
+    b.appendChild(row);
+    frag.appendChild(b);
+  }
   if (p["résumé"] && Array.isArray(status["résumé"])) frag.appendChild(cards(status["résumé"]));
   const mapPage = pages.find((x) => x["cadre"] === "map.html");
   if (status["carte"] && p.carte) {
@@ -1111,14 +1146,20 @@ function show(status) {
     full.rel = "noopener";
     frag.appendChild(full);
   }
+  formCacheNext = new Map();
   p.sections.forEach((k) => {
     if (!(k in status)) return;
     const s = el("section");
+    s.dataset.scrollKey = page + "/" + k;
     s.appendChild(labelEl("h2", k));
     s.appendChild(render(status[k], k));
     frag.appendChild(s);
   });
+  formCache = formCacheNext;
   main.insertBefore(frag, frame || keep);
+  main.querySelectorAll("[data-scroll-key]").forEach((x) => {
+    if (scrolls[x.dataset.scrollKey]) x.scrollLeft = scrolls[x.dataset.scrollKey];
+  });
   if (!keep && actions.length) {
     const s = el("section");
     s.id = "actions";

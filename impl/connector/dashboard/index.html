@@ -130,6 +130,15 @@ td.short{white-space:nowrap}
   .browser-list li:hover, .browser-list li:focus { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
   .browser-list li.empty { cursor: default; }
   dialog.panel { width: min(640px, 94vw); }
+  .form-text { width: 100%; margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+  section.callout { border: 1px solid #c58a1a; border-left: 5px solid #c58a1a; background: color-mix(in srgb, #c58a1a 8%, var(--card)); }
+  section.callout h3 { color: var(--fg); font-size: 15px; }
+  section.callout .form-text { color: var(--fg); font-size: 13px; margin: 0; }
+  .callout-forms { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+  .callout-forms form { border: 0; padding: 0; margin: 0; }
+  .callout-forms form:first-child { flex: 1 1 320px; }
+  section.callout button[type=submit]:not(.secondary) { font-size: 15px; padding: 8px 18px; font-weight: 600; }
+  .section-body { display: grid; gap: 10px; }
 </style>
 </head>
 <body>

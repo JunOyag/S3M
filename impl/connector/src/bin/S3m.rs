@@ -530,6 +530,10 @@ fn main() {
                         if v.sync_error.is_some() && prev.as_ref().is_none_or(|p| p.sync_error.is_none()) {
                             say(id, &format!("Erreur de synchronisation : {}", v.sync_error.clone().unwrap_or_default()));
                         }
+                        if prev.as_ref().is_some_and(|p| v.messages_received > p.messages_received) {
+                            let text: String = v.last_message.clone().unwrap_or_default().chars().take(120).collect();
+                            say(id, &format!("Nouveau message de votre Nœud : {text}"));
+                        }
                         if v.reachable == Some(true) && id.offline_notified {
                             id.offline_notified = false;
                             say(id, "Votre Nœud est de nouveau joignable.");

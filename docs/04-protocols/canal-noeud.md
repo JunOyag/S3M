@@ -74,7 +74,9 @@ son Nœud, avec `UserCredential` :
 | `ReadMessages{since_info, since_alert}` | `Messages` | les 64 plus anciens messages de `seq` supérieur destinés au demandeur (sans `recipient`, ou `recipient` = son `pub_user`), toutes sortes confondues ; `node_name` : nom actuel du Nœud ([`deploiement.pseudos`](../07-deploiement/pseudos.md#regles)) |
 | `PostMessage{text}` | `Ack` | 4 096 o au plus ; 10 messages par Utilisateur et par 86 400 s, au-delà `RateLimited` ; quota, voir ci-dessous |
 
-Le Connecteur envoie `ReadMessages` à chaque sondage de son Nœud. Le Nœud
+Le Connecteur envoie `ReadMessages` à chaque sondage de son Nœud et, quand
+le Nœud est joignable, toutes les 30 s (ajout du 2026-11-22) ; chaque
+nouveau message est signalé par une notification de la barre des tâches. Le Nœud
 conserve ses messages 2 592 000 s (256 au plus, les plus anciens supprimés
 d'abord) et les messages reçus des Utilisateurs (`UserMessage`) 2 592 000 s.
 ### Décompte du quota {: #quota }

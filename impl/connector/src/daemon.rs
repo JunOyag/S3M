@@ -730,6 +730,27 @@ fn set_node_name(sh: &Shared, name: Option<String>) {
     }
 }
 
+/// Délai de relève des messages du Nœud, indépendant de la surveillance
+/// (`protocols.canal-noeud`).
+pub const MESSAGES_POLL_S: u64 = 30;
+
+/// Relève les messages du Nœud (et son nom) ; conserve l'état s'il change.
+async fn poll_messages(sh: &Shared) {
+    let cur = sh.channel.lock().unwrap().cursor;
+    if let Ok((list, node_name)) = sh.session.read_messages(cur.info, cur.alert).await {
+        let fresh = {
+            let mut c = sh.channel.lock().unwrap();
+            list.iter()
+                .filter(|s| c.accept(s, Some(&sh.pub_user)))
+                .count()
+        };
+        set_node_name(sh, node_name);
+        if fresh > 0 {
+            save_channel(sh);
+        }
+    }
+}
+
 async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
     use s3m_protocol::message::{alert_key, open_alert_entry, ALERT_POLL_S};
     let before = sh.channel.lock().unwrap().clone();
@@ -771,16 +792,7 @@ async fn channel_tick(sh: &Shared, now: u64, reachable: bool) {
         sh.channel.lock().unwrap().alert_polled_at = now;
     }
     if reachable {
-        let cur = sh.channel.lock().unwrap().cursor;
-        if let Ok((list, node_name)) = sh.session.read_messages(cur.info, cur.alert).await {
-            {
-                let mut c = sh.channel.lock().unwrap();
-                for s in &list {
-                    c.accept(s, Some(&sh.pub_user));
-                }
-            }
-            set_node_name(sh, node_name);
-        }
+        poll_messages(sh).await;
     }
     let republish = sh.channel.lock().unwrap().republish_due(now);
     let announce = sh.channel.lock().unwrap().announce;
@@ -1175,6 +1187,9 @@ pub struct TrayView {
     pub attach_error: Option<String>,
     pub mounted: bool,
     pub mount_point: Option<String>,
+    /// Messages du Nœud reçus depuis toujours, et le dernier.
+    pub messages_received: u64,
+    pub last_message: Option<String>,
 }
 
 /// Calcule la vue de l'état courant.
@@ -1238,6 +1253,14 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         attach_error: a.last_error,
         mounted: ds.mounted,
         mount_point: sh.mount_point(),
+        messages_received: sh.channel.lock().unwrap().received_total,
+        last_message: sh
+            .channel
+            .lock()
+            .unwrap()
+            .received
+            .last()
+            .map(|m| m.text.clone()),
     }
 }
 
@@ -1634,6 +1657,17 @@ pub async fn start(
             watch_once(&sh).await;
             emergency_tick(&sh).await;
             tokio::time::sleep(Duration::from_secs(sh.config.watch_interval_s.max(1))).await;
+        }
+    });
+    // Messages du Nœud : relevés toutes les 30 s quand il est joignable.
+    let sh = shared.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(MESSAGES_POLL_S)).await;
+            let reachable = sh.health.lock().unwrap().reachable == Some(true);
+            if reachable {
+                poll_messages(&sh).await;
+            }
         }
     });
     Ok((shared, url))

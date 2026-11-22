@@ -80,6 +80,9 @@ pub struct ChannelState {
     /// l'Utilisateur : `(nouvelle clé, seq)`.
     #[serde(default)]
     pub pending_announce: Option<(Id, u64)>,
+    /// Messages acceptés depuis toujours (notifications de la barre des tâches).
+    #[serde(default)]
+    pub received_total: u64,
 }
 
 impl ChannelState {
@@ -133,6 +136,7 @@ impl ChannelState {
             self.alert_acknowledged = false;
         }
         self.received.push(r);
+        self.received_total += 1;
         let extra = self.received.len().saturating_sub(MAX_RECEIVED);
         self.received.drain(..extra);
         true

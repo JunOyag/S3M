@@ -947,28 +947,46 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                 pos.1.get(&n).copied().unwrap_or(0),
             );
             let r2 = |x: f64| (x * 100.0).round() / 100.0;
-            json!({ "nœud": n,
-                    "nom": s3m_protocol::pseudo::display(&[s.partner_names.get(id).map(String::as_str)], id),
+            let name = s3m_protocol::pseudo::display(&[s.partner_names.get(id).map(String::as_str)], id);
+            let state = if peer.status.is_empty() { "partenaire".to_string() } else { peer.status.clone() };
+            // Colonnes essentielles ; le reste dans le panneau de la ligne.
+            json!({ "nom": name,
+                    "état": state,
                     "score": r2(sc.total),
-                    "fiabilité": r2(sc.reliability), "disponibilité": r2(sc.availability), "vitesse": r2(sc.speed),
-                    "état": if peer.status.is_empty() { "partenaire".to_string() } else { peer.status.clone() },
                     "pays": country(Some(&peer.ip)),
-                    "latence (ms)": if peer.answered == 0 { Value::Null } else { json!(peer.latency_ms.round()) },
-                    "dernier challenge réussi": pos.2.get(&n),
-                    "fragments confiés": p.ledger.hosted_for_partner,
-                    "fragments reçus": p.ledger.hosted_by_partner,
-                    "adresse": addrs.get(id),
+                    "confiés / reçus": format!("{} / {}", p.ledger.hosted_for_partner, p.ledger.hosted_by_partner),
                     "dernier échange": p.last_seen,
-                    "purge à venir": if p.last_seen == 0 { Value::Null } else { json!(purge) },
-                    "purge échue": p.last_seen != 0 && purge <= now })
+                    "score (tri)": sc.total,
+                    "_ouvrir": {
+                        "titre": format!("Partenaire {name}"),
+                        "contenu": {
+                            "nœud": n,
+                            "état": state,
+                            "score": r2(sc.total),
+                            "fiabilité": r2(sc.reliability), "disponibilité": r2(sc.availability), "vitesse": r2(sc.speed),
+                            "pays": country(Some(&peer.ip)),
+                            "latence (ms)": if peer.answered == 0 { Value::Null } else { json!(peer.latency_ms.round()) },
+                            "dernier challenge réussi": pos.2.get(&n),
+                            "fragments confiés": p.ledger.hosted_for_partner,
+                            "fragments reçus": p.ledger.hosted_by_partner,
+                            "adresse": addrs.get(id),
+                            "dernier échange": p.last_seen,
+                            "purge à venir": if p.last_seen == 0 { Value::Null } else { json!(purge) },
+                            "purge échue": p.last_seen != 0 && purge <= now,
+                        } } })
         })
         .collect();
     partners.sort_by(|a, b| {
-        b["score"]
+        b["score (tri)"]
             .as_f64()
             .unwrap_or(0.0)
-            .total_cmp(&a["score"].as_f64().unwrap_or(0.0))
+            .total_cmp(&a["score (tri)"].as_f64().unwrap_or(0.0))
     });
+    for p in &mut partners {
+        if let Some(o) = p.as_object_mut() {
+            o.remove("score (tri)");
+        }
+    }
     let candidates = peers.values().filter(|p| p.status == "candidat").count();
     let pol = s.attach_policy;
     let auto_used: u64 = s
@@ -2111,11 +2129,12 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
         .iter()
         .map(|u| {
             let id = u.volume_id.to_string();
-            let act = |nom: &str, libelle: &str| {
-                json!({ "nom": "volume_draft", "libellé": libelle, "valeurs": { "volume": id, "modification": nom } })
+            let act = |nom: &str, titre: &str, texte: &str, libelle: &str, style: &str| {
+                json!({ "nom": "volume_draft", "titre": titre, "texte": texte, "libellé": libelle, "style": style,
+                        "valeurs": { "volume": id, "modification": nom } })
             };
             let mut actions = vec![json!({ "nom": "volume_draft_edit", "titre": "Chemin et capacité",
-                "libellé": "Ajouter à la liste des actions",
+                "libellé": "Préparer ce changement",
                 "champs": ["nouveau chemin", "nouvelle capacité (Go)"], "fixes": { "volume": id },
                 "valeurs": { "nouveau chemin": u.mount_path.display().to_string(),
                              "nouvelle capacité (Go)": (u.max_capacity_bytes as f64 / (1u64 << 30) as f64 * 100.0).round() / 100.0 },
@@ -2123,17 +2142,24 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
                 "aide": { "nouveau chemin": "Les données doivent déjà s'y trouver",
                           "nouvelle capacité (Go)": "Capacité réservée sur ce disque" } })];
             if u.draining {
-                actions.push(act("cancel_remove", "Annuler le retrait"));
+                actions.push(act("cancel_remove", "Annuler le retrait",
+                    "Le volume redevient actif et reçoit de nouveau des blocs.", "Préparer l'annulation", "secondary"));
             } else {
-                actions.push(act("remove", "Retirer"));
+                actions.push(act("remove", "Retirer le volume",
+                    "Ses blocs sont recopiés sur les autres volumes, puis il n'est plus utilisé.", "Préparer le retrait", "secondary"));
             }
-            actions.push(act("lost", "Déclarer perdu"));
+            actions.push(act("lost", "Déclarer le volume perdu",
+                "Disque mort ou débranché pour de bon : ses blocs sont reconstruits depuis les partenaires.", "Préparer : déclarer perdu", "danger"));
             if u.blocks == 0 {
-                actions.push(act("wipe", "Effacer"));
+                actions.push(act("wipe", "Effacer le volume",
+                    "Le volume est vide : ses fichiers S3m sont supprimés du disque.", "Préparer l'effacement", "danger"));
             }
             let actions = vec![json!({ "nom": "edit_volume", "libellé": "Éditer", "panneau": {
                 "titre": format!("Volume {id} — {}", u.mount_path.display()),
-                "texte": "Chaque modification s'ajoute à la liste des actions de la page ; rien n'est fait avant « Appliquer ».",
+                "texte": [
+                    "1. Préparez ici un changement : il s'ajoute aux modifications en attente, rien n'est encore fait.",
+                    "2. Vérifiez-les en haut de la page Volumes, puis cliquez « Appliquer » pour tout exécuter d'un coup."
+                ],
                 "formulaires": actions } })];
             json!({
                 "volume": u.volume_id,
@@ -2202,14 +2228,23 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
         )
     };
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
-        a.push(json!({ "nom": "volume_draft_add", "titre": "Ajouter un volume", "libellé": "Ajouter à la liste",
+        a.push(json!({ "nom": "volume_draft_add", "titre": "Ajouter un volume", "libellé": "Préparer l'ajout",
+            "texte": "L'ajout rejoint les modifications en attente, en haut de la page ; il n'est fait qu'après « Appliquer ».",
             "champs": ["chemin", "capacité (Go)", "effacer et réutiliser"],
             "types": { "chemin": "chemin", "capacité (Go)": "number", "effacer et réutiliser": "bool" },
             "aide": { "chemin": "Dossier sur le disque (créé s'il n'existe pas)",
                       "effacer et réutiliser": "Seulement pour un disque d'un autre Nœud : ses données S3m seront effacées" } }));
-        a.push(json!({ "nom": "volume_apply", "titre": "Appliquer la liste des actions", "libellé": "Appliquer",
-            "champs": [], "confirmer": confirm }));
-        a.push(json!({ "nom": "volume_draft_clear", "libellé": "Vider la liste", "champs": [] }));
+        // Modifications en attente : bandeau en haut de la page (`mise_en_avant`).
+        if !ui.draft.is_empty() {
+            let n = ui.draft.len();
+            a.push(json!({ "nom": "volume_apply", "mise_en_avant": true,
+                "titre": format!("{n} modification{} de volume en attente", if n > 1 { "s" } else { "" }),
+                "texte": ui.draft.iter().map(|c| format!("• {}", c.describe())).collect::<Vec<_>>(),
+                "libellé": format!("Appliquer {}", if n > 1 { format!("les {n} modifications") } else { "la modification".into() }),
+                "champs": [], "confirmer": confirm }));
+            a.push(json!({ "nom": "volume_draft_clear", "mise_en_avant": true, "libellé": "Tout annuler",
+                "style": "secondary", "champs": [] }));
+        }
     }
 }
 
@@ -2256,7 +2291,10 @@ fn volume_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
                 return Err(format!("le volume {id} a déjà une action dans la liste"));
             }
         }
-        let m = format!("Ajouté à la liste des actions : {}", c.describe());
+        let m = format!(
+            "Préparé : {} — cliquez « Appliquer » en haut de la page Volumes",
+            c.describe()
+        );
         ui.draft.push(c);
         Ok(json!({ "ok": true, "message": m }))
     };

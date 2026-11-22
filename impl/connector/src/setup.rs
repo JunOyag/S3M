@@ -321,32 +321,36 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                 .collect();
             json!({
                 "titre": "S3m — premier lancement",
-                "1. votre phrase de récupération (à noter sur papier, ne pas photographier)": {
+                "votre phrase de récupération (à noter sur papier, ne pas photographier)": {
                     "24 mots": p.mnemonic,
                     "important": "Gardez-la hors de cet ordinateur : elle seule permet de retrouver vos fichiers.",
                 },
-                "2. nœuds trouvés sur le réseau local": if s.scanning { json!("recherche en cours…") } else if found.is_empty() { json!("aucun (le Nœud est-il allumé, sur le même réseau, mDNS actif ?)") } else { json!(found) },
-                "3. si le Nœud n'accepte pas le rattachement automatique, transmettez à son opérateur": {
+                "j'ai déjà une identité S3m": {
+                    "_contenu": "Reprenez-la avec sa phrase de 24 mots au lieu d'en créer une nouvelle.",
+                    "_formulaires": [
+                        { "nom": "restore", "libellé": "Reprendre cette identité", "champs": ["phrase de récupération"],
+                          "types": { "phrase de récupération": "texte" },
+                          "aide": { "phrase de récupération": "Vos 24 mots, séparés par des espaces" } },
+                    ],
+                },
+                "nœuds trouvés sur le réseau local": {
+                    "_contenu": if s.scanning { json!("recherche en cours…") } else if found.is_empty() { json!("aucun (le Nœud est-il allumé, sur le même réseau, annonce locale active ?)") } else { json!(found) },
+                    "_formulaires": [
+                        { "nom": "scan", "libellé": "Rechercher à nouveau", "style": "secondary", "champs": [] },
+                        { "nom": "manual", "titre": "Nœud absent de la liste : saisir son adresse",
+                          "libellé": "Se rattacher", "champs": ["adresse"],
+                          "aide": { "adresse": "Pour un Nœud joignable mais non trouvé ci-dessus (autre réseau, annonce locale désactivée) : son adresse /ip4/…/tcp/…/p2p/… figure dans son tableau de bord. S3m lui demande le rattachement automatiquement ; s'il le refuse, transmettez d'abord à son opérateur votre identifiant et votre sel (section ci-dessous)." } },
+                    ],
+                },
+                "si le Nœud n'accepte pas le rattachement automatique, transmettez à son opérateur": {
                     "user_id": p.user_id,
                     "salt": p.salt,
                 },
-                "4. accès aux fichiers": match (s.access.access.as_deref(), &s.access.folder, &s.access.mount) {
-                    (Some("dossier"), Some(f), _) => json!({ "accès choisi": "dossier synchronisé (comme OneDrive)", "dossier": f.display().to_string() }),
-                    (Some(_), _, Some(m)) => json!({ "accès choisi": if cfg!(windows) { "périphérique (lettre de lecteur)" } else { "périphérique (point de montage)" },
-                                                      "emplacement": m }),
-                    _ if drive_possible() => json!({ "accès choisi": "automatique : périphérique (lettre de lecteur), WinFsp est installé" }),
-                    _ => json!({ "accès choisi": "automatique : dossier synchronisé (WinFsp n'est pas installé)", "dossier": default_folder(&dir).display().to_string() }),
+                "accès aux fichiers": {
+                    "_contenu": access_summary(&s.access, &dir),
+                    "_formulaires": [access_form(&s.access, &dir)],
                 },
-                "actions": [
-                    { "nom": "restore", "titre": "J'ai déjà une identité S3m",
-                      "libellé": "Reprendre cette identité", "champs": ["phrase de récupération"],
-                      "aide": { "phrase de récupération": "Vos 24 mots, séparés par des espaces" } },
-                    access_form(&s.access, &dir),
-                    { "nom": "manual", "titre": "Nœud absent de la liste : saisir son adresse",
-                      "libellé": "Se rattacher", "champs": ["adresse"],
-                      "aide": { "adresse": "Pour un Nœud joignable mais non trouvé ci-dessus (autre réseau, annonce locale désactivée) : son adresse /ip4/…/tcp/…/p2p/… figure dans son tableau de bord. S3m lui demande le rattachement automatiquement ; s'il le refuse, transmettez d'abord à son opérateur votre identifiant et votre sel (section 3)." } },
-                    { "nom": "scan", "libellé": "Rechercher à nouveau", "champs": [] }
-                ]
+                "actions": []
             })
         })
     };
@@ -504,4 +508,28 @@ fn access_form(c: &AccessChoice, dir: &Path) -> Value {
                   "dossier": "Dossier vide ou nouveau, sur un disque local (NTFS sous Windows) ; « Parcourir… » permet d'en créer un",
                   "lettre": "Lettre libre, par exemple P:",
                   "point de montage": "Dossier vide où le lecteur sera monté" } })
+}
+
+/// Accès retenu, avec seulement l'emplacement qui correspond au type
+/// d'accès et à la plateforme (pas de lettre hors de Windows).
+fn access_summary(c: &AccessChoice, dir: &Path) -> Value {
+    let drive = if cfg!(windows) {
+        "périphérique (lettre de lecteur)"
+    } else {
+        "périphérique (point de montage)"
+    };
+    match (c.access.as_deref(), &c.folder, &c.mount) {
+        (Some("dossier"), Some(f), _) => {
+            json!({ "accès choisi": "dossier synchronisé (comme OneDrive)", "dossier": f.display().to_string() })
+        }
+        (Some(_), _, Some(m)) if cfg!(windows) => json!({ "accès choisi": drive, "lettre": m }),
+        (Some(_), _, Some(m)) => json!({ "accès choisi": drive, "point de montage": m }),
+        _ if cfg!(windows) && drive_possible() => {
+            json!({ "accès choisi": format!("automatique : {drive}, WinFsp est installé"), "lettre": free_drive_letter() })
+        }
+        _ if !cfg!(windows) => json!({ "accès choisi": "à choisir ci-dessous" }),
+        _ => {
+            json!({ "accès choisi": "automatique : dossier synchronisé (WinFsp n'est pas installé)", "dossier": default_folder(dir).display().to_string() })
+        }
+    }
 }

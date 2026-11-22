@@ -117,4 +117,5 @@ fn addressed_messages_and_announce_replacement_need_the_user() {
         &sign_message(&PRIV_ANNOUNCE, &m(2, Kind::Alert, None)),
         Some(&me)
     ));
+    assert_eq!(c.received_total, 4, "compteur des notifications");
 }
