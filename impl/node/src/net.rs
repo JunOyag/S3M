@@ -92,6 +92,8 @@ pub struct NatState {
     /// Adresses via relais (avec `/p2p/<soi>`).
     pub relayed: Vec<String>,
     pub listen: Vec<String>,
+    /// Adresses sur le réseau local (IPv4 privées, avec `/p2p/<soi>`).
+    pub lan: Vec<String>,
     pub hole_punch_ok: u64,
     pub hole_punch_failed: u64,
     pub relay_circuits_served: u64,
@@ -103,12 +105,17 @@ pub struct NatState {
 }
 
 impl NatState {
-    /// Multiaddrs à publier : directes (TCP puis QUIC), puis via relais.
+    /// Multiaddrs à publier : directes (TCP puis QUIC), via relais, puis
+    /// sur le réseau local (`network.traversee-nat`).
     pub fn announced(&self) -> Vec<String> {
         let mut direct = self.external.clone();
         direct.sort_by_key(|a| a.contains("/quic"));
         direct.extend(self.relayed.iter().cloned());
-        direct.dedup();
+        let mut lan = self.lan.clone();
+        lan.sort_by_key(|a| a.contains("/quic"));
+        direct.extend(lan);
+        let mut seen = std::collections::HashSet::new();
+        direct.retain(|a| seen.insert(a.clone()));
         direct
     }
 
@@ -199,6 +206,11 @@ fn with_self(a: &Multiaddr, me: PeerId) -> String {
     } else {
         a.clone().with(Protocol::P2p(me)).to_string()
     }
+}
+
+/// Adresse sur un réseau local (IPv4 privée).
+fn is_lan(a: &Multiaddr) -> bool {
+    matches!(a.iter().next(), Some(Protocol::Ip4(v)) if v.is_private())
 }
 
 /// Adresse publiquement routable (hors réseaux privés et boucle locale).
@@ -438,6 +450,9 @@ async fn run(
                             n.relayed.push(with_self(&address, me));
                         } else {
                             n.listen.push(address.to_string());
+                            if is_lan(&address) {
+                                n.lan.push(with_self(&address, me));
+                            }
                         }
                     }
                     // Écoute directe sur une adresse publique : joignable tel quel.
@@ -457,6 +472,7 @@ async fn run(
                     let s = with_self(&address, me);
                     let mut n = nat.lock().unwrap();
                     n.relayed.retain(|a| *a != s);
+                    n.lan.retain(|a| *a != s);
                     n.listen.retain(|a| *a != address.to_string());
                 }
                 SwarmEvent::ExternalAddrConfirmed { address } => {

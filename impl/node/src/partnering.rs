@@ -200,6 +200,29 @@ pub struct Net<'a> {
     pub own_entry: Option<Vec<u8>>,
 }
 
+/// Met en tête une adresse TCP du même réseau local (même /24 qu'une
+/// adresse locale de `own`) : deux Nœuds derrière la même box se joignent
+/// sans passer par elle (`network.traversee-nat`).
+pub fn lan_first(addrs: &mut Vec<String>, own: &[String]) {
+    let prefix = |a: &str| -> Option<[u8; 3]> {
+        match a.parse::<Multiaddr>().ok()?.iter().next()? {
+            Protocol::Ip4(v) if v.is_private() => {
+                let o = v.octets();
+                Some([o[0], o[1], o[2]])
+            }
+            _ => None,
+        }
+    };
+    let mine: Vec<[u8; 3]> = own.iter().filter_map(|a| prefix(a)).collect();
+    if let Some(i) = addrs
+        .iter()
+        .position(|a| !a.contains("/quic") && prefix(a).is_some_and(|p| mine.contains(&p)))
+    {
+        let a = addrs.remove(i);
+        addrs.insert(0, a);
+    }
+}
+
 /// Partenaires exclus des nouveaux placements (score bas ou retrait).
 pub fn excluded(cfg: &PartneringConfig, state: &DispersalState) -> HashSet<Id> {
     state
@@ -254,8 +277,14 @@ pub async fn run_partnering(
     let mut st = std::mem::take(&mut state.partnering);
 
     // Partenariats acceptés à la demande d'autres Nœuds.
+    let own = net
+        .own_entry
+        .as_deref()
+        .map(|e| entry_multiaddrs(&me, e))
+        .unwrap_or_default();
     let inbound = std::mem::take(&mut service.lock().unwrap().new_partners);
     for (n, mut addrs) in inbound {
+        lan_first(&mut addrs, &own);
         if !addrs.is_empty() {
             let a = addrs.remove(0);
             net.addrs.lock().unwrap().insert(n, a.clone());
@@ -309,6 +338,7 @@ pub async fn run_partnering(
                 continue;
             };
             let mut addrs = entry_multiaddrs(&n, &env);
+            lan_first(&mut addrs, &own);
             if addrs.is_empty() {
                 continue;
             }

@@ -392,3 +392,62 @@ async fn nodes_discover_score_and_partner_then_retire_weak_partners() {
         "terminé"
     );
 }
+
+/// Réseau local sans adresse externe (`network.traversee-nat`) : adresses
+/// locales publiées en dernier, et préférées entre Nœuds du même /24.
+#[test]
+fn lan_addresses_are_announced_last_and_preferred_on_the_same_lan() {
+    let n = s3m_node::net::NatState {
+        external: vec!["/ip4/82.1.2.3/tcp/20385/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9".into()],
+        relayed: vec!["/ip4/5.6.7.8/tcp/4001/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9/p2p-circuit/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9".into()],
+        lan: vec![
+            "/ip4/192.168.0.10/udp/4001/quic-v1/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9".into(),
+            "/ip4/192.168.0.10/tcp/4001/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9".into(),
+        ],
+        ..Default::default()
+    };
+    let a = n.announced();
+    assert_eq!(
+        a[0],
+        "/ip4/82.1.2.3/tcp/20385/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9"
+    );
+    assert_eq!(
+        a[2],
+        "/ip4/192.168.0.10/tcp/4001/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9"
+    );
+    assert_eq!(a.len(), 4);
+    let only_lan = s3m_node::net::NatState {
+        lan: vec![
+            "/ip4/10.0.0.5/tcp/4001/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9"
+                .into(),
+        ],
+        ..Default::default()
+    };
+    assert_eq!(
+        only_lan.announced(),
+        vec![
+            "/ip4/10.0.0.5/tcp/4001/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9"
+                .to_string()
+        ]
+    );
+
+    let own = vec![
+        "/ip4/192.168.0.20/tcp/4001/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9"
+            .to_string(),
+    ];
+    let mut peer = a.clone();
+    lan_first(&mut peer, &own);
+    assert_eq!(
+        peer[0],
+        "/ip4/192.168.0.10/tcp/4001/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9"
+    );
+    let mut far = a.clone();
+    lan_first(
+        &mut far,
+        &[
+            "/ip4/10.1.1.1/tcp/4001/p2p/12D3KooWRfTtCoAc8xt85RJ5PyPrGUdvERfWCApb1GbfZ3tAyhj9"
+                .to_string(),
+        ],
+    );
+    assert_eq!(far, a, "autre réseau local : ordre inchangé");
+}

@@ -50,7 +50,13 @@ une seule pile libp2p (même identité `pub_node`, mêmes ports) : TCP et
 
 L'entrée DHT Node ([`network.NodeEntry`](../02-schemas/network/NodeEntry.md))
 porte, champ additif `addrs`, la liste des multiaddrs joignables : adresses
-externes confirmées (TCP puis QUIC) d'abord, adresses via relais ensuite.
+externes confirmées (TCP puis QUIC) d'abord, adresses via relais ensuite,
+puis, ajout du 2026-11-22, ses adresses sur le réseau local (IPv4 privées).
+Sans adresse externe ni relais, le Nœud publie donc quand même son entrée,
+avec ses seules adresses locales : les Nœuds d'un même réseau local se
+découvrent et deviennent partenaires sans être joignables depuis Internet.
+Un pair qui partage un réseau local (même préfixe /24) avec le Nœud essaie
+d'abord son adresse locale, sans dépendre du retour par la box.
 `ip`/`port` restent l'adresse TCP directe (configurée par `public_ip`, sinon
 détectée). Les pairs, la recherche de partenaires, la restauration et le
 Connecteur essaient les adresses dans cet ordre.
