@@ -1125,7 +1125,10 @@ fn dispersal_status(sh: &Shared) -> Value {
     };
     json!({
         "paramètres": { "k": sh.config.dispersal.k, "coef": sh.config.dispersal.coef,
-                        "partenaires requis par stripe": sh.config.dispersal.k * sh.config.dispersal.coef },
+                        "partenaires requis par stripe": sh.config.dispersal.k * sh.config.dispersal.coef,
+                        "partenaires minimum par stripe": sh.config.dispersal.min_confirmations(),
+                        "mode essai": (sh.config.dispersal.min_confirmations() < sh.config.dispersal.k + 2)
+                            .then_some("minimum abaissé : vos fichiers ne supportent plus la perte de partenaires") },
         "dernier cycle": cycle.map(|(t, r)| json!({ "instant": t, "stripes dispersés": r.stripes_dispersed,
                         "publications": r.published, "fragments libérés": r.purged, "erreurs": r.errors })),
         "utilisateurs": users,

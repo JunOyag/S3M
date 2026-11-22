@@ -60,6 +60,21 @@ pub struct EngineConfig {
     pub idle_timeout_s: u64,
     /// Délai de grâce avant purge des fragments orphelins.
     pub grace_s: u64,
+    /// Confirmations minimales par stripe : k + 2 (0 = k + 2), abaissable
+    /// jusqu'à 1 pour des essais sur un réseau local de quelques Nœuds
+    /// (`protocols.dispersion-transactionnelle`).
+    #[serde(default)]
+    pub min_confirmations: usize,
+}
+
+impl EngineConfig {
+    /// Seuil de confirmation effectif, entre 1 et k + 2.
+    pub fn min_confirmations(&self) -> usize {
+        match self.min_confirmations {
+            0 => self.k + 2,
+            n => n.clamp(1, self.k + 2),
+        }
+    }
 }
 
 impl Default for EngineConfig {
@@ -69,6 +84,7 @@ impl Default for EngineConfig {
             coef: COEF,
             idle_timeout_s: 300,
             grace_s: 3_600,
+            min_confirmations: 0,
         }
     }
 }
@@ -272,12 +288,12 @@ pub(crate) async fn disperse(
         parity: placed,
         salt: salt.map(|s| hx(&s)),
     };
-    if rec.parity.len() < cfg.k + 2 {
+    if rec.parity.len() < cfg.min_confirmations() {
         retire(&rec, retired, now);
         return Err(format!(
             "confirmations insuffisantes : {}/{} (partenaires joignables : {})",
             rec.parity.len(),
-            cfg.k + 2,
+            cfg.min_confirmations(),
             candidates.len()
         ));
     }

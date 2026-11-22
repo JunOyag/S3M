@@ -51,6 +51,7 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
         coef: 2,
         idle_timeout_s: 100,
         grace_s: 0,
+        min_confirmations: 0,
     };
     let clock: Clock = Arc::new(|| 1_000);
     let listen: libp2p::Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();

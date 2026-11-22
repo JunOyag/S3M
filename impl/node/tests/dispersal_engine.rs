@@ -62,6 +62,7 @@ async fn node_disperses_publishes_and_data_survives_total_node_loss() {
         coef: 2,
         idle_timeout_s: 100,
         grace_s: 0,
+        min_confirmations: 0,
     };
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000);
     let listen: libp2p::Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
@@ -198,4 +199,19 @@ async fn node_disperses_publishes_and_data_survives_total_node_loss() {
     let mut want = originals.clone();
     want.sort();
     assert_eq!(recovered, want);
+}
+
+/// Minimum de partenaires par stripe : k + 2 par défaut, abaissable pour des
+/// essais locaux, jamais sous 1 ni au-dessus de k + 2.
+#[test]
+fn minimum_confirmations_can_be_lowered_for_local_tests_only_within_bounds() {
+    let c = |n| EngineConfig {
+        min_confirmations: n,
+        ..Default::default()
+    };
+    assert_eq!(c(0).min_confirmations(), 6);
+    assert_eq!(c(2).min_confirmations(), 2);
+    assert_eq!(c(99).min_confirmations(), 6);
+    let parsed: EngineConfig = serde_json::from_str(r#"{"idle_timeout_s":1,"grace_s":1}"#).unwrap();
+    assert_eq!(parsed.min_confirmations(), 6, "anciens fichiers : valeur normale");
 }

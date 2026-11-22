@@ -372,7 +372,7 @@ pub async fn run_upkeep(
                 // Fragments jamais placés (dispersion partielle).
                 let placed: HashSet<u16> = rec.parity.iter().map(|(i, _, _)| *i).collect();
                 let up_count = rec.parity.iter().filter(|(_, _, p)| available(p)).count();
-                if up_count < cfg.k + 2 {
+                if up_count < cfg.min_confirmations() {
                     indices.extend(
                         (cfg.k..cfg.k * (1 + cfg.coef))
                             .map(|i| i as u16)
@@ -447,7 +447,7 @@ pub async fn run_upkeep(
                                 }))
                     })
                     .count()
-                    < cfg.k + 2
+                    < cfg.min_confirmations()
             });
             if weak {
                 changed = true;

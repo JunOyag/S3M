@@ -241,6 +241,14 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Contrôles",
+        "partenaires minimum par stripe (essais)",
+        "dispersal.min_confirmations",
+        Kind::Number,
+        false,
+        "0 = 6 (k + 2, valeur normale). Abaisser jusqu'à 1 seulement pour des essais sur un réseau local de quelques Nœuds : vos fichiers ne supportent alors plus la perte de partenaires.",
+    ),
+    f(
+        "Contrôles",
         "délai de grâce avant purge (s)",
         "dispersal.grace_s",
         Kind::Number,

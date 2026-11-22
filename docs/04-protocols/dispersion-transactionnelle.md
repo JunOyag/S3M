@@ -23,6 +23,9 @@ l'ancienne version reste intégralement valide et récupérable.
    sont dispersées en premier, puis les niveaux d'index qui les référencent,
    jusqu'à la racine — jamais l'inverse.
 2. **Seuil de confirmation** : chaque Stripe doit recevoir au moins **k+2**
+   (réglage `min_confirmations`, abaissable jusqu'à 1 pour des essais sur
+   un réseau local de quelques Nœuds, ajout du 2026-11-22 ; la tolérance
+   aux pannes n'est alors plus garantie et le tableau de bord l'indique)
    confirmations partenaires avant que le niveau parent ne soit dispersé à
    son tour.
    Testé par `dispersion::parent_waits_for_k_plus_2_confirmations_on_every_child`

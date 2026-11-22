@@ -35,6 +35,7 @@ async fn fraud_absence_and_local_corruption_are_repaired_automatically() {
         coef: 2,
         idle_timeout_s: 100,
         grace_s: 0,
+        min_confirmations: 0,
     };
     let ucfg = UpkeepConfig {
         challenges_per_cycle: 64,
