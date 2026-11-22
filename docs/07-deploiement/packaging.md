@@ -111,7 +111,15 @@ ouvre directement un écran.
 Le résultat de chaque action s'affiche dans un message éphémère (succès ou
 erreur), le bouton étant désactivé pendant l'envoi ; les actions propres à
 un élément d'un tableau (par exemple « Se rattacher » à un Nœud trouvé)
-sont des boutons sur sa ligne.
+sont des boutons sur sa ligne. Ajout du 2026-11-22 : une ligne modifiable (utilisateur,
+volume du Nœud) porte un seul bouton « Éditer », qui ouvre un **panneau**
+modal regroupant ses modifications préremplies (quota et étiquette d'un
+utilisateur ; chemin, capacité, retrait, perte et effacement d'un volume) ;
+la page ne répète pas ces formulaires. Un secret remis une seule fois
+(phrase d'annonce de
+[`protocols.canal-noeud`](../04-protocols/canal-noeud.md)) s'affiche dans
+un panneau qui ne se ferme qu'après confirmation, en grille de 6 × 4 mots,
+avec la démarche à suivre — jamais dans un message éphémère.
 
 ## Dashboard Connecteur
 

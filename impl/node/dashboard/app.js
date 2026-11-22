@@ -375,7 +375,9 @@ function toast(message, kind = "ok", href) {
 
 // ---------------------------------------------------------------- actions
 
+// Rend `true` si l'action a réussi.
 async function runAction(nom, body, button, label) {
+  let ok = false;
   if (button) button.disabled = true;
   try {
     const r = await fetch("/api/action/" + encodeURIComponent(nom), {
@@ -388,6 +390,9 @@ async function runAction(nom, body, button, label) {
       // `ouvrir` : page à ouvrir (dashboard d'un Nœud administré à distance).
       const w = res.ouvrir ? window.open(res.ouvrir, "_blank", "noopener") : true;
       toast(res.message || (label ? `${label} : c'est fait` : "C'est fait"), "ok", w ? undefined : res.ouvrir);
+      // `révéler` : secret à noter, affiché une seule fois dans un panneau.
+      if (res["révéler"]) showReveal(res["révéler"]);
+      ok = true;
       refresh();
     } else {
       toast(await r.text(), "error");
@@ -397,6 +402,56 @@ async function runAction(nom, body, button, label) {
   } finally {
     if (button) button.disabled = false;
   }
+  return ok;
+}
+
+// ---------------------------------------------------------------- panneaux
+
+// Panneau modal : titre, croix de fermeture, contenu ; fermé par Échap.
+function modal(title, closable = true) {
+  const d = el("dialog", undefined, "panel");
+  const head = el("div", undefined, "panel-head");
+  head.appendChild(el("h2", title));
+  const close = () => {
+    d.close();
+    d.remove();
+  };
+  if (closable) {
+    const x = el("button", "✕", "small close");
+    x.type = "button";
+    x.title = "Fermer";
+    x.addEventListener("click", close);
+    head.appendChild(x);
+  } else {
+    d.addEventListener("cancel", (e) => e.preventDefault());
+  }
+  d.appendChild(head);
+  document.body.appendChild(d);
+  return { d, close };
+}
+
+// Panneau d'édition d'une ligne : formulaires préremplis ; fermé après une
+// modification réussie.
+function openPanel(p) {
+  const { d, close } = modal(p["titre"] || "Modifier");
+  const texts = Array.isArray(p["texte"]) ? p["texte"] : p["texte"] ? [p["texte"]] : [];
+  texts.forEach((t) => d.appendChild(el("p", t, "muted")));
+  (p["formulaires"] || []).forEach((a) => d.appendChild(actionForm(a, close)));
+  d.showModal();
+}
+
+// Secret affiché une seule fois (24 mots en grille 6 × 4) et démarche.
+function showReveal(r) {
+  const { d, close } = modal(r["titre"] || "À noter", false);
+  (r["texte"] || []).forEach((t, i) => d.appendChild(el("p", `${i + 1}. ${t}`)));
+  if (r["24 mots"]) d.appendChild(wordGrid(r["24 mots"]));
+  const b = el("button", r["fermer"] || "Fermer");
+  b.type = "button";
+  b.addEventListener("click", () => {
+    if (window.confirm("Avez-vous bien noté les 24 mots ? Ils ne seront plus affichés.")) close();
+  });
+  d.appendChild(b);
+  d.showModal();
 }
 
 function cell(v) {
@@ -462,7 +517,9 @@ function rowActions(list) {
   const td = el("td", undefined, "row-actions");
   for (const a of list || []) {
     const b = el("button", a["libellé"], "small");
-    b.addEventListener("click", () => runAction(a["nom"], a["valeurs"] || {}, b, a["libellé"]));
+    // `panneau` : le bouton ouvre un panneau d'édition (formulaires).
+    b.addEventListener("click", () =>
+      a["panneau"] ? openPanel(a["panneau"]) : runAction(a["nom"], a["valeurs"] || {}, b, a["libellé"]));
     td.appendChild(b);
   }
   return td;
@@ -582,7 +639,9 @@ function render(value, key) {
 }
 
 // Formulaire : champs texte, nombre ou case à cocher, valeurs pré-remplies.
-function actionForm(a) {
+// `fixes` : valeurs envoyées sans champ visible (ligne éditée) ; `done` :
+// appelé après succès (fermeture du panneau).
+function actionForm(a, done) {
   const f = el("form", undefined, (a["champs"] || []).length > 3 ? "form grid" : "form");
   const values = a["valeurs"] || {};
   const types = a["types"] || {};
@@ -618,11 +677,11 @@ function actionForm(a) {
   f.appendChild(b);
   f.addEventListener("submit", (ev) => {
     ev.preventDefault();
-    const body = {};
+    const body = Object.assign({}, a["fixes"] || {}, a["valeurs"] && !(a["champs"] || []).length ? a["valeurs"] : {});
     inputs.forEach((i) => (body[i.name] = i.type === "checkbox" ? i.checked : i.value.trim()));
     // `confirmer` : fenêtre de confirmation avant l'envoi.
     if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
-    runAction(a["nom"], body, b, a["libellé"]);
+    runAction(a["nom"], body, b, a["libellé"]).then((ok) => ok && done && done());
   });
   return f;
 }

@@ -648,13 +648,13 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "sections": ["alertes d'intégrité signalées", "identité"], "actions": ["set_node_name"] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
-          "actions": ["attach_user", "set_quota", "set_user_label", "set_attach_policy"] },
+          "actions": ["attach_user", "set_attach_policy"] },
         { "id": "partenaires", "titre": "Partenaires", "carte": true,
           "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner"] },
         { "id": "carte", "titre": "Carte du monde", "cadre": "map.html", "sections": [], "actions": [] },
         { "id": "volumes", "titre": "Volumes",
           "sections": ["volumes", "liste des actions", "imports de volumes", "journal des volumes"],
-          "actions": ["volume_draft_add", "volume_draft_edit", "volume_apply", "volume_draft_clear"] },
+          "actions": ["volume_draft_add", "volume_apply", "volume_draft_clear"] },
         { "id": "stockage", "titre": "Stockage et protection",
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "messages", "titre": "Messages",
@@ -899,13 +899,27 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         .users
         .iter()
         .map(|(id, u)| {
+            let name = s3m_protocol::pseudo::display(&[s.user_labels.get(id).map(String::as_str)], id);
+            let gib = (u.quota_bytes as f64 / (1u64 << 30) as f64 * 100.0).round() / 100.0;
             json!({ "utilisateur": hx(id),
-                    "nom": s3m_protocol::pseudo::display(&[s.user_labels.get(id).map(String::as_str)], id),
+                    "nom": name,
                     "quota (octets)": u.quota_bytes,
                     "utilisé (octets)": u.used_bytes,
                     "rattachement": if s.auto_attached.contains(id) { "automatique" } else { "manuel" },
                     "pays": country(s.last_user_ip.get(id)),
-                    "racine": hx(&u.root) })
+                    "racine": hx(&u.root),
+                    "_actions": [{ "nom": "edit_user", "libellé": "Éditer", "panneau": {
+                        "titre": format!("Utilisateur {name}"),
+                        "formulaires": [
+                            { "nom": "set_quota", "titre": "Quota", "libellé": "Changer le quota",
+                              "champs": ["quota (Gio)"], "fixes": { "user_id": hx(id) },
+                              "valeurs": { "quota (Gio)": gib }, "types": { "quota (Gio)": "number" },
+                              "aide": { "quota (Gio)": format!("Utilisé : {:.2} Gio", u.used_bytes as f64 / (1u64 << 30) as f64) } },
+                            { "nom": "set_user_label", "titre": "Étiquette", "libellé": "Enregistrer",
+                              "champs": ["étiquette"], "fixes": { "utilisateur": hx(id) },
+                              "valeurs": { "étiquette": s.user_labels.get(id).cloned().unwrap_or_default() },
+                              "aide": { "étiquette": "Visible par vous seul ; vide pour l'effacer" } },
+                        ] } }] })
         })
         .collect();
     users.sort_by_key(|v| v["utilisateur"].to_string());
@@ -1021,10 +1035,6 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             { "nom": "set_node_name", "titre": "Nom du Nœud", "libellé": "Enregistrer",
               "champs": ["nom"], "valeurs": { "nom": s.name.clone().unwrap_or_default() },
               "aide": { "nom": "Publié dans l'annuaire et affiché par les connecteurs avec l'empreinte du Nœud (64 octets au plus) ; vide pour aucun nom" } },
-            { "nom": "set_user_label", "titre": "Étiquette d'un utilisateur", "libellé": "Enregistrer",
-              "champs": ["utilisateur", "étiquette"],
-              "aide": { "utilisateur": "Identifiant de l'utilisateur (colonne « Utilisateur »)",
-                        "étiquette": "Visible par vous seul ; vide pour l'effacer" } },
             { "nom": "send_message", "titre": "Écrire aux utilisateurs", "libellé": "Envoyer",
               "champs": ["message"],
               "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (4 096 octets au plus, conservé 30 jours)" } },
@@ -1049,10 +1059,6 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "champs": ["node_id", "addr"],
               "libellés": { "node_id": "identifiant du Nœud", "addr": "adresse" },
               "aide": { "addr": "/ip4/…/tcp/…/p2p/…" } },
-            { "nom": "set_quota", "titre": "Changer le quota d'un utilisateur", "libellé": "Changer",
-              "champs": ["user_id", "quota (Gio)"],
-              "libellés": { "user_id": "identifiant de l'utilisateur", "quota (Gio)": "nouveau quota (Gio)" },
-              "types": { "quota (Gio)": "number" } },
             { "nom": "set_attach_policy", "titre": "Rattachement automatique des utilisateurs",
               "libellé": "Enregistrer",
               "champs": ["enabled", "quota par utilisateur (Gio)", "max_users"],
@@ -1562,10 +1568,19 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, St
                 .and_then(|t| s.channel.post_info(&sh.priv_node, t, now))
                 .map(|n| json!({ "ok": true, "message": format!("Message n° {n} envoyé") })),
             "create_announce_key" => s.channel.create_announce().map(|phrase| {
-                json!({ "ok": true, "message": format!(
-                    "Clé d'annonce créée. Notez ces 24 mots et rangez-les à part de la phrase de récupération :                      ils ne seront plus jamais affichés.
-
-{phrase}") })
+                json!({ "ok": true, "message": "Clé d'annonce créée",
+                        "révéler": {
+                            "titre": "Phrase d'annonce : à noter maintenant",
+                            "texte": [
+                                "Ces 24 mots ne seront plus jamais affichés : le Nœud ne les conserve pas.",
+                                "Notez-les sur papier (ne les photographiez pas) et rangez-les à part de la phrase de récupération du Nœud, ailleurs que sur cette machine.",
+                                "Ils servent à une seule chose : si ce Nœud est un jour compromis, ils permettent d'envoyer à vos utilisateurs une alerte qu'un attaquant ne peut ni forger ni bloquer (page Messages, « Alerte : ce Nœud est compromis »).",
+                                "Les connecteurs de vos utilisateurs retiennent cette clé à leur prochain passage : créez-la tant que le Nœud est sain."
+                            ],
+                            "24 mots": phrase,
+                            "fermer": "J'ai noté les 24 mots"
+                        },
+                    })
             }),
             "send_alert" => (|| {
                 let k = crate::channel::announce_from_phrase(field(v, "phrase d'annonce")?)?;
@@ -2035,7 +2050,14 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
             let act = |nom: &str, libelle: &str| {
                 json!({ "nom": "volume_draft", "libellé": libelle, "valeurs": { "volume": id, "modification": nom } })
             };
-            let mut actions = Vec::new();
+            let mut actions = vec![json!({ "nom": "volume_draft_edit", "titre": "Chemin et capacité",
+                "libellé": "Ajouter à la liste des actions",
+                "champs": ["nouveau chemin", "nouvelle capacité (Go)"], "fixes": { "volume": id },
+                "valeurs": { "nouveau chemin": u.mount_path.display().to_string(),
+                             "nouvelle capacité (Go)": (u.max_capacity_bytes as f64 / (1u64 << 30) as f64 * 100.0).round() / 100.0 },
+                "types": { "nouvelle capacité (Go)": "number" },
+                "aide": { "nouveau chemin": "Les données doivent déjà s'y trouver",
+                          "nouvelle capacité (Go)": "Capacité réservée sur ce disque" } })];
             if u.draining {
                 actions.push(act("cancel_remove", "Annuler le retrait"));
             } else {
@@ -2045,6 +2067,10 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
             if u.blocks == 0 {
                 actions.push(act("wipe", "Effacer"));
             }
+            let actions = vec![json!({ "nom": "edit_volume", "libellé": "Éditer", "panneau": {
+                "titre": format!("Volume {id} — {}", u.mount_path.display()),
+                "texte": "Chaque modification s'ajoute à la liste des actions de la page ; rien n'est fait avant « Appliquer ».",
+                "formulaires": actions } })];
             json!({
                 "volume": u.volume_id,
                 "chemin": u.mount_path.display().to_string(),
@@ -2117,11 +2143,6 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
             "types": { "capacité (Go)": "number", "effacer et réutiliser": "bool" },
             "aide": { "chemin": "Dossier sur le disque (créé s'il n'existe pas)",
                       "effacer et réutiliser": "Seulement pour un disque d'un autre Nœud : ses données S3m seront effacées" } }));
-        a.push(json!({ "nom": "volume_draft_edit", "titre": "Modifier un volume", "libellé": "Ajouter à la liste",
-            "champs": ["volume", "nouveau chemin", "nouvelle capacité (Go)"],
-            "types": { "volume": "number", "nouvelle capacité (Go)": "number" },
-            "aide": { "nouveau chemin": "Laisser vide pour ne pas changer ; les données doivent déjà s'y trouver",
-                      "nouvelle capacité (Go)": "Laisser vide pour ne pas changer" } }));
         a.push(json!({ "nom": "volume_apply", "titre": "Appliquer la liste des actions", "libellé": "Appliquer",
             "champs": [], "confirmer": confirm }));
         a.push(json!({ "nom": "volume_draft_clear", "libellé": "Vider la liste", "champs": [] }));
@@ -2194,8 +2215,21 @@ fn volume_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
         }
         "volume_draft_edit" => {
             let volume_id = num("volume")?;
-            let path = Some(text("nouveau chemin")).filter(|p| !p.is_empty());
-            let capacity_bytes = gib(v, "nouvelle capacité (Go)")?;
+            // Valeurs préremplies du panneau : seules celles changées comptent.
+            let current = volume_usage(sh)
+                .into_iter()
+                .find(|u| u.volume_id == volume_id);
+            let path = Some(text("nouveau chemin")).filter(|p| {
+                !p.is_empty()
+                    && current
+                        .as_ref()
+                        .is_none_or(|u| u.mount_path.display().to_string() != *p)
+            });
+            let capacity_bytes = gib(v, "nouvelle capacité (Go)")?.filter(|c| {
+                current
+                    .as_ref()
+                    .is_none_or(|u| c.abs_diff(u.max_capacity_bytes) > (1 << 30) / 100)
+            });
             if path.is_none() && capacity_bytes.is_none() {
                 return Err("rien à modifier".into());
             }

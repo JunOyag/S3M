@@ -55,6 +55,11 @@
   .muted { color: var(--muted); font-size: 12px; }
   td.long { min-width: 260px; }
   .row-actions button { margin: 1px 2px; }
+  dialog.panel { border: none; border-radius: 10px; background: var(--card); color: var(--fg); padding: 18px 22px; width: min(560px, 92vw); max-height: 88vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+  dialog.panel::backdrop { background: rgba(0,0,0,.45); }
+  dialog.panel .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  dialog.panel .panel-head h2 { margin: 0; font-size: 18px; }
+  dialog.panel form { margin: 12px 0; }
   ol.words { display: grid; grid-template-columns: repeat(4, max-content); gap: 4px 28px; margin: 4px 0; padding-left: 2.2em; font-family: ui-monospace, Consolas, monospace; }
   ol.words li { padding-left: 4px; }
   iframe.frame { width: 100%; height: calc(100vh - 170px); min-height: 420px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
