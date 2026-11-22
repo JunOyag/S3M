@@ -122,14 +122,6 @@ pub fn parse_drive_letter(s: &str) -> Result<String, String> {
     }
 }
 
-/// Lettres libres, de D: à Z: (aide du dashboard).
-fn free_letters() -> Vec<String> {
-    ('D'..='Z')
-        .map(|c| format!("{c}:"))
-        .filter(|l| !Path::new(&format!("{l}\\")).exists())
-        .collect()
-}
-
 /// Change la lettre du lecteur : démontage, montage sur la nouvelle lettre
 /// (retour à l'ancienne en cas d'échec), puis enregistrement dans le
 /// fichier de configuration. Les modifications en attente sont conservées.
@@ -561,7 +553,7 @@ pub fn status(sh: &Shared) -> Value {
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
-          "sections": ["lecteur", "file d'écriture"], "actions": ["sync_now", "set_mount_point"] },
+          "sections": ["accès aux fichiers", "lecteur", "file d'écriture"], "actions": ["sync_now"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "messages", "titre": "Messages du Nœud",
@@ -943,21 +935,13 @@ fn status_base(sh: &Shared) -> Value {
             "accès aux fichiers": access_mode(&sh.config),
             "dossier synchronisé": folder_path(&sh.config).display().to_string(),
         },
+        "accès aux fichiers": {
+            "_contenu": crate::setup::access_summary(&current_access(sh), &identity_dir(sh)),
+            "_formulaires": [crate::setup::access_form(&current_access(sh), &identity_dir(sh))],
+        },
         "écriture d'urgence": emergency_status(sh, now),
         "actions": [
             { "nom": "sync_now", "libellé": "Synchroniser maintenant", "champs": [] },
-            { "nom": "set_mount_point", "titre": "Lettre du lecteur", "libellé": "Changer",
-              "champs": ["lettre du lecteur"],
-              "valeurs": { "lettre du lecteur": sh.mount_point() },
-              "aide": { "lettre du lecteur": format!("Lettres libres : {}. S3m redémarre ; les modifications en attente sont conservées.", free_letters().join(", ")) } },
-            { "nom": "set_access", "titre": "Accès aux fichiers", "libellé": "Enregistrer",
-              "champs": ["accès", "dossier"],
-              "types": { "accès": "choix", "dossier": "chemin" },
-              "options": { "accès": [["dossier", "Dossier synchronisé (comme OneDrive)"], ["lecteur", "Périphérique (lettre de lecteur, WinFsp)"]] },
-              "visible_si": { "dossier": ["accès", "dossier"] },
-              "valeurs": { "accès": access_mode(&sh.config), "dossier": folder_path(&sh.config).display().to_string() },
-              "aide": { "accès": "« lecteur » : une lettre de lecteur (WinFsp requis, installé par un administrateur) ; « dossier » : un dossier synchronisé, comme OneDrive, sans rien à installer. Pris en compte au prochain lancement de S3m.",
-                        "dossier": "Emplacement du dossier synchronisé, sur un disque local NTFS" } },
             { "nom": "admin_node", "titre": "Administrer mon Nœud à distance",
               "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration"],
               "aide": { "code 2FA": "Code à 6 chiffres de votre application d'authentification",
@@ -1790,28 +1774,41 @@ pub fn files_location(sh: &Shared) -> Option<String> {
     folder.or_else(|| sh.mount_point().map(|m| format!("{m}\\")))
 }
 
-/// Change l'accès aux fichiers (pris en compte au prochain lancement).
-fn set_access(sh: &Shared, v: &Value) -> Result<Value, String> {
-    let access = v
-        .get("accès")
-        .and_then(Value::as_str)
-        .map(|s| s.trim().to_lowercase())
-        .unwrap_or_default();
-    if access != "lecteur" && access != "dossier" {
-        return Err("accès attendu : « lecteur » ou « dossier »".into());
+/// Dossier de l'identité (celui de sa configuration).
+fn identity_dir(sh: &Shared) -> PathBuf {
+    sh.config
+        .source
+        .as_ref()
+        .and_then(|p| p.parent())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| sh.config.data_dir.clone())
+}
+
+/// Accès aux fichiers en vigueur, au format de l'assistant.
+fn current_access(sh: &Shared) -> crate::setup::AccessChoice {
+    let access = access_mode(&sh.config);
+    crate::setup::AccessChoice {
+        access: Some(access.to_string()),
+        folder: Some(folder_path(&sh.config)),
+        mount: if access == "lecteur" {
+            sh.mount_point()
+        } else {
+            None
+        },
     }
-    let folder = v
-        .get("dossier")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from);
-    if let Some(f) = &folder {
-        if !f.is_absolute() {
-            return Err(
-                "dossier : chemin complet attendu, par exemple C:\\Users\\vous\\S3m".into(),
-            );
-        }
+}
+
+/// Change l'accès aux fichiers, avec le formulaire de l'assistant : seule
+/// la lettre d'un lecteur déjà monté change sans relancer S3m.
+fn set_access(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let c = crate::setup::parse_access(v)?;
+    let now = current_access(sh);
+    if c == now {
+        return Ok(json!({ "ok": true, "message": "Rien à changer" }));
+    }
+    if c.access == now.access && c.access.as_deref() == Some("lecteur") && cfg!(windows) {
+        let letter = c.mount.clone().unwrap_or_default();
+        return set_mount_point(sh, &json!({ "lettre du lecteur": letter }));
     }
     let path = sh
         .config
@@ -1820,9 +1817,12 @@ fn set_access(sh: &Shared, v: &Value) -> Result<Value, String> {
         .ok_or("fichier de configuration inconnu")?;
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    raw["access"] = json!(access);
-    if let Some(f) = folder {
+    raw["access"] = json!(c.access);
+    if let Some(f) = &c.folder {
         raw["folder"] = json!(f);
+    }
+    if let Some(m) = &c.mount {
+        raw["mount_point"] = json!(m);
     }
     let tmp = path.with_extension("json.tmp");
     std::fs::write(
@@ -1831,7 +1831,7 @@ fn set_access(sh: &Shared, v: &Value) -> Result<Value, String> {
     )
     .and_then(|_| std::fs::rename(&tmp, &path))
     .map_err(|e| e.to_string())?;
-    Ok(json!({ "ok": true, "message": "Enregistré : relancez S3m pour l'appliquer" }))
+    Ok(json!({ "ok": true, "message": "Enregistré : quittez puis relancez S3m pour l'appliquer" }))
 }
 
 /// Connecte le dossier synchronisé (mode dossier, Windows).

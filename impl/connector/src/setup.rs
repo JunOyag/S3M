@@ -465,7 +465,7 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
 
 /// Formulaire « Accès aux fichiers » : Dossier (chemin et espace) ou
 /// Périphérique (lettre libre sous Windows, point de montage ailleurs).
-fn access_form(c: &AccessChoice, dir: &Path) -> Value {
+pub fn access_form(c: &AccessChoice, dir: &Path) -> Value {
     let mount_field = if cfg!(windows) {
         "lettre"
     } else {
@@ -492,7 +492,7 @@ fn access_form(c: &AccessChoice, dir: &Path) -> Value {
             "dossier".into()
         }
     });
-    json!({ "nom": "set_access", "titre": "Accès aux fichiers", "libellé": "Choisir",
+    json!({ "nom": "set_access", "titre": "Accès aux fichiers", "libellé": "Appliquer",
         "champs": ["accès", "dossier", mount_field],
         "types": { "accès": "choix", "dossier": "chemin", mount_field: if cfg!(windows) { "lettre" } else { "chemin" } },
         "options": { "accès": choices, "lettre": s3m_protocol::local_fs::free_letters() },
@@ -512,7 +512,7 @@ fn access_form(c: &AccessChoice, dir: &Path) -> Value {
 
 /// Accès retenu, avec seulement l'emplacement qui correspond au type
 /// d'accès et à la plateforme (pas de lettre hors de Windows).
-fn access_summary(c: &AccessChoice, dir: &Path) -> Value {
+pub fn access_summary(c: &AccessChoice, dir: &Path) -> Value {
     let drive = if cfg!(windows) {
         "périphérique (lettre de lecteur)"
     } else {

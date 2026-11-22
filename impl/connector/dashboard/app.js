@@ -1000,6 +1000,7 @@ const RESERVED = new Set(["titre", "actions", "carte", "pages", "résumé", "à 
 // `à signaler` : message affiché une fois, au premier chargement.
 let signaled = false;
 let actionsKey = "";
+let shownPage = null;
 const tabState = {};
 let lastStatus = null;
 let page = null;
@@ -1117,6 +1118,9 @@ function show(status) {
   // Défilement horizontal des sections conservé d'un rafraîchissement à l'autre.
   const scrolls = {};
   main.querySelectorAll("[data-scroll-key]").forEach((x) => (scrolls[x.dataset.scrollKey] = x.scrollLeft));
+  // Défilement vertical : la page ne remonte pas pendant le redessin.
+  const pageY = window.scrollY;
+  main.style.minHeight = main.offsetHeight + "px";
   // Les formulaires ne sont reconstruits que s'ils changent, et restent dans
   // la page entre deux rafraîchissements : saisie et focus préservés.
   const key = page + JSON.stringify(actions);
@@ -1182,6 +1186,9 @@ function show(status) {
   main.querySelectorAll("[data-scroll-key]").forEach((x) => {
     if (scrolls[x.dataset.scrollKey]) x.scrollLeft = scrolls[x.dataset.scrollKey];
   });
+  main.style.minHeight = "";
+  if (page === shownPage) window.scrollTo(0, pageY);
+  shownPage = page;
   if (!keep && actions.length) {
     const s = el("section");
     s.id = "actions";
