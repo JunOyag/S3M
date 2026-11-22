@@ -233,6 +233,12 @@ qu'il doit héberger est traité comme un échec PoS
 `EmergencyPut`, `EmergencyGet` et `EmergencyRelease` (ajouts du
 2026-11-21) : voir [`protocols.espace-secours`](espace-secours.md#depot).
 
+## Partage
+
+`ShareCredential` (lecture des blocs d'un propriétaire sur autorisation
+signée) et `RevokeShare` (ajouts du 2026-11-22) : voir
+[`protocols.partage`](partage.md#lecture).
+
 ## Canal Nœud ↔ Utilisateurs
 
 `ReadMessages` et `PostMessage` (ajouts du 2026-11-21) : voir

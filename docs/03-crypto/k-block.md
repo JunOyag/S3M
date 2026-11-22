@@ -10,12 +10,19 @@ verified_by: []
 # K_block — Contenu Réel des Blocs
 
 ```
-K_block = KDF(master_key[version], "block", encryption_salt, u32(index_du_bloc))
+K_elem  = KDF(master_key[version], "element", encryption_salt)
+K_block = KDF(K_elem, "block", —, u32(index_du_bloc))
 ```
 
 Instanciation selon la [convention KDF](symmetric-suite.md#kdf-hkdf-sha256) :
-IKM = `master_key[version]`, étiquette `"block"`, sel = `encryption_salt`,
-entrée publique = index du bloc en `u32` big-endian.
+la clé d'élément `K_elem` (IKM = `master_key[version]`, étiquette
+`"element"`, sel = `encryption_salt`) est propre à une version d'un fichier
+ou d'un répertoire ; `K_block` en dérive (IKM = `K_elem`, étiquette
+`"block"`, entrée publique = index du bloc en `u32` big-endian). Révision
+du 2026-11-22 ([`protocols.partage`](../04-protocols/partage.md#cles-element)) :
+la clé d'un élément se confie seule, sans la clé maîtresse ; chaque
+répertoire porte, chiffrées sous sa clé, celles de ses enfants
+(`wrapped_key` de [`fs.DirectoryEntry`](../02-schemas/fs/DirectoryEntry.md)).
 
 - Dérivée uniquement de la seed BIP-39 du User — **jamais partagée avec le
   Nœud**.

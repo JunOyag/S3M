@@ -264,6 +264,15 @@ pages:
       - schemas::write_queue_and_emergency_roundtrip
       - schemas::every_generated_table_builds_and_verifies
 
+  - id: network.ShareEntry
+    kind: schema
+    path: 02-schemas/network/ShareEntry.md
+    title: "ShareEntry"
+    section: "§3.12.6"
+    fbs: "schemas/network/ShareEntry.fbs#ShareEntry"
+    refs: [network.dht-directory, protocols.partage]
+    verified_by: []
+
   - id: network.AlertEntry
     kind: schema
     path: 02-schemas/network/AlertEntry.md
@@ -936,6 +945,14 @@ pages:
       - emergency::deposit_fetch_and_release_against_a_real_partner
       - drive::emergency_tree_is_built_offline_and_committed_unchanged_on_return
       - drive::a_later_change_supersedes_the_emergency_tree
+
+  - id: protocols.partage
+    kind: narrative
+    path: 04-protocols/partage.md
+    title: "Partage de Fichiers et de Dossiers"
+    section: "§3.12.6"
+    refs: [crypto.k-block, fs.DirectoryEntry, network.ShareEntry, network.dht-directory, protocols.echange-blocs, crypto.k-attach, protocols.acces-applicatif, protocols.integrite-lecture, deploiement.packaging]
+    verified_by: []
 
   - id: protocols.canal-noeud
     kind: narrative

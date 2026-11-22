@@ -29,6 +29,10 @@ l'expiration de sa durée de vie.
   — voir [`protocols.espace-secours`](../04-protocols/espace-secours.md).
 - **Alert** : `SHA-256(pub_node_announce ‖ "alert")` — voir
   [`protocols.canal-noeud`](../04-protocols/canal-noeud.md#annuaire).
+- **Share** : `SHA-256(sig_pub_share ‖ "share")` — voir
+  [`protocols.partage`](../04-protocols/partage.md#pointeur). Comme pour
+  Alert, un pair n'accepte l'enveloppe que si sa clé de signature
+  correspond à la clé de recherche.
 
 ## Enveloppe signée
 
@@ -102,6 +106,7 @@ pour le détail de cette dérivation et son asymétrie d'usage.
 | **DispersalManifest** | `sig_pub_dispersal` en clair, `timestamp`, `Encrypt(K_attach, DispersalRootPointer)` | 15 552 000 s, republication toutes les 2 592 000 s |
 | **EmergencyManifest** (par `user_id`, indépendant du Nœud) | `sig_pub_emergency` en clair, `seq`, `timestamp`, `Encrypt(K_emergency_content, EmergencyManifest)` | 15 552 000 s, **ni republication ni suppression** |
 | **Alert** (par clé d'annonce) | `pub_node_announce` en clair, `timestamp`, alerte signée | 15 552 000 s depuis `timestamp`, enveloppe republiée telle quelle toutes les 2 592 000 s |
+| **Share** (par partage) | `sig_pub_share` en clair, `seq`, `timestamp`, `Encrypt(K_share_content, SharePointer)` | 15 552 000 s, republication par le propriétaire toutes les 2 592 000 s et à chaque changement |
 
 L'`EmergencyManifest` est écrit par n'importe quel Connecteur du même
 `user_id` selon la règle de séquence de
@@ -124,6 +129,7 @@ valeur 1) :
 | `UserEntryPlaintext` | `K_self` | `"dht-user-plaintext"` |
 | `DispersalRootPointer` | `K_attach` | `"dht-dispersal-root"` |
 | `EmergencyManifest` | `K_emergency_content` | `"dht-emergency-manifest"` |
+| `SharePointer` | `K_share_content` | `"dht-share-pointer"` |
 
 ## Rôle de `dispersal_root_partners`
 

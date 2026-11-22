@@ -77,7 +77,7 @@ entries:
       tâche network.dht-directory.
   crypto.k-block:
     kind: narrative
-    status: done
+    status: in_progress
     owner: claude-code
     tests:
       - k_block_vectors::k_block_matches_generated_vector
@@ -89,6 +89,8 @@ entries:
       - k_block_vectors::block_rejects_oversized_plaintext_and_wrong_frame_size
       - k_block_vectors::block_tampering_is_rejected
     notes: >-
+      Révision du 2026-11-22 (protocols.partage) à implémenter : K_elem
+      intermédiaire, K_block dérivée de K_elem.
       Spec V3 : K_block = KDF(master_key, "block", encryption_salt 16 o,
       u32(index)) ; seal_block/open_block : trame exacte de 65 536 o (en-tête
       2 o ‖ nonce 12 o ‖ chiffré ‖ tag), AAD = en-tête, padding zéro jusqu'à
@@ -1321,6 +1323,21 @@ entries:
       appartenance par registre de dispersion ou OwnershipQuery, suppression
       des inconnus, partenaire injoignable réessayé) ; disque d'un autre Nœud
       : effacer et réutiliser seulement ; effacement limité aux données S3m.
+  network.ShareEntry:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
+  protocols.partage:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: >-
+      Spécifié le 2026-11-22 (étape 1 : lecture seule, Utilisateur S3m ou
+      lien S3m). Suppose la révision de crypto.k-block (clés d'élément,
+      wrapped_key des entrées de répertoire).
   protocols.canal-noeud:
     kind: narrative
     status: done

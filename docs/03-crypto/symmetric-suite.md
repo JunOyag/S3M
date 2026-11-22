@@ -142,7 +142,12 @@ L'unicité fait l'objet d'un test unitaire du noyau (`impl/core`,
 | `"node-recovery"` | `K_node_self` | `priv_node` | — | — | [`crypto.k-node-self`](k-node-self.md) |
 | `"dht-lookup"` | `user_dht_key` | `priv_user` | — | `pub_user` | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
 | `"dht-signing"` | graine de `sig_priv_user` | `priv_user` | — | `pub_user` | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
-| `"block"` | `K_block` | `master_key[version]` | `encryption_salt` | `u32(index_du_bloc)` | [`crypto.k-block`](k-block.md) |
+| `"element"` | `K_elem` (clé d'élément) | `master_key[version]` | `encryption_salt` | — | [`crypto.k-block`](k-block.md) |
+| `"block"` | `K_block` | `K_elem` | — | `u32(index_du_bloc)` | [`crypto.k-block`](k-block.md) |
+| `"child-wrap"` | `K_child_wrap` (clés des enfants d'un répertoire) | `K_elem` du répertoire | — | — | [`protocols.partage`](../04-protocols/partage.md#cles-element) |
+| `"share-content"` | `K_share_content` | secret du partage `S` | — | — | [`protocols.partage`](../04-protocols/partage.md#cles) |
+| `"share-signing"` | graine de `sig_priv_share` | `priv_user` | — | `share_id` | [`protocols.partage`](../04-protocols/partage.md#cles) |
+| `"share-invite"` | clé de l'invitation d'un Utilisateur S3m | secret partagé X25519 (éphémère × destinataire) | — | clé publique éphémère | [`protocols.partage`](../04-protocols/partage.md#destinataire) |
 | `"master-key-wrap"` | `K_wrap` | `master_key[version_courante]` | — | `u16(version_wrappée)`, `u16(version_courante)` | cette page |
 | `"node-snapshot"` | `K_node_snapshot` (blocs du snapshot du NodeManifest) | `priv_node` | sel du snapshot (16 o) | `u32(index_du_bloc)` | [`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md#snapshot) |
 | `"admin-totp"` | secret TOTP de l'administration à distance (20 premiers octets) | `priv_node` | — | `u32(numéro_de_série)` | [`deploiement.appairage-admin`](../07-deploiement/appairage-admin.md#administration) |
@@ -174,6 +179,8 @@ convention KDF (inchangés depuis la V2) :
 |---|---|---|
 | `SHA-256(K_attach)` | `dht_key` du DispersalManifest | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
 | `SHA-256(K_attach ‖ "emergency")` | `emergency_dht_key` | [`protocols.espace-secours`](../04-protocols/espace-secours.md) |
+| `SHA-256(L("s3m/share-id") ‖ S)` | `share_id` d'un partage | [`protocols.partage`](../04-protocols/partage.md#cles) |
+| `SHA-256(sig_pub_share ‖ "share")` | clé de l'annuaire d'un partage | [`protocols.partage`](../04-protocols/partage.md#cles) |
 
 `SHA-256(identité marquée)` (challenge VDF) n'est **pas** une dérivation de
 clé : hors registre.

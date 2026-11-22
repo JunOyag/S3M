@@ -1,0 +1,38 @@
+// ---- ShareEntry.fbs ----
+// Partage d'un fichier ou d'une arborescence (protocols.partage) : pointeur
+// vivant publié dans l'annuaire, indexé par SHA-256(sig_pub_share ‖ "share"),
+// payload d'une DhtEnvelope signée par sig_priv_share (clé du seul
+// propriétaire). Le contenu est chiffré sous K_share_content, dérivée du
+// secret du partage S que seuls le propriétaire et les destinataires
+// connaissent.
+// Source: protocols.partage (fonctionnalité ajoutée le 2026-11-22)
+namespace S3m.Dht;
+
+/// Contenu chiffré d'un partage (`Encrypt(K_share_content, SharePointer)`,
+/// AAD « dht-share-pointer »).
+table SharePointer {
+  share_id: [ubyte];          // SHA-256(L("s3m/share-id") ‖ S) (32 o)
+  kind: ubyte;                // 0 : fichier, 1 : dossier (avec toute son arborescence)
+  name: string;               // nom de l'élément partagé
+  size_bytes: uint64;
+  modified_at: uint64;
+  first_block_hash: [ubyte];  // premier bloc de la version courante (32 o)
+  element_key: [ubyte];       // K_elem de la version courante (32 o)
+  node_id: [ubyte];           // pub_node du Nœud du propriétaire (32 o)
+  node_addrs: [string];       // multiaddrs de ce Nœud
+  owner_label: string;        // pseudo du propriétaire (facultatif)
+  grant: [ubyte];             // SignedShareGrant sérialisé (lecture chez ce Nœud)
+  revoked: bool;              // partage retiré : plus aucune lecture
+}
+
+/// Entrée DHT Share. TTL 15 552 000 s ; republiée par le propriétaire toutes
+/// les 2 592 000 s et à chaque changement de l'élément partagé.
+table ShareEntry {
+  sig_pub_share: [ubyte];     // en clair, pour que les pairs vérifient l'enveloppe (32 o)
+  seq: uint64;                // strictement croissant
+  timestamp: uint64;
+  pointer: [ubyte];           // nonce (12 o) ‖ chiffré ‖ tag
+}
+
+root_type ShareEntry;
+file_identifier "SHAR";

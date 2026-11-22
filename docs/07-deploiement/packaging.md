@@ -229,6 +229,12 @@ synchronisation courantes :
   récupération, sel d'attachement) est conservée ; `connector.json` et les
   données locales sont renommés avec un suffixe horodaté, jamais effacés.
 
+### Partages {: #partages }
+
+Ajout du 2026-11-22 : page « Partages » du dashboard Connecteur et
+dossier `Partagés avec moi` du lecteur — voir
+[`protocols.partage`](../04-protocols/partage.md#connecteur).
+
 ### Plusieurs identités {: #plusieurs-identites }
 
 Ajout du 2026-11-22 (étape 2 de l'usage de plusieurs identités, après les

@@ -52,7 +52,26 @@ table EmergencyCredential {
   signature: [ubyte];         // Ed25519 par sig_priv_user sur L("s3m/sig/emergency-deposit/v1") ‖ emergency_pub ‖ L(peer_demandeur) ‖ L(peer_partenaire)
 }
 
-union Credential { UserCredential, RescueCredential, DelegatedCredential, EmergencyCredential }
+// Ajout du 2026-11-22 (protocols.partage) : autorisation de lecture des blocs
+// d'un partage chez le Nœud du propriétaire. Sérialisée puis signée.
+table ShareGrant {
+  owner_user_id: [ubyte];     // pub_user du propriétaire (32 o), Utilisateur de ce Nœud
+  node_id: [ubyte];           // pub_node du Nœud qui la sert (32 o)
+  share_id: [ubyte];          // identifiant du partage (32 o)
+  expires_at: uint64;         // secondes Unix ; 0 : sans expiration
+}
+// ShareGrant signé par priv_user du propriétaire.
+table SignedShareGrant {
+  grant: [ubyte];             // ShareGrant sérialisé
+  signature: [ubyte];         // Ed25519 sur L("s3m/sig/share-grant/v1") ‖ grant
+}
+// N'importe quel Connecteur → Nœud du propriétaire : lecture (GetBlock) des
+// blocs de ce propriétaire, débit limité.
+table ShareCredential {
+  grant: SignedShareGrant;
+}
+
+union Credential { UserCredential, RescueCredential, DelegatedCredential, EmergencyCredential, ShareCredential }
 
 // Connecteur → Nœud
 table GetBlock {
@@ -158,12 +177,18 @@ table PostMessage {
   text: string;               // UTF-8, 4 096 o au plus
 }
 
+// Ajout du 2026-11-22 (protocols.partage) : Connecteur → son Nœud
+// (UserCredential) : retrait d'un partage, ses autorisations ne valent plus.
+table RevokeShare {
+  share_id: [ubyte];          // 32 o
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
   StoreFragment, Challenge, FetchFragment, Tombstone,
   Probe, ProposePartnership, Attach, OwnershipQuery,
   EmergencyPut, EmergencyGet, EmergencyRelease,
-  ReadMessages, PostMessage
+  ReadMessages, PostMessage, RevokeShare
 }
 
 // Requête : une par flux libp2p request-response.

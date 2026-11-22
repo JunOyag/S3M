@@ -139,6 +139,8 @@ phases:
       - { id: network.traversee-nat,                component: node+connector, depends_on: [network.dht-directory, protocols.echange-blocs] }
       - { id: protocols.partenariat-automatique,    component: node+connector, depends_on: [protocols.echange-blocs, network.dht-directory, securite.pos-challenges, securite.blacklist-fraude, protocols.volatilite-reparation, deploiement.packaging] }
       - { id: protocols.canal-noeud,                component: node+connector, depends_on: [protocols.echange-blocs, network.dht-directory, securite.incidents-compromissions, protocols.migration-noeud] }
+      - { id: network.ShareEntry,                   component: protocol }
+      - { id: protocols.partage,                    component: core+protocol+node+connector, depends_on: [crypto.k-block, network.ShareEntry, network.dht-directory, protocols.echange-blocs, protocols.acces-applicatif] }
       - { id: protocols.gestion-volumes,            component: node, depends_on: [protocols.stockage-physique, protocols.echange-blocs, securite.integrite-autoreparation, deploiement.packaging] }
       - { id: deploiement.appairage-admin,          component: node+connector, depends_on: [deploiement.packaging, network.bootstrap, crypto.identity-derivation, crypto.symmetric-suite] }
       - { id: network.BlockRequest,                 component: protocol }

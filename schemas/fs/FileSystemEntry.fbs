@@ -27,6 +27,7 @@ table DirectoryEntry {
   encryption_salt: [ubyte];       // 16 o CSPRNG, neuf à chaque réémission ; avec key_version et l'index du bloc, dérive K_block (§3.8)
   key_version: uint16;            // version de master_key utilisée pour ce fichier/répertoire (§3.8)
   metadata: [Metadata];
+  wrapped_key: [ubyte];           // ajout du 2026-11-22 (protocols.partage) : K_elem de l'élément, chiffrée sous la clé de ce répertoire (60 o)
 }
 
 /// Bloc de répertoire — chaîné par next_hash au-delà de la capacité d'un bloc (~300 entrées, §3.13).
