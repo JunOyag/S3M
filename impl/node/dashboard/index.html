@@ -12,6 +12,8 @@
     :root { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --card: #1f1f1d; --accent: #7fb0e0; --bad: #e07a72; }
   }
   * { box-sizing: border-box; }
+  /* `hidden` l'emporte sur les `display` ci-dessous (onglets, champs conditionnels). */
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
   header { padding: 16px 24px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
   h1 { font-size: 18px; margin: 0; }

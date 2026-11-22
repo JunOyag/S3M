@@ -771,6 +771,15 @@ function render(value, key) {
 // `fixes` : valeurs envoyées sans champ visible (ligne éditée) ; `done` :
 // appelé après succès (fermeture du panneau).
 function actionForm(a, done) {
+  // `panneau` : simple bouton qui ouvre le panneau (ex. « Ajouter un volume »).
+  if (a["panneau"]) {
+    const box = el("div", undefined, "form-button");
+    const b = el("button", a["libellé"], a["style"]);
+    b.type = "button";
+    b.addEventListener("click", () => openPanel(a["panneau"]));
+    box.appendChild(b);
+    return box;
+  }
   const f = el("form", undefined, (a["champs"] || []).length > 3 ? "form grid" : "form");
   const values = a["valeurs"] || {};
   const types = a["types"] || {};

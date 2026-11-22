@@ -93,6 +93,17 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
         source: None,
     };
     let (shared, url) = start(config, clock).await.unwrap();
+    // Vue de la barre des tâches : calculée sans se bloquer (un seul verrou
+    // du canal à la fois).
+    let sh2 = shared.clone();
+    let view = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        tokio::task::spawn_blocking(move || s3m_connector::daemon::tray_view(&sh2)),
+    )
+    .await
+    .expect("tray_view ne doit pas se bloquer")
+    .unwrap();
+    assert_eq!(view.unread_messages, 0);
     watch_once(&shared).await;
     {
         let h = shared.health.lock().unwrap();

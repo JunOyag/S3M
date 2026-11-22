@@ -1292,6 +1292,16 @@ pub fn tray_view(sh: &Shared) -> TrayView {
     } else {
         (TrayState::Ok, "À jour".into())
     };
+    // Un seul verrou à la fois : dans une même expression, les gardes
+    // temporaires vivent jusqu'à sa fin (deux `lock()` = blocage).
+    let (messages_received, unread_messages, last_message) = {
+        let c = sh.channel.lock().unwrap();
+        (
+            c.received_total,
+            c.unread(),
+            c.received.last().map(|m| m.text.clone()),
+        )
+    };
     TrayView {
         state,
         text,
@@ -1304,15 +1314,9 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         attach_error: a.last_error,
         mounted: ds.mounted,
         mount_point: sh.mount_point(),
-        messages_received: sh.channel.lock().unwrap().received_total,
-        unread_messages: sh.channel.lock().unwrap().unread(),
-        last_message: sh
-            .channel
-            .lock()
-            .unwrap()
-            .received
-            .last()
-            .map(|m| m.text.clone()),
+        messages_received,
+        unread_messages,
+        last_message,
     }
 }
 

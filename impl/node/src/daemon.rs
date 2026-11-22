@@ -663,7 +663,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         { "id": "carte", "titre": "Carte du monde", "cadre": "map.html", "sections": [], "actions": [] },
         { "id": "volumes", "titre": "Volumes",
           "sections": ["volumes", "liste des actions", "imports de volumes", "journal des volumes"],
-          "actions": ["volume_draft_add", "volume_apply", "volume_draft_clear"] },
+          "actions": ["volume_apply", "volume_draft_clear"] },
         { "id": "stockage", "titre": "Stockage et protection",
           "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
         { "id": "messages", "titre": "Messages",
@@ -775,11 +775,14 @@ fn node_summary(v: &Value) -> Value {
         .and_then(|x| x.as_u64())
         .unwrap_or(0);
     let partners = len("partenaires");
-    let capacity: u64 = v.get("volumes").and_then(|x| x.as_array()).map_or(0, |a| {
-        a.iter()
-            .filter_map(|x| x.get("capacité (octets)")?.as_u64())
-            .sum()
-    });
+    let capacity: u64 = v
+        .pointer("/volumes/_contenu")
+        .and_then(|x| x.as_array())
+        .map_or(0, |a| {
+            a.iter()
+                .filter_map(|x| x.get("capacité (octets)")?.as_u64())
+                .sum()
+        });
     let alerts = len("alertes d'intégrité signalées");
     let unread: u64 = v
         .get("messages des utilisateurs")
@@ -2222,7 +2225,22 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
             })
         })
         .collect();
-    v["volumes"] = json!(rows);
+    // Bouton « Ajouter un volume » sous le tableau, formulaire en panneau.
+    let add_form = json!({ "nom": "volume_draft_add", "libellé": "Préparer l'ajout",
+            "champs": ["chemin", "capacité (Go)", "effacer et réutiliser"],
+            "types": { "chemin": "chemin", "capacité (Go)": "number", "effacer et réutiliser": "bool" },
+            "aide": { "chemin": "Dossier sur le disque (créé s'il n'existe pas)",
+                      "effacer et réutiliser": "Seulement pour un disque d'un autre Nœud : ses données S3m seront effacées" } });
+    v["volumes"] = json!({
+        "_contenu": rows,
+        "_formulaires": [{ "nom": "add_volume", "libellé": "Ajouter un volume", "panneau": {
+            "titre": "Ajouter un volume",
+            "texte": [
+                "1. Choisissez le dossier (« Parcourir… » permet d'en créer un) et la capacité à réserver sur ce disque.",
+                "2. L'ajout rejoint les modifications en attente, en haut de la page ; il n'est fait qu'après « Appliquer »."
+            ],
+            "formulaires": [add_form] } }],
+    });
     v["liste des actions"] = if ui.draft.is_empty() {
         json!("aucune")
     } else {
@@ -2274,12 +2292,6 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
         )
     };
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
-        a.push(json!({ "nom": "volume_draft_add", "titre": "Ajouter un volume", "libellé": "Préparer l'ajout",
-            "texte": "L'ajout rejoint les modifications en attente, en haut de la page ; il n'est fait qu'après « Appliquer ».",
-            "champs": ["chemin", "capacité (Go)", "effacer et réutiliser"],
-            "types": { "chemin": "chemin", "capacité (Go)": "number", "effacer et réutiliser": "bool" },
-            "aide": { "chemin": "Dossier sur le disque (créé s'il n'existe pas)",
-                      "effacer et réutiliser": "Seulement pour un disque d'un autre Nœud : ses données S3m seront effacées" } }));
         // Modifications en attente : bandeau en haut de la page (`mise_en_avant`).
         if !ui.draft.is_empty() {
             let n = ui.draft.len();
