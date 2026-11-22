@@ -7,7 +7,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use s3m_core::identity_derivation::{recovery_code_decode, recovery_code_encode, RecoveryRole};
 use s3m_core::symmetric_suite::derive_admin_totp_secret;
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
@@ -16,20 +15,10 @@ use crate::admin::{self, otpauth_uri, qr_svg, Mode};
 use crate::daemon::{generate_mnemonic, node_seed_from_mnemonic, Config};
 use crate::local_http::{ActionFn, StatusFn, Switch};
 
-/// Saisie d'une identité existante : code de récupération (`S3M1:N:…`) ou
-/// phrase de 12 à 24 mots. Rend la phrase normalisée.
+/// Saisie d'une identité existante : phrase de 12 à 24 mots (casse et
+/// espaces indifférents). Rend la phrase normalisée.
 pub fn parse_recovery(input: &str) -> Result<String, String> {
-    let t = input.trim();
-    if t.to_ascii_uppercase().starts_with("S3M1") {
-        let (role, entropy) = recovery_code_decode(t).map_err(|e| e.to_string())?;
-        if role != RecoveryRole::Node {
-            return Err("code d'Utilisateur : un code de Nœud (S3M1:N:…) est attendu".into());
-        }
-        return bip39::Mnemonic::from_entropy(&entropy)
-            .map(|m| m.to_string())
-            .map_err(|e| e.to_string());
-    }
-    let words = t
+    let words = input
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -37,12 +26,6 @@ pub fn parse_recovery(input: &str) -> Result<String, String> {
     bip39::Mnemonic::parse_normalized(&words)
         .map(|m| m.to_string())
         .map_err(|e| format!("phrase de récupération : {e}"))
-}
-
-/// Code de récupération d'une phrase.
-pub fn recovery_code(mnemonic: &str, role: RecoveryRole) -> Result<String, String> {
-    let m = bip39::Mnemonic::parse_normalized(mnemonic).map_err(|e| e.to_string())?;
-    recovery_code_encode(role, &m.to_entropy()).map_err(|e| e.to_string())
 }
 
 /// Enrôlement 2FA de l'identité `mnemonic` : `(secret base32, QR SVG)`.
@@ -85,18 +68,16 @@ fn status(st: &State, cfg: &Config, code: &str, temp: &str) -> Value {
             "actions": [
                 { "nom": "new_identity", "titre": "Nouvelle identité", "libellé": "Créer une nouvelle identité", "champs": [] },
                 { "nom": "existing_identity", "titre": "Identité existante (restauration)", "libellé": "Restaurer",
-                  "champs": ["code de récupération ou phrase"],
-                  "aide": { "code de récupération ou phrase": "Code S3M1:N:… (QR code) ou les 24 mots" } }
+                  "champs": ["phrase de récupération"],
+                  "aide": { "phrase de récupération": "Les 24 mots du Nœud, séparés par des espaces" } }
             ]
         }),
         Phase::Reveal { mnemonic, restored } => {
             let mut v = json!({ "titre": "S3m Nœud — identité à confirmer" });
             if !restored {
-                v["1. code de récupération (à imprimer, ne pas photographier)"] = json!({
-                    "QR code": recovery_code(mnemonic, RecoveryRole::Node).map(|c| qr_svg(&c)).unwrap_or_default(),
-                    "code": recovery_code(mnemonic, RecoveryRole::Node).unwrap_or_default(),
+                v["1. phrase de récupération (à noter sur papier, ne pas photographier)"] = json!({
                     "24 mots": mnemonic,
-                    "important": "Seul ce code permet de reconstruire le Nœud et ses données. Gardez-le hors de cette machine.",
+                    "important": "Seule cette phrase permet de reconstruire le Nœud et ses données. Gardez-la hors de cette machine.",
                 });
             }
             let (secret, qr) = totp_enrolment(mnemonic, cfg.identity_index, cfg.admin_totp_serial)
@@ -107,7 +88,7 @@ fn status(st: &State, cfg: &Config, code: &str, temp: &str) -> Value {
                 "aide": "Scannez ce QR code (et lui seul) avec votre application d'authentification.",
             });
             v["actions"] = json!([
-                { "nom": "confirm", "libellé": if *restored { "Démarrer et restaurer le Nœud" } else { "J'ai noté mon code : démarrer le Nœud" }, "champs": [] },
+                { "nom": "confirm", "libellé": if *restored { "Démarrer et restaurer le Nœud" } else { "J'ai noté ma phrase : démarrer le Nœud" }, "champs": [] },
                 { "nom": "back", "libellé": "Revenir au choix", "champs": [] }
             ]);
             v
@@ -127,12 +108,12 @@ fn act(st: &mut State, seed_file: &PathBuf, name: &str, v: &Value) -> Result<Val
                 restored: false,
             };
             Ok(
-                json!({ "ok": true, "message": "Nouvelle identité créée : notez le code avant de démarrer" }),
+                json!({ "ok": true, "message": "Nouvelle identité créée : notez la phrase avant de démarrer" }),
             )
         }
         ("existing_identity", Phase::Choose) => {
             let input = v
-                .get("code de récupération ou phrase")
+                .get("phrase de récupération")
                 .and_then(|x| x.as_str())
                 .unwrap_or_default();
             let mnemonic = parse_recovery(input)?;

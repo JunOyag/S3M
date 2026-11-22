@@ -28,11 +28,11 @@ local comme « à configurer »
 L'assistant propose deux choix :
 
 - **Nouvelle identité** : phrase de récupération tirée au hasard, affichée
-  sous forme de [code de récupération](../03-crypto/identity-derivation.md#code-de-recuperation)
-  (QR code, texte et 24 mots) avec le QR code 2FA ; elle n'est écrite
+  en [24 mots](../03-crypto/identity-derivation.md#phrase-seule) avec le
+  QR code 2FA ; elle n'est écrite
   qu'après confirmation de l'opérateur, puis le Nœud démarre normalement
   (VDF, publication).
-- **Identité existante** : saisie du code de récupération ou des 24 mots ;
+- **Identité existante** : saisie des 24 mots ;
   le Nœud démarre et se restaure depuis son snapshot
   ([`deploiement.disaster-recovery`](disaster-recovery.md#snapshot)).
 
@@ -108,8 +108,8 @@ qui détient celle-ci détient aussi le 2FA. Le Nœud ne le stocke pas : il le
 redérive de la clé qu'il détient déjà.
 
 - Le QR code 2FA (URI `otpauth://totp/S3m:<8 premiers hex de node_id>?secret=<base32>&issuer=S3m&algorithm=SHA1&digits=6&period=30`)
-  est distinct du code de récupération : ne jamais scanner ce dernier avec
-  une application 2FA.
+  est le seul QR code de l'assistant : la phrase de récupération ne s'affiche
+  qu'en mots.
 - Fenêtre d'acceptation ±1 pas ; un même pas n'est accepté qu'une fois.
 - Téléphone perdu : « régénérer le 2FA » incrémente le numéro de série
   (`admin_totp_serial` de `node.json`) et ferme toutes les sessions.

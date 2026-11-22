@@ -6,10 +6,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use libp2p::PeerId;
-use s3m_core::identity_derivation::RecoveryRole;
 use s3m_node::admin::{hotp, Auth, Mode, SecretFn, TOTP_STEP};
 use s3m_node::local_http::{ActionFn, StatusFn};
-use s3m_node::setup::{parse_recovery, recovery_code};
+use s3m_node::setup::parse_recovery;
 use s3m_protocol::admin::{
     confirm_mac, pake_finish, pake_start, AdminRequest, AdminResponse, Side,
 };
@@ -212,15 +211,15 @@ fn totp_login_refuses_replay_and_local_only_actions_and_follows_the_serial() {
 }
 
 #[test]
-fn recovery_input_accepts_code_or_words_of_a_node() {
+fn recovery_input_accepts_the_words_only() {
     let words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-    let code = recovery_code(words, RecoveryRole::Node).unwrap();
-    assert_eq!(parse_recovery(&code).unwrap(), words);
     assert_eq!(
         parse_recovery(&format!("  {}  ", words.to_uppercase())).unwrap(),
         words
     );
-    let user = recovery_code(words, RecoveryRole::User).unwrap();
-    assert!(parse_recovery(&user).is_err(), "code d'Utilisateur refusé");
+    assert!(
+        parse_recovery("S3M1:N:AAAA:AAAAAAA").is_err(),
+        "plus de code S3M1"
+    );
     assert!(parse_recovery("abandon abandon").is_err());
 }

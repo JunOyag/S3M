@@ -88,42 +88,10 @@ pub fn prepare(dir: &Path) -> Result<Prepared, String> {
     })
 }
 
-/// QR code SVG d'un texte (correction d'erreur M).
-pub fn qr_svg(text: &str) -> String {
-    match qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M) {
-        Ok(c) => c
-            .render::<qrcode::render::svg::Color>()
-            .min_dimensions(220, 220)
-            .quiet_zone(true)
-            .build(),
-        Err(_) => String::new(),
-    }
-}
-
-/// Code de récupération d'Utilisateur (`S3M1:U:…`) d'une phrase.
-pub fn user_recovery_code(mnemonic: &str) -> Result<String, String> {
-    let m = bip39::Mnemonic::parse_normalized(mnemonic).map_err(|e| e.to_string())?;
-    s3m_core::identity_derivation::recovery_code_encode(
-        s3m_core::identity_derivation::RecoveryRole::User,
-        &m.to_entropy(),
-    )
-    .map_err(|e| e.to_string())
-}
-
-/// Saisie d'une identité existante : code `S3M1:U:…` ou 12 à 24 mots.
+/// Saisie d'une identité existante : phrase de 12 à 24 mots (casse et
+/// espaces indifférents).
 pub fn parse_user_recovery(input: &str) -> Result<String, String> {
-    use s3m_core::identity_derivation::{recovery_code_decode, RecoveryRole};
-    let t = input.trim();
-    if t.to_ascii_uppercase().starts_with("S3M1") {
-        let (role, entropy) = recovery_code_decode(t).map_err(|e| e.to_string())?;
-        if role != RecoveryRole::User {
-            return Err("code de Nœud : un code d'Utilisateur (S3M1:U:…) est attendu".into());
-        }
-        return bip39::Mnemonic::from_entropy(&entropy)
-            .map(|m| m.to_string())
-            .map_err(|e| e.to_string());
-    }
-    let words = t
+    let words = input
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -281,11 +249,9 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                 .collect();
             json!({
                 "titre": "S3m — premier lancement",
-                "1. votre code de récupération (à imprimer, ne pas photographier)": {
-                    "QR code": user_recovery_code(&p.mnemonic).map(|c| qr_svg(&c)).unwrap_or_default(),
-                    "code": user_recovery_code(&p.mnemonic).unwrap_or_default(),
+                "1. votre phrase de récupération (à noter sur papier, ne pas photographier)": {
                     "24 mots": p.mnemonic,
-                    "important": "Gardez-le hors de cet ordinateur : lui seul permet de retrouver vos fichiers.",
+                    "important": "Gardez-la hors de cet ordinateur : elle seule permet de retrouver vos fichiers.",
                 },
                 "2. nœuds trouvés sur le réseau local": if s.scanning { json!("recherche en cours…") } else if found.is_empty() { json!("aucun (le Nœud est-il allumé, sur le même réseau, mDNS actif ?)") } else { json!(found) },
                 "3. si le Nœud n'accepte pas le rattachement automatique, transmettez à son opérateur": {
@@ -302,8 +268,8 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                 },
                 "actions": [
                     { "nom": "restore", "titre": "J'ai déjà une identité S3m",
-                      "libellé": "Reprendre cette identité", "champs": ["code de récupération ou phrase"],
-                      "aide": { "code de récupération ou phrase": "Code S3M1:U:… (QR code) ou les 24 mots" } },
+                      "libellé": "Reprendre cette identité", "champs": ["phrase de récupération"],
+                      "aide": { "phrase de récupération": "Vos 24 mots, séparés par des espaces" } },
                     { "nom": "set_access", "titre": "Accès aux fichiers",
                       "libellé": "Choisir", "champs": ["accès"],
                       "valeurs": { "accès": s.access.clone().unwrap_or_else(|| if crate::daemon::winfsp_installed() { "lecteur".into() } else { "dossier".into() }) },
@@ -326,7 +292,7 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
             let addr = match name {
                 "restore" => {
                     let input = v
-                        .get("code de récupération ou phrase")
+                        .get("phrase de récupération")
                         .and_then(|x| x.as_str())
                         .unwrap_or_default();
                     *p.lock().unwrap() = restore(&dir, input)?;

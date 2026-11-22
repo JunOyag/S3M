@@ -66,12 +66,14 @@ async fn a_temporary_node_is_configured_remotely_with_its_pairing_code() {
     assert!(st["actions"].to_string().contains("new_identity"));
     session.action("new_identity", json!({})).await.unwrap();
     let st = session.status().await.unwrap();
-    let words = st.pointer("/1. code de récupération (à imprimer, ne pas photographier)/24 mots");
+    let words = st.pointer(
+        "/1. phrase de récupération (à noter sur papier, ne pas photographier)/24 mots",
+    );
     assert_eq!(
         words.and_then(|w| w.as_str()).unwrap().split(' ').count(),
         24
     );
-    assert!(st.to_string().contains("<svg"), "QR codes fournis");
+    assert!(st.to_string().contains("<svg"), "QR code 2FA fourni");
     assert!(
         !config.seed_file.exists(),
         "rien n'est écrit avant confirmation"

@@ -41,9 +41,6 @@ pub enum CoreError {
     )]
     VdfUnavailable,
 
-    #[error("code de récupération invalide : {0}")]
-    RecoveryCode(&'static str),
-
     #[error("paramètre VDF invalide : {reason}")]
     InvalidVdfParameter { reason: &'static str },
 

@@ -143,32 +143,13 @@ Si elle est utilisée :
 2. **La passphrase n'est stockée nulle part.** La perdre revient à perdre
    l'identité, et l'accès à toutes les données qui en dérivent.
 
-## Code de récupération {: #code-de-recuperation }
+## Phrase de récupération seule {: #phrase-seule }
 
-Ajout du 2026-11-20 ([`deploiement.appairage-admin`](../07-deploiement/appairage-admin.md)).
-La phrase de récupération se présente aussi sous forme d'un **code texte**,
-affiché en QR code (correction d'erreur M), en clair et accompagné des
-24 mots. C'est une autre écriture de la **même entropie BIP-39** : le code
-redonne la phrase, et la chaîne de dérivation ci-dessus est inchangée
-(les identités existantes restent valides).
-
-```
-S3M1:<rôle>:<entropie>:<contrôle>
-```
-
-- `rôle` : `N` (Nœud) ou `U` (Utilisateur) ; un code d'un autre rôle est
-  refusé à la saisie ;
-- `entropie` : entropie BIP-39 (32 octets pour 24 mots, 16 pour 12) en
-  base32 RFC 4648, majuscules, sans remplissage ;
-- `contrôle` : 4 premiers octets de
-  `SHA-256("s3m/recovery-code/v1" ‖ rôle ‖ entropie)`, en base32 (7
-  caractères).
-
-Le code n'utilise que des majuscules, des chiffres et `:` (mode
-alphanumérique du QR code, compact). La saisie accepte le code ou les mots,
-insensible à la casse et aux espaces. La passphrase n'y figure **jamais**.
-Le QR code se garde imprimé : une photo part souvent dans une sauvegarde en
-ligne.
+Le 2026-11-22, le code de récupération `S3M1:…` (autre écriture de la même
+entropie, en QR code) a été retiré : la phrase de 24 mots est l'unique
+forme de la phrase de récupération, affichée en grille numérotée de
+6 lignes × 4 colonnes et saisie telle quelle (casse et espaces
+indifférents). Elle se garde sur papier, jamais en photo.
 
 ## Périmètre de ce schéma
 

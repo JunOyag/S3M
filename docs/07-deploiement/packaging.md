@@ -182,9 +182,8 @@ synchronisation courantes :
   nouveau joignable, rattachement automatique accepté ou refusé, erreur de
   synchronisation persistante.
 - **Assistant de premier lancement** (aucune configuration) : création de
-  la phrase de récupération, affichée en
-  [code de récupération](../03-crypto/identity-derivation.md#code-de-recuperation)
-  (QR code, texte, 24 mots), ou reprise d'une identité existante, recherche des
+  la [phrase de récupération](../03-crypto/identity-derivation.md#phrase-seule)
+  (24 mots), ou reprise d'une identité existante par ses 24 mots, recherche des
   Nœuds du réseau local
   ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)),
   bouton « Se rattacher » sur chaque Nœud trouvé ou saisie manuelle de son

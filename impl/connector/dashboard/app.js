@@ -131,7 +131,7 @@ const LABELS = {
   "4. accès aux fichiers": ["Accès aux fichiers", "Lettre de lecteur (WinFsp requis) ou dossier synchronisé, comme OneDrive."],
   "accès choisi": ["Accès choisi", "Modifiable ensuite dans le tableau de bord (relance de S3m)."],
   "code d'appairage": ["Code d'appairage", "Code affiché par le Nœud à configurer."],
-  "code de récupération ou phrase": ["Code de récupération ou phrase", "Code S3M1:… ou phrase de 24 mots d'une identité existante."],
+  "phrase de récupération": ["Phrase de récupération", "Les 24 mots d'une identité existante, séparés par des espaces."],
   "24 mots": ["Phrase de récupération (24 mots)", "À noter et garder en lieu sûr : elle permet de tout restaurer."],
   "QR code": ["QR code", ""],
   "code": ["Code", ""],

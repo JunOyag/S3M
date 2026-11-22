@@ -125,7 +125,7 @@ const LABELS = {
   "numéro ou adresse": ["Numéro ou adresse", "Numéro du Nœud dans la liste, ou son adresse /ip4/…/p2p/…"],
   "2. nœuds trouvés sur le réseau local": ["Nœuds trouvés sur le réseau local", ""],
   "code d'appairage": ["Code d'appairage", "Code affiché par le Nœud à configurer."],
-  "code de récupération ou phrase": ["Code de récupération ou phrase", "Code S3M1:… ou phrase de 24 mots d'une identité existante."],
+  "phrase de récupération": ["Phrase de récupération", "Les 24 mots d'une identité existante, séparés par des espaces."],
   "24 mots": ["Phrase de récupération (24 mots)", "À noter et garder en lieu sûr : elle permet de tout restaurer."],
   "QR code": ["QR code", ""],
   "code": ["Code", ""],
@@ -435,9 +435,17 @@ function fmt(k, v) {
   return cell(v);
 }
 
+// Phrase de récupération : grille alignée de 6 lignes × 4 colonnes, numérotée.
+function wordGrid(text) {
+  const g = el("ol", undefined, "words");
+  text.trim().split(/\s+/).forEach((w) => g.appendChild(el("li", w)));
+  return g;
+}
+
 // QR code : SVG fourni par le moteur, affiché comme image (jamais inséré).
 // Objet imbriqué : sous-tableau.
 function valueNode(v, k) {
+  if (/24 mots|phrase d'annonce/.test(k || "") && typeof v === "string" && v.trim().split(/\s+/).length === 24) return wordGrid(v);
   if (v !== null && typeof v === "object" && !(Array.isArray(v) && v.every((x) => x === null || typeof x !== "object"))) {
     return render(v);
   }
