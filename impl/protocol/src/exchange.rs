@@ -130,6 +130,11 @@ pub enum Credential {
         emergency_pub: Vec<u8>,
         signature: Vec<u8>,
     },
+    /// Lecture d'un partage (`protocols.partage`) : `SignedShareGrant`.
+    Share {
+        grant: Vec<u8>,
+        signature: Vec<u8>,
+    },
 }
 
 /// Union `RequestBody`.
@@ -212,6 +217,10 @@ pub enum Body {
     /// Message de l'Utilisateur à son Nœud.
     PostMessage {
         text: String,
+    },
+    /// Retrait d'un partage (`protocols.partage`).
+    RevokeShare {
+        share_id: Vec<u8>,
     },
 }
 
@@ -366,6 +375,20 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
                 fb::Credential::EmergencyCredential,
                 Some(o.as_union_value()),
             )
+        }
+        Some(Credential::Share { grant, signature }) => {
+            let g = b.create_vector(grant);
+            let sg = b.create_vector(signature);
+            let sgr = fb::SignedShareGrant::create(
+                &mut b,
+                &fb::SignedShareGrantArgs {
+                    grant: Some(g),
+                    signature: Some(sg),
+                },
+            );
+            let o =
+                fb::ShareCredential::create(&mut b, &fb::ShareCredentialArgs { grant: Some(sgr) });
+            (fb::Credential::ShareCredential, Some(o.as_union_value()))
         }
     };
     let (bt, body) = match &r.body {
@@ -559,6 +582,11 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             let o = fb::PostMessage::create(&mut b, &fb::PostMessageArgs { text: Some(t) });
             (fb::RequestBody::PostMessage, o.as_union_value())
         }
+        Body::RevokeShare { share_id } => {
+            let v = b.create_vector(share_id);
+            let o = fb::RevokeShare::create(&mut b, &fb::RevokeShareArgs { share_id: Some(v) });
+            (fb::RequestBody::RevokeShare, o.as_union_value())
+        }
     };
     let root = fb::BlockRequest::create(
         &mut b,
@@ -641,6 +669,16 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
                 vdf_pi: bytes(c.vdf_pi()),
                 emergency_pub: bytes(c.emergency_pub()),
                 signature: bytes(c.signature()),
+            })
+        }
+        fb::Credential::ShareCredential => {
+            let c = r
+                .credential_as_share_credential()
+                .ok_or(Refusal::Malformed)?;
+            let g = c.grant().ok_or(Refusal::Malformed)?;
+            Some(Credential::Share {
+                grant: bytes(g.grant()),
+                signature: bytes(g.signature()),
             })
         }
         _ => return Err(Refusal::Malformed),
@@ -746,6 +784,9 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
                 .text()
                 .unwrap_or_default()
                 .to_string(),
+        },
+        fb::RequestBody::RevokeShare => Body::RevokeShare {
+            share_id: bytes(r.body_as_revoke_share().ok_or(m)?.share_id()),
         },
         _ => return Err(m),
     };

@@ -334,6 +334,9 @@ pub struct SavedState {
     /// `(user_id, étiquette)` locales.
     #[serde(default)]
     pub user_labels: Vec<(String, String)>,
+    /// Partages retirés (`protocols.partage`).
+    #[serde(default)]
+    pub revoked_shares: Vec<String>,
 }
 
 impl SavedState {
@@ -394,6 +397,7 @@ impl SavedState {
             channel: Some(s.channel.clone()),
             name: s.name.clone(),
             user_labels: sorted_pairs(&s.user_labels),
+            revoked_shares: sorted(s.revoked_shares.iter().map(|x| hx(x))),
         }
     }
 
@@ -450,6 +454,9 @@ impl SavedState {
         s.name = self.name.clone();
         for (u, l) in &self.user_labels {
             s.user_labels.insert(unhex32(u)?, l.clone());
+        }
+        for x in &self.revoked_shares {
+            s.revoked_shares.insert(unhex32(x)?);
         }
         for u in &self.auto_attached {
             s.auto_attached.insert(unhex32(u)?);

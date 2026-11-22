@@ -155,6 +155,10 @@ pub struct NodeService {
     /// Fragments de parité du dernier stripe restés sans partenaire : la
     /// recherche de partenaires relève sa cible d'autant.
     pub missing_partners: usize,
+    /// Partages retirés par leur propriétaire (`protocols.partage`).
+    pub revoked_shares: std::collections::HashSet<Id>,
+    /// Débit servi par partage : `(minute, blocs)`.
+    share_rate: HashMap<Id, (u64, u32)>,
     /// Dernière adresse IP vue par Utilisateur (carte du dashboard).
     pub last_user_ip: HashMap<Id, String>,
     pub record_user_ips: bool,
@@ -224,6 +228,8 @@ impl NodeService {
             partner_names: HashMap::new(),
             emergency_verified: Default::default(),
             missing_partners: 0,
+            revoked_shares: Default::default(),
+            share_rate: HashMap::new(),
             limiter: RescueLimiter::default(),
         }
     }
@@ -249,6 +255,34 @@ impl NodeService {
     ) -> Response {
         self.dispatch(from, from_node, local, req, now)
             .unwrap_or_else(Response::Failure)
+    }
+
+    /// Lecteur d'un partage : autorisation signée par un Utilisateur de ce
+    /// Nœud, pour ce Nœud, non expirée, non retirée, débit limité. Rend le
+    /// propriétaire (`protocols.partage#lecture`).
+    fn share_reader(&mut self, cred: Option<&Credential>, now: u64) -> Result<Id, Refusal> {
+        let Some(Credential::Share { grant, signature }) = cred else {
+            return Err(Refusal::Unauthorized);
+        };
+        let g = s3m_protocol::share::verify_grant(grant, signature)
+            .map_err(|_| Refusal::Unauthorized)?;
+        if g.node_id != self.node_id()
+            || !self.users.contains_key(&g.owner_user_id)
+            || (g.expires_at != 0 && now >= g.expires_at)
+            || self.revoked_shares.contains(&g.share_id)
+        {
+            return Err(Refusal::Unauthorized);
+        }
+        let minute = now / 60;
+        let r = self.share_rate.entry(g.share_id).or_insert((minute, 0));
+        if r.0 != minute {
+            *r = (minute, 0);
+        }
+        if r.1 >= s3m_protocol::share::BLOCKS_PER_MINUTE {
+            return Err(Refusal::RateLimited);
+        }
+        r.1 += 1;
+        Ok(g.owner_user_id)
     }
 
     fn user(&self, cred: Option<&Credential>, from: &[u8], local: &[u8]) -> Result<Id, Refusal> {
@@ -282,6 +316,18 @@ impl NodeService {
     ) -> Result<Response, Refusal> {
         let cred = req.credential.as_ref();
         match req.body {
+            Body::GetBlock { hash } if matches!(cred, Some(Credential::Share { .. })) => {
+                let u = self.share_reader(cred, now)?;
+                match self.store.get(Space::UserBlock, &id32(&hash)?) {
+                    Some((o, d)) if o == u => Ok(Response::BlockData(d)),
+                    _ => Err(Refusal::NotFound),
+                }
+            }
+            Body::RevokeShare { share_id } => {
+                self.user(cred, from, local)?;
+                self.revoked_shares.insert(id32(&share_id)?);
+                Ok(Response::Ack { freed: 0 })
+            }
             Body::GetBlock { hash } => {
                 let u = self.user(cred, from, local)?;
                 match self.store.get(Space::UserBlock, &id32(&hash)?) {

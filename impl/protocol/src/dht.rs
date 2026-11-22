@@ -72,6 +72,8 @@ pub enum EntryKind {
     Emergency,
     /// Alerte de compromission (`protocols.canal-noeud`).
     Alert,
+    /// Pointeur d'un partage (`protocols.partage`).
+    Share,
 }
 
 impl EntryKind {
@@ -83,6 +85,7 @@ impl EntryKind {
             Self::Dispersal => "s3m/sig/dispersal-entry/v1",
             Self::Emergency => "s3m/sig/emergency-entry/v1",
             Self::Alert => "s3m/sig/alert-entry/v1",
+            Self::Share => "s3m/sig/share-entry/v1",
         }
     }
 
@@ -95,6 +98,7 @@ impl EntryKind {
             Self::Emergency => "dht-emergency-manifest",
             // L'alerte est en clair : aucun blob chiffré.
             Self::Alert => "",
+            Self::Share => "dht-share-pointer",
         }
     }
 
@@ -106,6 +110,7 @@ impl EntryKind {
             Self::Dispersal => dht::DISPERSAL_ENTRY_IDENTIFIER,
             Self::Emergency => dht::EMERGENCY_ENTRY_IDENTIFIER,
             Self::Alert => dht::ALERT_ENTRY_IDENTIFIER,
+            Self::Share => dht::SHARE_ENTRY_IDENTIFIER,
         }
     }
 
@@ -358,6 +363,16 @@ pub fn verify_envelope(
             verify_signature(key, label, payload, signature)?;
             check_ttl(kind, e.timestamp(), ctx.now)?;
         }
+        EntryKind::Share => {
+            let e =
+                dht::root_as_share_entry(payload).map_err(|_| DhtError::Format("ShareEntry"))?;
+            let key = e.sig_pub_share().ok_or(DhtError::BadSignature)?.bytes();
+            verify_signature(key, label, payload, signature)?;
+            check_ttl(kind, e.timestamp(), ctx.now)?;
+            if ctx.previous_seq.is_some_and(|prev| e.seq() <= prev) {
+                return Err(DhtError::StaleSequence);
+            }
+        }
     }
     Ok(payload.to_vec())
 }
@@ -406,6 +421,9 @@ pub fn inspect_envelope(envelope: &[u8]) -> Result<EnvelopeSummary, DhtError> {
     } else if has(EntryKind::Alert) {
         let e = dht::root_as_alert_entry(payload).map_err(bad("AlertEntry"))?;
         (EntryKind::Alert, e.timestamp(), None)
+    } else if has(EntryKind::Share) {
+        let e = dht::root_as_share_entry(payload).map_err(bad("ShareEntry"))?;
+        (EntryKind::Share, e.timestamp(), Some(e.seq()))
     } else {
         return Err(DhtError::WrongFileIdentifier);
     };
@@ -438,6 +456,23 @@ pub fn accept_record(
         let announce = e.pub_node_announce().ok_or(DhtError::BadSignature)?.bytes();
         if key != alert_dht_key(announce) {
             return Err(DhtError::Format("clé d'alerte"));
+        }
+    }
+    if summary.kind == EntryKind::Share {
+        // Clé de recherche liée à la clé du propriétaire : un destinataire
+        // ne peut pas réécrire le pointeur.
+        let env = flatbuffers::root::<dht::DhtEnvelope>(envelope)
+            .map_err(|_| DhtError::Format("DhtEnvelope"))?;
+        let payload = env.payload().ok_or(DhtError::Format("payload"))?.bytes();
+        let e = dht::root_as_share_entry(payload).map_err(|_| DhtError::Format("ShareEntry"))?;
+        let sig: [u8; 32] = e
+            .sig_pub_share()
+            .ok_or(DhtError::BadSignature)?
+            .bytes()
+            .try_into()
+            .map_err(|_| DhtError::Format("sig_pub_share"))?;
+        if key != s3m_core::share::share_dht_key(&sig) {
+            return Err(DhtError::Format("clé de partage"));
         }
     }
     let node_key: Option<[u8; 32]> = match summary.kind {

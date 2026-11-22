@@ -271,7 +271,8 @@ pages:
     section: "§3.12.6"
     fbs: "schemas/network/ShareEntry.fbs#ShareEntry"
     refs: [network.dht-directory, protocols.partage]
-    verified_by: []
+    verified_by:
+      - share::pointer_is_readable_with_the_token_and_bound_to_the_owner_key
 
   - id: network.AlertEntry
     kind: schema

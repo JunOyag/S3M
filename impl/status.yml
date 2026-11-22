@@ -1328,15 +1328,21 @@ entries:
       : effacer et réutiliser seulement ; effacement limité aux données S3m.
   network.ShareEntry:
     kind: schema
-    status: not_started
-    owner: null
-    tests: []
-    notes: ""
+    status: done
+    owner: claude-code
+    tests:
+      - share::pointer_is_readable_with_the_token_and_bound_to_the_owner_key
+    notes: "Entrée DHT Share (protocol/src/share.rs, dht.rs : liaison clé ↔ sig_pub_share)."
   protocols.partage:
     kind: narrative
-    status: not_started
-    owner: null
-    tests: []
+    status: in_progress
+    owner: claude-code
+    tests:
+      - share_keys::share_keys_match_vectors_and_invites_open_only_for_their_recipient
+      - share::grant_is_signed_by_its_owner
+      - share::links_and_invites_carry_the_token
+      - share::share_requests_roundtrip
+      - share::share_grant_reads_only_the_owner_blocks_until_revoked
     notes: >-
       Spécifié le 2026-11-22 (étape 1 : lecture seule, Utilisateur S3m ou
       lien S3m). Suppose la révision de crypto.k-block (clés d'élément,
