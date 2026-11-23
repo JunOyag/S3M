@@ -131,6 +131,20 @@ pub struct ReceivedShare {
     pub pointer: Option<CachedPointer>,
     pub refreshed_at: u64,
     pub last_error: Option<String>,
+    /// Nom du dossier dans « Partagés avec moi », fixé à la première
+    /// lecture du pointeur : un changement de pseudo du propriétaire ne le
+    /// renomme pas (vide : calculé).
+    #[serde(default)]
+    pub folder: String,
+}
+
+/// Nom proposé pour un partage reçu : `propriétaire — nom`.
+pub fn folder_name(p: &CachedPointer) -> String {
+    let base = match p.owner_label.is_empty() {
+        true => p.name.clone(),
+        false => format!("{} — {}", p.owner_label, p.name),
+    };
+    base.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
 }
 
 impl ReceivedShare {
@@ -175,18 +189,17 @@ impl ShareStore {
     }
 
     /// Partages reçus visibles, avec leur nom dans le dossier virtuel :
-    /// `propriétaire — nom`, rendu unique.
+    /// nom fixé (`propriétaire — nom` au départ), rendu unique.
     pub fn visible(&self) -> Vec<(String, CachedPointer)> {
         let mut out: Vec<(String, CachedPointer)> = Vec::new();
         for r in &self.received {
             let Some(p) = r.pointer.as_ref().filter(|p| !p.revoked) else {
                 continue;
             };
-            let base = match p.owner_label.is_empty() {
-                true => p.name.clone(),
-                false => format!("{} — {}", p.owner_label, p.name),
+            let base = match r.folder.is_empty() {
+                true => folder_name(p),
+                false => r.folder.clone(),
             };
-            let base = base.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
             let mut name = base.clone();
             let mut n = 2;
             while out.iter().any(|(x, _)| x.eq_ignore_ascii_case(&name)) {

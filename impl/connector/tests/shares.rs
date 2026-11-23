@@ -173,3 +173,22 @@ fn pointer_is_republished_when_the_element_changes_or_monthly() {
     };
     assert!(!done.publish_due(None, 200));
 }
+
+#[test]
+fn received_folder_name_survives_owner_rename() {
+    let mut st = ShareStore::default();
+    let p = CachedPointer {
+        name: "Photos".into(),
+        owner_label: "Alice".into(),
+        ..Default::default()
+    };
+    st.received.push(ReceivedShare {
+        folder: s3m_connector::shares::folder_name(&p),
+        pointer: Some(CachedPointer {
+            owner_label: "Alicia".into(),
+            ..p
+        }),
+        ..Default::default()
+    });
+    assert_eq!(st.visible()[0].0, "Alice — Photos");
+}

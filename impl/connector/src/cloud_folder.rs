@@ -496,6 +496,10 @@ impl Folder {
             dirs.push(crate::drive::SHARED_DIR.to_string());
         }
         for dir in dirs {
+            // « Partagés avec moi » est en lecture seule : rien de local à
+            // préserver, une entrée disparue (partage retiré, renommé) part.
+            let read_only = dir == crate::drive::SHARED_DIR
+                || dir.starts_with(&format!("{}/", crate::drive::SHARED_DIR));
             let remote = match self.drive.lock().unwrap().list(&dir) {
                 Ok(l) => l,
                 Err(_) => continue,
@@ -508,10 +512,11 @@ impl Folder {
                 .flatten()
                 .filter_map(|e| {
                     let m = e.metadata().ok()?;
-                    let in_sync = open(&e.path(), false)
-                        .ok()
-                        .and_then(|f| placeholder_state(&f))
-                        .unwrap_or(false);
+                    let in_sync = read_only
+                        || open(&e.path(), false)
+                            .ok()
+                            .and_then(|f| placeholder_state(&f))
+                            .unwrap_or(false);
                     Some(LocalEntry {
                         name: e.file_name().to_string_lossy().into_owned(),
                         is_dir: m.is_dir(),

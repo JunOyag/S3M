@@ -165,7 +165,11 @@ pub async fn tick(sh: &Arc<Shared>) {
             Ok(Some(env)) => match open_share_entry(&env, &token, now) {
                 Ok((seq, p)) => {
                     if r.pointer.as_ref().is_none_or(|c| seq >= c.seq) {
-                        r.pointer = Some(CachedPointer::of(seq, &p));
+                        let c = CachedPointer::of(seq, &p);
+                        if r.folder.is_empty() {
+                            r.folder = crate::shares::folder_name(&c);
+                        }
+                        r.pointer = Some(c);
                     }
                     r.last_error = None;
                 }
