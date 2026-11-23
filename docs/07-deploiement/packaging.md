@@ -265,9 +265,16 @@ identités Utilisateur, chacune comme un Connecteur complet et indépendant.
 - **Retrait** (second clic de confirmation ; l'identité d'origine seulement
   s'il en reste une autre) : S3m redémarre sans elle ; son dossier est
   renommé `<n>.retiree-<horodatage>` (pour l'origine, ses fichiers vont
-  dans `identites.retiree-<horodatage>`, le dossier de l'application
-  gardant journaux et identités), jamais effacé, et son dossier synchronisé
-  déconnecté. Le nom du sous-menu suit le pseudo de l'identité.
+  dans `identites\1.retiree-<horodatage>`, le dossier de l'application
+  gardant journaux et identités), jamais effacé d'office (voir ci-dessous), et
+  son dossier synchronisé déconnecté. Le nom du sous-menu suit le pseudo
+  de l'identité.
+- **Identités archivées** (menu de l'icône, grisé s'il n'y en a pas) : une
+  entrée par identité retirée, `pseudo — retirée le JJ/MM/AAAA`, avec
+  *Restaurer* (relancée aussitôt sous le premier numéro libre, à partir
+  de 2) et *Supprimer définitivement* (second clic de confirmation ; son
+  dossier est effacé de ce poste, phrase de récupération comprise : seule
+  la phrase notée permet ensuite de la retrouver).
 - Deux identités peuvent être rattachées au même Nœud (deux Utilisateurs
   distincts pour lui) ou à des Nœuds différents.
 
