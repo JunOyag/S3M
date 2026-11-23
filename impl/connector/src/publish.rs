@@ -82,6 +82,20 @@ pub async fn publish_if_changed(
         }
         now.max(s.last_timestamp + 1)
     };
+    // Espace local neuf (nouvel appareil, changement de Nœud) : ne jamais
+    // remplacer une racine publiée par la racine vide, ce qui ferait perdre
+    // la trace des fichiers aux autres appareils.
+    if plain.fs_root_hash == [0u8; 32] {
+        if let Some(cur) = read_user_entry(client, priv_user, pub_user).await {
+            if cur.fs_root_hash != [0u8; 32] {
+                state.lock().unwrap().last_error = Some(
+                    "racine locale vide : entrée publiée conservée (fichiers d'un autre appareil)"
+                        .into(),
+                );
+                return;
+            }
+        }
+    }
     let mut nonce = [0u8; 12];
     getrandom::getrandom(&mut nonce).expect("CSPRNG du système");
     let result = match user_entry_envelope(priv_user, pub_user, ts, proof, plain, &nonce) {

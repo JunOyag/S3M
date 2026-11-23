@@ -1673,6 +1673,12 @@ pub fn tray_view(sh: &Shared) -> TrayView {
 /// suivante.
 fn resolve_conflict(sh: &Shared, drive: &mut crate::drive::Drive) -> Option<Vec<String>> {
     let current = drive.conflict?;
+    let root = root_from_dht(sh, current).or_else(|| root_from_set_aside(sh, current))?;
+    drive.rebase(root, (sh.clock)()).ok()
+}
+
+/// Racine `current` d'après l'entrée User publiée.
+fn root_from_dht(sh: &Shared, current: BlockHash) -> Option<Root> {
     let client = sh.dht.get()?.clone();
     let rt = tokio::runtime::Handle::try_current().ok()?;
     let plain = rt.block_on(crate::publish::read_user_entry(
@@ -1680,19 +1686,45 @@ fn resolve_conflict(sh: &Shared, drive: &mut crate::drive::Drive) -> Option<Vec<
         &sh.priv_user,
         &sh.pub_user,
     ))?;
-    if plain.fs_root_hash != current {
-        return None;
+    (plain.fs_root_hash == current).then_some(Root {
+        fs_root_hash: plain.fs_root_hash,
+        encryption_salt: plain.encryption_salt,
+        key_version: plain.key_version,
+    })
+}
+
+/// Racine `current` d'après un ancien espace local mis de côté
+/// (`data.<horodatage>`, changement de Nœud) qui l'avait validée.
+fn root_from_set_aside(sh: &Shared, current: BlockHash) -> Option<Root> {
+    let dir = sh.config.data_dir.parent()?;
+    let want = hex::encode(current);
+    for e in std::fs::read_dir(dir).ok()?.flatten() {
+        if !e.file_name().to_string_lossy().starts_with("data.") {
+            continue;
+        }
+        let Some(j) = std::fs::read(e.path().join("workspace").join("journal.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        else {
+            continue;
+        };
+        if j["fs_root_hash"].as_str() != Some(want.as_str()) {
+            continue;
+        }
+        let Some(salt) = j["encryption_salt"]
+            .as_str()
+            .and_then(|x| hex::decode(x).ok())
+            .and_then(|b| <[u8; 16]>::try_from(b).ok())
+        else {
+            continue;
+        };
+        return Some(Root {
+            fs_root_hash: current,
+            encryption_salt: salt,
+            key_version: j["key_version"].as_u64().unwrap_or(0) as u16,
+        });
     }
-    drive
-        .rebase(
-            Root {
-                fs_root_hash: plain.fs_root_hash,
-                encryption_salt: plain.encryption_salt,
-                key_version: plain.key_version,
-            },
-            (sh.clock)(),
-        )
-        .ok()
+    None
 }
 
 pub fn sync_drive(sh: &Shared) -> Option<Result<usize, DriveError>> {

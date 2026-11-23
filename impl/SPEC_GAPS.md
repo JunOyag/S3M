@@ -679,3 +679,34 @@ propage en ruptures sur tout le voisinage ; réseau d'essai réparé à la main
 par `impl/essais/reconcilier-noeuds.ps1`.
 
 **Résolution** (utilisateur, 2026-11-23) : option 1 — perte, pas fraude. `docs/05-securite/blacklist-fraude.md` § Fragment introuvable et `docs/05-securite/pos-challenges.md` mis à jour ; `impl/node/src/upkeep.rs` replace le fragment et compte l'échec, sans liste noire.
+
+## protocols.echange-blocs / protocols.ecriture-differee — Effacement des anciennes versions par l'Utilisateur
+
+**Constat** (2026-11-23) : `protocols.ecriture-differee` § Ordre d'envoi
+veut que l'ancienne chaîne d'un fichier soit « tombstonée » une fois la
+nouvelle confirmée, mais `protocols.echange-blocs` ne définit aucune
+requête Connecteur → Nœud pour cela : l'avis `Tombstone` existant est signé
+par `priv_node` et ne vaut qu'entre Nœuds partenaires (fragments). Le Nœud
+ne libère donc jamais les blocs d'un Utilisateur : chaque modification
+ajoute des blocs (copie sur écriture) et `used_bytes` croît jusqu'au quota.
+Observé : 260 Mio occupés pour 1,3 Mo de fichiers, puis refus
+« quota dépassé » qui bloque toute synchronisation.
+
+**Question** : comment l'Utilisateur fait-il libérer ses anciens blocs ?
+Options :
+1. **Requête `ReleaseBlocks`** (recommandé) : Connecteur → Nœud, sous
+   `Credential::User`, liste de hashes de l'ancienne racine qui ne sont plus
+   référencés par la nouvelle, envoyée après un `CommitRoot` confirmé (et
+   gardée en file jusqu'à l'accusé). Le Nœud ne libère que les blocs de cet
+   Utilisateur, rend le quota, et retire les blocs de ses stripes (purge des
+   fragments chez les partenaires par `Tombstone`, comme aujourd'hui).
+2. **Ramasse-miettes côté Nœud** : à chaque `CommitRoot`, le Nœud libère
+   ce qui n'est plus atteignable depuis la nouvelle racine. Impossible en
+   l'état : les blocs sont chiffrés, le Nœud ne peut pas parcourir
+   l'arborescence.
+3. **Différé** : relever le quota à la main en attendant.
+
+**Impact si non résolu** : tout Utilisateur actif finit bloqué par son
+quota, quelle que soit la taille réelle de ses fichiers.
+
+**Résolution** : *(en attente d'arbitrage)*
