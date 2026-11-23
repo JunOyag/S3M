@@ -615,6 +615,9 @@ pub struct Shared {
     pub dispersal: tokio::sync::Mutex<DispersalState>,
     /// Dernier cycle de dispersion : `(instant, bilan)`.
     pub last_cycle: Mutex<Option<(u64, CycleReport)>>,
+    /// Dernier taux de redondance calculé `(global, plus faible stripe)`,
+    /// gardé pendant un cycle de dispersion.
+    pub last_redundancy: Mutex<Option<(f64, f64)>>,
     /// Dernier cycle de contrôle : `(instant, bilan)`.
     pub last_upkeep: Mutex<Option<(u64, UpkeepReport)>>,
     /// Entrée DHT Node.
@@ -832,6 +835,12 @@ fn node_summary(v: &Value) -> Value {
                 .sum()
         });
     let alerts = len("alertes d'intégrité signalées");
+    let red = v.pointer("/dispersion/redondance");
+    let rate = red.and_then(|r| r["taux (%)"].as_f64());
+    let weakest = red.and_then(|r| r["stripe le plus faible (%)"].as_f64());
+    let goal = red
+        .and_then(|r| r["objectif (%)"].as_f64())
+        .unwrap_or(300.0);
     let unread: u64 = v
         .get("messages des utilisateurs")
         .and_then(|x| x.as_array())
@@ -843,6 +852,10 @@ fn node_summary(v: &Value) -> Value {
           "état": match v.pointer("/republication DHT/taux de republication (%)").and_then(|x| x.as_f64()) {
               Some(x) if x >= 100.0 => "ok", Some(x) if x > 0.0 => "attention", Some(_) => "probleme", None => "neutre" },
           "page": "reseau" },
+        { "libellé": "Redondance", "valeur": rate.map(|x| format!("{x} %")).unwrap_or_else(|| "—".into()),
+          "détail": weakest.map(|m| format!("stripe le plus faible : {m} %")),
+          "état": match weakest { None => "neutre", Some(m) if m >= goal => "ok", Some(m) if m >= 100.0 => "attention", Some(_) => "probleme" },
+          "page": "stockage" },
         { "libellé": "Utilisateurs", "valeur": len("utilisateurs rattachés"), "état": "neutre", "page": "utilisateurs" },
         { "libellé": "Partenaires", "valeur": partners, "détail": format!("{target} visés"),
           "état": if partners == 0 { "attention" } else { "ok" }, "page": "partenaires" },
@@ -1277,7 +1290,10 @@ fn dispersal_status(sh: &Shared) -> Value {
     let cycle = sh.last_cycle.lock().unwrap().clone();
     let users: Vec<Value> = match sh.dispersal.try_lock() {
         Err(_) => vec![json!({ "état": "cycle en cours" })],
-        Ok(d) => d
+        Ok(d) => {
+            *sh.last_redundancy.lock().unwrap() =
+                crate::dispersal_engine::redundancy(&d, sh.config.dispersal.k);
+            d
             .users
             .iter()
             .map(|(u, x)| {
@@ -1289,9 +1305,16 @@ fn dispersal_status(sh: &Shared) -> Value {
                         "fragments à purger": x.retired.len(),
                         "erreur": x.last_error })
             })
-            .collect(),
+            .collect()
+        }
     };
+    let red = *sh.last_redundancy.lock().unwrap();
     json!({
+        "redondance": red.map(|(g, m)| json!({
+            "taux (%)": g.round(),
+            "stripe le plus faible (%)": m.round(),
+            "objectif (%)": sh.config.dispersal.coef * 100,
+            "lecture": "100 % : au moins l'équivalent d'une copie complète dispersée ; 300 % : les 12 fragments de parité de chaque stripe placés" })),
         "paramètres": { "k": sh.config.dispersal.k, "coef": sh.config.dispersal.coef,
                         "partenaires requis par stripe": sh.config.dispersal.k * sh.config.dispersal.coef,
                         "partenaires minimum par stripe": sh.config.dispersal.min_confirmations(),
@@ -2009,6 +2032,7 @@ pub async fn start_with(
         last_partnering: Mutex::new(None),
         dispersal: tokio::sync::Mutex::new(dispersal),
         last_cycle: Mutex::new(None),
+        last_redundancy: Mutex::new(None),
         last_upkeep: Mutex::new(None),
         node_entry: Arc::new(Mutex::new(NodeEntryState::default())),
         snapshot_pointer: Mutex::new(initial_pointer),

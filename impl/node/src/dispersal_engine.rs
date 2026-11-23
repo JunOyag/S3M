@@ -357,6 +357,29 @@ pub(crate) async fn disperse(
     Ok(rec)
 }
 
+/// Taux de redondance des données dispersées, en % : fragments de parité
+/// placés rapportés aux k blocs de données de chaque stripe (100 % : au
+/// moins l'équivalent d'une copie complète ; coef×100 % : toute la parité
+/// placée). Les blocs en attente comptent pour 0 %. Rend `(global, plus
+/// faible stripe)`, `None` sans données.
+pub fn redundancy(state: &DispersalState, k: usize) -> Option<(f64, f64)> {
+    let k = k.max(1) as f64;
+    let (mut placed, mut data, mut min) = (0f64, 0f64, f64::INFINITY);
+    for u in state.users.values() {
+        for s in u.stripes.iter().chain(&u.index) {
+            let p = s.parity.len() as f64;
+            placed += p;
+            data += k;
+            min = min.min(p / k * 100.0);
+        }
+        if !u.pending.is_empty() {
+            data += u.pending.len() as f64;
+            min = 0.0;
+        }
+    }
+    (data > 0.0).then(|| (placed / data * 100.0, min))
+}
+
 /// Délai entre la libération d'un bloc par son Utilisateur et son
 /// effacement (`protocols.echange-blocs` § Libération).
 pub const RELEASE_GRACE_S: u64 = 86_400;

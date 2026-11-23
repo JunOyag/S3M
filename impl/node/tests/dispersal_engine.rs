@@ -284,3 +284,32 @@ fn blacklist_entries_can_be_removed() {
     assert_eq!(st.clear_blacklist(), 1);
     assert!(st.upkeep.blacklist.is_empty());
 }
+
+/// Taux de redondance : parité placée rapportée aux k blocs de chaque
+/// stripe ; blocs en attente à 0 %.
+#[test]
+fn redundancy_rate_counts_placed_parity_per_stripe() {
+    let stripe = |n: usize| StripeRec {
+        id: format!("s{n}"),
+        data: vec!["a".into(); 4],
+        padding: vec![false; 4],
+        parity: (0..n)
+            .map(|i| (i as u16, format!("p{i}"), "n".into()))
+            .collect(),
+        salt: None,
+    };
+    let mut state = DispersalState::default();
+    assert_eq!(redundancy(&state, 4), None);
+    state.users.insert(
+        "u".into(),
+        UserDispersal {
+            stripes: vec![stripe(12), stripe(4)],
+            ..Default::default()
+        },
+    );
+    assert_eq!(redundancy(&state, 4), Some((200.0, 100.0)));
+    state.users.get_mut("u").unwrap().stripes = vec![stripe(12)];
+    assert_eq!(redundancy(&state, 4), Some((300.0, 300.0)));
+    state.users.get_mut("u").unwrap().pending = vec!["b".into(); 4];
+    assert_eq!(redundancy(&state, 4), Some((150.0, 0.0)));
+}
