@@ -125,7 +125,7 @@ const LABELS = {
   "numéro ou adresse": ["Numéro ou adresse", "Numéro du Nœud dans la liste, ou son adresse /ip4/…/p2p/…"],
   "nœuds trouvés sur le réseau local": ["Nœuds trouvés sur le réseau local", "Nœuds S3m annoncés sur votre réseau ; « Se rattacher » choisit le vôtre."],
   "j'ai déjà une identité S3m": ["J'ai déjà une identité S3m", "Reprendre une identité existante avec sa phrase de 24 mots."],
-  "dossier synchronisé": ["Dossier synchronisé", "Dossier où vos fichiers apparaissent en mode dossier, comme OneDrive : ils ne sont téléchargés qu'à l'ouverture."],
+  "dossier synchronisé": ["Dossier synchronisé", "Dossier où vos fichiers apparaissent, comme avec OneDrive ou Google Drive : ils ne sont téléchargés qu'à l'ouverture."],
   "accès aux fichiers": ["Accès aux fichiers", "« lecteur » : une lettre de lecteur (WinFsp requis) ; « dossier » : un dossier synchronisé, sans rien à installer."],
   "accès": ["Accès", "« lecteur » ou « dossier » ; pris en compte au prochain lancement de S3m."],
   "dossier": ["Dossier", "Emplacement du dossier synchronisé, sur un disque local."],

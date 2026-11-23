@@ -1093,7 +1093,11 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         .map(|v| json!({ "volume": v.volume_id, "chemin": v.mount_path, "capacité (octets)": v.max_capacity_bytes }))
         .collect();
     json!({
-        "titre": "Nœud S3m",
+        // Titre (onglet du navigateur) : nom du Nœud s'il est saisi.
+        "titre": match s.name.as_deref() {
+            Some(n) if !n.is_empty() => format!("Nœud S3m — {n}"),
+            _ => "Nœud S3m".to_string(),
+        },
         "carte": true,
         "identité": {
             "node_id": hx(&s.node_id()),

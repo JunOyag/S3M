@@ -546,6 +546,13 @@ pub fn status(sh: &Shared) -> Value {
             "aide": { "nom": "Remplace pour vous le nom choisi par l'opérateur ; l'empreinte reste toujours affichée" } }));
     }
     v["résumé"] = connector_summary(&v);
+    // Titre (onglet du navigateur) : pseudo de l'identité s'il est saisi.
+    let pseudo = sh.names.lock().unwrap().pseudo.clone();
+    v["titre"] = json!(if pseudo.is_empty() {
+        "Connecteur S3m".to_string()
+    } else {
+        format!("Connecteur S3m — {pseudo}")
+    });
     // Signalé une fois à l'ouverture du tableau de bord.
     let unread = sh.channel.lock().unwrap().unread();
     if unread > 0 {
