@@ -255,8 +255,9 @@ Nœud. « Partagés avec moi » y est en lecture seule.
 
 Ajout du 2026-11-23 : page « Contacts » du dashboard Connecteur. Un contact
 = identifiant S3m (`user_id`) et pseudo facultatif choisi par l'utilisateur,
-uniques ; conservés localement dans `contacts.json` (données de l'identité,
-jamais publiés). Édition par ligne (pseudo, identifiant, suppression). Le
+uniques ; copie locale dans `contacts.json` (données de l'identité),
+synchronisée entre appareils, chiffrée, par l'entrée User
+([`deploiement.contacts`](contacts.md)). Édition par ligne (pseudo, identifiant, suppression). Le
 destinataire d'un partage accepte le pseudo d'un contact ou un identifiant ;
 les écrans affichent le pseudo d'un contact à la place de l'empreinte
 (destinataire d'un partage donné, propriétaire d'un partage reçu, lu dans

@@ -135,6 +135,8 @@ phases:
       - { id: deploiement.formats-serialisation,   component: core }
       - { id: deploiement.packaging,                component: node+connector }
       - { id: deploiement.pseudos,                  component: node+connector, depends_on: [deploiement.packaging, network.dht-directory] }
+      - { id: network.ContactRecord,                component: protocol }
+      - { id: deploiement.contacts,                 component: protocol+node+connector, depends_on: [deploiement.pseudos, network.ContactRecord, network.dht-directory, protocols.partage] }
       - { id: protocols.echange-blocs,              component: node+connector, depends_on: [network.dht-directory, crypto.k-attach, securite.pos-challenges, protocols.tombstones, protocols.dispersion-transactionnelle, securite.incidents-compromissions] }
       - { id: network.traversee-nat,                component: node+connector, depends_on: [network.dht-directory, protocols.echange-blocs] }
       - { id: protocols.partenariat-automatique,    component: node+connector, depends_on: [protocols.echange-blocs, network.dht-directory, securite.pos-challenges, securite.blacklist-fraude, protocols.volatilite-reparation, deploiement.packaging] }

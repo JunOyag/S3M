@@ -181,6 +181,14 @@ offset_s = entier_big-endian( SHA-256( identifiant ) ) mod 2 592 000
 - La republication a lieu aux instants Unix `t` tels que
   `t ≡ offset_s (mod 2 592 000)` — ancrage sur l'époque Unix.
 
+## Tailles {: #tailles }
+
+Ajout du 2026-11-23 ([`deploiement.contacts`](../07-deploiement/contacts.md#taille)) :
+un message Kademlia, enregistrement compris, peut atteindre **64 Kio** sur
+les Nœuds comme sur les Connecteurs (la limite par défaut de libp2p,
+16 Kio, ne suffit plus à une entrée User portant des contacts). Un
+enregistrement de plus de 65 Kio est refusé au stockage.
+
 ## Rôles réseau et identité libp2p
 
 - **Nœud** : pair Kademlia complet (mode serveur), joignable en TCP (Noise

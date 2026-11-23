@@ -1386,6 +1386,18 @@ entries:
     tests:
       - message::messages_requests_and_response_roundtrip
     notes: ""
+  network.ContactRecord:
+    kind: schema
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
+  deploiement.contacts:
+    kind: narrative
+    status: not_started
+    owner: null
+    tests: []
+    notes: ""
   deploiement.pseudos:
     kind: narrative
     status: done

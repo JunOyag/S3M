@@ -208,13 +208,22 @@ pages:
     verified_by:
       - schemas::every_generated_table_builds_and_verifies
 
+  - id: network.ContactRecord
+    kind: schema
+    path: 02-schemas/network/ContactRecord.md
+    title: "ContactRecord"
+    section: "§3.11"
+    fbs: "schemas/network/UserEntry.fbs#ContactRecord"
+    refs: [network.UserEntryPlaintext, deploiement.contacts]
+    verified_by: []
+
   - id: network.UserEntryPlaintext
     kind: schema
     path: 02-schemas/network/UserEntryPlaintext.md
     title: "UserEntryPlaintext"
     section: "§3.9, §3.11"
     fbs: "schemas/network/UserEntry.fbs#UserEntryPlaintext"
-    refs: [crypto.k-self, network.AttachmentRecord, dispersal.MasterKeyEntry, crypto.master-key-chain, network.UserEntry]
+    refs: [crypto.k-self, network.AttachmentRecord, network.ContactRecord, dispersal.MasterKeyEntry, crypto.master-key-chain, network.UserEntry]
     verified_by:
       - schemas::every_generated_table_builds_and_verifies
 
@@ -1218,6 +1227,13 @@ pages:
       - entries::node_entry_is_accepted_with_proof_on_tagged_pub_node
       - pseudos::node_name_and_user_labels_survive_a_restart
       - pseudos::local_node_label_wins_over_the_published_name_and_fingerprint_always_shows
+  - id: deploiement.contacts
+    kind: narrative
+    path: 07-deploiement/contacts.md
+    title: "Contacts Synchronisés"
+    section: "§3.11"
+    refs: [network.UserEntryPlaintext, network.ContactRecord, network.dht-directory, crypto.k-self, deploiement.pseudos, deploiement.packaging, protocols.partage]
+    verified_by: []
   - id: deploiement.appairage-admin
     kind: narrative
     path: 07-deploiement/appairage-admin.md
