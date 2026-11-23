@@ -169,6 +169,14 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Partenaires",
+        "crédit d'hébergement (fragments)",
+        "partner_policy.credit_blocks",
+        Kind::Number,
+        true,
+        "Fragments hébergés pour un partenaire au-delà de ce qu'il héberge pour ce Nœud (64 Kio chacun ; 256 = 16 Mio). Stabilise un petit réseau aux charges inégales ; 0 = troc strict.",
+    ),
+    f(
+        "Partenaires",
         "recherche automatique",
         "partnering.enabled",
         Kind::Bool,

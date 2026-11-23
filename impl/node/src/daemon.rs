@@ -1089,6 +1089,9 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                             "dernier challenge réussi": pos.2.get(&n),
                             "fragments confiés": p.ledger.hosted_for_partner,
                             "fragments reçus": p.ledger.hosted_by_partner,
+                            "crédit d'hébergement utilisé (fragments)": format!("{} / {}",
+                                p.ledger.hosted_by_partner.saturating_sub(p.ledger.hosted_for_partner),
+                                if s.no_credit.contains(id) { 0 } else { s.partner_policy.credit_blocks }),
                             "adresse": addrs.get(id),
                             "dernier échange": p.last_seen,
                             "purge à venir": if p.last_seen == 0 { Value::Null } else { json!(purge) },
@@ -2197,7 +2200,9 @@ pub async fn start_with(
                 )
                 .await;
                 *sh.last_partnering.lock().unwrap() = Some((now, pr));
-                *sh.excluded.lock().unwrap() = excluded(&sh.config.partnering, &d);
+                let ex = excluded(&sh.config.partnering, &d);
+                sh.service.lock().unwrap().no_credit = ex.clone();
+                *sh.excluded.lock().unwrap() = ex;
                 let up = run_upkeep(
                     &sh.service,
                     &mut d,

@@ -75,6 +75,18 @@ impl Default for AttachPolicy {
 pub struct PartnerPolicy {
     pub accept: bool,
     pub max_partners: usize,
+    /// Crédit d'hébergement : fragments hébergés pour un partenaire au-delà
+    /// de ce qu'il héberge pour ce Nœud (`node.PartnerAccount#equilibre`) ;
+    /// 0 = troc strict.
+    #[serde(default = "default_credit_blocks")]
+    pub credit_blocks: u64,
+}
+
+/// Crédit d'hébergement par défaut : 256 fragments (16 Mio).
+pub const DEFAULT_CREDIT_BLOCKS: u64 = 256;
+
+fn default_credit_blocks() -> u64 {
+    DEFAULT_CREDIT_BLOCKS
 }
 
 impl Default for PartnerPolicy {
@@ -82,6 +94,7 @@ impl Default for PartnerPolicy {
         Self {
             accept: true,
             max_partners: 32,
+            credit_blocks: DEFAULT_CREDIT_BLOCKS,
         }
     }
 }
@@ -157,6 +170,9 @@ pub struct NodeService {
     pub missing_partners: usize,
     /// Partages retirés par leur propriétaire (`protocols.partage`).
     pub revoked_shares: std::collections::HashSet<Id>,
+    /// Partenaires sans crédit d'hébergement (score sous le seuil de
+    /// placement, retrait) : troc strict avec eux.
+    pub no_credit: std::collections::HashSet<Id>,
     /// Blocs libérés par leur Utilisateur, encore sur disque :
     /// `utilisateur → (hash → instant de libération)`
     /// (`protocols.echange-blocs` § Libération).
@@ -233,6 +249,7 @@ impl NodeService {
             emergency_verified: Default::default(),
             missing_partners: 0,
             revoked_shares: Default::default(),
+            no_credit: Default::default(),
             released: HashMap::new(),
             share_rate: HashMap::new(),
             limiter: RescueLimiter::default(),
@@ -432,8 +449,13 @@ impl NodeService {
                 let hash = hash_sha256(&data);
                 if !self.store.contains(&hash) {
                     let st = self.partners.get(&p).ok_or(Refusal::Unauthorized)?;
-                    // Troc strict 1:1 (`node.PartnerAccount#equilibre`).
-                    if !barter_allows(&st.ledger) {
+                    // Troc 1:1 avec crédit (`node.PartnerAccount#equilibre`).
+                    let credit = if self.no_credit.contains(&p) {
+                        0
+                    } else {
+                        self.partner_policy.credit_blocks
+                    };
+                    if !barter_allows(&st.ledger, credit) {
                         return Err(Refusal::QuotaExceeded);
                     }
                     self.store
@@ -1383,6 +1405,6 @@ async fn run(
 /// Troc strict 1:1 (`node.PartnerAccount#equilibre`) : un nouveau fragment
 /// du partenaire est accepté si, après dépôt, les fragments reçus de lui ne
 /// dépassent pas de plus de 1 ceux qui lui sont confiés.
-pub fn barter_allows(ledger: &PartnerLedger) -> bool {
-    ledger.hosted_by_partner <= ledger.hosted_for_partner
+pub fn barter_allows(ledger: &PartnerLedger, credit: u64) -> bool {
+    ledger.hosted_by_partner <= ledger.hosted_for_partner.saturating_add(credit)
 }

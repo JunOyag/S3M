@@ -131,6 +131,7 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
 #[test]
 fn partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance() {
     let mut p = NodeService::new(PARTNER);
+    p.partner_policy.credit_blocks = 0;
     p.partners.insert(pk(&NODE), PartnerState::default());
     let me = Some(pk(&NODE));
     let h = hash_sha256(&[9; 40]);
@@ -194,6 +195,7 @@ fn partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance() {
 #[test]
 fn barter_is_strictly_one_for_one() {
     let mut p = NodeService::new(PARTNER);
+    p.partner_policy.credit_blocks = 0;
     p.partners.insert(pk(&NODE), PartnerState::default());
     let me = Some(pk(&NODE));
     let store = |p: &mut NodeService, b: u8| {
@@ -220,6 +222,37 @@ fn barter_is_strictly_one_for_one() {
     assert!(matches!(store(&mut p, 2), Response::FragmentReceipt { .. }));
     assert_eq!(store(&mut p, 3), Response::Failure(Refusal::QuotaExceeded));
     assert_eq!(p.partners[&pk(&NODE)].ledger.hosted_by_partner, 2);
+}
+
+/// Crédit d'hébergement (`node.PartnerAccount#equilibre`) : jusqu'à S
+/// fragments d'avance, aucun pour un partenaire exclu (score bas, retrait).
+#[test]
+fn hosting_credit_allows_a_bounded_imbalance() {
+    let mut p = NodeService::new(PARTNER);
+    assert_eq!(p.partner_policy.credit_blocks, DEFAULT_CREDIT_BLOCKS);
+    p.partner_policy.credit_blocks = 3;
+    p.partners.insert(pk(&NODE), PartnerState::default());
+    let me = Some(pk(&NODE));
+    let store = |p: &mut NodeService, b: u8| {
+        p.handle(
+            b"n",
+            me,
+            b"p",
+            plain(Body::StoreFragment { data: vec![b; 40] }),
+            NOW,
+        )
+    };
+    // Rien hébergé pour ce Nœud : 1 + S fragments acceptés.
+    for b in 1..=4 {
+        assert!(matches!(store(&mut p, b), Response::FragmentReceipt { .. }));
+    }
+    assert_eq!(store(&mut p, 5), Response::Failure(Refusal::QuotaExceeded));
+    // Partenaire exclu : troc strict, plus aucun crédit.
+    p.partner_policy.credit_blocks = 10;
+    p.no_credit.insert(pk(&NODE));
+    assert_eq!(store(&mut p, 5), Response::Failure(Refusal::QuotaExceeded));
+    p.no_credit.clear();
+    assert!(matches!(store(&mut p, 5), Response::FragmentReceipt { .. }));
 }
 
 fn partner_hosting_node_fragment() -> (NodeService, Id) {

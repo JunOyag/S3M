@@ -91,6 +91,7 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
     b.partner_policy = PartnerPolicy {
         accept: true,
         max_partners: 1,
+        ..Default::default()
     };
     let propose = |allowance, entry: Vec<u8>| Request {
         credential: None,
