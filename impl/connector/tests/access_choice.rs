@@ -44,3 +44,20 @@ fn default_folder_is_never_a_missing_path() {
         dir.display().to_string()
     );
 }
+
+#[test]
+fn start_form_takes_everything_typed_in_one_click() {
+    let dir = std::env::temp_dir();
+    let f = s3m_connector::setup::start_form(&AccessChoice::default(), &dir);
+    assert_eq!(f["nom"], "start");
+    assert_eq!(f["libellé"], "Démarrer sous cette identité");
+    let champs: Vec<&str> = f["champs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c.as_str().unwrap())
+        .collect();
+    assert_eq!(champs[0], "adresse du nœud");
+    assert!(champs.contains(&"accès") && champs.contains(&"dossier"));
+    assert_eq!(f["valeurs"]["accès"], "dossier");
+}

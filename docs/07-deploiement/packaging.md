@@ -114,7 +114,7 @@ ouvre directement un écran.
 
 Le résultat de chaque action s'affiche dans un message éphémère (succès ou
 erreur), le bouton étant désactivé pendant l'envoi ; les actions propres à
-un élément d'un tableau (par exemple « Se rattacher » à un Nœud trouvé)
+un élément d'un tableau (par exemple « Choisir » un Nœud trouvé)
 sont des boutons sur sa ligne. Ajout du 2026-11-22 : une ligne modifiable (utilisateur,
 volume du Nœud) porte un seul bouton « Éditer », qui ouvre un **panneau**
 modal regroupant ses modifications préremplies (quota et étiquette d'un
@@ -220,8 +220,10 @@ synchronisation courantes :
   (24 mots), ou reprise d'une identité existante par ses 24 mots, recherche des
   Nœuds du réseau local
   ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)),
-  bouton « Se rattacher » sur chaque Nœud trouvé ou saisie manuelle de son
-  adresse, puis démarrage normal et ouverture du tableau de bord ; le
+  bouton « Choisir » sur chaque Nœud trouvé (qui ne fait que le mettre en
+  évidence) ou saisie manuelle de son adresse ; un bouton unique « Démarrer
+  sous cette identité », en bas de page, prend en compte tout ce qui est
+  saisi (Nœud, accès aux fichiers), puis démarrage normal et ouverture du tableau de bord ; le
   rattachement est demandé automatiquement
   ([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md)).
   Un Nœud « à configurer » trouvé se configure depuis sa ligne de la liste

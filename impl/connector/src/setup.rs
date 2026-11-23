@@ -248,6 +248,8 @@ struct SetupState {
     scanning: bool,
     /// Accès aux fichiers choisi, sinon automatique.
     access: AccessChoice,
+    /// Nœud choisi dans la liste (adresse), mis en évidence.
+    selected: Option<String>,
     done: Option<PathBuf>,
     notify: Option<oneshot::Sender<PathBuf>>,
 }
@@ -315,14 +317,23 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                                            "valeurs": { "numéro ou adresse": (i + 1).to_string() } }],
                         });
                     }
-                    json!({
+                    let chosen = s.selected.as_deref() == Some(n.addr.as_str());
+                    let mut row = json!({
                         "numéro": i + 1,
                         "nœud": s3m_protocol::pseudo::display(&[n.name.as_deref()], &n.node_id),
                         "adresse": n.addr,
-                        "état": if n.accepting_partners { "prêt" } else { "prêt (n'accepte pas de partenaires)" },
-                        "_actions": [{ "nom": "choose", "libellé": "Se rattacher",
-                                       "valeurs": { "numéro": (i + 1).to_string() } }],
-                    })
+                        "état": match (chosen, n.accepting_partners) {
+                            (true, _) => "✔ choisi",
+                            (false, true) => "prêt",
+                            (false, false) => "prêt (n'accepte pas de partenaires)",
+                        },
+                        "_gras": chosen,
+                    });
+                    if !chosen {
+                        row["_actions"] = json!([{ "nom": "choose", "libellé": "Choisir",
+                                       "valeurs": { "numéro": (i + 1).to_string() } }]);
+                    }
+                    row
                 })
                 .collect();
             json!({
@@ -343,18 +354,15 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                     "_contenu": if s.scanning { json!("recherche en cours…") } else if found.is_empty() { json!("aucun (le Nœud est-il allumé, sur le même réseau, annonce locale active ?)") } else { json!(found) },
                     "_formulaires": [
                         { "nom": "scan", "libellé": "Rechercher à nouveau", "style": "secondary", "champs": [] },
-                        { "nom": "manual", "titre": "Nœud absent de la liste : saisir son adresse",
-                          "libellé": "Se rattacher", "champs": ["adresse"],
-                          "aide": { "adresse": "Pour un Nœud joignable mais non trouvé ci-dessus (autre réseau, annonce locale désactivée) : son adresse /ip4/…/tcp/…/p2p/… figure dans son tableau de bord. S3m lui demande le rattachement automatiquement ; s'il le refuse, transmettez d'abord à son opérateur votre identifiant et votre sel (section ci-dessous)." } },
                     ],
                 },
                 "si le Nœud n'accepte pas le rattachement automatique, transmettez à son opérateur": {
                     "user_id": p.user_id,
                     "salt": p.salt,
                 },
-                "accès aux fichiers": {
-                    "_contenu": access_summary(&s.access, &dir),
-                    "_formulaires": [access_form(&s.access, &dir)],
+                "démarrer": {
+                    "_contenu": { "nœud choisi": s.selected.clone().unwrap_or_else(|| "aucun : choisissez-en un dans la liste ou saisissez son adresse ci-dessous".into()) },
+                    "_formulaires": [start_form(&s.access, &dir)],
                 },
                 "actions": []
             })
@@ -411,9 +419,20 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                 }
                 "fs_browse" => return s3m_protocol::local_fs::browse(&v),
                 "fs_mkdir" => return s3m_protocol::local_fs::mkdir(&v),
-                "set_access" => {
-                    state.lock().unwrap().access = parse_access(&v)?;
-                    return Ok(json!({ "ok": true, "message": "Accès aux fichiers choisi" }));
+                // Tout ce qui est saisi : adresse (sinon le Nœud choisi) et accès.
+                "start" => {
+                    let access = parse_access(&v)?;
+                    let typed = v
+                        .get("adresse du nœud")
+                        .and_then(|x| x.as_str())
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(str::to_string);
+                    let mut s = state.lock().unwrap();
+                    s.access = access;
+                    typed
+                        .or_else(|| s.selected.clone())
+                        .ok_or("choisissez un Nœud dans la liste ou saisissez son adresse")?
                 }
                 "scan" => {
                     rescan(state.clone());
@@ -427,7 +446,7 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                         .and_then(|x| x.as_str())
                         .and_then(|x| x.trim().parse().ok())
                         .ok_or("numéro invalide")?;
-                    let s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap();
                     let f = s
                         .found
                         .get(n.wrapping_sub(1))
@@ -438,13 +457,12 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                                 .into(),
                         );
                     }
-                    f.addr.clone()
+                    // Choisir ne fait que mettre le Nœud en évidence.
+                    s.selected = Some(f.addr.clone());
+                    return Ok(
+                        json!({ "ok": true, "message": "Nœud choisi : complétez puis « Démarrer sous cette identité »" }),
+                    );
                 }
-                "manual" => v
-                    .get("adresse")
-                    .and_then(|x| x.as_str())
-                    .ok_or("adresse manquante")?
-                    .to_string(),
                 _ => return Err(format!("action inconnue : {name}")),
             };
             let p = p.lock().unwrap().clone();
@@ -509,6 +527,21 @@ pub fn access_form(c: &AccessChoice, dir: &Path) -> Value {
                   "dossier": "Choisissez avec « Parcourir… » un dossier vide, ou créez-en un (par exemple « S3m » dans votre dossier personnel), sur un disque local (NTFS sous Windows)",
                   "lettre": "Lettre libre, par exemple P:",
                   "point de montage": "Dossier vide où le lecteur sera monté" } })
+}
+
+/// Formulaire final du premier lancement : adresse saisie (facultative si
+/// un Nœud est choisi dans la liste) et accès aux fichiers, pris en compte
+/// d'un seul clic.
+pub fn start_form(c: &AccessChoice, dir: &Path) -> Value {
+    let mut f = access_form(c, dir);
+    f["nom"] = json!("start");
+    f["titre"] = json!("Démarrer");
+    f["libellé"] = json!("Démarrer sous cette identité");
+    let mut champs = vec![json!("adresse du nœud")];
+    champs.extend(f["champs"].as_array().cloned().unwrap_or_default());
+    f["champs"] = json!(champs);
+    f["aide"]["adresse du nœud"] = json!("Vide : le Nœud choisi dans la liste. Pour un Nœud joignable mais absent de la liste (autre réseau, annonce locale désactivée) : son adresse /ip4/…/tcp/…/p2p/…, dans son tableau de bord. S3m lui demande le rattachement automatiquement ; s'il le refuse, transmettez d'abord à son opérateur votre identifiant et votre sel (section ci-dessus).");
+    f
 }
 
 /// Accès retenu, avec seulement l'emplacement qui correspond au type
