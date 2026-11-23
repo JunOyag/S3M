@@ -61,7 +61,10 @@ fn init(dir: &Path, identity: bool) -> Result<(), Box<dyn std::error::Error>> {
         // Identité neuve : la phrase reste dans node.seed (Nœud d'essai).
         let phrase = s3m_node::daemon::generate_mnemonic()?;
         std::fs::write(dir.join("node.seed"), phrase)?;
-        println!("Identité neuve écrite dans {}", dir.join("node.seed").display());
+        println!(
+            "Identité neuve écrite dans {}",
+            dir.join("node.seed").display()
+        );
     } else {
         println!("Au premier démarrage, le Nœud propose une nouvelle identité ou la restauration d'une identité existante.");
     }

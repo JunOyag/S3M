@@ -219,3 +219,30 @@ fn minimum_confirmations_can_be_lowered_for_local_tests_only_within_bounds() {
         "anciens fichiers : valeur normale"
     );
 }
+
+/// Stripe redispersé à l'identique après des confirmations insuffisantes :
+/// ses fragments, replacés chez les mêmes partenaires, ne reçoivent pas
+/// d'avis d'effacement (sinon le partenaire passerait pour fraudeur).
+#[test]
+fn identical_redispersal_is_not_tombstoned() {
+    use s3m_node::dispersal_engine::{DispersalState, Retired, StripeRec, UserDispersal};
+    let r = |h: &str, p: &str| Retired {
+        at: 1,
+        hash: h.into(),
+        partner: p.into(),
+    };
+    let mut st = DispersalState::default();
+    st.users.insert(
+        "u".into(),
+        UserDispersal {
+            stripes: vec![StripeRec {
+                parity: vec![(4, "h1".into(), "p1".into())],
+                ..Default::default()
+            }],
+            retired: vec![r("h1", "p1"), r("h1", "p2"), r("h2", "p1")],
+            ..Default::default()
+        },
+    );
+    st.drop_referenced_retired();
+    assert_eq!(st.users["u"].retired, vec![r("h1", "p2"), r("h2", "p1")]);
+}

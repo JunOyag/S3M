@@ -221,6 +221,31 @@ impl DispersalState {
         }
         s
     }
+
+    /// Fragments encore attendus chez leur partenaire `(hash, partenaire)` :
+    /// stripes de données, d'index et du snapshot.
+    pub fn referenced(&self) -> std::collections::HashSet<(String, String)> {
+        let snap = self.snapshot.stripe.iter();
+        self.users
+            .values()
+            .flat_map(|u| u.stripes.iter().chain(u.index.iter()))
+            .chain(snap)
+            .flat_map(|st| st.parity.iter().map(|(_, h, p)| (h.clone(), p.clone())))
+            .collect()
+    }
+
+    /// Retire des listes d'orphelins les fragments encore attendus : un
+    /// stripe redispersé à l'identique (nouvel essai après des confirmations
+    /// insuffisantes) replace les mêmes fragments chez les mêmes partenaires,
+    /// et l'avis d'effacement les détruirait.
+    pub fn drop_referenced_retired(&mut self) {
+        let live = self.referenced();
+        let keep = |r: &Retired| !live.contains(&(r.hash.clone(), r.partner.clone()));
+        for u in self.users.values_mut() {
+            u.retired.retain(keep);
+        }
+        self.snapshot.retired.retain(keep);
+    }
 }
 
 /// Bilan d'un cycle.
@@ -571,6 +596,7 @@ async fn purge(
     now: u64,
 ) -> u64 {
     let priv_node = service.lock().unwrap().priv_node();
+    state.drop_referenced_retired();
     let mut by_partner: BTreeMap<String, Vec<Id>> = BTreeMap::new();
     let lists = state
         .users
