@@ -412,6 +412,8 @@ fn save_grant(dir: &Path, g: &SignedGrant) -> std::io::Result<()> {
 pub struct NodeIo {
     pub session: NodeSession,
     pub runtime: tokio::runtime::Handle,
+    /// Nœud injoignable : reconstruction depuis la parité des partenaires.
+    pub rescue: Option<Arc<crate::rescue::Rescue>>,
 }
 
 impl NodeIo {
@@ -426,7 +428,15 @@ impl NodeIo {
 
 impl BlockIo for NodeIo {
     fn get(&self, hash: &BlockHash) -> Option<Vec<u8>> {
-        self.wait(self.session.get_block(hash)).ok()
+        match self.wait(self.session.get_block(hash)) {
+            Ok(b) => Some(b),
+            // Lecture de secours seulement si le Nœud ne répond pas.
+            Err(ExchangeError::Network(_)) => {
+                let r = self.rescue.as_ref()?;
+                self.wait(r.get(hash))
+            }
+            Err(_) => None,
+        }
     }
 
     fn put(&self, hash: &BlockHash, frame: Vec<u8>) -> Result<(), String> {
@@ -471,6 +481,9 @@ pub struct Health {
     pub inactivity_detected_at: Option<u64>,
     pub last_error: Option<String>,
     pub incidents: Vec<String>,
+    /// Nœud hors ligne : partenaires en ligne `(en ligne, total)` ; `None`
+    /// si l'annuaire est injoignable (hors réseau).
+    pub partners_online: Option<(usize, usize)>,
 }
 
 /// Demande de remontage du lecteur : `(lettre, réponse)`.
@@ -498,6 +511,8 @@ pub struct Shared {
     pub pub_user: [u8; 32],
     pub session: NodeSession,
     pub keeper: tokio::sync::Mutex<GrantKeeper>,
+    /// Lecture de secours (Nœud injoignable).
+    pub rescue: Arc<crate::rescue::Rescue>,
     pub grant_expiry: Mutex<Option<u64>>,
     pub health: Mutex<Health>,
     pub clock: Arc<dyn Fn() -> u64 + Send + Sync>,
@@ -642,14 +657,30 @@ pub fn status(sh: &Shared) -> Value {
     v
 }
 
+/// Message d'état du Nœud hors ligne : partenaires en ligne (lecture de
+/// secours possible) ou hors réseau (seul le stockage local reste).
+fn offline_message(h: &Health) -> Value {
+    if h.reachable != Some(false) {
+        return Value::Null;
+    }
+    match h.partners_online {
+        Some((up, n)) if up > 0 && n > 0 => json!(format!(
+            "Nœud hors ligne, Partenaires en ligne : {} %",
+            up * 100 / n
+        )),
+        _ => json!("Hors réseau, stockage local"),
+    }
+}
+
 /// Indicateurs de la vue d'ensemble (`état` : ok, attention, probleme, neutre).
 fn connector_summary(v: &Value) -> Value {
     let p = |path: &str| v.pointer(path).cloned().unwrap_or(Value::Null);
     let (node, node_state) = match p("/nœud rattaché/joignable") {
-        Value::Bool(true) => ("joignable", "ok"),
-        Value::Bool(false) => ("injoignable", "probleme"),
+        Value::Bool(true) => ("en ligne", "ok"),
+        Value::Bool(false) => ("hors ligne", "probleme"),
         _ => ("vérification…", "neutre"),
     };
+    let offline = p("/nœud rattaché/état");
     let pending = p("/lecteur/modifications en attente").as_u64().unwrap_or(0);
     let (sync, sync_state) = if !p("/lecteur/erreur de synchronisation").is_null() {
         ("erreur".to_string(), "probleme")
@@ -722,7 +753,7 @@ fn connector_summary(v: &Value) -> Value {
         { "libellé": "Écriture d'urgence",
           "valeur": if deposits > 0 { format!("{deposits} bloc(s) chez les partenaires") } else { "aucun dépôt".to_string() },
           "état": if deposits > 0 { "attention" } else { "ok" }, "page": "urgence" },
-        { "libellé": "Mon Nœud", "valeur": node, "état": node_state, "page": "noeud" },
+        { "libellé": "Mon Nœud", "valeur": node, "détail": offline, "état": node_state, "page": "noeud" },
         { "libellé": "Synchronisation", "valeur": sync, "état": sync_state, "page": "fichiers" },
         { "libellé": "Lecteur", "valeur": drive, "état": drive_state, "page": "fichiers" },
         { "libellé": "File d'écriture", "valeur": queue, "détail": "modifications hors ligne",
@@ -1025,8 +1056,11 @@ fn status_base(sh: &Shared) -> Value {
             "adresse configurée": sh.config.node.addr,
             "adresse utilisée": sh.session.node_addr().to_string(),
             "joignable": h.reachable,
+            "état": offline_message(&h),
             "dernier contact": h.last_contact,
             "indisponible depuis (s)": h.inactivity_detected_at.map(|t| now.saturating_sub(t)),
+            "lectures de secours (blocs reconstruits)": sh.rescue.served.load(std::sync::atomic::Ordering::Relaxed),
+            "dernière erreur de lecture de secours": sh.rescue.last_error.lock().unwrap().clone(),
             "dernière erreur": h.last_error,
         },
         "utilisateur": {
@@ -2041,6 +2075,13 @@ pub async fn watch_once(sh: &Shared) {
             h.last_error = probe.err().map(|e| e.to_string());
         }
     }
+    // Nœud hors ligne : la parité reste-t-elle lisible ?
+    let partners = if ok {
+        None
+    } else {
+        sh.rescue.partners_online(sh).await
+    };
+    sh.health.lock().unwrap().partners_online = partners;
     channel_tick(sh, now, ok).await;
     if ok {
         // Lecture du quota et de l'occupation : validation sans changement
@@ -2119,6 +2160,7 @@ pub async fn start(
         .as_ref()
         .and_then(|g| open_grant(g, clock()).ok())
         .map(|g| g.expires_at);
+    let rescue = Arc::new(crate::rescue::Rescue::default());
     let drive = match config.mount_point.is_some() || config.access.as_deref() == Some("dossier") {
         false => None,
         true => Some(Arc::new(Mutex::new(
@@ -2126,6 +2168,7 @@ pub async fn start(
                 Arc::new(NodeIo {
                     session: session.clone(),
                     runtime: tokio::runtime::Handle::current(),
+                    rescue: Some(rescue.clone()),
                 }),
                 master,
                 config.data_dir.join("workspace"),
@@ -2169,10 +2212,12 @@ pub async fn start(
         salt: salt.clone(),
         session,
         keeper: tokio::sync::Mutex::new(keeper),
+        rescue: rescue.clone(),
         grant_expiry: Mutex::new(expiry),
         health: Mutex::new(Health::default()),
         clock,
     });
+    rescue.attach(Arc::downgrade(&shared));
     crate::share_ops::install_tree(&shared);
     // Références faibles : le tableau de bord ne retient pas une identité
     // arrêtée.

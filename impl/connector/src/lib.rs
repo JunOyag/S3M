@@ -26,6 +26,7 @@ pub mod local_http;
 pub mod migration;
 pub mod publish;
 pub mod remote;
+pub mod rescue;
 pub mod setup;
 pub mod share_ops;
 pub mod shares;
