@@ -222,7 +222,20 @@ pub enum Body {
     RevokeShare {
         share_id: Vec<u8>,
     },
+    /// Libération de blocs de l'Utilisateur (`protocols.echange-blocs`
+    /// § Libération) : n × 32 o.
+    ReleaseBlocks {
+        hashes: Vec<u8>,
+    },
+    /// Blocs de l'Utilisateur encore comptés, par pages.
+    ListBlocks {
+        after: Vec<u8>,
+        limit: u32,
+    },
 }
+
+/// Hashes par `ReleaseBlocks` ou par page de `ListBlocks`, au plus.
+pub const MAX_RELEASE_BLOCKS: usize = 2048;
 
 /// `BlockRequest`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,6 +288,11 @@ pub enum Response {
     Messages {
         messages: Vec<crate::message::Signed>,
         node_name: Option<String>,
+    },
+    /// Réponse à `ListBlocks` : n × 32 o, et s'il reste des pages.
+    BlockList {
+        hashes: Vec<u8>,
+        more: bool,
     },
 }
 
@@ -587,6 +605,22 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             let o = fb::RevokeShare::create(&mut b, &fb::RevokeShareArgs { share_id: Some(v) });
             (fb::RequestBody::RevokeShare, o.as_union_value())
         }
+        Body::ReleaseBlocks { hashes } => {
+            let v = b.create_vector(hashes);
+            let o = fb::ReleaseBlocks::create(&mut b, &fb::ReleaseBlocksArgs { hashes: Some(v) });
+            (fb::RequestBody::ReleaseBlocks, o.as_union_value())
+        }
+        Body::ListBlocks { after, limit } => {
+            let v = b.create_vector(after);
+            let o = fb::ListBlocks::create(
+                &mut b,
+                &fb::ListBlocksArgs {
+                    after: Some(v),
+                    limit: *limit,
+                },
+            );
+            (fb::RequestBody::ListBlocks, o.as_union_value())
+        }
     };
     let root = fb::BlockRequest::create(
         &mut b,
@@ -788,6 +822,20 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
         fb::RequestBody::RevokeShare => Body::RevokeShare {
             share_id: bytes(r.body_as_revoke_share().ok_or(m)?.share_id()),
         },
+        fb::RequestBody::ReleaseBlocks => {
+            let hashes = bytes(r.body_as_release_blocks().ok_or(m)?.hashes());
+            if !hashes.len().is_multiple_of(32) || hashes.len() > 32 * MAX_RELEASE_BLOCKS {
+                return Err(m);
+            }
+            Body::ReleaseBlocks { hashes }
+        }
+        fb::RequestBody::ListBlocks => {
+            let x = r.body_as_list_blocks().ok_or(m)?;
+            Body::ListBlocks {
+                after: bytes(x.after()),
+                limit: x.limit().min(MAX_RELEASE_BLOCKS as u32),
+            }
+        }
         _ => return Err(m),
     };
     Ok(Request { credential, body })
@@ -936,6 +984,17 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             );
             (fb::ResponseBody::Messages, o.as_union_value())
         }
+        Response::BlockList { hashes, more } => {
+            let v = b.create_vector(hashes);
+            let o = fb::BlockList::create(
+                &mut b,
+                &fb::BlockListArgs {
+                    hashes: Some(v),
+                    more: *more,
+                },
+            );
+            (fb::ResponseBody::BlockList, o.as_union_value())
+        }
     };
     let root = fb::BlockResponse::create(
         &mut b,
@@ -1034,6 +1093,13 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
         }
         fb::ResponseBody::GrantIssued => {
             Response::GrantIssued(signed_grant_of(r.body_as_grant_issued().ok_or(m)?.grant())?)
+        }
+        fb::ResponseBody::BlockList => {
+            let x = r.body_as_block_list().ok_or(m)?;
+            Response::BlockList {
+                hashes: bytes(x.hashes()),
+                more: x.more(),
+            }
         }
         _ => return Err(m),
     })

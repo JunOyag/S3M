@@ -78,10 +78,16 @@ table Messages {
   node_name: string;          // ajout du 2026-11-21 (deploiement.pseudos) : nom actuel du Nœud, absent sans nom
 }
 
+// ListBlocks (ajout du 2026-11-23) : une page, par hash croissant.
+table BlockList {
+  hashes: [ubyte];            // n × 32 o
+  more: bool;                 // pages suivantes
+}
+
 union ResponseBody {
   Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
   Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached, OwnershipAnswer,
-  Messages
+  Messages, BlockList
 }
 
 table BlockResponse {

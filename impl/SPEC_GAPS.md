@@ -709,4 +709,8 @@ Options :
 **Impact si non résolu** : tout Utilisateur actif finit bloqué par son
 quota, quelle que soit la taille réelle de ses fichiers.
 
-**Résolution** : *(en attente d'arbitrage)*
+**Résolution** (utilisateur, 2026-11-23) : option 1 — requête
+`ReleaseBlocks` après chaque `CommitRoot` confirmé, quota rendu aussitôt,
+effacement physique après 24 h et seulement quand tout le stripe est
+libéré ; rattrapage manuel par `ListBlocks`. Spécifié dans
+`docs/04-protocols/echange-blocs.md` § Libération des blocs.

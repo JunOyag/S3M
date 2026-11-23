@@ -33,6 +33,8 @@ impl<'a> UserEntryPlaintext<'a> {
   pub const VT_MASTER_KEY_CHAIN: flatbuffers::VOffsetT = 12;
   pub const VT_SCHEMA_VERSION: flatbuffers::VOffsetT = 14;
   pub const VT_PSEUDO: flatbuffers::VOffsetT = 16;
+  pub const VT_CONTACTS: flatbuffers::VOffsetT = 18;
+  pub const VT_PADDING: flatbuffers::VOffsetT = 20;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -44,6 +46,8 @@ impl<'a> UserEntryPlaintext<'a> {
     args: &'args UserEntryPlaintextArgs<'args>
   ) -> flatbuffers::WIPOffset<UserEntryPlaintext<'bldr>> {
     let mut builder = UserEntryPlaintextBuilder::new(_fbb);
+    if let Some(x) = args.padding { builder.add_padding(x); }
+    if let Some(x) = args.contacts { builder.add_contacts(x); }
     if let Some(x) = args.pseudo { builder.add_pseudo(x); }
     if let Some(x) = args.master_key_chain { builder.add_master_key_chain(x); }
     if let Some(x) = args.attachments { builder.add_attachments(x); }
@@ -104,6 +108,20 @@ impl<'a> UserEntryPlaintext<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(UserEntryPlaintext::VT_PSEUDO, None)}
   }
+  #[inline]
+  pub fn contacts(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContactRecord<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContactRecord>>>>(UserEntryPlaintext::VT_CONTACTS, None)}
+  }
+  #[inline]
+  pub fn padding(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(UserEntryPlaintext::VT_PADDING, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for UserEntryPlaintext<'_> {
@@ -120,6 +138,8 @@ impl flatbuffers::Verifiable for UserEntryPlaintext<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<super::dispersal::MasterKeyEntry>>>>("master_key_chain", Self::VT_MASTER_KEY_CHAIN, false)?
      .visit_field::<u16>("schema_version", Self::VT_SCHEMA_VERSION, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pseudo", Self::VT_PSEUDO, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ContactRecord>>>>("contacts", Self::VT_CONTACTS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("padding", Self::VT_PADDING, false)?
      .finish();
     Ok(())
   }
@@ -132,6 +152,8 @@ pub struct UserEntryPlaintextArgs<'a> {
     pub master_key_chain: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<super::dispersal::MasterKeyEntry<'a>>>>>,
     pub schema_version: u16,
     pub pseudo: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub contacts: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContactRecord<'a>>>>>,
+    pub padding: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
 }
 impl<'a> Default for UserEntryPlaintextArgs<'a> {
   #[inline]
@@ -144,6 +166,8 @@ impl<'a> Default for UserEntryPlaintextArgs<'a> {
       master_key_chain: None,
       schema_version: 0,
       pseudo: None,
+      contacts: None,
+      padding: None,
     }
   }
 }
@@ -182,6 +206,14 @@ impl<'a: 'b, 'b> UserEntryPlaintextBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(UserEntryPlaintext::VT_PSEUDO, pseudo);
   }
   #[inline]
+  pub fn add_contacts(&mut self, contacts: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ContactRecord<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(UserEntryPlaintext::VT_CONTACTS, contacts);
+  }
+  #[inline]
+  pub fn add_padding(&mut self, padding: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(UserEntryPlaintext::VT_PADDING, padding);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> UserEntryPlaintextBuilder<'a, 'b> {
     let start = _fbb.start_table();
     UserEntryPlaintextBuilder {
@@ -206,6 +238,8 @@ impl core::fmt::Debug for UserEntryPlaintext<'_> {
       ds.field("master_key_chain", &self.master_key_chain());
       ds.field("schema_version", &self.schema_version());
       ds.field("pseudo", &self.pseudo());
+      ds.field("contacts", &self.contacts());
+      ds.field("padding", &self.padding());
       ds.finish()
   }
 }

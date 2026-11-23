@@ -865,6 +865,10 @@ pages:
     section: "§3.7, §3.12"
     refs: [network.dht-directory, network.BlockRequest, network.BlockResponse, network.RescueGrant, crypto.k-attach, crypto.symmetric-suite, securite.pos-challenges, protocols.tombstones, protocols.dispersion-transactionnelle, protocols.migration-noeud, securite.incidents-compromissions]
     verified_by:
+      - exchange::release_and_list_blocks_roundtrip_and_are_bounded
+      - release::released_blocks_refund_quota_and_are_erased_after_the_grace_period
+      - drive::released_blocks_are_never_needed_by_the_new_root
+      - explorer::explorer_creates_uploads_reads_moves_and_deletes
       - exchange::connector_proof_is_bound_to_both_peers_and_k_attach
       - exchange::rescue_session_proof_is_bound_to_the_connection
       - exchange::delegation_lets_only_the_delegate_node_read_within_the_grant_lifetime

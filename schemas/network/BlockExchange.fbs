@@ -183,12 +183,28 @@ table RevokeShare {
   share_id: [ubyte];          // 32 o
 }
 
+// Ajout du 2026-11-23 (protocols.echange-blocs § Libération) : Connecteur →
+// son Nœud (UserCredential) : blocs de l'Utilisateur qui ne servent plus
+// (ancienne version, après un CommitRoot confirmé). Réponse : Ack.
+table ReleaseBlocks {
+  hashes: [ubyte];            // n × 32 o, 2 048 au plus
+}
+
+// Ajout du 2026-11-23 : Connecteur → son Nœud (UserCredential) : liste des
+// blocs de l'Utilisateur encore comptés, par pages (rattrapage manuel).
+// Réponse : BlockList.
+table ListBlocks {
+  after: [ubyte];             // dernier hash de la page précédente ; vide : début
+  limit: uint32 = 2048;
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
   StoreFragment, Challenge, FetchFragment, Tombstone,
   Probe, ProposePartnership, Attach, OwnershipQuery,
   EmergencyPut, EmergencyGet, EmergencyRelease,
-  ReadMessages, PostMessage, RevokeShare
+  ReadMessages, PostMessage, RevokeShare,
+  ReleaseBlocks, ListBlocks
 }
 
 // Requête : une par flux libp2p request-response.

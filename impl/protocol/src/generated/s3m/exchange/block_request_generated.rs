@@ -460,6 +460,36 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_release_blocks(&self) -> Option<ReleaseBlocks<'a>> {
+    if self.body_type() == RequestBody::ReleaseBlocks {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ReleaseBlocks::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_list_blocks(&self) -> Option<ListBlocks<'a>> {
+    if self.body_type() == RequestBody::ListBlocks {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ListBlocks::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -502,6 +532,8 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::ReadMessages => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ReadMessages>>("RequestBody::ReadMessages", pos),
           RequestBody::PostMessage => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PostMessage>>("RequestBody::PostMessage", pos),
           RequestBody::RevokeShare => v.verify_union_variant::<flatbuffers::ForwardsUOffset<RevokeShare>>("RequestBody::RevokeShare", pos),
+          RequestBody::ReleaseBlocks => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ReleaseBlocks>>("RequestBody::ReleaseBlocks", pos),
+          RequestBody::ListBlocks => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListBlocks>>("RequestBody::ListBlocks", pos),
           _ => Ok(()),
         }
      })?
@@ -752,6 +784,20 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::RevokeShare => {
           if let Some(x) = self.body_as_revoke_share() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::ReleaseBlocks => {
+          if let Some(x) = self.body_as_release_blocks() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::ListBlocks => {
+          if let Some(x) = self.body_as_list_blocks() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

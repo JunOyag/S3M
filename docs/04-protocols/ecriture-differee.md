@@ -86,6 +86,14 @@ l'`update_entry`, comme pour la
 entièrement confirmée par le Nœud : jamais avant, sinon une interruption
 laisserait le fichier sans version valide.
 
+Côté Connecteur → Nœud, cette suppression est la requête `ReleaseBlocks`
+([`protocols.echange-blocs`](echange-blocs.md#liberation), ajout du
+2026-11-23) : après chaque `CommitRoot` confirmé, les blocs de l'ancienne
+racine que la nouvelle ne référence plus — ancienne chaîne d'un fichier
+modifié, chaînes d'un élément supprimé (sous-arborescence comprise),
+anciens blocs des répertoires réécrits. Jamais les blocs d'un élément
+déplacé, qui sert toujours.
+
 ## Portée
 
 La règle ne concerne pas les lectures ; elle s'applique de la même façon à

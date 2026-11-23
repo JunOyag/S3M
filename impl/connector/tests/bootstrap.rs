@@ -80,6 +80,8 @@ fn user_envelope(attachments: &[([u8; 32], u64)], fs_root: &[u8], ts: u64) -> Ve
             master_key_chain: None,
             schema_version: 1,
             pseudo: None,
+            contacts: None,
+            padding: None,
         },
     );
     fbb.finish_minimal(p);

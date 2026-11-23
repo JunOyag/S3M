@@ -207,6 +207,8 @@ Au-delà, les données ne sont plus garanties (limite résiduelle de
 | `EmergencyPut` | `Stored` |
 | `EmergencyGet` | `BlockData` |
 | `RenewGrant` | `GrantIssued` |
+| `ReleaseBlocks` | `Ack` (`freed` : blocs libérés) |
+| `ListBlocks` | `BlockList` |
 
 `RootState.quota_bytes` / `used_bytes` (ajout du 2026-11-21 ; 0 : non
 communiqué par un Nœud plus ancien) donnent la taille du lecteur monté et
@@ -217,6 +219,42 @@ Toute erreur est une `Failure` portant un `ErrorCode`. Un partenaire qui
 répond `NotFound` à un `FetchFragment` ou `Challenge` portant sur un fragment
 qu'il doit héberger est traité comme un échec PoS
 ([`securite.blacklist-fraude`](../05-securite/blacklist-fraude.md)).
+
+## Libération des blocs d'un Utilisateur {: #liberation }
+
+Ajout du 2026-11-23 (arbitrage `impl/SPEC_GAPS.md`). Les blocs d'un
+Utilisateur sont immuables (copie sur écriture) : sans libération, chaque
+modification consomme du quota pour toujours.
+
+- **`ReleaseBlocks`** (Connecteur → son Nœud, `UserCredential`) : au plus
+  2 048 hashes. Envoyée seulement après un `CommitRoot` confirmé, pour les
+  blocs de l'ancienne racine que la nouvelle ne référence plus
+  ([`protocols.ecriture-differee`](ecriture-differee.md#ordre-denvoi-et-de-suppression)).
+  Le Connecteur garde la liste jusqu'à l'accusé et la renvoie après une
+  interruption ; la requête est idempotente.
+- Le Nœud ne considère que les blocs de **cet** Utilisateur (`UserBlock`
+  dont il est propriétaire) ; un hash inconnu, étranger ou déjà libéré est
+  ignoré. Pour chaque bloc libéré, il **rend le quota aussitôt**
+  (`used_bytes`) et note l'instant de libération. Le bloc reste lisible
+  pendant un **délai de 24 h** (un autre appareil resté sur l'ancienne
+  racine peut encore la lire), puis :
+    - bloc en attente de dispersion : retiré de la file et effacé ;
+    - bloc d'un stripe : effacé quand **tous** les blocs réels du stripe
+      sont libérés et leur délai échu ; le stripe est alors retiré et ses
+      fragments purgés chez les partenaires par
+      [`protocols.tombstones`](tombstones.md) (les contrôles PoS
+      recalculent la parité depuis les blocs locaux : un stripe
+      partiellement libéré les garde).
+- Un `PutBlock` d'un bloc libéré mais pas encore effacé l'annule (le bloc
+  sert de nouveau) et le recompte dans le quota.
+- **`ListBlocks`** (Connecteur → son Nœud, `UserCredential`) : blocs de
+  l'Utilisateur encore comptés, par hash croissant et par pages
+  (`after`, `limit` ≤ 2 048). Sert au **rattrapage manuel** des versions
+  accumulées avant cette fonctionnalité : le Connecteur liste ses blocs,
+  retire ceux qu'atteint sa racine courante, et libère le reste par
+  `ReleaseBlocks`. Geste confirmé par l'Utilisateur dans le tableau de bord
+  (un autre appareil qui écrit au même moment pourrait perdre des blocs
+  pas encore validés).
 
 ## Partenariats et rattachements automatiques
 

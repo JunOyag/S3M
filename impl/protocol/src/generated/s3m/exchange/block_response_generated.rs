@@ -262,6 +262,21 @@ impl<'a> BlockResponse<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_block_list(&self) -> Option<BlockList<'a>> {
+    if self.body_type() == ResponseBody::BlockList {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { BlockList::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockResponse<'_> {
@@ -287,6 +302,7 @@ impl flatbuffers::Verifiable for BlockResponse<'_> {
           ResponseBody::Attached => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Attached>>("ResponseBody::Attached", pos),
           ResponseBody::OwnershipAnswer => v.verify_union_variant::<flatbuffers::ForwardsUOffset<OwnershipAnswer>>("ResponseBody::OwnershipAnswer", pos),
           ResponseBody::Messages => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Messages>>("ResponseBody::Messages", pos),
+          ResponseBody::BlockList => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BlockList>>("ResponseBody::BlockList", pos),
           _ => Ok(()),
         }
      })?
@@ -434,6 +450,13 @@ impl core::fmt::Debug for BlockResponse<'_> {
         },
         ResponseBody::Messages => {
           if let Some(x) = self.body_as_messages() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResponseBody::BlockList => {
+          if let Some(x) = self.body_as_block_list() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

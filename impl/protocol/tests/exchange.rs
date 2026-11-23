@@ -276,3 +276,57 @@ fn ownership_query_and_answer_round_trip() {
     let r = Response::OwnershipAnswer { owned: vec![0b01] };
     assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);
 }
+
+/// Libération des blocs d'un Utilisateur (`protocols.echange-blocs`
+/// § Libération) : requêtes et réponse, bornes.
+#[test]
+fn release_and_list_blocks_roundtrip_and_are_bounded() {
+    use s3m_protocol::exchange::*;
+    let user = Some(Credential::User {
+        user_id: vec![1; 32],
+        proof: vec![2; 32],
+    });
+    for body in [
+        Body::ReleaseBlocks {
+            hashes: vec![7; 32 * 3],
+        },
+        Body::ListBlocks {
+            after: vec![5; 32],
+            limit: 100,
+        },
+    ] {
+        let r = Request {
+            credential: user.clone(),
+            body,
+        };
+        assert_eq!(decode_request(&encode_request(&r)).unwrap(), r);
+    }
+    // Liste mal formée ou trop longue : refusée.
+    for hashes in [vec![7; 33], vec![7; 32 * (MAX_RELEASE_BLOCKS + 1)]] {
+        let r = Request {
+            credential: user.clone(),
+            body: Body::ReleaseBlocks { hashes },
+        };
+        assert!(decode_request(&encode_request(&r)).is_err());
+    }
+    // Page demandée trop grande : ramenée au plafond.
+    let r = Request {
+        credential: user.clone(),
+        body: Body::ListBlocks {
+            after: vec![],
+            limit: 1_000_000,
+        },
+    };
+    assert_eq!(
+        decode_request(&encode_request(&r)).unwrap().body,
+        Body::ListBlocks {
+            after: vec![],
+            limit: MAX_RELEASE_BLOCKS as u32
+        }
+    );
+    let resp = Response::BlockList {
+        hashes: vec![3; 64],
+        more: true,
+    };
+    assert_eq!(decode_response(&encode_response(&resp)).unwrap(), resp);
+}

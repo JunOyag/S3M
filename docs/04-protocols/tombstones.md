@@ -23,6 +23,11 @@ pour ce partenaire (anti-rejeu), ne libère que les blocs qu'il héberge
 effectivement pour lui et décrémente son compte d'autant ; l'émetteur
 décrémente le sien du même nombre à l'accusé de réception.
 
+Les blocs d'un **Utilisateur** chez son Nœud sont libérés par
+`ReleaseBlocks` ([`protocols.echange-blocs`](echange-blocs.md#liberation)) ;
+les fragments correspondants chez les partenaires suivent ensuite par avis
+de suppression.
+
 Déclenché notamment par :
 
 - la purge différée qui suit une dispersion (copy-on-write), voir

@@ -8,6 +8,8 @@ pub mod s3m {
     pub use self::alert_entry_generated::*;
     mod attachment_record_generated;
     pub use self::attachment_record_generated::*;
+    mod contact_record_generated;
+    pub use self::contact_record_generated::*;
     mod dht_envelope_generated;
     pub use self::dht_envelope_generated::*;
     mod dispersal_entry_generated;
@@ -71,6 +73,8 @@ pub mod s3m {
     pub use self::attached_generated::*;
     mod block_data_generated;
     pub use self::block_data_generated::*;
+    mod block_list_generated;
+    pub use self::block_list_generated::*;
     mod block_request_generated;
     pub use self::block_request_generated::*;
     mod block_response_generated;
@@ -107,6 +111,8 @@ pub mod s3m {
     pub use self::get_block_generated::*;
     mod grant_issued_generated;
     pub use self::grant_issued_generated::*;
+    mod list_blocks_generated;
+    pub use self::list_blocks_generated::*;
     mod message_kind_generated;
     pub use self::message_kind_generated::*;
     mod messages_generated;
@@ -131,6 +137,8 @@ pub mod s3m {
     pub use self::put_block_generated::*;
     mod read_messages_generated;
     pub use self::read_messages_generated::*;
+    mod release_blocks_generated;
+    pub use self::release_blocks_generated::*;
     mod renew_grant_generated;
     pub use self::renew_grant_generated::*;
     mod report_incident_generated;

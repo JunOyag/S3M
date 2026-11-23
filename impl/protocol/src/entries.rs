@@ -192,6 +192,9 @@ fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
             master_key_chain: None,
             schema_version: 1,
             pseudo,
+            // deploiement.contacts : pas encore publiés.
+            contacts: None,
+            padding: None,
         },
     );
     b.finish_minimal(p);

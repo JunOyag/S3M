@@ -238,6 +238,12 @@ synchronisation courantes :
   sel d'attachement) est conservée ; `connector.json` et les données
   locales sont renommés avec un suffixe horodaté, jamais effacés. Si un
   fichier reste ouvert, S3m redémarre entièrement, comme auparavant.
+  **Version des fichiers reprise** (2026-11-23) : le nouvel espace local
+  repart de la racine validée de l'ancien (racine, sel, version de clé) si
+  le Nœud choisi la détient encore (même Nœud, ou Nœud qui l'a reprise par
+  [`protocols.migration-noeud`](../04-protocols/migration-noeud.md)) ;
+  sinon, de celle publiée dans l'entrée User. Il ne repart jamais d'un
+  espace vide quand des fichiers existent ailleurs.
 
 ### Explorateur {: #explorateur }
 

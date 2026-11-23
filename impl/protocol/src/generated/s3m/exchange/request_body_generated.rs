@@ -12,10 +12,10 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_REQUEST_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_REQUEST_BODY: u8 = 20;
+pub const ENUM_MAX_REQUEST_BODY: u8 = 22;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 21] = [
+pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 23] = [
   RequestBody::NONE,
   RequestBody::GetBlock,
   RequestBody::PutBlock,
@@ -37,6 +37,8 @@ pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 21] = [
   RequestBody::ReadMessages,
   RequestBody::PostMessage,
   RequestBody::RevokeShare,
+  RequestBody::ReleaseBlocks,
+  RequestBody::ListBlocks,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -65,9 +67,11 @@ impl RequestBody {
   pub const ReadMessages: Self = Self(18);
   pub const PostMessage: Self = Self(19);
   pub const RevokeShare: Self = Self(20);
+  pub const ReleaseBlocks: Self = Self(21);
+  pub const ListBlocks: Self = Self(22);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 20;
+  pub const ENUM_MAX: u8 = 22;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::GetBlock,
@@ -90,6 +94,8 @@ impl RequestBody {
     Self::ReadMessages,
     Self::PostMessage,
     Self::RevokeShare,
+    Self::ReleaseBlocks,
+    Self::ListBlocks,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -115,6 +121,8 @@ impl RequestBody {
       Self::ReadMessages => Some("ReadMessages"),
       Self::PostMessage => Some("PostMessage"),
       Self::RevokeShare => Some("RevokeShare"),
+      Self::ReleaseBlocks => Some("ReleaseBlocks"),
+      Self::ListBlocks => Some("ListBlocks"),
       _ => None,
     }
   }
