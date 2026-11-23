@@ -621,6 +621,9 @@ pub struct Shared {
     pub admin: Mutex<Option<crate::admin::AdminServer>>,
     /// Brouillon et suivi de la gestion des volumes.
     pub volumes_ui: Mutex<VolumesUi>,
+    /// Nœuds à retirer de la liste noire (dashboard), appliqués au prochain
+    /// tour si l'état de dispersion est occupé.
+    pub unblacklist: Mutex<Vec<String>>,
     pub emergency_ui: Mutex<EmergencyUi>,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
@@ -1279,7 +1282,9 @@ fn upkeep_status(sh: &Shared) -> Value {
     let blacklist: Vec<Value> = up
         .blacklist
         .iter()
-        .map(|(n, (at, why))| json!({ "nœud": n, "depuis": at, "motif": why }))
+        .map(|(n, (at, why))| json!({ "nœud": n, "depuis": at, "motif": why,
+            "_actions": [{ "nom": "unblacklist", "libellé": "Retirer", "valeurs": { "nœud": n },
+                "confirmer": "Retirer ce Nœud de la liste noire ? Il pourra redevenir partenaire." }] }))
         .collect();
     json!({
         "challenges réussis": up.challenges_passed,
@@ -1562,6 +1567,28 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
     }
     if let Some(r) = channel_action(sh, name, &v) {
         return r;
+    }
+    if name == "unblacklist" {
+        let n = field(&v, "nœud")?.to_lowercase();
+        let id: [u8; 32] = hex::decode(&n)
+            .ok()
+            .and_then(|b| b.try_into().ok())
+            .ok_or("identifiant de Nœud invalide")?;
+        sh.service.lock().unwrap().blacklisted.remove(&id);
+        let msg = match sh.dispersal.try_lock() {
+            Ok(mut d) => {
+                if !d.unblacklist(&n) {
+                    return Err("ce Nœud n'est pas en liste noire".into());
+                }
+                let _ = save_dispersal(&sh.config, &d);
+                "Nœud retiré de la liste noire"
+            }
+            Err(_) => {
+                sh.unblacklist.lock().unwrap().push(n);
+                "Retrait enregistré : appliqué à la fin du cycle de contrôle en cours"
+            }
+        };
+        return Ok(json!({ "ok": true, "message": msg }));
     }
     let mut s = sh.service.lock().unwrap();
     match name {
@@ -1955,6 +1982,7 @@ pub async fn start_with(
         admin_reveal_until: Mutex::new(None),
         admin: Mutex::new(None),
         volumes_ui: Mutex::new(VolumesUi::default()),
+        unblacklist: Mutex::new(Vec::new()),
         emergency_ui: Mutex::new(EmergencyUi::default()),
     });
     {
@@ -2100,6 +2128,11 @@ pub async fn start_with(
             {
                 let now = clock();
                 let mut d = sh.dispersal.lock().await;
+                // Retraits de liste noire demandés pendant un cycle.
+                let pending = std::mem::take(&mut *sh.unblacklist.lock().unwrap());
+                for n in &pending {
+                    d.unblacklist(n);
+                }
                 // Partenariats automatiques, puis exclusions de placement.
                 sh.service.lock().unwrap().blacklisted = d
                     .upkeep

@@ -246,3 +246,25 @@ fn identical_redispersal_is_not_tombstoned() {
     st.drop_referenced_retired();
     assert_eq!(st.users["u"].retired, vec![r("h1", "p2"), r("h2", "p1")]);
 }
+
+/// Retrait de la liste noire (dashboard, `s3m-node blacklist-clear`).
+#[test]
+fn blacklist_entries_can_be_removed() {
+    use s3m_node::dispersal_engine::DispersalState;
+    let mut st = DispersalState::default();
+    for n in ["aa", "bb"] {
+        st.upkeep
+            .blacklist
+            .insert(n.into(), (1, "pos_invalid_response".into()));
+        st.partnering.peers.insert(n.into(), Default::default());
+    }
+    assert!(st.unblacklist("aa"));
+    assert!(!st.unblacklist("aa"), "déjà retiré");
+    assert!(
+        !st.partnering.peers.contains_key("aa"),
+        "proposable à nouveau"
+    );
+    assert!(st.partnering.peers.contains_key("bb"));
+    assert_eq!(st.clear_blacklist(), 1);
+    assert!(st.upkeep.blacklist.is_empty());
+}

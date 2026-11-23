@@ -234,6 +234,22 @@ impl DispersalState {
             .collect()
     }
 
+    /// Retire `node` (hex) de la liste noire ; il est aussi oublié de la
+    /// recherche de partenaires, qui pourra le reproposer.
+    pub fn unblacklist(&mut self, node: &str) -> bool {
+        let found = self.upkeep.blacklist.remove(node).is_some();
+        if found {
+            self.partnering.peers.remove(node);
+        }
+        found
+    }
+
+    /// Vide la liste noire ; rend le nombre de Nœuds retirés.
+    pub fn clear_blacklist(&mut self) -> usize {
+        let all: Vec<String> = self.upkeep.blacklist.keys().cloned().collect();
+        all.iter().filter(|n| self.unblacklist(n)).count()
+    }
+
     /// Retire des listes d'orphelins les fragments encore attendus : un
     /// stripe redispersé à l'identique (nouvel essai après des confirmations
     /// insuffisantes) replace les mêmes fragments chez les mêmes partenaires,

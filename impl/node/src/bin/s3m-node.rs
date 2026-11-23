@@ -5,6 +5,8 @@
 //! s3m-node init <répertoire> --identite
 //!                              crée aussi une identité neuve (node.seed), sans
 //!                              assistant : Nœuds d'essai créés par script
+//! s3m-node blacklist-clear <config.json>
+//!                              vide la liste noire (Nœud arrêté)
 //! s3m-node <config.json>       démarre le Nœud (premier lancement : identité
 //!                              temporaire et assistant, deploiement.appairage-admin)
 //! ```
@@ -100,6 +102,23 @@ async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Vide la liste noire d'un Nœud arrêté (un Nœud en marche réécrirait son
+/// état par-dessus).
+fn blacklist_clear(config: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let c = Config::load(config)?;
+    let path = c.data_dir.join("dispersal.json");
+    if !path.exists() {
+        println!("Liste noire vide (aucun état de dispersion).");
+        return Ok(());
+    }
+    let mut st: s3m_node::dispersal_engine::DispersalState =
+        serde_json::from_slice(&std::fs::read(&path)?)?;
+    let n = st.clear_blacklist();
+    s3m_node::daemon::save_dispersal(&c, &st)?;
+    println!("{n} Nœud(s) retiré(s) de la liste noire.");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -119,9 +138,10 @@ async fn main() {
                 Err(e) => Err(e.into()),
             }
         }
+        [cmd, config] if cmd == "blacklist-clear" => blacklist_clear(Path::new(config)),
         [config] => run(Path::new(config)).await,
         _ => Err(
-            "usage : s3m-node init <répertoire> [--identite] | geoip-update <répertoire de données> | <config.json>".into(),
+            "usage : s3m-node init <répertoire> [--identite] | geoip-update <répertoire de données> | blacklist-clear <config.json> | <config.json>".into(),
         ),
     };
     if let Err(e) = result {
