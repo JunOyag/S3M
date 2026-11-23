@@ -175,6 +175,11 @@ différée, indicateur des synchronisations en attente et action
 
 - **Nœud** : image conteneurisée officielle Docker (et binaire autonome),
   NAS/serveurs domestiques/Raspberry Pi.
+  Pour des essais, `s3m-node init <répertoire> --identite` crée un Nœud
+  avec une identité neuve, sans assistant ; les scripts `impl/essais/`
+  (`creer-noeuds.ps1`, `lancer-noeuds.ps1`, `arreter-noeuds.ps1`) créent,
+  lancent et arrêtent des dizaines de Nœuds sur une même machine, chacun
+  avec ses ports, sans UPnP.
 - **Connecteur** : **binaire Rust natif**, indépendant du Nœud (peut
   tourner sur une machine distincte). Le moteur (cryptographie, système de
   fichiers, DHT) est entièrement en Rust. **TypeScript ne concerne que

@@ -2,6 +2,9 @@
 //!
 //! ```text
 //! s3m-node init <répertoire>   crée la configuration
+//! s3m-node init <répertoire> --identite
+//!                              crée aussi une identité neuve (node.seed), sans
+//!                              assistant : Nœuds d'essai créés par script
 //! s3m-node <config.json>       démarre le Nœud (premier lancement : identité
 //!                              temporaire et assistant, deploiement.appairage-admin)
 //! ```
@@ -11,7 +14,7 @@ use std::path::{Path, PathBuf};
 use s3m_node::daemon::{start_with, Config, VolumeSpec, ASSETS};
 use s3m_node::local_http::Switch;
 
-fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn init(dir: &Path, identity: bool) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dir)?;
     if dir.join("node.json").exists() {
         return Err(format!("{} existe déjà", dir.join("node.json").display()).into());
@@ -54,7 +57,14 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         dir.join("node.json"),
         serde_json::to_string_pretty(&config)?,
     )?;
-    println!("Au premier démarrage, le Nœud propose une nouvelle identité ou la restauration d'une identité existante.");
+    if identity {
+        // Identité neuve : la phrase reste dans node.seed (Nœud d'essai).
+        let phrase = s3m_node::daemon::generate_mnemonic()?;
+        std::fs::write(dir.join("node.seed"), phrase)?;
+        println!("Identité neuve écrite dans {}", dir.join("node.seed").display());
+    } else {
+        println!("Au premier démarrage, le Nœud propose une nouvelle identité ou la restauration d'une identité existante.");
+    }
     println!("Configuration : {}", dir.join("node.json").display());
     Ok(())
 }
@@ -91,7 +101,8 @@ async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result: Result<(), Box<dyn std::error::Error>> = match args.as_slice() {
-        [cmd, dir] if cmd == "init" => init(Path::new(dir)),
+        [cmd, dir] if cmd == "init" => init(Path::new(dir), false),
+        [cmd, dir, flag] if cmd == "init" && flag == "--identite" => init(Path::new(dir), true),
         [cmd, dir] if cmd == "geoip-update" => {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -107,7 +118,7 @@ async fn main() {
         }
         [config] => run(Path::new(config)).await,
         _ => Err(
-            "usage : s3m-node init <répertoire> | geoip-update <répertoire de données> | <config.json>".into(),
+            "usage : s3m-node init <répertoire> [--identite] | geoip-update <répertoire de données> | <config.json>".into(),
         ),
     };
     if let Err(e) = result {
