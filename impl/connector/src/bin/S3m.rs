@@ -274,6 +274,39 @@ fn start_connector(
     });
 }
 
+const PURGE_TEXT: &str = "Supprimer définitivement…";
+
+/// Entrée du menu « Identités archivées ».
+struct ArchivedItem {
+    ar: s3m_connector::identities::Archived,
+    sub: Submenu,
+    restore: MenuItem,
+    purge: MenuItem,
+    armed: Option<Instant>,
+}
+
+/// (Re)construit le menu « Identités archivées » (grisé s'il est vide).
+fn fill_archives(menu: &Submenu, items: &mut Vec<ArchivedItem>, app: &Path) {
+    for it in items.drain(..) {
+        let _ = menu.remove(&it.sub);
+    }
+    for ar in s3m_connector::identities::archived(app) {
+        let sub = Submenu::new(ar.label(), true);
+        let restore = MenuItem::new("Restaurer", true, None);
+        let purge = MenuItem::new(PURGE_TEXT, true, None);
+        let _ = sub.append_items(&[&restore, &purge]);
+        let _ = menu.append(&sub);
+        items.push(ArchivedItem {
+            ar,
+            sub,
+            restore,
+            purge,
+            armed: None,
+        });
+    }
+    menu.set_enabled(!items.is_empty());
+}
+
 /// Retrait demandé au redémarrage précédent : dossier synchronisé
 /// déconnecté, dossier de l'identité mis de côté.
 fn remove_identity(app: &Path, dir: &Path) {
@@ -345,6 +378,9 @@ fn main() {
 
     let status = MenuItem::new("Démarrage…", false, None);
     let add = MenuItem::new("Ajouter une identité…", true, None);
+    let archive_menu = Submenu::new("Identités archivées", false);
+    let mut archives: Vec<ArchivedItem> = Vec::new();
+    fill_archives(&archive_menu, &mut archives, &dir);
     let autostart = CheckMenuItem::new("Démarrer avec Windows", true, autostart_enabled(), None);
     let logs = MenuItem::new("Ouvrir les journaux", true, None);
     let quit = MenuItem::new("Quitter S3m", true, None);
@@ -360,6 +396,7 @@ fn main() {
     let _ = menu.append_items(&[
         &PredefinedMenuItem::separator(),
         &add,
+        &archive_menu,
         &autostart,
         &logs,
         &PredefinedMenuItem::separator(),
@@ -455,6 +492,39 @@ fn main() {
                     }
                     return;
                 }
+                // Identités archivées : restaurer, supprimer définitivement.
+                if let Some(k) = archives.iter().position(|a| a.restore.id() == &e.id) {
+                    let ar = archives[k].ar.clone();
+                    match s3m_connector::identities::restore(&dir, &ar.dir) {
+                        Ok((n, d)) => {
+                            log(&format!("identité restaurée : {} → {}", ar.dir.display(), d.display()));
+                            notify(&format!("{} restaurée (identité {n}).", ar.label().split(" — ").next().unwrap_or("Identité")));
+                            let id = Ident::new(n, d.clone());
+                            let _ = menu.insert(&id.sub, 2 + idents.len());
+                            idents.push(id);
+                            launch(&rt, idents.len() - 1, d, proxy.clone());
+                        }
+                        Err(e) => notify(&format!("Restauration impossible : {e}")),
+                    }
+                    fill_archives(&archive_menu, &mut archives, &dir);
+                    return;
+                }
+                if let Some(k) = archives.iter().position(|a| a.purge.id() == &e.id) {
+                    let armed = archives[k].armed.is_some_and(|t| t.elapsed() < Duration::from_secs(10));
+                    if !armed {
+                        archives[k].armed = Some(Instant::now());
+                        archives[k].purge.set_text("Confirmer la suppression (cliquer à nouveau)");
+                        notify("Suppression définitive : la phrase de récupération de cette identité est effacée de ce poste. Notez-la avant si besoin, puis cliquez à nouveau.");
+                        return;
+                    }
+                    let ar = archives[k].ar.clone();
+                    match s3m_connector::identities::purge(&dir, &ar.dir) {
+                        Ok(()) => log(&format!("identité archivée supprimée : {}", ar.dir.display())),
+                        Err(e) => notify(&format!("Suppression impossible : {e}")),
+                    }
+                    fill_archives(&archive_menu, &mut archives, &dir);
+                    return;
+                }
                 let Some(id) = idents.iter_mut().find(|id| {
                     [&id.files, &id.dash, &id.sync, &id.pause, &id.change]
                         .iter()
@@ -502,6 +572,12 @@ fn main() {
                 }
             }
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
+                for a in archives.iter_mut() {
+                    if a.armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(10)) {
+                        a.armed = None;
+                        a.purge.set_text(PURGE_TEXT);
+                    }
+                }
                 for id in idents.iter_mut() {
                     if id.remove_armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(10)) {
                         id.remove_armed = None;

@@ -89,6 +89,121 @@ pub fn set_aside(app: &Path, dir: &Path, stamp: u64) -> Result<PathBuf, String> 
     Ok(to)
 }
 
+/// Identité archivée (retirée) : dossier `identites\<n>.retiree-<horodatage>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Archived {
+    pub dir: PathBuf,
+    /// Numéro qu'elle portait.
+    pub num: u32,
+    /// Date du retrait (secondes Unix).
+    pub retired_at: u64,
+    /// Pseudo enregistré (vide si aucun).
+    pub pseudo: String,
+}
+
+impl Archived {
+    /// Libellé du menu : pseudo (ou numéro) et date du retrait.
+    pub fn label(&self) -> String {
+        let who = match self.pseudo.is_empty() {
+            true => format!("Identité {}", self.num),
+            false => self.pseudo.clone(),
+        };
+        format!("{who} — retirée le {}", date_fr(self.retired_at))
+    }
+}
+
+/// `JJ/MM/AAAA` (UTC) d'un instant Unix.
+pub fn date_fr(t: u64) -> String {
+    // Jours depuis 1970 → date civile (algorithme de H. Hinnant).
+    let z = (t / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{d:02}/{m:02}/{y}")
+}
+
+/// Identités archivées, de la plus récente à la plus ancienne.
+pub fn archived(app: &Path) -> Vec<Archived> {
+    let mut out: Vec<Archived> = std::fs::read_dir(identities_dir(app))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_str()?.to_string();
+            let (n, t) = name.split_once(".retiree-")?;
+            let dir = e.path();
+            let pseudo = std::fs::read(dir.join("data").join("names.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<crate::channel::Names>(&b).ok())
+                .map(|n| n.pseudo)
+                .unwrap_or_default();
+            Some(Archived {
+                num: n.parse().ok()?,
+                retired_at: t.parse().ok()?,
+                pseudo,
+                dir,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| b.retired_at.cmp(&a.retired_at).then(a.dir.cmp(&b.dir)));
+    out
+}
+
+/// Dossier archivé valide : directement dans `identites`, nommé
+/// `<n>.retiree-<horodatage>`.
+fn check_archived(app: &Path, dir: &Path) -> Result<(), String> {
+    let ok = dir.parent() == Some(identities_dir(app).as_path())
+        && dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.contains(".retiree-"));
+    match ok {
+        true => Ok(()),
+        false => Err("dossier d'identité archivée inattendu".into()),
+    }
+}
+
+/// Restaure une identité archivée sous le premier numéro libre (à partir
+/// de 2) : `(numéro, dossier)`.
+pub fn restore(app: &Path, dir: &Path) -> Result<(u32, PathBuf), String> {
+    check_archived(app, dir)?;
+    if !config_path(dir).exists() {
+        return Err("cette identité n'avait pas de configuration : rien à restaurer".into());
+    }
+    let base = identities_dir(app);
+    for n in 2u32.. {
+        let to = base.join(n.to_string());
+        if config_path(&to).exists() {
+            continue;
+        }
+        // Dossier vide laissé par un assistant non terminé : remplacé.
+        if to.exists() {
+            let empty = std::fs::read_dir(&to)
+                .map(|mut r| r.next().is_none())
+                .unwrap_or(false);
+            if !empty {
+                continue;
+            }
+            std::fs::remove_dir(&to).map_err(|e| e.to_string())?;
+        }
+        std::fs::rename(dir, &to).map_err(|e| e.to_string())?;
+        return Ok((n, to));
+    }
+    unreachable!()
+}
+
+/// Supprime définitivement une identité archivée de ce poste (phrase de
+/// récupération comprise : seule la phrase notée permet de la retrouver).
+pub fn purge(app: &Path, dir: &Path) -> Result<(), String> {
+    check_archived(app, dir)?;
+    std::fs::remove_dir_all(dir).map_err(|e| e.to_string())
+}
+
 /// Gravité : erreur > Nœud injoignable > suspendue > modifications en
 /// attente ou synchronisation > démarrage > à jour.
 fn rank(s: TrayState) -> u8 {

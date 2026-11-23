@@ -54,6 +54,41 @@ fn identities_are_listed_added_and_set_aside() {
 }
 
 #[test]
+fn archived_identities_are_restored_or_purged() {
+    let a = app("archive");
+    std::fs::write(a.join("connector.json"), "{}").unwrap();
+    let (_, d2) = next_dir(&a).unwrap();
+    std::fs::write(d2.join("connector.json"), "{}").unwrap();
+    std::fs::create_dir_all(d2.join("data")).unwrap();
+    std::fs::write(
+        d2.join("data").join("names.json"),
+        r#"{"pseudo":"Toto","node_label":""}"#,
+    )
+    .unwrap();
+    let (_, d3) = next_dir(&a).unwrap();
+    std::fs::write(d3.join("connector.json"), "{}").unwrap();
+    // 2023-11-14 22:13:20 UTC, puis un peu plus tard.
+    set_aside(&a, &d2, 1_700_000_000).unwrap();
+    set_aside(&a, &d3, 1_700_000_100).unwrap();
+    let ar = archived(&a);
+    assert_eq!(ar.len(), 2);
+    assert_eq!(ar[0].num, 3, "la plus récente d'abord");
+    assert_eq!(ar[1].label(), "Toto — retirée le 14/11/2023");
+    assert_eq!(ar[0].label(), "Identité 3 — retirée le 14/11/2023");
+    // Restauration : premier numéro libre ; dossier vide d'assistant réutilisé.
+    std::fs::create_dir_all(a.join("identites").join("2")).unwrap();
+    let (n, to) = restore(&a, &ar[1].dir).unwrap();
+    assert_eq!(n, 2);
+    assert!(to.join("connector.json").exists());
+    assert!(list(&a).iter().any(|(k, _)| *k == 2));
+    // Suppression définitive ; rien hors des archives.
+    purge(&a, &ar[0].dir).unwrap();
+    assert!(archived(&a).is_empty());
+    assert!(purge(&a, &to).is_err());
+    assert!(restore(&a, &a).is_err());
+}
+
+#[test]
 fn icon_follows_the_worst_identity() {
     use TrayState::*;
     assert_eq!(worst(&[Ok, Syncing]), Syncing);
