@@ -165,7 +165,7 @@ function showDetail(c) {
   for (const p of c.points.slice(0, 200)) {
     const li = el("li");
     li.append(el("strong", p.label));
-    if (p.detail) li.append(el("div", p.detail));
+    if (p.detail) li.append(el("div", datesIn(p.detail)));
     ul.appendChild(li);
   }
   if (c.points.length > 200) ul.appendChild(el("li", `… ${c.points.length - 200} de plus`));
@@ -239,3 +239,11 @@ async function load() {
   await load();
   setInterval(load, 30000);
 })();
+
+// Instants Unix dans un texte : date et heure au format local du navigateur.
+function datesIn(s) {
+  return String(s).replace(/(^|\bdepuis |\ble |\bà )(\d{10})(?=$|[\s,.;:)])(?!\s*(?:o|octets|Ko|Mo|Go|To|blocs?|fragments?)\b)/g, (m, pre, t) => {
+    const n = Number(t);
+    return n > 1.4e9 && n < 4.2e9 ? pre + new Date(n * 1000).toLocaleString() : m;
+  });
+}

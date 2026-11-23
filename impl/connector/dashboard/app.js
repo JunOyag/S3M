@@ -566,9 +566,24 @@ function cell(v) {
   if (v === null || v === undefined) return "—";
   if (v === true) return "Oui";
   if (v === false) return "Non";
-  if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) return v.length ? v.join("\n") : "Aucun";
+  if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object"))
+    return v.length ? v.map((x) => (typeof x === "string" ? datesIn(x) : cell(x))).join("\n") : "Aucun";
   if (typeof v === "object") return JSON.stringify(v);
-  return cap(String(v));
+  return cap(typeof v === "string" ? datesIn(v) : String(v));
+}
+
+// Instants Unix (secondes, 2014 à 2103) : date et heure au format local
+// du navigateur.
+const isUnixTime = (n) => n > 1.4e9 && n < 4.2e9;
+function localTime(n) {
+  return new Date(n * 1000).toLocaleString();
+}
+
+// Instants dans un texte du moteur : en tête de ligne (« 1795435843
+// réparation… ») ou après « depuis », « le », « à ».
+function datesIn(s) {
+  return s.replace(/(^|\bdepuis |\ble |\bà )(\d{10})(?=$|[\s,.;:)])(?!\s*(?:o|octets|Ko|Mo|Go|To|blocs?|fragments?)\b)/g, (m, pre, t) =>
+    isUnixTime(Number(t)) ? pre + localTime(Number(t)) : m);
 }
 
 // Texte du moteur : première lettre en majuscule (sauf identifiants hexadécimaux).
@@ -588,12 +603,13 @@ function bytes(n) {
   return (i ? n.toFixed(n < 10 ? 1 : 0).replace(".", ",") : String(n)) + " " + u[i];
 }
 
-const DATE_KEY = /(dernier|dernière|expire|publiée le|prochaine|contact|heure|date|le$)/i;
+// Libellés de tailles et de quantités : jamais pris pour des dates.
+const SIZE_KEY = /(octets|bytes|capacit|quota|taille|budget|\(go\)|\(gio\)|\(mo\)|blocs|fragments|nombre|compte)/i;
 
 function fmt(k, v) {
   if (typeof v === "number" && k) {
     if (/octets/i.test(k)) return bytes(v);
-    if (v > 1.4e9 && v < 4.2e9 && DATE_KEY.test(k)) return new Date(v * 1000).toLocaleString("fr-FR");
+    if (isUnixTime(v) && !SIZE_KEY.test(k)) return localTime(v);
   }
   return cell(v);
 }
