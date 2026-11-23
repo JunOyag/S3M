@@ -624,6 +624,8 @@ pub struct Shared {
     /// Nœuds à retirer de la liste noire (dashboard), appliqués au prochain
     /// tour si l'état de dispersion est occupé.
     pub unblacklist: Mutex<Vec<String>>,
+    /// Redémarrage demandé depuis le dashboard (traité par l'exécutable).
+    pub restart: tokio::sync::Notify,
     pub emergency_ui: Mutex<EmergencyUi>,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
@@ -635,6 +637,9 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     let mut v = status_base(sh, now);
     let (forms, pending) = config_forms(sh);
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        a.push(json!({ "nom": "restart_node", "titre": "Redémarrage",
+            "libellé": "Redémarrer le Nœud", "champs": [],
+            "confirmer": "Redémarrer le Nœud ? Il est indisponible quelques secondes ; l'état est enregistré avant l'arrêt. Le tableau de bord se recharge ensuite." }));
         a.push(json!({ "nom": "geoip_update", "titre": "Géolocalisation",
             "libellé": "Mettre à jour la base de géolocalisation", "champs": [] }));
         a.extend(forms);
@@ -673,7 +678,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
-          "sections": ["alertes d'intégrité signalées", "identité"], "actions": ["set_node_name"] },
+          "sections": ["alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
           "actions": ["attach_user", "set_attach_policy"] },
@@ -958,7 +963,7 @@ fn set_config(sh: &Shared, v: &Value) -> Result<Value, String> {
         "Configuration enregistrée et appliquée".to_string()
     } else {
         format!(
-            "Configuration enregistrée ; redémarrez le Nœud pour appliquer : {}",
+            "Configuration enregistrée ; redémarrez le Nœud pour appliquer (bouton « Redémarrer le Nœud », Vue d'ensemble) : {}",
             a.restart.join(", ")
         )
     };
@@ -1568,6 +1573,11 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
     if let Some(r) = channel_action(sh, name, &v) {
         return r;
     }
+    if name == "restart_node" {
+        sh.restart.notify_one();
+        return Ok(json!({ "ok": true,
+            "message": "Redémarrage en cours : le tableau de bord se reconnecte dans quelques secondes" }));
+    }
     if name == "unblacklist" {
         let n = field(&v, "nœud")?.to_lowercase();
         let id: [u8; 32] = hex::decode(&n)
@@ -1983,6 +1993,7 @@ pub async fn start_with(
         admin: Mutex::new(None),
         volumes_ui: Mutex::new(VolumesUi::default()),
         unblacklist: Mutex::new(Vec::new()),
+        restart: tokio::sync::Notify::new(),
         emergency_ui: Mutex::new(EmergencyUi::default()),
     });
     {

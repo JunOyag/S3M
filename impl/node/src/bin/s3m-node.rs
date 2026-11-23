@@ -74,11 +74,26 @@ fn init(dir: &Path, identity: bool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Variable posée sur le processus relancé par « Redémarrer le Nœud ».
+const RESTARTED_ENV: &str = "S3M_NODE_RESTARTED";
+
 async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let c = Config::load(path)?;
     let switch = Switch::new();
     std::fs::create_dir_all(&c.data_dir)?;
-    let url = switch.serve(c.api_port, ASSETS, Some(&c.data_dir)).await?;
+    // Relancé : l'ancien processus libère ses ports en quittant.
+    let restarted = std::env::var_os(RESTARTED_ENV).is_some();
+    let mut tries = 0;
+    let url = loop {
+        match switch.serve(c.api_port, ASSETS, Some(&c.data_dir)).await {
+            Ok(u) => break u,
+            Err(_) if restarted && tries < 60 => {
+                tries += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    };
     println!("Dashboard : {url}");
     if !c.seed_file.exists() {
         s3m_node::setup::run(&c, &switch).await?;
@@ -97,8 +112,41 @@ async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(a) = &shared.blocks_addr {
         println!("Échange de blocs : {a}");
     }
-    let _ = tokio::signal::ctrl_c().await;
+    let restart = tokio::select! {
+        _ = tokio::signal::ctrl_c() => false,
+        _ = shared.restart.notified() => true,
+    };
+    if restart {
+        // Laisse partir la réponse au dashboard.
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    }
     let _ = s3m_node::daemon::save(&shared);
+    if let Ok(d) =
+        tokio::time::timeout(std::time::Duration::from_secs(20), shared.dispersal.lock()).await
+    {
+        let _ = s3m_node::daemon::save_dispersal(&shared.config, &d);
+    }
+    if restart {
+        relaunch(path)?;
+        std::process::exit(0);
+    }
+    Ok(())
+}
+
+/// Relance l'exécutable avec la même configuration (sorties héritées) ;
+/// `node.pid` à côté de la configuration (Nœuds d'essai) suit le nouveau
+/// processus.
+fn relaunch(config: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let child = std::process::Command::new(std::env::current_exe()?)
+        .arg(config)
+        .env(RESTARTED_ENV, "1")
+        .spawn()?;
+    println!("Redémarrage : nouveau processus {}", child.id());
+    if let Some(pid) = config.parent().map(|d| d.join("node.pid")) {
+        if pid.exists() {
+            let _ = std::fs::write(pid, child.id().to_string());
+        }
+    }
     Ok(())
 }
 
