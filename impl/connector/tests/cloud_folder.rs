@@ -163,12 +163,39 @@ fn folder_shows_placeholders_hydrates_and_records_local_changes() {
         ("/renomme.txt".to_string(), now),
     ]
     .into();
-    let none = s3m_connector::cloud_folder::free_space(&root, &root, Some(86_400), now, &recent);
+    let none =
+        s3m_connector::cloud_folder::free_space(&root, &root, Some(86_400), now, &recent, &[]);
     assert!(!recall(&distant), "téléchargé récemment : gardé ({none:?})");
-    let freed = s3m_connector::cloud_folder::free_space(&root, &root, None, now, &recent);
+    // Gardé sur cet appareil : jamais libéré (liste ou épinglage Windows).
+    let kept = root.join("renomme.txt");
+    let _ = std::fs::read(&kept).unwrap();
+    s3m_connector::cloud_folder::set_keep(&kept, true).unwrap();
+    let freed = s3m_connector::cloud_folder::free_space(
+        &root,
+        &root,
+        None,
+        now,
+        &recent,
+        &["/docs/a.txt".to_string()],
+    );
     assert!(freed.files >= 1 && freed.bytes >= 10, "{freed:?}");
     assert!(recall(&distant), "contenu retiré du disque");
+    assert!(!recall(&kept), "épinglé : gardé");
+    assert!(
+        !recall(&root.join("docs").join("a.txt")),
+        "dans la liste : gardé"
+    );
     assert_eq!(std::fs::read(&distant).unwrap(), b"d'ailleurs");
+    // Garder un fichier libéré le retélécharge.
+    let freed = s3m_connector::cloud_folder::free_space(&root, &root, None, now, &recent, &[]);
+    assert!(recall(&root.join("docs").join("a.txt")), "{freed:?}");
+    s3m_connector::cloud_folder::set_keep(&root.join("docs"), true).unwrap();
+    assert!(
+        !recall(&root.join("docs").join("a.txt")),
+        "dossier gardé : retéléchargé"
+    );
+    s3m_connector::cloud_folder::set_keep(&root.join("docs"), false).unwrap();
+    s3m_connector::cloud_folder::set_keep(&kept, false).unwrap();
 
     // Arrêt sans quitter le processus : fils terminés, dossier déconnecté,
     // lecteur relâché.

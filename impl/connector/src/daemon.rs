@@ -103,6 +103,10 @@ pub struct Config {
     /// depuis ce nombre de jours libérée automatiquement ; 0 : jamais.
     #[serde(default)]
     pub free_after_days: u64,
+    /// Dossier synchronisé : fichiers et dossiers gardés sur cet appareil
+    /// (chemins du lecteur), jamais libérés.
+    #[serde(default)]
+    pub keep_offline: Vec<String>,
     /// Fichier d'où la configuration a été lue (modifications depuis le
     /// dashboard).
     #[serde(skip)]
@@ -483,6 +487,8 @@ pub struct Shared {
     pub free_after_s: Arc<std::sync::atomic::AtomicU64>,
     /// Dernière libération automatique : `(instant, bilan)`.
     pub last_free: Arc<Mutex<Option<(u64, crate::folder_sync::Freed)>>>,
+    /// Gardés sur cet appareil (chemins du lecteur), modifiable à chaud.
+    pub keep_offline: Arc<Mutex<Vec<String>>>,
     /// Lettre courante du lecteur.
     pub mount_point: Mutex<Option<String>>,
     /// Remontage du lecteur sur une autre lettre : `(lettre, réponse)`.
@@ -564,6 +570,7 @@ pub fn status(sh: &Shared) -> Value {
     v["santé"] = health_status(sh);
     if access_mode(&sh.config) == "dossier" {
         v["libération d'espace"] = free_status(sh);
+        v["toujours sur cet appareil"] = keep_status(sh);
         let days = sh.free_after_s.load(std::sync::atomic::Ordering::Relaxed) / 86_400;
         if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
             a.push(json!({ "nom": "free_space", "titre": "Libérer de l'espace", "libellé": "Libérer",
@@ -574,6 +581,10 @@ pub fn status(sh: &Shared) -> Value {
                 "champs": ["après (jours)"], "types": { "après (jours)": "number" },
                 "valeurs": { "après (jours)": days },
                 "aide": { "après (jours)": "Place libérée pour les fichiers ni ouverts ni téléchargés depuis ce nombre de jours (vérifié chaque heure) ; 0 : jamais" } }));
+            a.push(json!({ "nom": "keep_offline", "titre": "Toujours garder sur cet appareil", "libellé": "Garder",
+                "texte": "Le fichier ou le dossier est téléchargé et n'est jamais libéré, ni à la demande ni automatiquement ; ce qui s'ajoute ensuite dans un dossier gardé est téléchargé aussi. L'Explorateur l'affiche « toujours disponible ».",
+                "champs": ["élément"], "types": { "élément": "chemin" }, "explorateurs": { "élément": "drive_browse" },
+                "aide": { "élément": "Fichier ou dossier de votre espace (« Parcourir… »)" } }));
         }
     }
     v["journal"] = journal_rows(sh);
@@ -597,8 +608,8 @@ pub fn status(sh: &Shared) -> Value {
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
-          "sections": ["accès aux fichiers", "libération d'espace", "lecteur", "file d'écriture"],
-          "actions": ["sync_now", "free_space", "set_auto_free"] },
+          "sections": ["accès aux fichiers", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture"],
+          "actions": ["sync_now", "free_space", "set_auto_free", "keep_offline"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "partages", "titre": "Partages",
@@ -1801,6 +1812,7 @@ pub async fn start(
         restart_identity: Default::default(),
         free_after_s: Arc::new(config.free_after_days.saturating_mul(86_400).into()),
         last_free: Default::default(),
+        keep_offline: Arc::new(Mutex::new(config.keep_offline.clone())),
         mount_point: Mutex::new(config.mount_point.clone()),
         remount: Mutex::new(None),
         priv_user,
@@ -1834,6 +1846,8 @@ pub async fn start(
                 "set_access" => set_access(&sh, &v),
                 "free_space" => free_space_action(&sh, &v),
                 "set_auto_free" => set_auto_free(&sh, &v),
+                "keep_offline" => keep_action(&sh, &v, true),
+                "unkeep_offline" => keep_action(&sh, &v, false),
                 "sync_now" => {
                     sync_now(&sh);
                     Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
@@ -2218,6 +2232,89 @@ fn free_status(sh: &Shared) -> Value {
     })
 }
 
+/// Section « toujours sur cet appareil » (mode dossier).
+fn keep_status(sh: &Shared) -> Value {
+    json!(sh
+        .keep_offline
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| json!({ "élément": p,
+            "_actions": [{ "nom": "unkeep_offline", "libellé": "Ne plus garder", "valeurs": { "élément": p },
+                "confirmer": "Ne plus garder cet élément sur cet appareil ? Il redevient libérable ; rien n'est supprimé." }] }))
+        .collect::<Vec<_>>())
+}
+
+/// Garde un élément sur cet appareil, ou cesse de le garder.
+#[cfg(all(windows, feature = "folder"))]
+fn keep_action(sh: &Shared, v: &Value, keep: bool) -> Result<Value, String> {
+    if access_mode(&sh.config) != "dossier" {
+        return Err("seulement en accès « Dossier synchronisé »".into());
+    }
+    let raw = v
+        .get("élément")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
+    let path = format!("/{}", raw.trim_matches('/'));
+    if path == "/" {
+        return Err("choisissez un fichier ou un dossier (« Parcourir… »)".into());
+    }
+    if path.starts_with(crate::drive::SHARED_DIR) {
+        return Err("les partages reçus ne peuvent pas être gardés hors ligne".into());
+    }
+    let root = folder_path(&sh.config);
+    let mut target = root.clone();
+    for part in path.split('/').filter(|p| !p.is_empty()) {
+        target.push(part);
+    }
+    if !target.exists() {
+        return Err(format!("introuvable : {}", target.display()));
+    }
+    let list = {
+        let mut k = sh.keep_offline.lock().unwrap();
+        k.retain(|x| !x.eq_ignore_ascii_case(&path));
+        if keep {
+            k.push(path.clone());
+        }
+        k.clone()
+    };
+    write_config_key(sh, "keep_offline", json!(list))?;
+    // Épinglage et téléchargement : peut être long, en arrière-plan.
+    std::thread::spawn(move || {
+        let _ = crate::cloud_folder::set_keep(&target, keep);
+    });
+    Ok(json!({ "ok": true, "message": if keep {
+        format!("{path} est gardé sur cet appareil : téléchargement en cours, jamais libéré")
+    } else {
+        format!("{path} n'est plus gardé : il redevient libérable")
+    } }))
+}
+
+#[cfg(not(all(windows, feature = "folder")))]
+fn keep_action(_: &Shared, _: &Value, _: bool) -> Result<Value, String> {
+    Err("dossier synchronisé indisponible sur cette plateforme".into())
+}
+
+/// Écrit une clé de `connector.json`.
+fn write_config_key(sh: &Shared, key: &str, value: Value) -> Result<(), String> {
+    let path = sh
+        .config
+        .source
+        .clone()
+        .ok_or("fichier de configuration inconnu")?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    raw[key] = value;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&raw).expect("sérialisable"),
+    )
+    .and_then(|_| std::fs::rename(&tmp, &path))
+    .map_err(|e| e.to_string())
+}
+
 /// Libère la place des fichiers à jour du dossier synchronisé (tout, ou un
 /// dossier), sans les supprimer.
 #[cfg(all(windows, feature = "folder"))]
@@ -2238,7 +2335,15 @@ fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
     if !dir.is_dir() {
         return Err(format!("dossier introuvable : {}", dir.display()));
     }
-    let f = crate::cloud_folder::free_space(&root, &dir, None, (sh.clock)(), &Default::default());
+    let keep = sh.keep_offline.lock().unwrap().clone();
+    let f = crate::cloud_folder::free_space(
+        &root,
+        &dir,
+        None,
+        (sh.clock)(),
+        &Default::default(),
+        &keep,
+    );
     Ok(json!({ "ok": true, "message": format!(
         "{} fichier(s) libéré(s), {:.1} Mo : ils restent visibles et reviennent à l'ouverture",
         f.files, f.bytes as f64 / 1_048_576.0) }))
@@ -2301,6 +2406,7 @@ fn mount_folder(sh: &Arc<Shared>) -> bool {
         state_file: Some(sh.config.data_dir.join(HYDRATED_FILE)),
         free_after_s: sh.free_after_s.clone(),
         last_free: sh.last_free.clone(),
+        keep: sh.keep_offline.clone(),
     };
     let r = crate::cloud_folder::start_with(&root, drive, on_write, options).map(|stop| {
         sh.stoppers.lock().unwrap().push(stop);

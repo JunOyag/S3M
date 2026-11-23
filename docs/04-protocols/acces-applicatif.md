@@ -87,6 +87,11 @@ monte sans être root.
   jours. Les dates d'un fichier étant celles de son auteur, le Connecteur
   note l'instant de chaque téléchargement (`telechargements.json` dans les
   données de l'identité).
+- **Toujours garder sur cet appareil** (2026-11-23) : fichiers et dossiers
+  choisis (`keep_offline`, chemins de l'espace) téléchargés et épinglés
+  (« toujours disponible » dans l'Explorateur), jamais libérés ; ce qui
+  s'ajoute dans un dossier gardé est téléchargé à son tour. Un fichier
+  épinglé autrement (`attrib +P`) n'est pas libéré non plus.
 - **Modifications locales** : écrites par l'application dans le vrai
   fichier. Le Connecteur les détecte, attend 2 s sans nouvelle écriture,
   relit le fichier et n'enregistre que les blocs de 64 Kio qui diffèrent,

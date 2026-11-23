@@ -70,6 +70,7 @@ async fn unattached_connector_attaches_itself_with_the_node_policy_quota() {
         emergency_write: false,
         n_secours: 4,
         free_after_days: 0,
+        keep_offline: vec![],
         source: None,
     };
     let (shared, _) = start(config, clock).await.unwrap();

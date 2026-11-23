@@ -67,6 +67,78 @@ pub struct FolderOptions {
     pub free_after_s: Arc<std::sync::atomic::AtomicU64>,
     /// Dernière libération automatique : `(instant, bilan)`.
     pub last_free: Arc<Mutex<Option<(u64, Freed)>>>,
+    /// Gardés sur cet appareil (chemins du lecteur) : jamais libérés,
+    /// téléchargés d'office, y compris ce qui s'y ajoute.
+    pub keep: Arc<Mutex<Vec<String>>>,
+}
+
+/// `chemin` est `racine` ou se trouve dessous (chemins du lecteur).
+pub fn under(path: &str, root: &str) -> bool {
+    let root = root.trim_end_matches('/');
+    root.is_empty()
+        || path.eq_ignore_ascii_case(root)
+        || (path.len() > root.len()
+            && path.as_bytes()[root.len()] == b'/'
+            && path[..root.len()].eq_ignore_ascii_case(root))
+}
+
+/// `FILE_ATTRIBUTE_PINNED` : « toujours conserver sur cet appareil ».
+const ATTR_PINNED: u32 = 0x0008_0000;
+/// `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` : contenu absent du disque.
+const ATTR_RECALL: u32 = 0x0040_0000;
+
+/// Ouverture pour changer l'état d'épinglage (fichier ou dossier).
+fn open_attrs(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        // FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES
+        .access_mode(0x80 | 0x100)
+        .share_mode(FILE_SHARE_ALL)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+}
+
+/// Garde `target` (fichier ou dossier du dossier synchronisé) sur cet
+/// appareil : épinglé (icône « toujours disponible » de l'Explorateur) et
+/// téléchargé ; `false` : rendu libérable. Rend le nombre de fichiers
+/// téléchargés.
+pub fn set_keep(target: &Path, keep: bool) -> Result<u64, String> {
+    let f = open_attrs(target).map_err(|e| format!("{} : {e}", target.display()))?;
+    let state = if keep {
+        CF_PIN_STATE_PINNED
+    } else {
+        CF_PIN_STATE_UNSPECIFIED
+    };
+    unsafe { CfSetPinState(handle(&f), state, CF_SET_PIN_FLAG_RECURSE, None) }
+        .map_err(|e| format!("épinglage refusé par Windows : {e}"))?;
+    Ok(if keep { hydrate_all(target) } else { 0 })
+}
+
+/// Télécharge tout ce qui manque sous `target` ; rend le nombre de fichiers.
+fn hydrate_all(target: &Path) -> u64 {
+    use std::os::windows::fs::MetadataExt;
+    let mut n = 0;
+    let mut stack = vec![target.to_path_buf()];
+    while let Some(p) = stack.pop() {
+        let Ok(m) = std::fs::metadata(&p) else {
+            continue;
+        };
+        if m.is_dir() {
+            if let Ok(rd) = std::fs::read_dir(&p) {
+                stack.extend(rd.flatten().map(|e| e.path()));
+            }
+            continue;
+        }
+        if m.file_attributes() & ATTR_RECALL == 0 {
+            continue;
+        }
+        // Lecture complète : le contenu est fourni par le Connecteur.
+        if let Ok(mut f) = std::fs::File::open(&p) {
+            if std::io::copy(&mut f, &mut std::io::sink()).is_ok() {
+                n += 1;
+            }
+        }
+    }
+    n
 }
 
 /// Instants de téléchargement conservés.
@@ -209,7 +281,8 @@ impl Folder {
             return;
         }
         let map = self.hydrated.lock().unwrap().clone();
-        let r = free_space(&self.root, &self.root, Some(age), now, &map);
+        let keep = self.options.keep.lock().unwrap().clone();
+        let r = free_space(&self.root, &self.root, Some(age), now, &map, &keep);
         *self.options.last_free.lock().unwrap() = Some((now, r));
     }
 
@@ -753,10 +826,9 @@ pub fn free_space(
     older_than_s: Option<u64>,
     now: u64,
     hydrated: &HashMap<String, u64>,
+    keep: &[String],
 ) -> Freed {
     use std::os::windows::fs::MetadataExt;
-    /// `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` : contenu absent du disque.
-    const RECALL_ON_DATA_ACCESS: u32 = 0x0040_0000;
     let mut out = Freed::default();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
@@ -770,7 +842,11 @@ pub fn free_space(
                 stack.push(p);
                 continue;
             }
-            if m.len() == 0 || m.file_attributes() & RECALL_ON_DATA_ACCESS != 0 {
+            if m.len() == 0 || m.file_attributes() & (ATTR_RECALL | ATTR_PINNED) != 0 {
+                continue;
+            }
+            // Gardé sur cet appareil : jamais libéré.
+            if drive_path(root, &p).is_some_and(|dp| keep.iter().any(|k| under(&dp, k))) {
                 continue;
             }
             if let Some(age) = older_than_s {
@@ -1023,6 +1099,11 @@ pub fn start_with(
                 last_upkeep = Instant::now();
                 folder.save_hydrated();
                 folder.auto_free();
+                // Gardés sur cet appareil : ce qui s'y ajoute est téléchargé.
+                let keep = folder.options.keep.lock().unwrap().clone();
+                for k in keep {
+                    hydrate_all(&local_path(&folder.root, &k));
+                }
             }
             let now = folder.now_ms();
             let due = folder.pending.lock().unwrap().due(now);

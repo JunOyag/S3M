@@ -230,6 +230,7 @@ pub fn write_config(
         emergency_write: true,
         n_secours: crate::emergency::DEFAULT_N_SECOURS,
         free_after_days: 0,
+        keep_offline: vec![],
         source: None,
     };
     let path = config_path(dir);
