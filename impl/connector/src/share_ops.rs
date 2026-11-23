@@ -203,10 +203,59 @@ fn spawn_tick(sh: &Arc<Shared>) {
     }
 }
 
+/// Expiration inscrite dans l'autorisation du pointeur reçu (0 : aucune).
+fn received_expiry(p: &CachedPointer) -> Option<u64> {
+    let g = hex::decode(&p.grant).ok()?;
+    let s = hex::decode(&p.grant_signature).ok()?;
+    s3m_protocol::share::verify_grant(&g, &s)
+        .ok()
+        .map(|g| g.expires_at)
+}
+
 fn fingerprint_of(hex_id: &str) -> String {
     hex::decode(hex_id)
         .map(|b| s3m_protocol::pseudo::fingerprint(&b))
         .unwrap_or_default()
+}
+
+/// Durée d'expiration saisie (jours, 0 : aucune).
+fn days_of(v: &Value) -> u64 {
+    v.get("expiration (jours)")
+        .and_then(|x| {
+            x.as_u64()
+                .or_else(|| x.as_str().and_then(|s| s.trim().parse().ok()))
+        })
+        .unwrap_or(0)
+}
+
+/// Nouveau partage (secret neuf) et texte à transmettre.
+fn new_share(
+    sh: &Shared,
+    path: String,
+    is_dir: bool,
+    recipient: Option<[u8; 32]>,
+    days: u64,
+    now: u64,
+) -> Result<(GivenShare, String), String> {
+    let token = ShareToken::new(&sh.priv_user, random());
+    let shared_text = match &recipient {
+        Some(r) => token
+            .invite(r, &random(), &random())
+            .map_err(|e| e.to_string())?,
+        None => token.link(),
+    };
+    let g = GivenShare {
+        id: hex::encode(token.share_id()),
+        secret: hex::encode(token.secret),
+        path,
+        is_dir,
+        recipient: recipient.map(hex::encode),
+        created_at: now,
+        expires_at: if days == 0 { 0 } else { now + days * 86_400 },
+        text: shared_text.clone(),
+        ..Default::default()
+    };
+    Ok((g, shared_text))
 }
 
 /// Sections et actions de la page « Partages ».
@@ -224,21 +273,47 @@ pub fn status(sh: &Shared, v: &mut Value) {
                 (false, _, None) if g.seq == 0 => "publication en cours".to_string(),
                 _ => "actif".to_string(),
             };
-            let mut actions = vec![json!({ "nom": "show_share", "libellé": if g.recipient.is_some() { "Invitation" } else { "Lien" },
-                "valeurs": { "id": g.id } })];
-            if !g.revoked {
-                actions.push(json!({ "nom": "revoke_share", "libellé": "Retirer", "style": "danger",
-                    "valeurs": { "id": g.id },
-                    "confirmer": "Retirer ce partage ? Le destinataire ne pourra plus rien lire ; ce qu'il a déjà téléchargé ne peut pas lui être repris." }));
-            }
+            let fixes = json!({ "id": g.id });
+            let (texte, forms) = match (g.revoked, g.revoke_done) {
+                (false, _) => (
+                    vec![],
+                    vec![
+                        json!({ "nom": "show_share", "libellé": if g.recipient.is_some() { "Afficher l'invitation" } else { "Afficher le lien" },
+                            "champs": [], "fixes": fixes }),
+                        json!({ "nom": "revoke_share", "libellé": "Retirer le partage", "style": "danger", "champs": [], "fixes": fixes,
+                            "confirmer": "Retirer ce partage ? Le destinataire ne pourra plus rien lire ; ce qu'il a déjà téléchargé ne peut pas lui être repris." }),
+                    ],
+                ),
+                (true, true) => (
+                    vec!["Partage retiré. « Repartager » crée un nouveau partage du même élément pour le même destinataire : un nouveau lien ou une nouvelle invitation, à lui retransmettre."],
+                    vec![
+                        json!({ "nom": "reshare_share", "titre": "Repartager", "libellé": "Repartager", "champs": ["expiration (jours)"],
+                            "types": { "expiration (jours)": "number" }, "fixes": fixes,
+                            "aide": { "expiration (jours)": "Vide ou 0 : sans expiration" } }),
+                        json!({ "nom": "delete_share", "libellé": "Supprimer de la liste", "style": "danger", "champs": [], "fixes": fixes,
+                            "confirmer": "Supprimer ce partage retiré de la liste ? Il ne pourra plus être repartagé d'ici." }),
+                    ],
+                ),
+                (true, false) => (vec!["Retrait en cours de transmission à votre Nœud et à l'annuaire."], vec![]),
+            };
+            let pour = g.recipient.as_ref().map(|r| fingerprint_of(r)).unwrap_or_else(|| "lien".into());
+            let expires = if g.expires_at == 0 { Value::Null } else { json!(g.expires_at) };
+            let panel = json!({
+                "titre": format!("Partage de {}", g.path),
+                "texte": texte,
+                "contenu": { "élément": g.path, "type": if g.is_dir { "dossier" } else { "fichier" }, "pour": pour,
+                             "créé le": g.created_at, "expire le": expires, "état": state },
+                "formulaires": forms,
+            });
             json!({
                 "élément": g.path,
                 "type": if g.is_dir { "dossier" } else { "fichier" },
-                "pour": g.recipient.as_ref().map(|r| fingerprint_of(r)).unwrap_or_else(|| "lien".into()),
+                "pour": pour,
                 "créé le": g.created_at,
-                "expire le": if g.expires_at == 0 { Value::Null } else { json!(g.expires_at) },
+                "expire le": expires,
                 "état": state,
-                "_actions": actions,
+                "_ouvrir": panel.clone(),
+                "_actions": [{ "nom": "edit_share", "libellé": "Modifier", "panneau": panel }],
             })
         })
         .collect::<Vec<_>>());
@@ -264,6 +339,7 @@ pub fn status(sh: &Shared, v: &mut Value) {
                 "type": p.map(|p| if p.is_dir { "dossier" } else { "fichier" }),
                 "taille (octets)": p.filter(|p| !p.is_dir).map(|p| p.size_bytes),
                 "ajouté le": r.added_at,
+                "expire le": p.and_then(received_expiry).filter(|t| *t != 0),
                 "état": state,
                 "_actions": [{ "nom": "remove_received", "libellé": "Retirer de la liste", "style": "danger",
                                "valeurs": { "id": r.id },
@@ -337,31 +413,7 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                         )?,
                 ),
             };
-            let days = v
-                .get("expiration (jours)")
-                .and_then(|x| {
-                    x.as_u64()
-                        .or_else(|| x.as_str().and_then(|s| s.trim().parse().ok()))
-                })
-                .unwrap_or(0);
-            let token = ShareToken::new(&sh.priv_user, random());
-            let shared_text = match &recipient {
-                Some(r) => token
-                    .invite(r, &random(), &random())
-                    .map_err(|e| e.to_string())?,
-                None => token.link(),
-            };
-            let g = GivenShare {
-                id: hex::encode(token.share_id()),
-                secret: hex::encode(token.secret),
-                path,
-                is_dir: e.is_dir,
-                recipient: recipient.map(hex::encode),
-                created_at: now,
-                expires_at: if days == 0 { 0 } else { now + days * 86_400 },
-                text: shared_text.clone(),
-                ..Default::default()
-            };
+            let (g, shared_text) = new_share(sh, path, e.is_dir, recipient, days_of(v), now)?;
             let store = {
                 let mut s = sh.shares.lock().unwrap();
                 s.given.push(g);
@@ -374,6 +426,63 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                 "révéler": reveal(if recipient.is_some() { "Invitation à transmettre" } else { "Lien de partage" }, &shared_text, recipient.is_some()) }),
             )
         })(),
+        "reshare_share" => (|| {
+            let old = sh
+                .shares
+                .lock()
+                .unwrap()
+                .given
+                .iter()
+                .find(|g| g.id == text("id"))
+                .cloned()
+                .ok_or("partage introuvable")?;
+            if !(old.revoked && old.revoke_done) {
+                return Err("seul un partage retiré peut être repartagé".to_string());
+            }
+            let drive = sh.drive.clone().ok_or("pas de lecteur")?;
+            let e = drive
+                .lock()
+                .unwrap()
+                .shared_element(&old.path)
+                .map_err(|e| e.to_string())?
+                .ok_or("l'élément n'existe plus dans votre espace")?;
+            let recipient: Option<[u8; 32]> = old
+                .recipient
+                .as_deref()
+                .and_then(|r| hex::decode(r).ok()?.try_into().ok());
+            let (g, shared_text) =
+                new_share(sh, old.path.clone(), e.is_dir, recipient, days_of(v), now)?;
+            // Le retrait est définitif chez le Nœud : nouveau partage, qui
+            // remplace l'ancien dans la liste.
+            let store = {
+                let mut s = sh.shares.lock().unwrap();
+                s.given.retain(|x| x.id != old.id);
+                s.given.push(g);
+                s.clone()
+            };
+            save(sh, &store);
+            spawn_tick(sh);
+            Ok(
+                json!({ "ok": true, "message": "Nouveau partage créé ; transmettez-le au destinataire",
+                "révéler": reveal(if recipient.is_some() { "Nouvelle invitation à transmettre" } else { "Nouveau lien de partage" }, &shared_text, recipient.is_some()) }),
+            )
+        })(),
+        "delete_share" => {
+            let id = text("id");
+            let store = {
+                let mut s = sh.shares.lock().unwrap();
+                let Some(g) = s.given.iter().find(|g| g.id == id) else {
+                    return Some(Err("partage introuvable".into()));
+                };
+                if !(g.revoked && g.revoke_done) {
+                    return Some(Err("retirez d'abord ce partage".into()));
+                }
+                s.given.retain(|g| g.id != id);
+                s.clone()
+            };
+            save(sh, &store);
+            Ok(json!({ "ok": true, "message": "Partage supprimé de la liste" }))
+        }
         "show_share" => {
             let s = sh.shares.lock().unwrap();
             match s.given.iter().find(|g| g.id == text("id")) {
