@@ -258,7 +258,23 @@ fn blacklist_entries_can_be_removed() {
             .insert(n.into(), (1, "pos_invalid_response".into()));
         st.partnering.peers.insert(n.into(), Default::default());
     }
+    st.users.insert(
+        "u".into(),
+        UserDispersal {
+            stripes: vec![StripeRec {
+                parity: vec![(4, "h1".into(), "aa".into()), (5, "h2".into(), "cc".into())],
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    );
     assert!(st.unblacklist("aa"));
+    // Fragments effacés lors de la rupture : oubliés, donc replacés et non
+    // challengés.
+    assert_eq!(
+        st.users["u"].stripes[0].parity,
+        vec![(5, "h2".to_string(), "cc".to_string())]
+    );
     assert!(!st.unblacklist("aa"), "déjà retiré");
     assert!(
         !st.partnering.peers.contains_key("aa"),

@@ -240,6 +240,22 @@ impl DispersalState {
         let found = self.upkeep.blacklist.remove(node).is_some();
         if found {
             self.partnering.peers.remove(node);
+            // La rupture a effacé de part et d'autre les fragments échangés :
+            // ceux qu'on croyait chez lui sont perdus. Oubliés, ils ne sont
+            // plus challengés (sinon nouvelle « fraude ») et la réparation
+            // les replace.
+            let stripes = self
+                .users
+                .values_mut()
+                .flat_map(|u| u.stripes.iter_mut().chain(u.index.iter_mut()))
+                .chain(self.snapshot.stripe.iter_mut());
+            for st in stripes {
+                st.parity.retain(|(_, _, p)| p != node);
+            }
+            for u in self.users.values_mut() {
+                u.retired.retain(|r| r.partner != node);
+            }
+            self.snapshot.retired.retain(|r| r.partner != node);
         }
         found
     }
