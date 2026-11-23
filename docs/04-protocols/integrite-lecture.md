@@ -37,6 +37,21 @@ corruption silencieuse — le PoS
 ([`securite.pos-challenges`](../05-securite/pos-challenges.md)) ne couvre
 que les partenaires, jamais la copie locale du Nœud.
 
+## Nœud hors ligne {: #noeud-hors-ligne }
+
+Ajout du 2026-11-23. Le chemin de secours sert aussi quand le Nœud ne
+répond pas (erreur réseau, pas refus) : le Connecteur lit son
+`DispersalManifest` dans la DHT sous `K_attach`, situe le bloc dans l'arbre
+d'index (gardé 5 minutes, relu si le bloc est plus récent) et le
+reconstruit depuis k fragments demandés aux partenaires sous son
+autorisation de secours
+([`protocols.echange-blocs`](echange-blocs.md#autorisation-de-secours)).
+Lecture seule ; les écritures restent en file jusqu'au retour du Nœud. Les
+blocs pas encore dispersés par le Nœud ne sont pas lisibles ainsi. La vue
+d'ensemble du Connecteur affiche alors « Nœud hors ligne, Partenaires en
+ligne : x % » (partenaires du catalogue qui répondent), ou « Hors réseau,
+stockage local » si aucun ne répond ou si l'annuaire est injoignable.
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par
