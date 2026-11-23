@@ -337,6 +337,9 @@ pub struct SavedState {
     /// Partages retirés (`protocols.partage`).
     #[serde(default)]
     pub revoked_shares: Vec<String>,
+    /// Blocs libérés par leur Utilisateur : `(utilisateur, hash, instant)`.
+    #[serde(default)]
+    pub released: Vec<(String, String, u64)>,
 }
 
 impl SavedState {
@@ -398,6 +401,15 @@ impl SavedState {
             name: s.name.clone(),
             user_labels: sorted_pairs(&s.user_labels),
             revoked_shares: sorted(s.revoked_shares.iter().map(|x| hx(x))),
+            released: {
+                let mut v: Vec<(String, String, u64)> = s
+                    .released
+                    .iter()
+                    .flat_map(|(u, m)| m.iter().map(move |(h, t)| (hx(u), hx(h), *t)))
+                    .collect();
+                v.sort();
+                v
+            },
         }
     }
 
@@ -454,6 +466,12 @@ impl SavedState {
         s.name = self.name.clone();
         for (u, l) in &self.user_labels {
             s.user_labels.insert(unhex32(u)?, l.clone());
+        }
+        for (u, h, t) in &self.released {
+            s.released
+                .entry(unhex32(u)?)
+                .or_default()
+                .insert(unhex32(h)?, *t);
         }
         for x in &self.revoked_shares {
             s.revoked_shares.insert(unhex32(x)?);
@@ -2192,6 +2210,13 @@ pub async fn start_with(
                 *sh.last_upkeep.lock().unwrap() = Some((now, up));
                 let report =
                     run_cycle(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await;
+                let erased = crate::dispersal_engine::purge_released(&sh.service, &mut d, now);
+                if erased > 0 {
+                    crate::daemon::note(
+                        &sh,
+                        format!("{erased} bloc(s) libéré(s) par leurs utilisateurs effacé(s)"),
+                    );
+                }
                 if run_snapshot(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await {
                     *sh.snapshot_pointer.lock().unwrap() = d
                         .snapshot

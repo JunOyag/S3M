@@ -357,6 +357,77 @@ pub(crate) async fn disperse(
     Ok(rec)
 }
 
+/// Délai entre la libération d'un bloc par son Utilisateur et son
+/// effacement (`protocols.echange-blocs` § Libération).
+pub const RELEASE_GRACE_S: u64 = 86_400;
+
+/// Efface les blocs libérés dont le délai est échu : bloc en attente de
+/// dispersion, ou stripe dont tous les blocs réels sont libérés (stripe
+/// retiré, parité purgée chez les partenaires). Un stripe partiellement
+/// libéré garde ses blocs (les contrôles PoS en recalculent la parité).
+/// Rend le nombre de blocs effacés.
+pub fn purge_released(service: &Mutex<NodeService>, state: &mut DispersalState, now: u64) -> usize {
+    let due: Vec<(Id, std::collections::HashSet<Id>)> = {
+        let s = service.lock().unwrap();
+        s.released
+            .iter()
+            .map(|(u, m)| {
+                let d: std::collections::HashSet<Id> = m
+                    .iter()
+                    .filter(|(_, t)| **t + RELEASE_GRACE_S <= now)
+                    .map(|(h, _)| *h)
+                    .collect();
+                (*u, d)
+            })
+            .filter(|(_, d)| !d.is_empty())
+            .collect()
+    };
+    let mut erased = 0;
+    for (u, set) in due {
+        let mut erase: Vec<Id> = Vec::new();
+        let mut kept: std::collections::HashSet<String> = std::collections::HashSet::new();
+        if let Some(ud) = state.users.get_mut(&hx(&u)) {
+            let freed = |h: &String| id_of(h).is_some_and(|x| set.contains(&x));
+            ud.pending.retain(|h| !freed(h));
+            let mut stripes = Vec::new();
+            for rec in std::mem::take(&mut ud.stripes) {
+                let real: Vec<&String> = rec
+                    .data
+                    .iter()
+                    .zip(&rec.padding)
+                    .filter(|(_, pad)| !**pad)
+                    .map(|(h, _)| h)
+                    .collect();
+                if !real.is_empty() && real.iter().all(|h| freed(h)) {
+                    retire(&rec, &mut ud.retired, now);
+                    ud.dirty = true;
+                } else {
+                    kept.extend(rec.data.iter().cloned());
+                    stripes.push(rec);
+                }
+            }
+            ud.stripes = stripes;
+        }
+        // Effacés : tout bloc dû qui ne sert plus à un stripe gardé.
+        erase.extend(set.iter().filter(|h| !kept.contains(&hx(*h))).copied());
+        let mut s = service.lock().unwrap();
+        s.dispersal_queue
+            .retain(|(owner, h)| !(*owner == u && erase.contains(h)));
+        for h in &erase {
+            s.store.remove(Space::UserBlock, &u, h);
+            if let Some(m) = s.released.get_mut(&u) {
+                m.remove(h);
+            }
+            erased += 1;
+        }
+    }
+    erased
+}
+
+fn id_of(h: &str) -> Option<Id> {
+    hex::decode(h).ok()?.try_into().ok()
+}
+
 pub(crate) fn retire(rec: &StripeRec, retired: &mut Vec<Retired>, now: u64) {
     retired.extend(rec.parity.iter().map(|(_, h, p)| Retired {
         at: now,

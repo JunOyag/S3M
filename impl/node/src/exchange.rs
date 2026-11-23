@@ -157,6 +157,10 @@ pub struct NodeService {
     pub missing_partners: usize,
     /// Partages retirés par leur propriétaire (`protocols.partage`).
     pub revoked_shares: std::collections::HashSet<Id>,
+    /// Blocs libérés par leur Utilisateur, encore sur disque :
+    /// `utilisateur → (hash → instant de libération)`
+    /// (`protocols.echange-blocs` § Libération).
+    pub released: HashMap<Id, std::collections::BTreeMap<Id, u64>>,
     /// Débit servi par partage : `(minute, blocs)`.
     share_rate: HashMap<Id, (u64, u32)>,
     /// Dernière adresse IP vue par Utilisateur (carte du dashboard).
@@ -229,6 +233,7 @@ impl NodeService {
             emergency_verified: Default::default(),
             missing_partners: 0,
             revoked_shares: Default::default(),
+            released: HashMap::new(),
             share_rate: HashMap::new(),
             limiter: RescueLimiter::default(),
         }
@@ -361,6 +366,24 @@ impl NodeService {
             Body::PutBlock { data } => {
                 let u = self.user(cred, from, local)?;
                 Ok(Response::Stored(self.put_user_block(&u, &data)?.to_vec()))
+            }
+            Body::ReleaseBlocks { hashes } => {
+                let u = self.user(cred, from, local)?;
+                let list: Vec<Id> = hashes
+                    .chunks(32)
+                    .filter_map(|c| c.try_into().ok())
+                    .collect();
+                Ok(Response::Ack {
+                    freed: self.release_user_blocks(&u, &list, now),
+                })
+            }
+            Body::ListBlocks { after, limit } => {
+                let u = self.user(cred, from, local)?;
+                let (list, more) = self.list_user_blocks(&u, &after, limit as usize);
+                Ok(Response::BlockList {
+                    hashes: list.concat(),
+                    more,
+                })
             }
             Body::CommitRoot {
                 base_root,
@@ -695,6 +718,21 @@ impl NodeService {
     /// quota (`PutBlock`, intégration des blocs de secours) ; rend son hash.
     pub fn put_user_block(&mut self, u: &Id, data: &[u8]) -> Result<Id, Refusal> {
         let hash = hash_sha256(data);
+        // Bloc libéré mais encore là : il sert de nouveau, recompté.
+        if self.released.get(u).is_some_and(|r| r.contains_key(&hash)) {
+            let acc = self.users.get(u).ok_or(Refusal::Unauthorized)?;
+            let used = acc.used_bytes + data.len() as u64;
+            if used > acc.quota_bytes {
+                return Err(Refusal::QuotaExceeded);
+            }
+            if let Some(r) = self.released.get_mut(u) {
+                r.remove(&hash);
+            }
+            if let Some(acc) = self.users.get_mut(u) {
+                acc.used_bytes = used;
+            }
+            return Ok(hash);
+        }
         if !self.store.contains(&hash) {
             let acc = self.users.get(u).ok_or(Refusal::Unauthorized)?;
             let used = acc.used_bytes + data.len() as u64;
@@ -712,6 +750,46 @@ impl NodeService {
             return Err(Refusal::Unauthorized);
         }
         Ok(hash)
+    }
+
+    /// Libère des blocs de l'Utilisateur `u` : quota rendu aussitôt, bloc
+    /// gardé jusqu'à l'effacement différé. Hash inconnu, étranger ou déjà
+    /// libéré : ignoré. Rend le nombre de blocs libérés.
+    pub fn release_user_blocks(&mut self, u: &Id, hashes: &[Id], now: u64) -> u64 {
+        let mut freed = 0;
+        for h in hashes {
+            if self.released.get(u).is_some_and(|r| r.contains_key(h)) {
+                continue;
+            }
+            let Some((owner, data)) = self.store.get(Space::UserBlock, h) else {
+                continue;
+            };
+            if owner != *u {
+                continue;
+            }
+            self.released.entry(*u).or_default().insert(*h, now);
+            if let Some(acc) = self.users.get_mut(u) {
+                acc.used_bytes = acc.used_bytes.saturating_sub(data.len() as u64);
+            }
+            freed += 1;
+        }
+        freed
+    }
+
+    /// Blocs de `u` encore comptés, par hash croissant, après `after` ;
+    /// `(page, encore des pages)`.
+    pub fn list_user_blocks(&self, u: &Id, after: &[u8], limit: usize) -> (Vec<Id>, bool) {
+        let released = self.released.get(u).cloned().unwrap_or_default();
+        let mut all: Vec<Id> = self
+            .store
+            .hashes(Space::UserBlock, u)
+            .into_iter()
+            .filter(|h| !released.contains_key(h) && h.as_slice() > after)
+            .collect();
+        all.sort();
+        let more = all.len() > limit;
+        all.truncate(limit);
+        (all, more)
     }
 
     /// Purge les dépôts de secours jamais libérés ; rend leur nombre.
