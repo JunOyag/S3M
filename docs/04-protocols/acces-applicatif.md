@@ -68,7 +68,9 @@ tard ; extension d'application signée). Linux n'en a pas besoin : FUSE y
 monte sans être root.
 
 - **Choix** : réglage « accès aux fichiers » = `lecteur` (lettre, WinFsp)
-  ou `dossier`. Le Connecteur prend `dossier` si WinFsp est absent.
+  ou `dossier`. L'assistant propose `dossier` par défaut, même si WinFsp
+  est installé (2026-11-23) ; le Connecteur le prend d'office si WinFsp
+  est absent.
   Emplacement par défaut : `%USERPROFILE%\S3m`.
 - **Fantômes** : chaque fichier et dossier y apparaît comme un fantôme
   (taille et dates, aucun contenu). Le contenu d'un dossier est fourni à sa
@@ -76,6 +78,15 @@ monte sans être root.
   mêmes lectures que le lecteur monté : la récupération reste
   [paresseuse](#recuperation-paresseuse-lazy). Un fichier lu reste disponible
   hors ligne jusqu'à « Libérer de l'espace ».
+- **Libérer de l'espace** (2026-11-23, tableau de bord, page Fichiers) :
+  le contenu des fichiers à jour (déjà chez le Nœud) est retiré du disque,
+  pour tout le dossier ou un sous-dossier ; ils redeviennent des fantômes,
+  rien n'est supprimé. Un fichier pas encore envoyé n'est jamais touché.
+  **Libération automatique** réglable (`free_after_days`, 0 : jamais) :
+  chaque heure, fichiers ni ouverts ni téléchargés depuis ce nombre de
+  jours. Les dates d'un fichier étant celles de son auteur, le Connecteur
+  note l'instant de chaque téléchargement (`telechargements.json` dans les
+  données de l'identité).
 - **Modifications locales** : écrites par l'application dans le vrai
   fichier. Le Connecteur les détecte, attend 2 s sans nouvelle écriture,
   relit le fichier et n'enregistre que les blocs de 64 Kio qui diffèrent,

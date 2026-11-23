@@ -99,6 +99,10 @@ pub struct Config {
     /// `n_secours` : partenaires de secours distincts.
     #[serde(default = "default_n_secours")]
     pub n_secours: usize,
+    /// Dossier synchronisé : place des fichiers ni ouverts ni téléchargés
+    /// depuis ce nombre de jours libérée automatiquement ; 0 : jamais.
+    #[serde(default)]
+    pub free_after_days: u64,
     /// Fichier d'où la configuration a été lue (modifications depuis le
     /// dashboard).
     #[serde(skip)]
@@ -475,6 +479,10 @@ pub struct Shared {
     pub change_node: std::sync::atomic::AtomicBool,
     /// Accès aux fichiers changé : l'identité redémarre seule (S3m).
     pub restart_identity: std::sync::atomic::AtomicBool,
+    /// Libération automatique (secondes, 0 : jamais), modifiable à chaud.
+    pub free_after_s: Arc<std::sync::atomic::AtomicU64>,
+    /// Dernière libération automatique : `(instant, bilan)`.
+    pub last_free: Arc<Mutex<Option<(u64, crate::folder_sync::Freed)>>>,
     /// Lettre courante du lecteur.
     pub mount_point: Mutex<Option<String>>,
     /// Remontage du lecteur sur une autre lettre : `(lettre, réponse)`.
@@ -554,6 +562,20 @@ pub fn status(sh: &Shared) -> Value {
             "aide": { "nom": "Remplace pour vous le nom choisi par l'opérateur ; l'empreinte reste toujours affichée" } }));
     }
     v["santé"] = health_status(sh);
+    if access_mode(&sh.config) == "dossier" {
+        v["libération d'espace"] = free_status(sh);
+        let days = sh.free_after_s.load(std::sync::atomic::Ordering::Relaxed) / 86_400;
+        if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+            a.push(json!({ "nom": "free_space", "titre": "Libérer de l'espace", "libellé": "Libérer",
+                "texte": "Retire du disque le contenu des fichiers déjà envoyés à votre Nœud, sans les supprimer : ils restent visibles et reviennent à l'ouverture. Un fichier pas encore envoyé n'est jamais touché.",
+                "champs": ["dossier"], "types": { "dossier": "chemin" }, "explorateurs": { "dossier": "drive_browse" },
+                "aide": { "dossier": "Vide : tout le dossier synchronisé ; sinon un sous-dossier (« Parcourir… »)" } }));
+            a.push(json!({ "nom": "set_auto_free", "titre": "Libération automatique", "libellé": "Enregistrer",
+                "champs": ["après (jours)"], "types": { "après (jours)": "number" },
+                "valeurs": { "après (jours)": days },
+                "aide": { "après (jours)": "Place libérée pour les fichiers ni ouverts ni téléchargés depuis ce nombre de jours (vérifié chaque heure) ; 0 : jamais" } }));
+        }
+    }
     v["journal"] = journal_rows(sh);
     v["résumé"] = connector_summary(&v);
     // Titre (onglet du navigateur) : pseudo de l'identité s'il est saisi.
@@ -575,7 +597,8 @@ pub fn status(sh: &Shared) -> Value {
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
-          "sections": ["accès aux fichiers", "lecteur", "file d'écriture"], "actions": ["sync_now"] },
+          "sections": ["accès aux fichiers", "libération d'espace", "lecteur", "file d'écriture"],
+          "actions": ["sync_now", "free_space", "set_auto_free"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "partages", "titre": "Partages",
@@ -1776,6 +1799,8 @@ pub async fn start(
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
         restart_identity: Default::default(),
+        free_after_s: Arc::new(config.free_after_days.saturating_mul(86_400).into()),
+        last_free: Default::default(),
         mount_point: Mutex::new(config.mount_point.clone()),
         remount: Mutex::new(None),
         priv_user,
@@ -1807,6 +1832,8 @@ pub async fn start(
             match name {
                 "set_mount_point" => set_mount_point(&sh, &v),
                 "set_access" => set_access(&sh, &v),
+                "free_space" => free_space_action(&sh, &v),
+                "set_auto_free" => set_auto_free(&sh, &v),
                 "sync_now" => {
                     sync_now(&sh);
                     Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
@@ -2175,6 +2202,88 @@ fn retire_stale_folders(sh: &Shared) {
 #[cfg(not(all(windows, feature = "folder")))]
 fn retire_stale_folders(_: &Shared) {}
 
+/// Instants de téléchargement du dossier synchronisé (données de l'identité).
+pub const HYDRATED_FILE: &str = "telechargements.json";
+
+/// Section « libération d'espace » (mode dossier).
+fn free_status(sh: &Shared) -> Value {
+    let days = sh.free_after_s.load(std::sync::atomic::Ordering::Relaxed) / 86_400;
+    let last = *sh.last_free.lock().unwrap();
+    json!({
+        "libération automatique": if days == 0 { "désactivée".to_string() } else {
+            format!("fichiers ni ouverts ni téléchargés depuis {days} jour(s)") },
+        "dernière libération automatique": last.map(|(t, _)| t),
+        "fichiers libérés": last.map(|(_, f)| f.files),
+        "place libérée (octets)": last.map(|(_, f)| f.bytes),
+    })
+}
+
+/// Libère la place des fichiers à jour du dossier synchronisé (tout, ou un
+/// dossier), sans les supprimer.
+#[cfg(all(windows, feature = "folder"))]
+fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
+    if access_mode(&sh.config) != "dossier" {
+        return Err("seulement en accès « Dossier synchronisé »".into());
+    }
+    let root = folder_path(&sh.config);
+    let rel = v
+        .get("dossier")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
+    let mut dir = root.clone();
+    for part in rel.split('/').filter(|p| !p.is_empty()) {
+        dir.push(part);
+    }
+    if !dir.is_dir() {
+        return Err(format!("dossier introuvable : {}", dir.display()));
+    }
+    let f = crate::cloud_folder::free_space(&root, &dir, None, (sh.clock)(), &Default::default());
+    Ok(json!({ "ok": true, "message": format!(
+        "{} fichier(s) libéré(s), {:.1} Mo : ils restent visibles et reviennent à l'ouverture",
+        f.files, f.bytes as f64 / 1_048_576.0) }))
+}
+
+#[cfg(not(all(windows, feature = "folder")))]
+fn free_space_action(_: &Shared, _: &Value) -> Result<Value, String> {
+    Err("dossier synchronisé indisponible sur cette plateforme".into())
+}
+
+/// Règle la libération automatique (jours, 0 : jamais), à chaud.
+fn set_auto_free(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let days = v
+        .get("après (jours)")
+        .and_then(|x| {
+            x.as_u64()
+                .or_else(|| x.as_str().and_then(|s| s.trim().parse().ok()))
+        })
+        .unwrap_or(0);
+    let path = sh
+        .config
+        .source
+        .clone()
+        .ok_or("fichier de configuration inconnu")?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    raw["free_after_days"] = json!(days);
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&raw).expect("sérialisable"),
+    )
+    .and_then(|_| std::fs::rename(&tmp, &path))
+    .map_err(|e| e.to_string())?;
+    sh.free_after_s.store(
+        days.saturating_mul(86_400),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    Ok(json!({ "ok": true, "message": if days == 0 {
+        "Libération automatique désactivée".to_string()
+    } else {
+        format!("Place libérée automatiquement pour les fichiers ni ouverts ni téléchargés depuis {days} jour(s)")
+    } }))
+}
+
 /// Connecte le dossier synchronisé (mode dossier, Windows).
 #[cfg(all(windows, feature = "folder"))]
 fn mount_folder(sh: &Arc<Shared>) -> bool {
@@ -2188,7 +2297,12 @@ fn mount_folder(sh: &Arc<Shared>) -> bool {
     });
     let root = folder_path(&sh.config);
     retire_stale_folders(sh);
-    let r = crate::cloud_folder::start(&root, drive, on_write).map(|stop| {
+    let options = crate::cloud_folder::FolderOptions {
+        state_file: Some(sh.config.data_dir.join(HYDRATED_FILE)),
+        free_after_s: sh.free_after_s.clone(),
+        last_free: sh.last_free.clone(),
+    };
+    let r = crate::cloud_folder::start_with(&root, drive, on_write, options).map(|stop| {
         sh.stoppers.lock().unwrap().push(stop);
     });
     if r.is_ok() {

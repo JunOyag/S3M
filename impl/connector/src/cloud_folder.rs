@@ -5,7 +5,7 @@
 //! modifications locales sont relues après un temps de calme
 //! ([`crate::folder_sync`]).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::c_void;
 use std::io::Read;
 use std::os::windows::ffi::OsStrExt;
@@ -50,6 +50,38 @@ pub struct Folder {
     started: Instant,
     /// Arrêt demandé (identité arrêtée sans quitter S3m).
     stopped: std::sync::atomic::AtomicBool,
+    /// Dernier téléchargement de chaque fichier (chemin du lecteur → instant
+    /// Unix) : les dates du fichier sont celles de son auteur.
+    hydrated: Mutex<HashMap<String, u64>>,
+    hydrated_dirty: std::sync::atomic::AtomicBool,
+    options: FolderOptions,
+}
+
+/// Réglages du dossier synchronisé.
+#[derive(Clone, Default)]
+pub struct FolderOptions {
+    /// Où conserver les instants de téléchargement (données de l'identité).
+    pub state_file: Option<PathBuf>,
+    /// Libération automatique : fichiers ni ouverts ni téléchargés depuis ce
+    /// délai (secondes) ; 0 : jamais. Modifiable à chaud.
+    pub free_after_s: Arc<std::sync::atomic::AtomicU64>,
+    /// Dernière libération automatique : `(instant, bilan)`.
+    pub last_free: Arc<Mutex<Option<(u64, Freed)>>>,
+}
+
+/// Instants de téléchargement conservés.
+pub fn load_hydrated(file: &Path) -> HashMap<String, u64> {
+    std::fs::read(file)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Arrête un dossier synchronisé connecté par [`start`].
@@ -142,6 +174,45 @@ fn mtime_s(m: &std::fs::Metadata) -> u64 {
 }
 
 impl Folder {
+    fn save_hydrated(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let Some(f) = &self.options.state_file else {
+            return;
+        };
+        if !self.hydrated_dirty.swap(false, Relaxed) {
+            return;
+        }
+        let map = self.hydrated.lock().unwrap().clone();
+        let tmp = f.with_extension("json.tmp");
+        if std::fs::write(&tmp, serde_json::to_vec(&map).unwrap_or_default()).is_ok() {
+            let _ = std::fs::rename(&tmp, f);
+        }
+    }
+
+    /// Libération automatique, au plus une fois par heure.
+    fn auto_free(&self) {
+        let age = self
+            .options
+            .free_after_s
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if age == 0 {
+            return;
+        }
+        let now = unix_now();
+        let due = self
+            .options
+            .last_free
+            .lock()
+            .unwrap()
+            .is_none_or(|(t, _)| now >= t + 3600);
+        if !due {
+            return;
+        }
+        let map = self.hydrated.lock().unwrap().clone();
+        let r = free_space(&self.root, &self.root, Some(age), now, &map);
+        *self.options.last_free.lock().unwrap() = Some((now, r));
+    }
+
     fn now_ms(&self) -> u64 {
         self.started.elapsed().as_millis() as u64
     }
@@ -202,6 +273,12 @@ impl Folder {
             Self::transfer(info, start, &[], STATUS_UNSUCCESSFUL, end - start);
             return;
         };
+        self.hydrated
+            .lock()
+            .unwrap()
+            .insert(path.clone(), unix_now());
+        self.hydrated_dirty
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         let mut off = start;
         while off < end {
             let len = CHUNK.min(end - off);
@@ -661,6 +738,72 @@ unsafe extern "system" fn on_rename(
     }
 }
 
+// ------------------------------------------------------------ libération d'espace
+
+pub use crate::folder_sync::Freed;
+
+/// Libère la place des fichiers téléchargés et à jour sous `dir` (dossier
+/// synchronisé ou l'un de ses sous-dossiers) sans les supprimer : ils
+/// restent visibles et reviennent à l'ouverture. `older_than_s` : seulement
+/// ceux ni ouverts ni modifiés depuis ce délai. Un fichier pas encore
+/// envoyé au Nœud n'est jamais touché.
+pub fn free_space(
+    root: &Path,
+    dir: &Path,
+    older_than_s: Option<u64>,
+    now: u64,
+    hydrated: &HashMap<String, u64>,
+) -> Freed {
+    use std::os::windows::fs::MetadataExt;
+    /// `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` : contenu absent du disque.
+    const RECALL_ON_DATA_ACCESS: u32 = 0x0040_0000;
+    let mut out = Freed::default();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let Ok(m) = e.metadata() else { continue };
+            let p = e.path();
+            if m.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if m.len() == 0 || m.file_attributes() & RECALL_ON_DATA_ACCESS != 0 {
+                continue;
+            }
+            if let Some(age) = older_than_s {
+                let seen = drive_path(root, &p).and_then(|dp| hydrated.get(&dp).copied());
+                let last = [m.accessed().ok(), m.modified().ok()]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .chain(seen)
+                    .max()
+                    .unwrap_or(0);
+                if now.saturating_sub(last) < age {
+                    continue;
+                }
+            }
+            // Seulement un fantôme à jour (contenu déjà chez le Nœud).
+            let Ok(f) = open(&p, true) else { continue };
+            if placeholder_state(&f) != Some(true) {
+                continue;
+            }
+            let ok =
+                unsafe { CfDehydratePlaceholder(handle(&f), 0, -1, CF_DEHYDRATE_FLAG_NONE, None) }
+                    .is_ok();
+            if ok {
+                out.files += 1;
+                out.bytes += m.len();
+            }
+        }
+    }
+    out
+}
+
 // ------------------------------------------------------------ retrait
 
 /// Retire un ancien dossier synchronisé : fantômes à jour supprimés (leur
@@ -722,6 +865,16 @@ pub fn start(
     root: &Path,
     drive: Arc<Mutex<Drive>>,
     on_write: WriteHook,
+) -> Result<Stopper, String> {
+    start_with(root, drive, on_write, FolderOptions::default())
+}
+
+/// [`start`] avec ses réglages (libération automatique d'espace).
+pub fn start_with(
+    root: &Path,
+    drive: Arc<Mutex<Drive>>,
+    on_write: WriteHook,
+    options: FolderOptions,
 ) -> Result<Stopper, String> {
     std::fs::create_dir_all(root).map_err(|e| format!("dossier {} : {e}", root.display()))?;
     let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
@@ -806,6 +959,15 @@ pub fn start(
         pending: Mutex::new(Debounce::default()),
         started: Instant::now(),
         stopped: Default::default(),
+        hydrated: Mutex::new(
+            options
+                .state_file
+                .as_deref()
+                .map(load_hydrated)
+                .unwrap_or_default(),
+        ),
+        hydrated_dirty: Default::default(),
+        options,
     }));
     let table = [
         CF_CALLBACK_REGISTRATION {
@@ -848,10 +1010,19 @@ pub fn start(
     let worker = std::thread::spawn(move || {
         let mut last_root = folder.drive.lock().unwrap().root_hash();
         let mut last_shared = folder.drive.lock().unwrap().shared_version();
+        let mut last_upkeep = Instant::now();
         loop {
             std::thread::sleep(Duration::from_millis(500));
             if folder.stopped.load(std::sync::atomic::Ordering::SeqCst) {
+                folder.save_hydrated();
                 return;
+            }
+            // Chaque minute : instants de téléchargement conservés ; chaque
+            // heure : libération automatique si elle est réglée.
+            if last_upkeep.elapsed() >= Duration::from_secs(60) {
+                last_upkeep = Instant::now();
+                folder.save_hydrated();
+                folder.auto_free();
             }
             let now = folder.now_ms();
             let due = folder.pending.lock().unwrap().due(now);

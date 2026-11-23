@@ -69,6 +69,7 @@ async fn unattached_connector_attaches_itself_with_the_node_policy_quota() {
         auto_attach: true,
         emergency_write: false,
         n_secours: 4,
+        free_after_days: 0,
         source: None,
     };
     let (shared, _) = start(config, clock).await.unwrap();

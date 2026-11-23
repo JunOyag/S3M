@@ -143,6 +143,33 @@ fn folder_shows_placeholders_hydrates_and_records_local_changes() {
         b"d'ailleurs"
     );
 
+    // Libération d'espace : fichiers téléchargés et à jour vidés du disque,
+    // toujours là, relus à l'ouverture ; rien de récent avec un délai.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let recall = |p: &Path| {
+        use std::os::windows::fs::MetadataExt;
+        std::fs::metadata(p).unwrap().file_attributes() & 0x0040_0000 != 0
+    };
+    let distant = root.join("docs").join("distant.txt");
+    assert!(!recall(&distant), "téléchargé par la lecture");
+    // Dates du fichier = celles de son auteur : le téléchargement récent
+    // compte (relevé du dossier synchronisé).
+    let recent: std::collections::HashMap<String, u64> = [
+        ("/docs/distant.txt".to_string(), now),
+        ("/docs/a.txt".to_string(), now),
+        ("/renomme.txt".to_string(), now),
+    ]
+    .into();
+    let none = s3m_connector::cloud_folder::free_space(&root, &root, Some(86_400), now, &recent);
+    assert!(!recall(&distant), "téléchargé récemment : gardé ({none:?})");
+    let freed = s3m_connector::cloud_folder::free_space(&root, &root, None, now, &recent);
+    assert!(freed.files >= 1 && freed.bytes >= 10, "{freed:?}");
+    assert!(recall(&distant), "contenu retiré du disque");
+    assert_eq!(std::fs::read(&distant).unwrap(), b"d'ailleurs");
+
     // Arrêt sans quitter le processus : fils terminés, dossier déconnecté,
     // lecteur relâché.
     assert!(Arc::strong_count(&drive) > 1);

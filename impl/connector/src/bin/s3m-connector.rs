@@ -45,6 +45,7 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         auto_attach: true,
         emergency_write: true,
         n_secours: s3m_connector::emergency::DEFAULT_N_SECOURS,
+        free_after_days: 0,
         source: None,
     };
     let cfg = dir.join("connector.json");

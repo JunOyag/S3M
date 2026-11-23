@@ -90,6 +90,7 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
         auto_attach: true,
         emergency_write: false,
         n_secours: 4,
+        free_after_days: 0,
         source: None,
     };
     let (shared, url) = start(config, clock).await.unwrap();

@@ -121,3 +121,10 @@ impl Debounce {
         ready
     }
 }
+
+/// Bilan d'une libération d'espace (dossier synchronisé).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Freed {
+    pub files: u64,
+    pub bytes: u64,
+}
