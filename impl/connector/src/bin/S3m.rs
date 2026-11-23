@@ -133,6 +133,8 @@ enum UserEvent {
     /// Identité arrêtée pour un changement de Nœud : configuration mise de
     /// côté (`Ok`), ou échec (redémarrage complet).
     Restarted(usize, Result<(), String>),
+    /// Identité arrêtée pour appliquer un nouvel accès aux fichiers.
+    Relaunch(usize),
 }
 
 fn clock() -> u64 {
@@ -351,6 +353,28 @@ fn begin_change(
     });
 }
 
+/// Redémarrage d'une seule identité (accès aux fichiers changé).
+fn begin_relaunch(
+    rt: &tokio::runtime::Runtime,
+    i: usize,
+    id: &mut Ident,
+    proxy: tao::event_loop::EventLoopProxy<UserEvent>,
+) {
+    let Some(sh) = id.shared.take() else {
+        return;
+    };
+    id.last = None;
+    id.status
+        .set_text("Accès aux fichiers : redémarrage de l'identité…");
+    for item in [&id.files, &id.sync, &id.pause] {
+        item.set_enabled(false);
+    }
+    rt.spawn(async move {
+        daemon::stop(sh).await;
+        let _ = proxy.send_event(UserEvent::Relaunch(i));
+    });
+}
+
 /// Retrait demandé au redémarrage précédent : dossier synchronisé
 /// déconnecté, dossier de l'identité mis de côté.
 fn remove_identity(app: &Path, dir: &Path) {
@@ -503,6 +527,11 @@ fn main() {
                 for item in [&id.dash, &id.sync, &id.pause] {
                     item.set_enabled(true);
                 }
+            }
+            Event::UserEvent(UserEvent::Relaunch(i)) => {
+                let id = &idents[i];
+                log(&format!("accès aux fichiers changé : redémarrage (identité {})", id.num));
+                start_connector(&rt, i, config_path(&id.dir), proxy.clone());
             }
             Event::UserEvent(UserEvent::Restarted(i, r)) => {
                 let id = &mut idents[i];
@@ -662,6 +691,11 @@ fn main() {
                         log(&format!("changement de Nœud demandé (tableau de bord, identité {})", id.num));
                         drop(sh);
                         begin_change(&rt, i, id, proxy.clone());
+                        continue;
+                    }
+                    if sh.restart_identity.load(Ordering::SeqCst) {
+                        drop(sh);
+                        begin_relaunch(&rt, i, id, proxy.clone());
                         continue;
                     }
                     let v = daemon::tray_view(&sh);

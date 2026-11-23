@@ -473,6 +473,8 @@ pub struct Shared {
     pub last_lan_search: Mutex<Option<u64>>,
     /// « Changer de Nœud » demandé (l'application redémarre sur l'assistant).
     pub change_node: std::sync::atomic::AtomicBool,
+    /// Accès aux fichiers changé : l'identité redémarre seule (S3m).
+    pub restart_identity: std::sync::atomic::AtomicBool,
     /// Lettre courante du lecteur.
     pub mount_point: Mutex<Option<String>>,
     /// Remontage du lecteur sur une autre lettre : `(lettre, réponse)`.
@@ -1773,6 +1775,7 @@ pub async fn start(
         node_entry_read_at: Mutex::new(0),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
+        restart_identity: Default::default(),
         mount_point: Mutex::new(config.mount_point.clone()),
         remount: Mutex::new(None),
         priv_user,
@@ -2068,7 +2071,13 @@ fn set_access(sh: &Shared, v: &Value) -> Result<Value, String> {
     )
     .and_then(|_| std::fs::rename(&tmp, &path))
     .map_err(|e| e.to_string())?;
-    Ok(json!({ "ok": true, "message": "Enregistré : quittez puis relancez S3m pour l'appliquer" }))
+    // S3m redémarre cette identité seule ; `s3m-connector` lancé à la main
+    // l'appliquera à son prochain démarrage.
+    sh.restart_identity
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    Ok(
+        json!({ "ok": true, "message": "Enregistré : l'accès aux fichiers de cette identité redémarre (quelques secondes)" }),
+    )
 }
 
 /// Fichier, à côté de la configuration, du dernier dossier synchronisé
@@ -2119,7 +2128,10 @@ pub fn stale_folders(config_dir: &Path, current: &[PathBuf]) -> Vec<PathBuf> {
 
 /// Dossiers synchronisés en usage par toutes les identités de ce poste.
 fn folders_in_use(c: &Config) -> Vec<PathBuf> {
-    let mut out = vec![folder_path(c)];
+    // Le dossier de cette identité n'est en usage qu'en mode dossier : passée
+    // en lecteur, son ancien dossier est retiré.
+    let own = access_mode(c) == "dossier";
+    let mut out: Vec<PathBuf> = own.then(|| folder_path(c)).into_iter().collect();
     let Some(src) = c.source.as_deref() else {
         return out;
     };
@@ -2132,7 +2144,7 @@ fn folders_in_use(c: &Config) -> Vec<PathBuf> {
     if let Ok(rd) = std::fs::read_dir(base.join("identites")) {
         cfgs.extend(rd.flatten().map(|e| e.path().join("connector.json")));
     }
-    for p in cfgs {
+    for p in cfgs.into_iter().filter(|p| p.as_path() != src) {
         if let Some(f) = std::fs::read(&p)
             .ok()
             .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
@@ -2143,6 +2155,25 @@ fn folders_in_use(c: &Config) -> Vec<PathBuf> {
     }
     out
 }
+
+/// Ancien dossier (choix changé, ou passage en lecteur) : retiré de
+/// Windows, sinon il resterait un dossier synchronisé sans Connecteur, en
+/// erreur à l'ouverture.
+#[cfg(all(windows, feature = "folder"))]
+fn retire_stale_folders(sh: &Shared) {
+    if let Some(dir) = sh.config.source.as_deref().and_then(Path::parent) {
+        for old in stale_folders(dir, &folders_in_use(&sh.config)) {
+            match crate::cloud_folder::retire(&old) {
+                Ok(true) => eprintln!("ancien dossier synchronisé retiré : {}", old.display()),
+                Ok(false) => {}
+                Err(e) => eprintln!("ancien dossier {} : {e}", old.display()),
+            }
+        }
+    }
+}
+
+#[cfg(not(all(windows, feature = "folder")))]
+fn retire_stale_folders(_: &Shared) {}
 
 /// Connecte le dossier synchronisé (mode dossier, Windows).
 #[cfg(all(windows, feature = "folder"))]
@@ -2156,17 +2187,7 @@ fn mount_folder(sh: &Arc<Shared>) -> bool {
         sched.lock().unwrap().on_write(path, size, clock());
     });
     let root = folder_path(&sh.config);
-    // Ancien dossier (choix changé) : retiré de Windows, sinon il resterait
-    // un dossier synchronisé sans Connecteur, en erreur à l'ouverture.
-    if let Some(dir) = sh.config.source.as_deref().and_then(Path::parent) {
-        for old in stale_folders(dir, &folders_in_use(&sh.config)) {
-            match crate::cloud_folder::retire(&old) {
-                Ok(true) => eprintln!("ancien dossier synchronisé retiré : {}", old.display()),
-                Ok(false) => {}
-                Err(e) => eprintln!("ancien dossier {} : {e}", old.display()),
-            }
-        }
-    }
+    retire_stale_folders(sh);
     let r = crate::cloud_folder::start(&root, drive, on_write).map(|stop| {
         sh.stoppers.lock().unwrap().push(stop);
     });
@@ -2194,6 +2215,7 @@ fn mount_drive(sh: &Arc<Shared>) {
     if access_mode(&sh.config) == "dossier" && mount_folder(sh) {
         return;
     }
+    retire_stale_folders(sh);
     let (Some(drive), Some(point)) = (sh.drive.clone(), sh.mount_point()) else {
         return;
     };
