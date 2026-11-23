@@ -281,6 +281,11 @@ pub trait SharedTree: Send + Sync {
     fn stat(&self, rel: &str) -> Result<Option<Meta>, DriveError>;
     fn list(&self, rel: &str) -> Result<Vec<(String, Meta)>, DriveError>;
     fn read(&self, rel: &str, offset: u64, len: usize) -> Result<Vec<u8>, DriveError>;
+    /// Change quand les partages reçus changent (ajout, mise à jour,
+    /// retrait) : les vues déjà ouvertes se rafraîchissent.
+    fn version(&self) -> u64 {
+        0
+    }
 }
 
 /// Élément de son propre espace à partager : version synchronisée.
@@ -370,6 +375,11 @@ impl Drive {
     /// Racine courante (`fs_root_hash`).
     pub fn root_hash(&self) -> BlockHash {
         self.root.fs_root_hash
+    }
+
+    /// Version des partages reçus montés (0 sans partages).
+    pub fn shared_version(&self) -> u64 {
+        self.shared.as_ref().map_or(0, |t| t.version())
     }
 
     /// Racine courante complète (hash, sel, version).

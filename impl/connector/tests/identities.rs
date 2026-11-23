@@ -57,6 +57,12 @@ fn identities_are_listed_added_and_set_aside() {
 fn icon_follows_the_worst_identity() {
     use TrayState::*;
     assert_eq!(worst(&[Ok, Syncing]), Syncing);
+    assert_eq!(
+        worst(&[Starting, Syncing]),
+        Syncing,
+        "le travail en attente passe avant le démarrage"
+    );
+    assert_eq!(needing_attention(&[Ok, Syncing, Offline]), 2);
     assert_eq!(worst(&[Ok, Offline, Paused]), Offline);
     assert_eq!(worst(&[Error, Offline]), Error);
     assert_eq!(worst(&[]), Starting);

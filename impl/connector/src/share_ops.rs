@@ -424,7 +424,21 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
 fn drive_browse(sh: &Shared, path: &str) -> Result<Value, String> {
     let drive = sh.drive.clone().ok_or("pas de lecteur")?;
     let p = format!("/{}", path.trim_matches('/'));
-    let p = if p == "//" { "/".to_string() } else { p };
+    let mut p = if p == "//" { "/".to_string() } else { p };
+    // Chemin d'un fichier (élément déjà choisi) : son dossier.
+    if drive
+        .lock()
+        .unwrap()
+        .stat(&p)
+        .ok()
+        .flatten()
+        .is_some_and(|m| !m.is_dir)
+    {
+        p = match p.rsplit_once('/') {
+            Some(("", _)) | None => "/".to_string(),
+            Some((up, _)) => up.to_string(),
+        };
+    }
     let entries = drive.lock().unwrap().list(&p).map_err(|e| e.to_string())?;
     let mut dirs = Vec::new();
     let mut files = Vec::new();

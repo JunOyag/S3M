@@ -297,6 +297,17 @@ impl ReceivedTree {
 }
 
 impl SharedTree for ReceivedTree {
+    fn version(&self) -> u64 {
+        let v = self.store.lock().unwrap().visible();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for (n, p) in &v {
+            std::hash::Hash::hash(n, &mut h);
+            std::hash::Hash::hash(&p.first_block_hash, &mut h);
+            std::hash::Hash::hash(&p.seq, &mut h);
+        }
+        std::hash::Hasher::finish(&h)
+    }
+
     fn stat(&self, rel: &str) -> Result<Option<Meta>, DriveError> {
         if rel == "/" {
             return Ok(Some(Meta {

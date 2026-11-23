@@ -140,11 +140,17 @@ fn space_json(s: Option<Space>) -> Value {
 pub fn browse(v: &Value) -> Result<Value, String> {
     let raw = v.get("chemin").and_then(Value::as_str).unwrap_or("").trim();
     let only_space = v.get("espace seul").and_then(Value::as_bool) == Some(true);
-    let p = if raw.is_empty() {
+    let mut p = if raw.is_empty() {
         home()
     } else {
         PathBuf::from(raw)
     };
+    // Chemin d'un fichier : son dossier.
+    if p.is_file() {
+        if let Some(up) = p.parent() {
+            p = up.to_path_buf();
+        }
+    }
     if only_space {
         return Ok(
             json!({ "ok": true, "données": { "chemin": p.display().to_string(), "espace": space_json(space(&p)) } }),

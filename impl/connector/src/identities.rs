@@ -89,15 +89,22 @@ pub fn set_aside(app: &Path, dir: &Path, stamp: u64) -> Result<PathBuf, String> 
     Ok(to)
 }
 
+/// Gravité : erreur > Nœud injoignable > suspendue > modifications en
+/// attente ou synchronisation > démarrage > à jour.
 fn rank(s: TrayState) -> u8 {
     match s {
         TrayState::Ok => 0,
-        TrayState::Syncing => 1,
-        TrayState::Paused => 2,
-        TrayState::Starting => 3,
+        TrayState::Starting => 1,
+        TrayState::Syncing => 2,
+        TrayState::Paused => 3,
         TrayState::Offline => 4,
         TrayState::Error => 5,
     }
+}
+
+/// Nombre d'états qui ne sont pas « à jour ».
+pub fn needing_attention(states: &[TrayState]) -> usize {
+    states.iter().filter(|s| **s != TrayState::Ok).count()
 }
 
 /// État d'ensemble pour l'icône : celui de l'identité dans le pire état.

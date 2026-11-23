@@ -573,10 +573,17 @@ fn main() {
                 // Icône et infobulle : identité dans le pire état.
                 let states: Vec<TrayState> = idents.iter().map(Ident::state).collect();
                 let worst = s3m_connector::identities::worst(&states);
+                // Texte : l'identité dans le pire état, et combien d'autres
+                // demandent aussi attention.
+                let others = s3m_connector::identities::needing_attention(&states).saturating_sub(1);
                 let text = match idents.iter().find(|id| id.state() == worst) {
                     Some(id) => {
                         let t = id.last.as_ref().map(|v| v.text.clone()).unwrap_or_else(|| "démarrage…".into());
-                        if many { format!("{} : {t}", id.name()) } else { t }
+                        match (many, others) {
+                            (false, _) => t,
+                            (true, 0) => format!("{} : {t}", id.name()),
+                            (true, n) => format!("{} : {t} (+{n} autre{})", id.name(), if n > 1 { "s" } else { "" }),
+                        }
                     }
                     None => "démarrage…".into(),
                 };

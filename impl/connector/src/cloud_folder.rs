@@ -487,7 +487,14 @@ impl Folder {
     /// Met à jour les fantômes des dossiers ouverts après un changement
     /// distant.
     fn refresh(&self) {
-        let dirs: Vec<String> = self.populated.lock().unwrap().iter().cloned().collect();
+        let mut dirs: Vec<String> = self.populated.lock().unwrap().iter().cloned().collect();
+        // « Partagés avec moi » est toujours suivi : ouvert vide avant
+        // l'arrivée d'un partage, Windows ne redemanderait pas son contenu.
+        if self.drive.lock().unwrap().shared.is_some()
+            && !dirs.iter().any(|d| d == crate::drive::SHARED_DIR)
+        {
+            dirs.push(crate::drive::SHARED_DIR.to_string());
+        }
         for dir in dirs {
             let remote = match self.drive.lock().unwrap().list(&dir) {
                 Ok(l) => l,
@@ -773,6 +780,7 @@ pub fn start(root: &Path, drive: Arc<Mutex<Drive>>, on_write: WriteHook) -> Resu
     // Traitement après le temps de calme, et changements distants.
     std::thread::spawn(move || {
         let mut last_root = folder.drive.lock().unwrap().root_hash();
+        let mut last_shared = folder.drive.lock().unwrap().shared_version();
         loop {
             std::thread::sleep(Duration::from_millis(500));
             let now = folder.now_ms();
@@ -780,9 +788,15 @@ pub fn start(root: &Path, drive: Arc<Mutex<Drive>>, on_write: WriteHook) -> Resu
             for p in due {
                 folder.process_local(Path::new(&p));
             }
-            let r = folder.drive.lock().unwrap().root_hash();
-            if r != last_root {
+            let (r, v) = {
+                let d = folder.drive.lock().unwrap();
+                (d.root_hash(), d.shared_version())
+            };
+            // Nouvelle racine, ou partages reçus changés : dossiers ouverts
+            // mis à jour.
+            if r != last_root || v != last_shared {
                 last_root = r;
+                last_shared = v;
                 folder.refresh();
             }
         }

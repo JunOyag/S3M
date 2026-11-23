@@ -471,10 +471,7 @@ pub fn access_form(c: &AccessChoice, dir: &Path) -> Value {
     } else {
         "point de montage"
     };
-    let mut choices = vec![json!([
-        "dossier",
-        "Dossier synchronisé"
-    ])];
+    let mut choices = vec![json!(["dossier", "Dossier synchronisé"])];
     if drive_possible() {
         choices.push(json!([
             "lecteur",
