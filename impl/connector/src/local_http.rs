@@ -144,7 +144,9 @@ pub async fn serve(
     assets: &'static [Asset],
     keep: Option<&std::path::Path>,
 ) -> std::io::Result<String> {
-    serve_with_map(port, status_fn, action_fn, None, assets, keep).await
+    serve_with_map(port, status_fn, action_fn, None, assets, keep)
+        .await
+        .map(|(url, _)| url)
 }
 
 async fn map(State(st): State<AppState>, h: HeaderMap) -> Response {
@@ -214,7 +216,7 @@ pub async fn serve_with_map(
     map_fn: Option<StatusFn>,
     assets: &'static [Asset],
     keep: Option<&std::path::Path>,
-) -> std::io::Result<String> {
+) -> std::io::Result<(String, tokio::task::AbortHandle)> {
     let (listener, token) = bind_kept(port, keep).await?;
     let guard = LocalApiGuard::new(token, listener.local_addr()?).map_err(std::io::Error::other)?;
     let url = guard.dashboard_url();
@@ -233,8 +235,9 @@ pub async fn serve_with_map(
         .route("/api/ws", get(ws))
         .route("/:file", get(asset))
         .with_state(st);
-    tokio::spawn(async move {
+    let server = tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
-    Ok(url)
+    // Arrêter le serveur libère le port (identité arrêtée sans quitter S3m).
+    Ok((url, server.abort_handle()))
 }

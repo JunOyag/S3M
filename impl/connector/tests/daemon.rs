@@ -128,9 +128,27 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
     drop(node);
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     watch_once(&shared).await;
-    let h = shared.health.lock().unwrap();
-    assert_eq!(h.reachable, Some(false));
-    assert_eq!(h.inactivity_detected_at, Some(NOW));
+    {
+        let h = shared.health.lock().unwrap();
+        assert_eq!(h.reachable, Some(false));
+        assert_eq!(h.inactivity_detected_at, Some(NOW));
+    }
+
+    // Arrêt de l'identité sans quitter le processus (changement de Nœud) :
+    // plus aucune référence, port du tableau de bord libéré, configuration
+    // et données déplaçables.
+    std::fs::write(dir.join("connector.json"), "{}").unwrap();
+    let weak = Arc::downgrade(&shared);
+    s3m_connector::daemon::stop(shared).await;
+    assert!(weak.upgrade().is_none(), "identité encore retenue");
+    assert!(
+        tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_err(),
+        "port du tableau de bord libéré"
+    );
+    s3m_connector::setup::set_aside_config(&dir, 42).unwrap();
+    assert!(dir.join("data.42").exists() && dir.join("connector.42.json").exists());
 }
 
 #[test]

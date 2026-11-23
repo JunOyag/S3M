@@ -218,7 +218,11 @@ pub fn write_config(
         q_max_bytes: DEFAULT_Q_MAX_BYTES,
         watch_interval_s: DEFAULT_WATCH_INTERVAL_S,
         mount_point: Some(choice.mount.clone().unwrap_or_else(free_drive_letter)),
-        access: choice.access.clone(),
+        // Sans choix : dossier synchronisé (Windows), même avec WinFsp.
+        access: choice
+            .access
+            .clone()
+            .or_else(|| cfg!(windows).then(|| "dossier".to_string())),
         folder: choice.folder.clone(),
         // DHT et échange de blocs partagent la pile du Nœud.
         dht_bootstrap: vec![m.to_string()],
@@ -482,13 +486,8 @@ pub fn access_form(c: &AccessChoice, dir: &Path) -> Value {
             }
         ]));
     }
-    let access = c.access.clone().unwrap_or_else(|| {
-        if drive_possible() {
-            "lecteur".into()
-        } else {
-            "dossier".into()
-        }
-    });
+    // Par défaut : dossier synchronisé, même si WinFsp est installé.
+    let access = c.access.clone().unwrap_or_else(|| "dossier".into());
     json!({ "nom": "set_access", "titre": "Accès aux fichiers", "libellé": "Appliquer",
         "champs": ["accès", "dossier", mount_field],
         "types": { "accès": "choix", "dossier": "chemin", mount_field: if cfg!(windows) { "lettre" } else { "chemin" } },
@@ -524,12 +523,9 @@ pub fn access_summary(c: &AccessChoice, dir: &Path) -> Value {
         }
         (Some(_), _, Some(m)) if cfg!(windows) => json!({ "accès choisi": drive, "lettre": m }),
         (Some(_), _, Some(m)) => json!({ "accès choisi": drive, "point de montage": m }),
-        _ if cfg!(windows) && drive_possible() => {
-            json!({ "accès choisi": format!("automatique : {drive}, WinFsp est installé"), "lettre": free_drive_letter() })
-        }
         _ if !cfg!(windows) => json!({ "accès choisi": "à choisir ci-dessous" }),
         _ => {
-            json!({ "accès choisi": "automatique : dossier synchronisé (WinFsp n'est pas installé)", "dossier": default_folder(dir).display().to_string() })
+            json!({ "accès choisi": "par défaut : dossier synchronisé", "dossier": default_folder(dir).display().to_string() })
         }
     }
 }

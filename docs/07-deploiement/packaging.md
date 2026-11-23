@@ -188,7 +188,8 @@ différée, indicateur des synchronisations en attente et action
   par le binaire ; aucun runtime JavaScript n'est requis à l'exécution. Le
   lecteur monté ([`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md))
   nécessite WinFsp ou FUSE ; sans eux, le [mode dossier](../04-protocols/acces-applicatif.md#mode-dossier)
-  ne demande rien à installer.
+  ne demande rien à installer. Sous Windows, l'assistant propose le mode
+  dossier par défaut, même si WinFsp est installé (2026-11-23).
 
 ### Application de la barre des tâches (Connecteur, Windows) {: #barre-des-taches }
 
@@ -231,9 +232,12 @@ synchronisation courantes :
   d'administrer son Nœud à distance avec le code 2FA
   ([`deploiement.appairage-admin`](appairage-admin.md)).
 - **Changer de Nœud** (menu de l'icône, ou tableau de bord avec
-  confirmation) : S3m redémarre sur l'assistant. L'identité (phrase de
-  récupération, sel d'attachement) est conservée ; `connector.json` et les
-  données locales sont renommés avec un suffixe horodaté, jamais effacés.
+  confirmation) : seule cette identité s'arrête (tâches, lecteur ou dossier
+  synchronisé, tableau de bord), puis son assistant s'ouvre ; les autres
+  identités continuent (2026-11-23). L'identité (phrase de récupération,
+  sel d'attachement) est conservée ; `connector.json` et les données
+  locales sont renommés avec un suffixe horodaté, jamais effacés. Si un
+  fichier reste ouvert, S3m redémarre entièrement, comme auparavant.
 
 ### Partages {: #partages }
 

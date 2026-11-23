@@ -48,7 +48,12 @@ pub struct Folder {
     populated: Mutex<BTreeSet<String>>,
     pending: Mutex<Debounce>,
     started: Instant,
+    /// Arrêt demandé (identité arrêtée sans quitter S3m).
+    stopped: std::sync::atomic::AtomicBool,
 }
+
+/// Arrête un dossier synchronisé connecté par [`start`].
+pub type Stopper = Box<dyn FnOnce() + Send>;
 
 fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
     s.encode_wide().chain(Some(0)).collect()
@@ -713,7 +718,11 @@ pub fn retire(root: &Path) -> Result<bool, String> {
 /// Enregistre et connecte le dossier `root`, puis lance la surveillance des
 /// modifications locales et distantes. Le dossier reste connecté jusqu'à la
 /// fin du processus.
-pub fn start(root: &Path, drive: Arc<Mutex<Drive>>, on_write: WriteHook) -> Result<(), String> {
+pub fn start(
+    root: &Path,
+    drive: Arc<Mutex<Drive>>,
+    on_write: WriteHook,
+) -> Result<Stopper, String> {
     std::fs::create_dir_all(root).map_err(|e| format!("dossier {} : {e}", root.display()))?;
     let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
     // `\\?\C:\…` → `C:\…`.
@@ -796,6 +805,7 @@ pub fn start(root: &Path, drive: Arc<Mutex<Drive>>, on_write: WriteHook) -> Resu
         populated: Mutex::new(populated),
         pending: Mutex::new(Debounce::default()),
         started: Instant::now(),
+        stopped: Default::default(),
     }));
     let table = [
         CF_CALLBACK_REGISTRATION {
@@ -819,7 +829,7 @@ pub fn start(root: &Path, drive: Arc<Mutex<Drive>>, on_write: WriteHook) -> Resu
             Callback: None,
         },
     ];
-    unsafe {
+    let key = unsafe {
         CfConnectSyncRoot(
             PCWSTR(wroot.as_ptr()),
             table.as_ptr(),
@@ -833,13 +843,16 @@ pub fn start(root: &Path, drive: Arc<Mutex<Drive>>, on_write: WriteHook) -> Resu
     // celles des dossiers ouverts lors d'un lancement précédent.
     folder.refresh();
     // Surveillance des modifications locales.
-    std::thread::spawn(move || watch(folder));
+    let watcher = std::thread::spawn(move || watch(folder));
     // Traitement après le temps de calme, et changements distants.
-    std::thread::spawn(move || {
+    let worker = std::thread::spawn(move || {
         let mut last_root = folder.drive.lock().unwrap().root_hash();
         let mut last_shared = folder.drive.lock().unwrap().shared_version();
         loop {
             std::thread::sleep(Duration::from_millis(500));
+            if folder.stopped.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
             let now = folder.now_ms();
             let due = folder.pending.lock().unwrap().due(now);
             for p in due {
@@ -858,7 +871,25 @@ pub fn start(root: &Path, drive: Arc<Mutex<Drive>>, on_write: WriteHook) -> Resu
             }
         }
     });
-    Ok(())
+    let stop: Stopper = Box::new(move || {
+        use std::os::windows::io::AsRawHandle;
+        folder
+            .stopped
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        // La surveillance attend un changement : lecture annulée jusqu'à
+        // ce que le fil s'arrête.
+        while !watcher.is_finished() {
+            let _ = unsafe {
+                windows::Win32::System::IO::CancelSynchronousIo(HANDLE(watcher.as_raw_handle()))
+            };
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let _ = worker.join();
+        let _ = unsafe { CfDisconnectSyncRoot(key) };
+        // Plus aucun rappel ni fil : la structure (et son lecteur) est libérée.
+        drop(unsafe { Box::from_raw(folder as *const Folder as *mut Folder) });
+    });
+    Ok(stop)
 }
 
 fn watch(folder: &'static Folder) {
@@ -888,6 +919,9 @@ fn watch(folder: &'static Folder) {
                 None,
             )
         };
+        if folder.stopped.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         if r.is_err() {
             std::thread::sleep(Duration::from_secs(1));
             continue;

@@ -130,6 +130,9 @@ enum UserEvent {
     Setup(usize, String),
     ConfigReady(usize, PathBuf),
     Failed(usize, String),
+    /// Identité arrêtée pour un changement de Nœud : configuration mise de
+    /// côté (`Ok`), ou échec (redémarrage complet).
+    Restarted(usize, Result<(), String>),
 }
 
 fn clock() -> u64 {
@@ -307,6 +310,47 @@ fn fill_archives(menu: &Submenu, items: &mut Vec<ArchivedItem>, app: &Path) {
     menu.set_enabled(!items.is_empty());
 }
 
+/// Changement de Nœud d'une seule identité, sans arrêter les autres :
+/// identité arrêtée, configuration mise de côté, puis assistant.
+fn begin_change(
+    rt: &tokio::runtime::Runtime,
+    i: usize,
+    id: &mut Ident,
+    proxy: tao::event_loop::EventLoopProxy<UserEvent>,
+) {
+    let Some(sh) = id.shared.take() else {
+        return;
+    };
+    id.url = None;
+    id.last = None;
+    id.failed = false;
+    id.status
+        .set_text("Changement de Nœud : arrêt de l'identité…");
+    for item in [&id.files, &id.dash, &id.sync, &id.pause, &id.change] {
+        item.set_enabled(false);
+    }
+    let dir = id.dir.clone();
+    rt.spawn(async move {
+        daemon::stop(sh).await;
+        // Fichiers relâchés en quelques instants : quelques essais.
+        let stamp = clock();
+        let mut r = Err(String::new());
+        for _ in 0..20 {
+            match s3m_connector::setup::set_aside_config(&dir, stamp) {
+                Ok(()) => {
+                    r = Ok(());
+                    break;
+                }
+                Err(e) => {
+                    r = Err(e.to_string());
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            }
+        }
+        let _ = proxy.send_event(UserEvent::Restarted(i, r));
+    });
+}
+
 /// Retrait demandé au redémarrage précédent : dossier synchronisé
 /// déconnecté, dossier de l'identité mis de côté.
 fn remove_identity(app: &Path, dir: &Path) {
@@ -460,6 +504,23 @@ fn main() {
                     item.set_enabled(true);
                 }
             }
+            Event::UserEvent(UserEvent::Restarted(i, r)) => {
+                let id = &mut idents[i];
+                match r {
+                    Ok(()) => {
+                        log(&format!("changement de Nœud : configuration mise de côté (identité {})", id.num));
+                        id.change.set_enabled(true);
+                        launch(&rt, i, id.dir.clone(), proxy.clone());
+                    }
+                    Err(e) => {
+                        // Fichiers encore ouverts : redémarrage complet, qui
+                        // achève la mise de côté.
+                        log(&format!("changement de Nœud sans redémarrage impossible (identité {}) : {e}", id.num));
+                        restart_with(CHANGE_NODE_ENV, &id.dir);
+                        *flow = ControlFlow::Exit;
+                    }
+                }
+            }
             Event::UserEvent(UserEvent::Failed(i, e)) => {
                 let id = &mut idents[i];
                 log(&format!("échec (identité {}) : {e}", id.num));
@@ -525,7 +586,7 @@ fn main() {
                     fill_archives(&archive_menu, &mut archives, &dir);
                     return;
                 }
-                let Some(id) = idents.iter_mut().find(|id| {
+                let Some(i) = idents.iter().position(|id| {
                     [&id.files, &id.dash, &id.sync, &id.pause, &id.change]
                         .iter()
                         .any(|m| m.id() == &e.id)
@@ -533,11 +594,11 @@ fn main() {
                 }) else {
                     return;
                 };
+                let id = &mut idents[i];
                 if e.id == *id.change.id() {
                     log(&format!("changement de Nœud demandé (identité {})", id.num));
-                    say(id, "S3m redémarre sur l'assistant : votre identité est conservée, l'ancienne configuration est mise de côté.");
-                    restart_with(CHANGE_NODE_ENV, &id.dir);
-                    *flow = ControlFlow::Exit;
+                    say(id, "Changement de Nœud : cette identité s'arrête puis l'assistant s'ouvre ; votre identité est conservée, les autres continuent.");
+                    begin_change(&rt, i, id, proxy.clone());
                 } else if id.remove.as_ref().is_some_and(|r| r.id() == &e.id) {
                     let armed = id.remove_armed.is_some_and(|t| t.elapsed() < Duration::from_secs(10));
                     if armed {
@@ -578,7 +639,7 @@ fn main() {
                         a.purge.set_text(PURGE_TEXT);
                     }
                 }
-                for id in idents.iter_mut() {
+                for (i, id) in idents.iter_mut().enumerate() {
                     if id.remove_armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(10)) {
                         id.remove_armed = None;
                         if let Some(r) = &id.remove {
@@ -599,9 +660,9 @@ fn main() {
                     }
                     if sh.change_node.load(Ordering::SeqCst) {
                         log(&format!("changement de Nœud demandé (tableau de bord, identité {})", id.num));
-                        restart_with(CHANGE_NODE_ENV, &id.dir);
-                        *flow = ControlFlow::Exit;
-                        return;
+                        drop(sh);
+                        begin_change(&rt, i, id, proxy.clone());
+                        continue;
                     }
                     let v = daemon::tray_view(&sh);
                     if id.last.as_ref() != Some(&v) {

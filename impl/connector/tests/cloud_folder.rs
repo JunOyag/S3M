@@ -72,7 +72,7 @@ fn folder_shows_placeholders_hydrates_and_records_local_changes() {
     let drive = Arc::new(Mutex::new(d));
     let writes = Arc::new(Mutex::new(Vec::<String>::new()));
     let w = writes.clone();
-    s3m_connector::cloud_folder::start(
+    let stop = s3m_connector::cloud_folder::start(
         &root,
         drive.clone(),
         Arc::new(move |p, _| w.lock().unwrap().push(p.to_string())),
@@ -141,6 +141,16 @@ fn folder_shows_placeholders_hydrates_and_records_local_changes() {
     assert_eq!(
         std::fs::read(root.join("docs").join("distant.txt")).unwrap(),
         b"d'ailleurs"
+    );
+
+    // Arrêt sans quitter le processus : fils terminés, dossier déconnecté,
+    // lecteur relâché.
+    assert!(Arc::strong_count(&drive) > 1);
+    stop();
+    assert_eq!(
+        Arc::strong_count(&drive),
+        1,
+        "lecteur relâché par le dossier"
     );
 
     let _ = s3m_connector::cloud_folder::unregister(&root);

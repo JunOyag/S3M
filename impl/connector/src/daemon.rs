@@ -514,6 +514,10 @@ pub struct Shared {
     pub share_client: Option<Arc<crate::exchange::BlockClient>>,
     /// Démarrage du Connecteur (instant Unix).
     pub started_at: u64,
+    /// Tâches de fond, annulées par [`stop`].
+    pub tasks: Mutex<Vec<tokio::task::AbortHandle>>,
+    /// Arrêts du lecteur, du dossier synchronisé et du tableau de bord.
+    pub stoppers: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
 }
 
 fn queue_status(c: &Config) -> Value {
@@ -1009,7 +1013,7 @@ fn status_base(sh: &Shared) -> Value {
                         "adresse d'administration": "Facultatif : par défaut, IP du Nœud et port 4003" } },
             { "nom": "change_node", "titre": "Changer de Nœud",
               "libellé": "Changer de Nœud", "champs": ["je confirme"], "types": { "je confirme": "bool" },
-              "aide": { "je confirme": "S3m redémarre sur l'assistant (votre identité est conservée). L'ancienne configuration et les données locales sont mises de côté, pas effacées." } }
+              "aide": { "je confirme": "Cette identité s'arrête puis l'assistant de choix du Nœud s'ouvre (votre identité est conservée) ; les autres identités continuent. L'ancienne configuration et les données locales sont mises de côté, pas effacées." } }
         ]
     })
 }
@@ -1145,7 +1149,7 @@ fn attached_at(dir: &Path, now: u64) -> u64 {
 /// Entrée DHT User : restauration de la racine, preuve VDF, publication à
 /// chaque nouvelle racine.
 fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], salt: Vec<u8>) {
-    tokio::spawn(async move {
+    spawn_tracked(&sh.clone(), async move {
         let bootstrap: Vec<Multiaddr> = sh
             .config
             .dht_bootstrap
@@ -1250,7 +1254,7 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
 pub fn sync_now(sh: &Arc<Shared>) {
     let sh = sh.clone();
     sh.scheduler.lock().unwrap().sync_now();
-    tokio::spawn(async move {
+    spawn_tracked(&sh.clone(), async move {
         watch_once(&sh).await;
         let s2 = sh.clone();
         let _ = tokio::task::spawn_blocking(move || sync_drive(&s2)).await;
@@ -1764,6 +1768,8 @@ pub async fn start(
         shares: crate::share_ops::load(&config.data_dir),
         share_client: crate::exchange::BlockClient::start().ok().map(Arc::new),
         started_at: clock(),
+        tasks: Mutex::new(Vec::new()),
+        stoppers: Mutex::new(Vec::new()),
         node_entry_read_at: Mutex::new(0),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),
@@ -1779,13 +1785,19 @@ pub async fn start(
         clock,
     });
     crate::share_ops::install_tree(&shared);
+    // Références faibles : le tableau de bord ne retient pas une identité
+    // arrêtée.
     let st_fn: StatusFn = {
-        let sh = shared.clone();
-        Arc::new(move || status(&sh))
+        let weak = Arc::downgrade(&shared);
+        Arc::new(move || match weak.upgrade() {
+            Some(sh) => status(&sh),
+            None => json!({ "titre": "Identité arrêtée" }),
+        })
     };
     let act_fn: ActionFn = {
-        let sh = shared.clone();
+        let weak = Arc::downgrade(&shared);
         Arc::new(move |name, v| {
+            let sh = weak.upgrade().ok_or("identité arrêtée")?;
             if let Some(r) = crate::share_ops::action(&sh, name, &v) {
                 return r;
             }
@@ -1813,21 +1825,27 @@ pub async fn start(
                     sh.change_node
                         .store(true, std::sync::atomic::Ordering::SeqCst);
                     Ok(
-                        json!({ "ok": true, "message": "S3m redémarre et ouvre l'assistant de choix du Nœud…" }),
+                        json!({ "ok": true, "message": "Cette identité s'arrête puis l'assistant de choix du Nœud s'ouvre…" }),
                     )
                 }
                 _ => Err(format!("action inconnue : {name}")),
             }
         })
     };
-    let url = local_http::serve(
+    let (url, server) = local_http::serve_with_map(
         config.api_port,
         st_fn,
         act_fn,
+        None,
         ASSETS,
         Some(&config.data_dir),
     )
     .await?;
+    shared
+        .stoppers
+        .lock()
+        .unwrap()
+        .push(Box::new(move || server.abort()));
     if !config.dht_bootstrap.is_empty() {
         spawn_user_entry(shared.clone(), priv_user, pub_node, salt.clone());
     }
@@ -1836,7 +1854,7 @@ pub async fn start(
         // Écriture différée : synchronisation quand un fichier modifié
         // atteint son échéance (`protocols.ecriture-differee`).
         let sh = shared.clone();
-        tokio::spawn(async move {
+        spawn_tracked(&shared, async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 if sh.paused.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1861,7 +1879,7 @@ pub async fn start(
         });
     }
     let sh = shared.clone();
-    tokio::spawn(async move {
+    spawn_tracked(&shared, async move {
         loop {
             watch_once(&sh).await;
             emergency_tick(&sh).await;
@@ -1871,7 +1889,7 @@ pub async fn start(
     });
     // Messages du Nœud : relevés toutes les 30 s quand il est joignable.
     let sh = shared.clone();
-    tokio::spawn(async move {
+    spawn_tracked(&shared, async move {
         loop {
             tokio::time::sleep(Duration::from_secs(MESSAGES_POLL_S)).await;
             let reachable = sh.health.lock().unwrap().reachable == Some(true);
@@ -1881,6 +1899,46 @@ pub async fn start(
         }
     });
     Ok((shared, url))
+}
+
+/// Lance une tâche de fond annulée par [`stop`].
+fn spawn_tracked<F>(sh: &Shared, f: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let h = tokio::spawn(f);
+    let mut t = sh.tasks.lock().unwrap();
+    t.retain(|x| !x.is_finished());
+    t.push(h.abort_handle());
+}
+
+/// Arrête l'identité sans quitter S3m (changement de Nœud) : tâches de
+/// fond annulées, synchronisation en cours menée à son terme (60 s au
+/// plus), lecteur démonté ou dossier synchronisé déconnecté, tableau de
+/// bord fermé. Les fichiers de l'identité sont ensuite libres (mise de
+/// côté de sa configuration) une fois la dernière référence relâchée.
+pub async fn stop(sh: Arc<Shared>) {
+    use std::sync::atomic::Ordering::SeqCst;
+    sh.paused.store(true, SeqCst);
+    for t in sh.tasks.lock().unwrap().drain(..) {
+        t.abort();
+    }
+    for _ in 0..600 {
+        if !sh.syncing.load(SeqCst) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let stoppers: Vec<_> = sh.stoppers.lock().unwrap().drain(..).collect();
+    *sh.remount.lock().unwrap() = None;
+    let _ = tokio::task::spawn_blocking(move || {
+        for s in stoppers {
+            s();
+        }
+    })
+    .await;
+    // Laisse les tâches annulées relâcher leurs références.
+    tokio::time::sleep(Duration::from_millis(300)).await;
 }
 
 /// WinFsp installé (dossier standard ou `WINFSP_DIR`) ?
@@ -2109,7 +2167,9 @@ fn mount_folder(sh: &Arc<Shared>) -> bool {
             }
         }
     }
-    let r = crate::cloud_folder::start(&root, drive, on_write);
+    let r = crate::cloud_folder::start(&root, drive, on_write).map(|stop| {
+        sh.stoppers.lock().unwrap().push(stop);
+    });
     if r.is_ok() {
         if let Some(dir) = sh.config.source.as_deref().and_then(Path::parent) {
             let _ = std::fs::write(dir.join(LAST_FOLDER_FILE), root.display().to_string());
@@ -2141,7 +2201,13 @@ fn mount_drive(sh: &Arc<Shared>) {
     let clock = sh.clock.clone();
     let sh2 = sh.clone();
     let (tx, rx) = std::sync::mpsc::channel();
-    *sh.remount.lock().unwrap() = Some(tx);
+    *sh.remount.lock().unwrap() = Some(tx.clone());
+    sh.stoppers.lock().unwrap().push(Box::new(move || {
+        let (rtx, rrx) = std::sync::mpsc::channel();
+        if tx.send((String::new(), rtx)).is_ok() {
+            let _ = rrx.recv_timeout(Duration::from_secs(30));
+        }
+    }));
     std::thread::spawn(move || {
         let session = sh2.session.clone();
         let on_write: crate::winfsp_backend::WriteHook = Arc::new(move |path, size| {
@@ -2167,6 +2233,12 @@ fn mount_drive(sh: &Arc<Shared>) {
             if let Some(mut h) = host.take() {
                 h.stop();
                 h.unmount();
+            }
+            // Arrêt de l'identité : lecteur démonté, fil terminé.
+            if letter.is_empty() {
+                sh2.drive_status.lock().unwrap().mounted = false;
+                let _ = reply.send(Ok(()));
+                return;
             }
             match mount(&letter) {
                 Some(h) => {

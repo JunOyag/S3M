@@ -104,5 +104,6 @@ pub async fn serve_remote(session: RemoteSession) -> Result<String, String> {
     };
     local_http::serve_with_map(0, st_fn, act_fn, Some(map_fn), ASSETS, None)
         .await
+        .map(|(url, _)| url)
         .map_err(|e| e.to_string())
 }
