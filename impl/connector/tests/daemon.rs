@@ -144,3 +144,38 @@ fn drive_letter_is_normalised_and_system_disk_refused() {
     assert!(parse_drive_letter("1").is_err());
     assert!(parse_drive_letter("").is_err());
 }
+
+#[test]
+fn stale_folders_spares_folders_in_use() {
+    use s3m_connector::daemon::{stale_folders, LAST_FOLDER_FILE};
+    use std::path::PathBuf;
+    let dir = std::env::temp_dir().join(format!("s3m-stale-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(LAST_FOLDER_FILE), r"D:\Cloud\Titi").unwrap();
+    let cfg = |name: &str, folder: &str| {
+        std::fs::write(
+            dir.join(name),
+            serde_json::json!({ "folder": folder }).to_string(),
+        )
+        .unwrap()
+    };
+    cfg("connector.17.json", r"D:\Cloud\Toto");
+    // Parent d'un dossier en usage, dossier en usage (casse, barre finale).
+    cfg("connector.18.json", r"D:\Cloud");
+    cfg("connector.19.json", r"D:\Cloud\2\");
+    // Configuration active : pas un ancien dossier.
+    cfg("connector.json", r"D:\Cloud\Zut");
+    let mut got = stale_folders(
+        &dir,
+        &[PathBuf::from(r"D:\Cloud\1"), PathBuf::from(r"d:\cloud\2")],
+    );
+    got.sort();
+    assert_eq!(
+        got,
+        vec![
+            PathBuf::from(r"D:\Cloud\Titi"),
+            PathBuf::from(r"D:\Cloud\Toto")
+        ]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}

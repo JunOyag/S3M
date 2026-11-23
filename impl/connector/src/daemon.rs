@@ -1908,6 +1908,79 @@ fn set_access(sh: &Shared, v: &Value) -> Result<Value, String> {
     Ok(json!({ "ok": true, "message": "Enregistré : quittez puis relancez S3m pour l'appliquer" }))
 }
 
+/// Fichier, à côté de la configuration, du dernier dossier synchronisé
+/// connecté.
+pub const LAST_FOLDER_FILE: &str = "dossier-precedent.txt";
+
+/// Anciens dossiers synchronisés de cette identité à retirer : dernier
+/// dossier connecté et dossiers des configurations mises de côté, hors
+/// dossiers en usage (`current`, toutes identités) et hors dossiers qui
+/// contiennent ou sont contenus dans un dossier en usage.
+pub fn stale_folders(config_dir: &Path, current: &[PathBuf]) -> Vec<PathBuf> {
+    let norm = |p: &Path| {
+        p.to_string_lossy()
+            .trim_end_matches(['\\', '/'])
+            .to_lowercase()
+    };
+    let mut found: Vec<PathBuf> = Vec::new();
+    if let Ok(t) = std::fs::read_to_string(config_dir.join(LAST_FOLDER_FILE)) {
+        if !t.trim().is_empty() {
+            found.push(PathBuf::from(t.trim()));
+        }
+    }
+    if let Ok(rd) = std::fs::read_dir(config_dir) {
+        for e in rd.flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with("connector.") && n.ends_with(".json") && n != "connector.json" {
+                let f = std::fs::read(e.path())
+                    .ok()
+                    .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                    .and_then(|v| v.get("folder")?.as_str().map(PathBuf::from));
+                found.extend(f);
+            }
+        }
+    }
+    let cur: Vec<String> = current.iter().map(|p| norm(p)).collect();
+    let mut out: Vec<PathBuf> = Vec::new();
+    for f in found {
+        let n = norm(&f);
+        let related = cur.iter().any(|c| {
+            *c == n || c.starts_with(&format!("{n}\\")) || n.starts_with(&format!("{c}\\"))
+        });
+        if !n.is_empty() && !related && !out.iter().any(|o| norm(o) == n) {
+            out.push(f);
+        }
+    }
+    out
+}
+
+/// Dossiers synchronisés en usage par toutes les identités de ce poste.
+fn folders_in_use(c: &Config) -> Vec<PathBuf> {
+    let mut out = vec![folder_path(c)];
+    let Some(src) = c.source.as_deref() else {
+        return out;
+    };
+    let Some(dir) = src.parent() else { return out };
+    let base = match identity_number(src) {
+        Some(_) => dir.parent().and_then(Path::parent).unwrap_or(dir),
+        None => dir,
+    };
+    let mut cfgs = vec![base.join("connector.json")];
+    if let Ok(rd) = std::fs::read_dir(base.join("identites")) {
+        cfgs.extend(rd.flatten().map(|e| e.path().join("connector.json")));
+    }
+    for p in cfgs {
+        if let Some(f) = std::fs::read(&p)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+            .and_then(|v| v.get("folder")?.as_str().map(PathBuf::from))
+        {
+            out.push(f);
+        }
+    }
+    out
+}
+
 /// Connecte le dossier synchronisé (mode dossier, Windows).
 #[cfg(all(windows, feature = "folder"))]
 fn mount_folder(sh: &Arc<Shared>) -> bool {
@@ -1920,7 +1993,23 @@ fn mount_folder(sh: &Arc<Shared>) -> bool {
         sched.lock().unwrap().on_write(path, size, clock());
     });
     let root = folder_path(&sh.config);
+    // Ancien dossier (choix changé) : retiré de Windows, sinon il resterait
+    // un dossier synchronisé sans Connecteur, en erreur à l'ouverture.
+    if let Some(dir) = sh.config.source.as_deref().and_then(Path::parent) {
+        for old in stale_folders(dir, &folders_in_use(&sh.config)) {
+            match crate::cloud_folder::retire(&old) {
+                Ok(true) => eprintln!("ancien dossier synchronisé retiré : {}", old.display()),
+                Ok(false) => {}
+                Err(e) => eprintln!("ancien dossier {} : {e}", old.display()),
+            }
+        }
+    }
     let r = crate::cloud_folder::start(&root, drive, on_write);
+    if r.is_ok() {
+        if let Some(dir) = sh.config.source.as_deref().and_then(Path::parent) {
+            let _ = std::fs::write(dir.join(LAST_FOLDER_FILE), root.display().to_string());
+        }
+    }
     let mut st = sh.drive_status.lock().unwrap();
     st.mounted = r.is_ok();
     st.folder = r.is_ok().then(|| root.display().to_string());

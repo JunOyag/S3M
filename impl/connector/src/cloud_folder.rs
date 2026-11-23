@@ -656,6 +656,58 @@ unsafe extern "system" fn on_rename(
     }
 }
 
+// ------------------------------------------------------------ retrait
+
+/// Retire un ancien dossier synchronisé : fantômes à jour supprimés (leur
+/// contenu est dans S3m), fichiers non synchronisés rendus ordinaires et
+/// conservés, puis dossier désinscrit de Windows. `Ok(false)` : ce n'était
+/// pas un dossier synchronisé.
+pub fn retire(root: &Path) -> Result<bool, String> {
+    let w = wide(root.as_os_str());
+    let mut buf = [0u8; 1024];
+    let registered = unsafe {
+        CfGetSyncRootInfoByPath(
+            PCWSTR(w.as_ptr()),
+            CF_SYNC_ROOT_INFO_BASIC,
+            buf.as_mut_ptr() as *mut c_void,
+            buf.len() as u32,
+            None,
+        )
+    }
+    .is_ok();
+    if !registered {
+        return Ok(false);
+    }
+    fn clean(dir: &Path) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
+                clean(&p);
+            }
+            let state = open(&p, false).ok().and_then(|f| placeholder_state(&f));
+            let gone = match (state, is_dir) {
+                (Some(true), false) => std::fs::remove_file(&p).is_ok(),
+                (_, true) => std::fs::remove_dir(&p).is_ok(),
+                _ => false,
+            };
+            if !gone && state.is_some() {
+                if let Ok(f) = open(&p, true).or_else(|_| open(&p, false)) {
+                    let _ = unsafe { CfRevertPlaceholder(handle(&f), CF_REVERT_FLAG_NONE, None) };
+                }
+            }
+        }
+    }
+    clean(root);
+    unsafe { CfUnregisterSyncRoot(PCWSTR(w.as_ptr())) }
+        .map_err(|e| format!("désinscription refusée par Windows : {e}"))?;
+    let _ = std::fs::remove_dir(root);
+    Ok(true)
+}
+
 // ------------------------------------------------------------ démarrage
 
 /// Enregistre et connecte le dossier `root`, puis lance la surveillance des
