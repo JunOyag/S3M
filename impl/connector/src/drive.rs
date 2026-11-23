@@ -262,6 +262,34 @@ fn join(dir: &str, name: &str) -> String {
     }
 }
 
+/// « dossier/nom (conflit AAAA-MM-JJ HHhMM).ext », unique parmi `taken`.
+fn conflict_name(path: &str, now: u64, taken: &[String]) -> String {
+    let (dir, file) = path.rsplit_once('/').unwrap_or(("", path));
+    let (stem, ext) = match file.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s, format!(".{e}")),
+        _ => (file, String::new()),
+    };
+    // Date civile UTC (algorithme de H. Hinnant).
+    let z = (now / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    let (h, mi) = ((now % 86_400) / 3600, (now % 3600) / 60);
+    let base = format!("{dir}/{stem} (conflit {y}-{m:02}-{d:02} {h:02}h{mi:02})");
+    let mut name = format!("{base}{ext}");
+    let mut n = 2;
+    while taken.contains(&name) {
+        name = format!("{base} {n}{ext}");
+        n += 1;
+    }
+    name
+}
+
 fn is_under(path: &str, ancestor: &str) -> bool {
     ancestor == "/" && path != "/"
         || path.len() > ancestor.len()
@@ -399,6 +427,91 @@ impl Drive {
         self.root = root;
         self.persist()?;
         Ok(true)
+    }
+
+    /// Élément de l'arborescence `root` (sans les modifications locales).
+    fn lookup_in(&mut self, root: &Root, path: &str) -> Result<Option<Entry>, DriveError> {
+        if root.fs_root_hash == NO_ROOT {
+            return Ok(None);
+        }
+        match self.with_volume(root.clone(), |v| v.lookup(path)) {
+            Err(DriveError::Access(AccessError::NotFound(_))) => Ok(None),
+            Err(DriveError::Access(AccessError::NotADirectory(_))) => Ok(None),
+            r => r,
+        }
+    }
+
+    /// Résolution d'un conflit (`protocols.write-queue#resolution-de-conflit`) :
+    /// la racine `root` écrite par un autre appareil devient la base, et les
+    /// modifications locales sont rejouées par-dessus. Un élément modifié
+    /// des deux côtés : le plus récent (`modified_at`) gagne, l'autre est
+    /// gardé à côté (« nom (conflit …) »). Une suppression locale ne
+    /// l'emporte que si l'élément n'a pas changé de l'autre côté. Rend les
+    /// copies de conflit créées.
+    pub fn rebase(&mut self, root: Root, now: u64) -> Result<Vec<String>, DriveError> {
+        if root.fs_root_hash == NO_ROOT {
+            return Err(DriveError::Conflict);
+        }
+        let old = self.root.clone();
+        let changes = self.journal.changes.clone();
+        let mut before = BTreeMap::new();
+        for p in changes.keys() {
+            before.insert(p.clone(), self.lookup_in(&old, p)?);
+        }
+        self.root = root.clone();
+        self.journal.fs_root_hash = hex::encode(root.fs_root_hash);
+        self.journal.encryption_salt = hex::encode(root.encryption_salt);
+        self.journal.key_version = root.key_version;
+        let mut copies = Vec::new();
+        for (p, ch) in changes {
+            let now_remote = self.lookup_in(&root, &p)?;
+            let was = before.remove(&p).flatten();
+            // Inchangé de l'autre côté : la modification locale s'applique.
+            let untouched = match (&was, &now_remote) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a.first_block_hash == b.first_block_hash,
+                _ => false,
+            };
+            if untouched {
+                continue;
+            }
+            match (ch, now_remote) {
+                (Change::Deleted, Some(_)) => {
+                    // Modifié ailleurs entre-temps : gardé.
+                    self.journal.changes.remove(&p);
+                }
+                (Change::Dir { .. }, Some(r)) if r.mime_type == DIRECTORY_MIME => {
+                    // Dossier créé des deux côtés : celui du Nœud, avec son
+                    // contenu (les ajouts locaux dedans restent).
+                    self.journal.changes.remove(&p);
+                }
+                (
+                    ch @ Change::File {
+                        modified_at: local, ..
+                    },
+                    Some(r),
+                ) => {
+                    let name = conflict_name(&p, now, &copies);
+                    if r.mime_type != DIRECTORY_MIME && r.modified_at <= local {
+                        // Local plus récent : la version du Nœud est gardée à côté.
+                        self.journal
+                            .changes
+                            .insert(name.clone(), Change::Moved(SavedEntry::from(&r)));
+                    } else {
+                        // Version du Nœud plus récente (ou dossier) : la locale
+                        // est gardée à côté.
+                        self.journal.changes.remove(&p);
+                        self.journal.changes.insert(name.clone(), ch);
+                    }
+                    copies.push(name);
+                }
+                _ => {}
+            }
+        }
+        self.conflict = None;
+        self.journal.revision += 1;
+        self.persist()?;
+        Ok(copies)
     }
 
     /// Nombre de modifications en attente.
@@ -931,7 +1044,10 @@ impl Drive {
                     );
                 }
                 Some(Change::Moved(e)) => {
-                    entries.insert(name.clone(), Entry::from(&e));
+                    // Le nom est celui de l'emplacement (copie de conflit).
+                    let mut en = Entry::from(&e);
+                    en.name = name.clone();
+                    entries.insert(name.clone(), en);
                 }
                 Some(Change::Dir { created_at }) => {
                     entries.insert(

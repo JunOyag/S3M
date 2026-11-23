@@ -42,6 +42,23 @@ appareil a écrit entre-temps. Résolution par **dernier écrit gagne**
 élément concerné — le fichier perdant est conservé hors arborescence
 (suffixe de conflit) plutôt que silencieusement écrasé.
 
+Précisions d'implémentation (2026-11-23) :
+
+- La racine écrite par l'autre appareil (et le sel qui permet de la lire)
+  est relue dans l'entrée User
+  ([`network.UserEntryPlaintext`](../02-schemas/network/UserEntryPlaintext.md)) ;
+  si l'annuaire ne la donne pas encore, nouvel essai à la synchronisation
+  suivante.
+- Les modifications locales sont rejouées sur cette racine. Un élément
+  modifié d'un seul côté prend cette modification ; modifié des deux, le
+  `modified_at` le plus récent gagne et l'autre version est gardée sous
+  « nom (conflit AAAA-MM-JJ HHhMM).ext » (UTC). Une suppression locale ne
+  s'applique que si l'élément n'a pas changé de l'autre côté. Un dossier
+  créé des deux côtés est fusionné.
+- Cas particulier : un espace local neuf (changement de Nœud, nouvel
+  appareil) qui a déjà des modifications avant d'avoir lu la racine se
+  résout de la même façon, sans copie s'il n'y a pas de collision.
+
 ## Taille limite {: #taille-limite }
 
 `Q_max = 4 GiO` par défaut, paramétrable via le dashboard Connecteur. Ce

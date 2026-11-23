@@ -458,6 +458,8 @@ pub struct DriveStatus {
     pub mount_error: Option<String>,
     pub last_sync: Option<u64>,
     pub last_sync_error: Option<String>,
+    /// Copies gardées lors de la dernière résolution de conflit.
+    pub conflict_copies: Vec<String>,
 }
 
 /// Observations de la surveillance.
@@ -1156,6 +1158,7 @@ fn drive_status(sh: &Shared) -> Value {
         "dernière synchronisation": st.last_sync,
         "erreur de synchronisation": st.last_sync_error,
         "conflit (racine du Nœud)": conflict,
+        "copies de conflit (dernière résolution)": st.conflict_copies.clone(),
     })
 }
 
@@ -1664,11 +1667,50 @@ pub fn tray_view(sh: &Shared) -> TrayView {
 }
 
 /// Synchronise le lecteur (appel bloquant).
+/// Racine écrite par un autre appareil, lue dans l'entrée User : rejoue
+/// les modifications locales dessus. `None` si l'annuaire ne la donne pas
+/// (pas encore publiée, injoignable) : nouvel essai à la synchronisation
+/// suivante.
+fn resolve_conflict(sh: &Shared, drive: &mut crate::drive::Drive) -> Option<Vec<String>> {
+    let current = drive.conflict?;
+    let client = sh.dht.get()?.clone();
+    let rt = tokio::runtime::Handle::try_current().ok()?;
+    let plain = rt.block_on(crate::publish::read_user_entry(
+        &client,
+        &sh.priv_user,
+        &sh.pub_user,
+    ))?;
+    if plain.fs_root_hash != current {
+        return None;
+    }
+    drive
+        .rebase(
+            Root {
+                fs_root_hash: plain.fs_root_hash,
+                encryption_salt: plain.encryption_salt,
+                key_version: plain.key_version,
+            },
+            (sh.clock)(),
+        )
+        .ok()
+}
+
 pub fn sync_drive(sh: &Shared) -> Option<Result<usize, DriveError>> {
     let d = sh.drive.as_ref()?;
     let mut drive = d.lock().unwrap();
     sh.syncing.store(true, std::sync::atomic::Ordering::Relaxed);
-    let r = drive.sync();
+    let mut r = drive.sync();
+    // Conflit : un autre appareil a écrit. Sa racine (et son sel) est relue
+    // dans l'entrée User ; les modifications locales sont rejouées dessus.
+    if matches!(r, Err(DriveError::Conflict)) {
+        if let Some(copies) = resolve_conflict(sh, &mut drive) {
+            if !copies.is_empty() {
+                eprintln!("conflit résolu, copies gardées : {}", copies.join(", "));
+                sh.drive_status.lock().unwrap().conflict_copies = copies;
+            }
+            r = drive.sync();
+        }
+    }
     sh.syncing
         .store(false, std::sync::atomic::Ordering::Relaxed);
     let mut st = sh.drive_status.lock().unwrap();
@@ -2345,6 +2387,7 @@ pub fn stale_folders(config_dir: &Path, current: &[PathBuf]) -> Vec<PathBuf> {
 }
 
 /// Dossiers synchronisés en usage par toutes les identités de ce poste.
+#[cfg_attr(not(all(windows, feature = "folder")), allow(dead_code))]
 fn folders_in_use(c: &Config) -> Vec<PathBuf> {
     // Le dossier de cette identité n'est en usage qu'en mode dossier : passée
     // en lecteur, son ancien dossier est retiré.
@@ -2391,6 +2434,7 @@ fn retire_stale_folders(sh: &Shared) {
 }
 
 #[cfg(not(all(windows, feature = "folder")))]
+#[allow(dead_code)]
 fn retire_stale_folders(_: &Shared) {}
 
 /// Instants de téléchargement du dossier synchronisé (données de l'identité).
@@ -2474,6 +2518,7 @@ fn keep_action(_: &Shared, _: &Value, _: bool) -> Result<Value, String> {
 }
 
 /// Écrit une clé de `connector.json`.
+#[cfg_attr(not(all(windows, feature = "folder")), allow(dead_code))]
 fn write_config_key(sh: &Shared, key: &str, value: Value) -> Result<(), String> {
     let path = sh
         .config

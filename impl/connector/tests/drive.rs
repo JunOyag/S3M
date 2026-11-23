@@ -250,3 +250,86 @@ fn a_later_change_supersedes_the_emergency_tree() {
     assert_ne!(d.root_hash(), b.root.fs_root_hash);
     assert_eq!(d.read("/a.txt", 0, 10).unwrap(), b"2");
 }
+
+/// Résolution d'un conflit (`protocols.write-queue#resolution-de-conflit`) :
+/// la racine d'un autre appareil devient la base, les modifications locales
+/// sont rejouées ; modifié des deux côtés, le plus récent gagne et l'autre
+/// est gardé à côté.
+#[test]
+fn conflict_is_resolved_by_replaying_local_changes_on_the_new_root() {
+    let node = Arc::new(MemNode::default());
+    let open = |ws: &str, t: u64| {
+        Drive::open(node.clone(), [9; 32], workspace(ws), Arc::new(move || t)).unwrap()
+    };
+    // Appareil A : état de départ partagé.
+    let mut a = open("rebase-a", 1_000);
+    for (p, c) in [
+        ("/commun.txt", "départ"),
+        ("/a.txt", "a"),
+        ("/supprime.txt", "x"),
+    ] {
+        a.create(p, false).unwrap();
+        a.write(p, 0, c.as_bytes()).unwrap();
+    }
+    a.sync().unwrap();
+    // Appareil B, à jour, modifie plus tard (3 000) qu'A (2 000).
+    let mut b = open("rebase-b", 3_000);
+    assert!(b.adopt_root(a.root()).unwrap());
+    b.set_size("/commun.txt", 0).unwrap();
+    b.write("/commun.txt", 0, b"version B").unwrap();
+    b.create("/b.txt", false).unwrap();
+    b.write("/b.txt", 0, b"b").unwrap();
+    b.remove("/supprime.txt").unwrap();
+    // A écrit d'abord.
+    let mut a2 = open("rebase-a2", 2_000);
+    assert!(a2.adopt_root(a.root()).unwrap());
+    a2.set_size("/commun.txt", 0).unwrap();
+    a2.write("/commun.txt", 0, b"version A").unwrap();
+    a2.create("/a2.txt", false).unwrap();
+    a2.sync().unwrap();
+    assert!(matches!(b.sync(), Err(DriveError::Conflict)));
+    // 2026-11-23 13:10:43 UTC.
+    let copies = b.rebase(a2.root(), 1_795_439_443).unwrap();
+    assert_eq!(
+        copies,
+        vec!["/commun (conflit 2026-11-23 13h10).txt".to_string()]
+    );
+    b.sync().unwrap();
+    // Un troisième appareil voit la fusion.
+    let mut c = open("rebase-c", 4_000);
+    assert!(c.adopt_root(b.root()).unwrap());
+    let mut n = names(&mut c, "/");
+    n.sort();
+    assert_eq!(
+        n,
+        vec![
+            "a.txt",
+            "a2.txt",
+            "b.txt",
+            "commun (conflit 2026-11-23 13h10).txt",
+            "commun.txt"
+        ]
+    );
+    assert_eq!(
+        c.read("/commun.txt", 0, 100).unwrap(),
+        b"version B",
+        "le plus récent gagne"
+    );
+    assert_eq!(
+        c.read("/commun (conflit 2026-11-23 13h10).txt", 0, 100)
+            .unwrap(),
+        b"version A",
+        "l'autre est gardé à côté"
+    );
+
+    // Nouvel espace local vide (changement de Nœud) avec un fichier : rejoué
+    // sur la racine existante, sans copie.
+    let mut fresh = open("rebase-fresh", 5_000);
+    fresh.create("/logo.png", false).unwrap();
+    fresh.write("/logo.png", 0, b"png").unwrap();
+    assert!(matches!(fresh.sync(), Err(DriveError::Conflict)));
+    assert!(fresh.rebase(b.root(), 5_000).unwrap().is_empty());
+    fresh.sync().unwrap();
+    assert!(names(&mut fresh, "/").contains(&"logo.png".to_string()));
+    assert!(names(&mut fresh, "/").contains(&"b.txt".to_string()));
+}
