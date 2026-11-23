@@ -649,3 +649,33 @@ automatique au démarrage d'une installation vide. Page
 d'une installation vide (seed + `bootstrap` DHT). La racine courante de
 chaque Utilisateur n'étant pas dans le NodeManifest, sa première validation
 après restauration est adoptée telle quelle.
+
+## securite.blacklist-fraude — Fragment introuvable : fraude ou perte ?
+
+**Constat** (2026-11-23) : la page ne qualifie de fraude que la « réponse
+PoS incorrecte (hash renvoyé ≠ attendu) » ; l'implémentation traite aussi
+un fragment **introuvable** (refus `NotFound`) comme une fraude, et c'est
+ce cas qui porte la « réciprocité différée ». Sur le réseau d'essai, une
+seule perte non frauduleuse (erreur d'implémentation : avis d'effacement
+envoyé pour un fragment encore attendu, corrigée en d163fb1) a suffi à
+déclencher des ruptures en cascade : chaque rupture efface en silence les
+fragments du partenaire, qui accuse à son tour, et ainsi de suite.
+Une liste noire vidée à la main (dashboard, `blacklist-clear`) ne casse pas
+la chaîne : le partenaire, lui, ne sait rien et accuse au contrôle suivant.
+
+**Question** : un fragment introuvable doit-il rester une fraude (rupture
+immédiate, liste noire permanente) ? Options :
+1. **Perte, pas fraude** (recommandé) : fragment replacé ailleurs, échec
+   PoS compté dans le score (fiabilité), retrait du partenariat par le
+   score s'il se répète ; seule une réponse au hash incorrect reste une
+   fraude. La réciprocité passe alors par les échecs comptés, sans cascade.
+2. **Rupture notifiée** : garder la rupture, mais l'annoncer au partenaire
+   par un avis signé, pour qu'il oublie les fragments qu'il nous avait
+   confiés au lieu de nous accuser.
+3. **Statu quo** : cascade possible après toute perte accidentelle.
+
+**Impact si non résolu** : une perte accidentelle (disque, erreur) se
+propage en ruptures sur tout le voisinage ; réseau d'essai réparé à la main
+par `impl/essais/reconcilier-noeuds.ps1`.
+
+**Résolution** : *(en attente d'arbitrage)*

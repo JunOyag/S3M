@@ -5,6 +5,10 @@
 //! s3m-node init <répertoire> --identite
 //!                              crée aussi une identité neuve (node.seed), sans
 //!                              assistant : Nœuds d'essai créés par script
+//! s3m-node essais-reconcilier <racine>
+//!                              Nœuds d'essai arrêtés de <racine>\node* :
+//!                              fragments introuvables chez leur détenteur
+//!                              oubliés, listes noires vidées
 //! s3m-node blacklist-clear <config.json>
 //!                              vide la liste noire (Nœud arrêté)
 //! s3m-node <config.json>       démarre le Nœud (premier lancement : identité
@@ -167,6 +171,90 @@ fn blacklist_clear(config: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Remise en cohérence des Nœuds d'essai (tous arrêtés, même machine) :
+/// chaque fragment que l'un croit chez un autre est vérifié dans le
+/// stockage de ce dernier ; introuvable, il est oublié (la réparation le
+/// replace). Les listes noires sont ensuite vidées.
+fn reconcile(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use s3m_node::dispersal_engine::DispersalState;
+    use std::collections::{HashMap, HashSet};
+    struct Node {
+        name: String,
+        config: Config,
+        id: String,
+    }
+    let mut nodes = Vec::new();
+    for e in std::fs::read_dir(root)?.flatten() {
+        let cfg = e.path().join("node.json");
+        if !cfg.exists() {
+            continue;
+        }
+        let config = Config::load(&cfg)?;
+        let Ok(phrase) = std::fs::read_to_string(&config.seed_file) else {
+            continue;
+        };
+        let seed = s3m_node::daemon::node_seed_from_mnemonic(&phrase, config.identity_index)?;
+        let id = hex::encode(s3m_core::keys::derive_sig_pub_user(&seed));
+        nodes.push(Node {
+            name: e.file_name().to_string_lossy().into_owned(),
+            config,
+            id,
+        });
+    }
+    // Fragments réellement hébergés : détenteur → {(hash, propriétaire)}.
+    let mut held: HashMap<String, HashSet<(String, String)>> = HashMap::new();
+    for n in &nodes {
+        let db = n.config.data_dir.join("store.sqlite");
+        let mut set = HashSet::new();
+        if db.exists() {
+            let c = rusqlite::Connection::open_with_flags(
+                &db,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )?;
+            let mut q = c.prepare(
+                "SELECT l.block_hash, c.owner_id FROM block_locations l \
+                 JOIN containers c ON c.container_id = l.container_id WHERE c.owner_type = 1",
+            )?;
+            let rows = q.query_map([], |r| {
+                Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?))
+            })?;
+            for r in rows.flatten() {
+                set.insert((hex::encode(r.0), hex::encode(r.1)));
+            }
+        }
+        held.insert(n.id.clone(), set);
+    }
+    for n in &nodes {
+        let path = n.config.data_dir.join("dispersal.json");
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let mut st: DispersalState = serde_json::from_slice(&bytes)?;
+        let mut forgotten = 0;
+        let stripes = st
+            .users
+            .values_mut()
+            .flat_map(|u| u.stripes.iter_mut().chain(u.index.iter_mut()))
+            .chain(st.snapshot.stripe.iter_mut());
+        for s in stripes {
+            let before = s.parity.len();
+            s.parity.retain(|(_, h, p)| match held.get(p) {
+                // Détenteur hors des Nœuds d'essai : laissé tel quel.
+                None => true,
+                Some(set) => set.contains(&(h.clone(), n.id.clone())),
+            });
+            forgotten += before - s.parity.len();
+        }
+        let cleared = st.clear_blacklist();
+        s3m_node::daemon::save_dispersal(&n.config, &st)?;
+        println!(
+            "{} : {forgotten} fragment(s) introuvable(s) oublié(s), {cleared} Nœud(s) retiré(s) de la liste noire",
+            n.name
+        );
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -187,9 +275,10 @@ async fn main() {
             }
         }
         [cmd, config] if cmd == "blacklist-clear" => blacklist_clear(Path::new(config)),
+        [cmd, root] if cmd == "essais-reconcilier" => reconcile(Path::new(root)),
         [config] => run(Path::new(config)).await,
         _ => Err(
-            "usage : s3m-node init <répertoire> [--identite] | geoip-update <répertoire de données> | blacklist-clear <config.json> | <config.json>".into(),
+            "usage : s3m-node init <répertoire> [--identite] | geoip-update <répertoire de données> | blacklist-clear <config.json> | essais-reconcilier <racine> | <config.json>".into(),
         ),
     };
     if let Err(e) = result {
