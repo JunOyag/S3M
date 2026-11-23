@@ -37,10 +37,52 @@ Précisions d'implémentation (2026-11-20, `impl/SPEC_GAPS.md`) :
   (hashes des fragments, demandés par hash). `node_snapshot_root_hash` est
   le hash du bloc 0.
 - **Restauration** : nouvelle installation avec la seule seed (base locale
-  vide, au moins un Nœud d'amorçage DHT) : lecture de sa propre entrée
+  vide ; voir [Restauration automatique](#automatique)) : lecture de sa propre entrée
   Node, reconstruction du snapshot depuis k fragments, puis, pour chaque
   Utilisateur rattaché, lecture de son `DispersalManifest` et
   reconstruction des blocs de données depuis la parité (étape 4).
+
+## Restauration automatique {: #automatique }
+
+Ajout du 2026-11-23. Toute installation vide (ni état ni dispersion)
+démarrée avec une seed existante se restaure seule, sans réglage : une
+identité tout juste créée (assistant, `s3m-node init`) pose un marqueur à
+côté de la seed et saute la restauration. Les étapes, enregistrées sur
+disque et reprises après un redémarrage, s'affichent en tête de la vue
+d'ensemble du dashboard (faite, en cours, à faire, erreur) :
+
+1. identité et preuve VDF ;
+2. Nœuds du réseau joints (réseau local ou Nœuds d'amorçage) ;
+3. entrée DHT Node lue ;
+4. snapshot reconstruit depuis k fragments ;
+5. Utilisateurs, partenaires et liste noire restaurés ;
+6. copie locale de chaque Utilisateur reconstruite depuis la parité,
+   réessayée à chaque cycle jusqu'au succès ;
+7. Utilisateurs repris à leur reconnexion (ci-dessous) ;
+8. restauration complète.
+
+**Gel** : tant que les étapes 3 à 5 n'ont pas abouti, le Nœud ne publie
+rien (entrée DHT Node, snapshot), ne recherche aucun partenaire et ne
+disperse rien — une seed restaurée ne peut plus écraser sa propre
+sauvegarde par un snapshot vide. Si, Nœuds joints, aucune entrée Node (ou
+une entrée sans snapshot) n'est trouvée pendant 10 minutes, le Nœud est
+tenu pour neuf et démarre normalement. Un Utilisateur dont la copie locale
+est en cours de reconstruction est tenu hors des cycles de dispersion ; les
+blocs qu'il envoie entre-temps restent en attente, puis sont dispersés.
+
+### Reprise à la reconnexion {: #reprise }
+
+Un Utilisateur inconnu du Nœud
+dont la demande `Attach`
+([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md#rattachement-automatique-des-utilisateurs))
+porte un identifiant valide est repris, quelle que soit la politique de
+rattachement, si son `DispersalManifest` existe dans la DHT sous
+`K_attach(ce Nœud, Utilisateur, sel)` : seul ce Nœud a pu le publier avec ce
+sel, c'est la preuve d'un rattachement passé. Le Nœud lui attribue le quota
+du rattachement automatique (modifiable), accepte sa prochaine racine telle
+quelle et reconstruit sa copie locale (étape 6). La reprise vaut aussi pour
+une installation existante qui aurait perdu la liste de ses Utilisateurs
+(sauvegarde écrasée) ; elle n'est alors jamais gelée.
 
 ## Procédure de restauration
 

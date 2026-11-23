@@ -96,7 +96,10 @@ Politique du Nœud, réglable dans son dashboard
 quota attribué, nombre maximal d'Utilisateurs rattachés automatiquement,
 budget total. Réponse `Attached` (quota attribué) ou `Failure`
 (`Unauthorized`, `QuotaExceeded`). Le quota de chaque Utilisateur reste
-modifiable à la main.
+modifiable à la main. Un `Attach` d'un ancien Utilisateur du Nœud est repris
+même si la politique le refuse
+([`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md#reprise)) ;
+le Connecteur le renvoie toutes les 10 minutes tant qu'il est refusé.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
