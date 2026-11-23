@@ -1116,8 +1116,8 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "nom": s3m_protocol::pseudo::display(&[s.name.as_deref()], &s.node_id()),
             "empreinte": s3m_protocol::pseudo::fingerprint(&s.node_id()),
             "peer_id": sh.peer_id,
-            "échange de blocs": sh.blocks_addr,
-            "DHT": sh.dht_addr,
+            // Échange de blocs et annuaire partagent la même adresse.
+            "adresse du nœud": sh.blocks_addr.clone().or_else(|| sh.dht_addr.clone()),
             "heure (s)": now,
         },
         "volumes": volumes,
