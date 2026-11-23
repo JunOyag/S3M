@@ -45,8 +45,26 @@ sinon il répond `QuotaExceeded`. Les deux Nœuds déposent donc en
 alternance, l'écart ne dépasse jamais un fragment, et un partenaire qui n'a
 rien à placer ne reçoit rien de plus : l'expéditeur passe au partenaire
 suivant ([`protocols.dispersion-transactionnelle`](../../04-protocols/dispersion-transactionnelle.md#orchestration)).
-Un Nœud sans Utilisateurs n'héberge donc rien. Seul l'espace disque peut
-encore faire refuser un dépôt conforme.
+Seul l'espace disque peut encore faire refuser un dépôt conforme.
+
+**Crédit d'hébergement** (ajout du 2026-11-23) : pour
+stabiliser un petit réseau aux charges inégales, un Nœud peut héberger pour
+un partenaire jusqu'à S fragments de plus que ce que ce partenaire héberge
+pour lui ; la règle devient
+
+`blocks_hosted_by_partner ≤ blocks_hosted_for_partner + 1 + S`
+
+S est un réglage local du Nœud qui reçoit (`partner_policy.credit_blocks`,
+**256 fragments, soit 16 Mio, par défaut** ; 0 = troc strict), appliqué sans
+négociation : l'expéditeur ne connaît pas le crédit de son partenaire et
+passe au suivant sur `QuotaExceeded`. Vu des deux côtés, c'est le même
+réglage : un partenaire peut disperser un peu plus qu'il n'héberge, et un
+Nœud avec peu ou pas d'Utilisateurs héberge un peu plus qu'il ne disperse.
+Aucun crédit n'est accordé à un partenaire exclu des nouveaux placements
+(score sous le seuil de placement ou en retrait,
+[`protocols.partenariat-automatique`](../../04-protocols/partenariat-automatique.md#placement-et-retrait)) :
+avec lui, le troc reste strict. L'exposition d'un Nœud reste bornée à
+S × nombre de partenaires (environ 256 Mio pour 16 partenaires).
 
 Une suppression retire des fragments d'un seul côté : l'écart qui en
 résulte est toléré, et seuls les dépôts suivants, soumis à la même règle,

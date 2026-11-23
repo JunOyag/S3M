@@ -61,7 +61,8 @@ maximal de partenaires, demandeur hors liste noire) et répond
 `PartnershipAnswer` : 0 = refus, toute autre valeur = accepté. Depuis le
 2026-11-21, aucun solde n'est négocié : `allowance_blocks` et
 `granted_blocks` valent 1 et ne bornent rien, l'échange suivant la règle
-d'équilibre de [`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md#equilibre).
+d'équilibre de [`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md#equilibre),
+avec le crédit d'hébergement local de chaque Nœud (ajout du 2026-11-23).
 
 **Partenaires manquants** : si un stripe ne trouve pas coef×k partenaires
 distincts qui acceptent l'échange, le Nœud relève sa cible du nombre
