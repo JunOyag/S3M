@@ -239,6 +239,18 @@ synchronisation courantes :
   locales sont renommés avec un suffixe horodaté, jamais effacés. Si un
   fichier reste ouvert, S3m redémarre entièrement, comme auparavant.
 
+### Explorateur {: #explorateur }
+
+Ajout du 2026-11-23 : page « Explorateur » du dashboard Connecteur
+(`explorer.html`, servie comme la carte du Nœud). Navigation dans l'espace,
+création de dossiers, envoi de fichiers et d'arborescences (bouton ou
+glisser-déposer), téléchargement, renommage et déplacement (y compris par
+glisser-déposer sur un dossier), suppression (dossier avec son contenu),
+partage ([`protocols.partage`](../04-protocols/partage.md)) et, en mode
+dossier, « garder sur cet appareil ». Les contenus transitent par morceaux
+de 512 Kio sur l'API locale ; chaque modification est synchronisée avec le
+Nœud. « Partagés avec moi » y est en lecture seule.
+
 ### Partages {: #partages }
 
 Ajout du 2026-11-22 : page « Partages » du dashboard Connecteur et

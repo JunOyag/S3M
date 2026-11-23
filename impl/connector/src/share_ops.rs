@@ -296,19 +296,19 @@ pub fn status(sh: &Shared, v: &mut Value) {
                 ),
                 (true, false) => (vec!["Retrait en cours de transmission à votre Nœud et à l'annuaire."], vec![]),
             };
-            let pour = g.recipient.as_ref().map(|r| fingerprint_of(r)).unwrap_or_else(|| "lien".into());
+            let pour = g.recipient.as_ref().map(|r| fingerprint_of(r)).unwrap_or_else(|| "Lien public".into());
             let expires = if g.expires_at == 0 { Value::Null } else { json!(g.expires_at) };
             let panel = json!({
                 "titre": format!("Partage de {}", g.path),
                 "texte": texte,
-                "contenu": { "élément": g.path, "type": if g.is_dir { "dossier" } else { "fichier" }, "pour": pour,
+                "contenu": { "élément": g.path, "type": if g.is_dir { "dossier" } else { "fichier" }, "pour (partage)": pour,
                              "créé le": g.created_at, "expire le": expires, "état": state },
                 "formulaires": forms,
             });
             json!({
                 "élément": g.path,
                 "type": if g.is_dir { "dossier" } else { "fichier" },
-                "pour": pour,
+                "pour (partage)": pour,
                 "créé le": g.created_at,
                 "expire le": expires,
                 "état": state,

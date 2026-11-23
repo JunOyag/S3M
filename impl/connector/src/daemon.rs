@@ -612,6 +612,7 @@ pub fn status(sh: &Shared) -> Value {
           "actions": ["sync_now", "free_space", "set_auto_free", "keep_offline"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
+        { "id": "explorateur", "titre": "Explorateur", "cadre": "explorer.html", "sections": [], "actions": [] },
         { "id": "partages", "titre": "Partages",
           "sections": ["partages donnés", "partages reçus"], "actions": ["create_share", "add_received"] },
         { "id": "messages", "titre": "Messages du Nœud",
@@ -1734,6 +1735,16 @@ const ASSETS: &[Asset] = &[
         include_bytes!("../dashboard/logo.png"),
     ),
     (
+        "explorer.html",
+        "text/html; charset=utf-8",
+        include_bytes!("../dashboard/explorer.html"),
+    ),
+    (
+        "explorer.js",
+        "text/javascript; charset=utf-8",
+        include_bytes!("../dashboard/explorer.js"),
+    ),
+    (
         "index.html",
         "text/html; charset=utf-8",
         include_bytes!("../dashboard/index.html"),
@@ -1838,6 +1849,9 @@ pub async fn start(
         let weak = Arc::downgrade(&shared);
         Arc::new(move |name, v| {
             let sh = weak.upgrade().ok_or("identité arrêtée")?;
+            if let Some(r) = crate::explorer::action(&sh, name, &v) {
+                return r;
+            }
             if let Some(r) = crate::share_ops::action(&sh, name, &v) {
                 return r;
             }

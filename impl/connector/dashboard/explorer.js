@@ -1,0 +1,464 @@
+"use strict";
+// Explorateur de l'espace S3m (dashboard Connecteur) : navigation, dossiers,
+// envoi par glisser-déposer, déplacement, téléchargement, partage,
+// suppression, « garder sur cet appareil ».
+
+const token = (() => {
+  const t = new URLSearchParams(location.hash.slice(1)).get("token");
+  try {
+    if (t) localStorage.setItem("s3m-token", t);
+    return t || localStorage.getItem("s3m-token") || "";
+  } catch (_) {
+    return t || "";
+  }
+})();
+
+// Morceau envoyé ou lu (octets), comme `explorer::CHUNK`.
+const CHUNK = 512 * 1024;
+const SHARED = "/Partagés avec moi";
+
+let cwd = "/";
+let folderMode = false;
+let readOnly = false;
+let busy = 0;
+
+const $ = (id) => document.getElementById(id);
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+const join = (dir, name) => (dir === "/" ? "/" + name : dir + "/" + name);
+const parent = (p) => (p.lastIndexOf("/") <= 0 ? "/" : p.slice(0, p.lastIndexOf("/")));
+const base = (p) => p.slice(p.lastIndexOf("/") + 1);
+
+async function call(nom, body) {
+  const r = await fetch("/api/action/" + encodeURIComponent(nom), {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  if (!r.ok) throw new Error((await r.text()) || r.statusText);
+  return r.json().catch(() => ({}));
+}
+
+function status(text, err) {
+  const s = $("status");
+  s.textContent = text || "";
+  s.classList.toggle("err", !!err);
+}
+
+function size(n) {
+  const u = ["o", "Ko", "Mo", "Go", "To"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return (i ? n.toFixed(n < 10 ? 1 : 0).replace(".", ",") : String(n)) + " " + u[i];
+}
+
+// ------------------------------------------------------------ hexadécimal
+
+function toHex(bytes) {
+  const h = new Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) h[i] = (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+  return h.join("");
+}
+function fromHex(s) {
+  const b = new Uint8Array(s.length / 2);
+  for (let i = 0; i < b.length; i++) b[i] = parseInt(s.substr(i * 2, 2), 16);
+  return b;
+}
+
+// ------------------------------------------------------------ affichage
+
+async function load(path) {
+  try {
+    const r = await call("explorer_list", { chemin: path });
+    cwd = r["chemin"];
+    folderMode = !!r["mode dossier"];
+    readOnly = !!r["lecture seule"] || cwd === SHARED || cwd.startsWith(SHARED + "/");
+    try {
+      sessionStorage.setItem("s3m-explorer", cwd);
+    } catch (_) {}
+    crumbs();
+    rows(r["entrées"] || []);
+    for (const id of ["mkdir", "upfiles", "upfolder"]) $(id).disabled = readOnly;
+    $("hint").hidden = readOnly;
+    if (!busy) status("");
+  } catch (e) {
+    status(e.message, true);
+  }
+}
+
+function crumbs() {
+  const nav = $("crumbs");
+  nav.replaceChildren();
+  const parts = cwd.split("/").filter(Boolean);
+  const add = (label, path) => {
+    const b = el("button", label);
+    b.type = "button";
+    b.addEventListener("click", () => load(path));
+    dropTarget(b, path);
+    nav.appendChild(b);
+  };
+  add("Mon espace", "/");
+  let acc = "";
+  for (const p of parts) {
+    acc += "/" + p;
+    nav.appendChild(el("span", "›"));
+    add(p, acc);
+  }
+}
+
+function rows(entries) {
+  const tb = $("rows");
+  tb.replaceChildren();
+  if (!entries.length) {
+    const tr = el("tr");
+    const td = el("td", readOnly ? "Dossier vide." : "Dossier vide : glissez des fichiers ici.", "muted");
+    td.colSpan = 4;
+    tr.appendChild(td);
+    tb.appendChild(tr);
+    return;
+  }
+  for (const e of entries) {
+    const path = join(cwd, e["nom"]);
+    const tr = el("tr", undefined, "row");
+    const name = el("td", undefined, "name");
+    name.appendChild(el("span", e["dossier"] ? "📁" : "📄", "ico"));
+    name.appendChild(document.createTextNode(e["nom"]));
+    if (e["gardé"]) name.appendChild(el("span", "sur cet appareil", "tag"));
+    name.title = e["dossier"] ? "Ouvrir" : "Télécharger";
+    name.addEventListener("click", () => (e["dossier"] ? load(path) : download(path, e["taille"])));
+    tr.appendChild(name);
+    tr.appendChild(el("td", e["dossier"] ? "" : size(e["taille"] || 0), "num"));
+    const t = e["modifié"];
+    tr.appendChild(el("td", t > 1.4e9 ? new Date(t * 1000).toLocaleString() : "", "num date"));
+    const acts = el("td", undefined, "acts");
+    const btn = (label, fn, cls) => {
+      const b = el("button", label, "small" + (cls ? " " + cls : ""));
+      b.type = "button";
+      b.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        fn();
+      });
+      acts.appendChild(b);
+    };
+    if (!e["dossier"]) btn("Télécharger", () => download(path, e["taille"]));
+    if (!e["lecture seule"]) {
+      btn("Partager", () => share(path));
+      btn("Renommer / déplacer", () => move(path));
+      if (folderMode) {
+        btn(e["gardé"] ? "Ne plus garder" : "Garder hors ligne", () => keep(path, !e["gardé"]));
+      }
+      btn("Supprimer", () => remove(path, e["dossier"]), "danger");
+      // Glisser l'élément sur un dossier : déplacement.
+      tr.draggable = true;
+      tr.addEventListener("dragstart", (ev) => {
+        ev.dataTransfer.setData("application/x-s3m-path", path);
+        ev.dataTransfer.effectAllowed = "move";
+      });
+    }
+    if (e["dossier"]) dropTarget(tr, path);
+    tr.appendChild(acts);
+    tb.appendChild(tr);
+  }
+}
+
+// Cible de dépôt : élément déplacé dedans, ou fichiers envoyés dedans.
+function dropTarget(node, dir) {
+  if (dir === SHARED || dir.startsWith(SHARED + "/")) return;
+  node.addEventListener("dragover", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    node.classList.add("drop-target");
+  });
+  node.addEventListener("dragleave", () => node.classList.remove("drop-target"));
+  node.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    node.classList.remove("drop-target");
+    $("zone").classList.remove("dragover");
+    const from = ev.dataTransfer.getData("application/x-s3m-path");
+    if (from) {
+      if (from !== dir && parent(from) !== dir) doMove(from, join(dir, base(from)));
+      return;
+    }
+    dropFiles(ev.dataTransfer, dir);
+  });
+}
+
+// ------------------------------------------------------------ actions
+
+async function run(label, fn) {
+  busy++;
+  status(label + "…");
+  try {
+    const r = await fn();
+    status((r && r.message) || "");
+    return true;
+  } catch (e) {
+    status(e.message, true);
+    return false;
+  } finally {
+    busy--;
+    load(cwd);
+  }
+}
+
+function dialog(title, fields, okLabel) {
+  return new Promise((resolve) => {
+    const d = $("dlg");
+    const f = $("dlgform");
+    f.replaceChildren(el("h3", title));
+    const inputs = fields.map(([label, value, help]) => {
+      const l = el("label", label);
+      const i = el("input");
+      i.value = value || "";
+      if (help) i.placeholder = help;
+      l.appendChild(i);
+      f.appendChild(l);
+      return i;
+    });
+    const row = el("div", undefined, "row-btns");
+    const cancel = el("button", "Annuler", "act secondary");
+    cancel.value = "cancel";
+    const ok = el("button", okLabel || "OK", "act");
+    ok.value = "ok";
+    row.append(cancel, ok);
+    f.appendChild(row);
+    d.onclose = () => resolve(d.returnValue === "ok" ? inputs.map((i) => i.value.trim()) : null);
+    d.returnValue = "";
+    d.showModal();
+    if (inputs[0]) inputs[0].focus();
+  });
+}
+
+function reveal(title, text) {
+  const d = $("dlg");
+  const f = $("dlgform");
+  f.replaceChildren(el("h3", title));
+  const t = el("textarea");
+  t.rows = 4;
+  t.readOnly = true;
+  t.value = text;
+  f.appendChild(t);
+  f.appendChild(el("p", "Le destinataire l'ajoute dans S3m, page Partages, « Ajouter un partage reçu ».", "muted"));
+  const row = el("div", undefined, "row-btns");
+  const copy = el("button", "Copier", "act secondary");
+  copy.type = "button";
+  copy.addEventListener("click", async () => {
+    t.select();
+    try {
+      await navigator.clipboard.writeText(t.value);
+    } catch (_) {
+      document.execCommand("copy");
+    }
+    status("Copié dans le presse-papiers");
+  });
+  const close = el("button", "Fermer", "act");
+  close.value = "ok";
+  row.append(copy, close);
+  f.appendChild(row);
+  d.onclose = null;
+  d.showModal();
+}
+
+async function mkdir() {
+  const v = await dialog("Nouveau dossier", [["Nom", "", "Nouveau dossier"]], "Créer");
+  if (!v || !v[0]) return;
+  run("Création", () => call("explorer_mkdir", { chemin: join(cwd, v[0]) }));
+}
+
+async function move(path) {
+  const v = await dialog("Renommer ou déplacer", [["Nouveau chemin", path]], "Valider");
+  if (!v || !v[0] || v[0] === path) return;
+  doMove(path, v[0].startsWith("/") ? v[0] : join(parent(path), v[0]));
+}
+
+function doMove(from, to) {
+  run("Déplacement", () => call("explorer_move", { de: from, vers: to }));
+}
+
+function remove(path, isDir) {
+  const what = isDir ? "le dossier « " + base(path) + " » et tout son contenu" : "« " + base(path) + " »";
+  if (!window.confirm("Supprimer " + what + " ?")) return;
+  run("Suppression", () => call("explorer_delete", { chemin: path }));
+}
+
+function keep(path, on) {
+  run(on ? "Mise hors ligne" : "Retrait", () =>
+    call(on ? "keep_offline" : "unkeep_offline", { "élément": path }));
+}
+
+async function share(path) {
+  const v = await dialog(
+    "Partager « " + base(path) + " »",
+    [
+      ["Destinataire (identifiant S3m, vide : lien public)", "", "64 caractères hexadécimaux"],
+      ["Expiration (jours, vide : jamais)", "", "0"],
+    ],
+    "Partager",
+  );
+  if (!v) return;
+  busy++;
+  status("Création du partage…");
+  try {
+    const r = await call("create_share", { "élément": path, destinataire: v[0], "expiration (jours)": v[1] || "0" });
+    status(r.message || "");
+    const rv = r["révéler"];
+    if (rv && rv["à copier"]) reveal(rv["titre"] || "Partage", rv["à copier"]);
+  } catch (e) {
+    status(e.message, true);
+  } finally {
+    busy--;
+  }
+}
+
+async function download(path, total) {
+  busy++;
+  const parts = [];
+  let off = 0;
+  try {
+    for (;;) {
+      status("Téléchargement de " + base(path) + (total ? " : " + Math.round((100 * off) / total) + " %" : "…"));
+      const r = await call("explorer_read", { chemin: path, offset: off });
+      const b = fromHex(r["données"] || "");
+      parts.push(b);
+      off += b.length;
+      if (r["fin"] || !b.length) break;
+    }
+    const a = el("a");
+    a.href = URL.createObjectURL(new Blob(parts));
+    a.download = base(path);
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 1000);
+    status(base(path) + " téléchargé");
+  } catch (e) {
+    status(e.message, true);
+  } finally {
+    busy--;
+  }
+}
+
+// ------------------------------------------------------------ envoi
+
+async function upload(file, dir) {
+  const path = join(dir, file.name);
+  let off = 0;
+  do {
+    const slice = new Uint8Array(await file.slice(off, off + CHUNK).arrayBuffer());
+    const last = off + slice.length >= file.size;
+    status("Envoi de " + file.name + (file.size ? " : " + Math.round((100 * off) / file.size) + " %" : ""));
+    await call("explorer_write", { chemin: path, offset: off, "données": toHex(slice), fin: last });
+    off += slice.length;
+  } while (off < file.size);
+}
+
+// Dossiers intermédiaires créés au besoin (envoi d'une arborescence).
+async function ensureDir(path, made) {
+  if (path === "/" || made.has(path)) return;
+  await ensureDir(parent(path), made);
+  try {
+    await call("explorer_mkdir", { chemin: path });
+  } catch (_) {
+    // Déjà présent.
+  }
+  made.add(path);
+}
+
+// `items` : [{ file, rel }] où `rel` est le chemin relatif (« a/b/c.txt »).
+async function sendAll(items, dir) {
+  if (!items.length) return;
+  busy++;
+  const made = new Set();
+  let done = 0;
+  try {
+    for (const { file, rel } of items) {
+      const sub = rel.includes("/") ? join(dir, rel.slice(0, rel.lastIndexOf("/"))) : dir;
+      await ensureDir(sub, made);
+      await upload(file, sub);
+      done++;
+    }
+    status(done + " fichier(s) envoyé(s) ; synchronisation avec votre Nœud en cours");
+  } catch (e) {
+    status("Envoi interrompu après " + done + " fichier(s) : " + e.message, true);
+  } finally {
+    busy--;
+    load(cwd);
+  }
+}
+
+// Fichiers et dossiers déposés (arborescences comprises).
+async function dropFiles(dt, dir) {
+  const entries = [...(dt.items || [])]
+    .map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null))
+    .filter(Boolean);
+  if (!entries.length) {
+    return sendAll([...(dt.files || [])].map((f) => ({ file: f, rel: f.name })), dir);
+  }
+  const items = [];
+  const walk = async (entry, prefix) => {
+    if (entry.isFile) {
+      const file = await new Promise((res, rej) => entry.file(res, rej));
+      items.push({ file, rel: prefix + file.name });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (;;) {
+        const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const c of batch) await walk(c, prefix + entry.name + "/");
+      }
+    }
+  };
+  for (const e of entries) await walk(e, "");
+  sendAll(items, dir);
+}
+
+// ------------------------------------------------------------ démarrage
+
+$("mkdir").addEventListener("click", mkdir);
+$("upfiles").addEventListener("click", () => $("pickfiles").click());
+$("upfolder").addEventListener("click", () => $("pickfolder").click());
+$("pickfiles").addEventListener("change", (ev) => {
+  sendAll([...ev.target.files].map((f) => ({ file: f, rel: f.name })), cwd);
+  ev.target.value = "";
+});
+$("pickfolder").addEventListener("change", (ev) => {
+  sendAll([...ev.target.files].map((f) => ({ file: f, rel: f.webkitRelativePath || f.name })), cwd);
+  ev.target.value = "";
+});
+const zone = $("zone");
+zone.addEventListener("dragover", (ev) => {
+  if (readOnly) return;
+  ev.preventDefault();
+  zone.classList.add("dragover");
+});
+zone.addEventListener("dragleave", (ev) => {
+  if (!zone.contains(ev.relatedTarget)) zone.classList.remove("dragover");
+});
+zone.addEventListener("drop", (ev) => {
+  ev.preventDefault();
+  zone.classList.remove("dragover");
+  if (readOnly) return;
+  const from = ev.dataTransfer.getData("application/x-s3m-path");
+  if (from) return;
+  dropFiles(ev.dataTransfer, cwd);
+});
+
+let start = "/";
+try {
+  start = sessionStorage.getItem("s3m-explorer") || "/";
+} catch (_) {}
+load(start);
+// Changements faits ailleurs (autre appareil, dossier synchronisé).
+setInterval(() => {
+  if (!busy && !document.hidden && !$("dlg").open) load(cwd);
+}, 15000);

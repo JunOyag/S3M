@@ -133,6 +133,7 @@ const LABELS = {
   "nouvelle clé": ["Nouvelle clé", "Empreinte de la clé d'alerte proposée."],
   "clé actuelle": ["Clé actuelle", "Empreinte de la clé d'alerte retenue jusqu'ici."],
   "pour": ["Pour", "Message adressé à vous seul, ou à tous les utilisateurs du Nœud."],
+  "pour (partage)": ["Pour", "Destinataire du partage : son empreinte, ou « Lien public » (lisible par qui détient le lien)."],
 
   "accès choisi": ["Accès choisi", "Modifiable ensuite dans le tableau de bord (relance de S3m)."],
   "texte": ["Message", ""],
