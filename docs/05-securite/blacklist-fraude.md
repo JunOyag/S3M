@@ -30,8 +30,29 @@ notification ni tombstone n'est adressé à P (contrairement à
 [`protocols.tombstones`](../04-protocols/tombstones.md)).
 
 **Réciprocité différée** : au prochain challenge PoS que P adressera au
-nœud, celui-ci échouera mécaniquement, déclenchant à son tour la rupture
-côté P — séparation bilatérale sans échange de message explicite.
+nœud, celui-ci échouera mécaniquement (fragment introuvable) : P le compte
+comme une perte (ci-dessous), replace ses fragments ailleurs et voit le
+score du nœud chuter jusqu'au retrait du partenariat — séparation
+bilatérale sans échange de message explicite, et sans cascade de
+ruptures.
+
+## Fragment introuvable : perte, pas fraude {: #fragment-introuvable-perte-pas-fraude }
+
+Arbitrage du 2026-11-23 (`impl/SPEC_GAPS.md`) : seule une **réponse
+fausse** (hash renvoyé ≠ attendu, ou bloc complet différent) est une
+fraude. Un fragment **introuvable** chez le partenaire qui doit l'héberger
+(refus `NotFound`) est une **perte** : disque défaillant, effacement par
+erreur, rupture prononcée par ce partenaire. Le nœud :
+
+- replace le fragment chez un autre partenaire, comme pour une fraude
+  (réparation proactive ci-dessous), sans liste noire ni rupture ;
+- compte un échec PoS dans la fiabilité du partenaire
+  ([`protocols.partenariat-automatique`](../04-protocols/partenariat-automatique.md)) :
+  un partenaire qui perd régulièrement sort par son score.
+
+Sans cette distinction, une seule perte accidentelle se propageait en
+ruptures successives : chaque rupture efface en silence les fragments du
+partenaire, qui accuse à son tour.
 
 Physiquement, cette destruction est rapide précisément parce que les blocs
 hébergés pour un partenaire donné sont **segmentés dans leurs propres

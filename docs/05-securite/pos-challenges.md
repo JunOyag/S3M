@@ -18,10 +18,12 @@ verified_by: []
   blocs mais **interdiction stricte** de brider les messages PoS.
 
 **Orchestration par le Nœud** (2026-11-20) : à chaque cycle (30 s), un lot
-de fragments (16 par défaut) est challengé à tour de rôle ; un fragment
-introuvable chez le partenaire qui doit l'héberger (`NotFound`) compte comme
-réponse fausse. Fraude → [`securite.blacklist-fraude`](blacklist-fraude.md)
-immédiatement ; absence → analyse de
+de fragments (16 par défaut) est challengé à tour de rôle. Réponse fausse
+→ fraude, [`securite.blacklist-fraude`](blacklist-fraude.md)
+immédiatement ; fragment introuvable chez le partenaire qui doit
+l'héberger (`NotFound`) → **perte, pas fraude** (arbitrage du 2026-11-23,
+voir [`securite.blacklist-fraude`](blacklist-fraude.md#fragment-introuvable-perte-pas-fraude)) ;
+absence → analyse de
 [`protocols.volatilite-reparation`](../04-protocols/volatilite-reparation.md).
 
 ## Calcul du challenge (reconstruction locale) {: #calcul-du-challenge }

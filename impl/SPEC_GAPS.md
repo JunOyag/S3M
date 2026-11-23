@@ -678,4 +678,4 @@ immédiate, liste noire permanente) ? Options :
 propage en ruptures sur tout le voisinage ; réseau d'essai réparé à la main
 par `impl/essais/reconcilier-noeuds.ps1`.
 
-**Résolution** : *(en attente d'arbitrage)*
+**Résolution** (utilisateur, 2026-11-23) : option 1 — perte, pas fraude. `docs/05-securite/blacklist-fraude.md` § Fragment introuvable et `docs/05-securite/pos-challenges.md` mis à jour ; `impl/node/src/upkeep.rs` replace le fragment et compte l'échec, sans liste noire.

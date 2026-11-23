@@ -50,7 +50,7 @@ async fn fraud_absence_and_local_corruption_are_repaired_automatically() {
     let mut servers: HashMap<[u8; 32], BlockServer> = HashMap::new();
     let mut addrs = HashMap::new();
     let mut service = NodeService::new(NODE);
-    for i in 0..6u8 {
+    for i in 0..7u8 {
         let seed = [0x60 + i; 32];
         let mut ps = NodeService::new(seed);
         ps.partners.insert(
@@ -147,6 +147,31 @@ async fn fraud_absence_and_local_corruption_are_repaired_automatically() {
     assert!(parity.iter().all(|(_, _, p)| *p != hex::encode(cheater)));
     assert!(state.users[&user].dirty, "arbre d'index à réémettre");
     let r = run_cycle(&service, &mut state, &fabric, &cfg, 1_050).await;
+    assert_eq!(r.published, 1, "{r:?}");
+
+    // Perte : un partenaire n'a plus le fragment (disque, effacement) —
+    // replacé ailleurs, échec compté, sans liste noire ni rupture.
+    let loser = holder(&state, 1);
+    let lost_hash: [u8; 32] = hex::decode(&state.users[&user].stripes[0].parity[1].1)
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert!(partners[&loser]
+        .lock()
+        .unwrap()
+        .store
+        .remove(Space::Fragment, &pk(&NODE), &lost_hash));
+    let r = run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, 1_060).await;
+    assert!(r.frauds.is_empty(), "perte ≠ fraude : {r:?}");
+    assert_eq!(r.lost, 1, "{r:?}");
+    assert!(r.repaired >= 1, "{r:?}");
+    assert!(!state.upkeep.is_blacklisted(&loser));
+    assert!(service.lock().unwrap().partners.contains_key(&loser));
+    assert_eq!(state.upkeep.pos_fail.get(&hex::encode(loser)), Some(&1));
+    let parity = &state.users[&user].stripes[0].parity;
+    assert_eq!(parity.len(), 4);
+    assert!(parity.iter().all(|(_, _, p)| *p != hex::encode(loser)));
+    let r = run_cycle(&service, &mut state, &fabric, &cfg, 1_060).await;
     assert_eq!(r.published, 1, "{r:?}");
 
     // Absence : un hébergeur s'arrête ; au-delà de la fenêtre, son fragment

@@ -112,6 +112,8 @@ pub struct UpkeepReport {
     pub passed: usize,
     pub timeouts: usize,
     pub frauds: Vec<Id>,
+    /// Fragments introuvables chez leur partenaire : perdus, replacés.
+    pub lost: usize,
     pub repaired: usize,
     pub local_repaired: usize,
 }
@@ -252,6 +254,8 @@ pub async fn run_upkeep(
         })
         .collect();
     let mut frauds: BTreeSet<Id> = BTreeSet::new();
+    // Fragments introuvables : `(utilisateur, stripe, indice)`.
+    let mut lost: HashSet<(String, usize, u16)> = HashSet::new();
     if !targets.is_empty() {
         let n = ucfg.challenges_per_cycle.min(targets.len());
         for j in 0..n {
@@ -290,6 +294,22 @@ pub async fn run_upkeep(
             )
             .await;
             report.challenged += 1;
+            // Introuvable : perte, pas fraude (`securite.blacklist-fraude`
+            // § Fragment introuvable) — échec compté, fragment replacé.
+            if matches!(answer, Ok(Ok(Response::Failure(Refusal::NotFound)))) {
+                *up.pos_fail.entry(partner.clone()).or_default() += 1;
+                lost.insert((user.clone(), *si, *index));
+                report.lost += 1;
+                up.log(
+                    now,
+                    format!(
+                        "fragment perdu chez {}… (stripe {}…) : replacé",
+                        &partner[..16.min(partner.len())],
+                        &state.users[user].stripes[*si].id[..12]
+                    ),
+                );
+                continue;
+            }
             let verdict = match answer {
                 Ok(Ok(Response::ChallengeResponse(d))) => {
                     let d: Option<[u8; 32]> = d.try_into().ok();
@@ -298,8 +318,6 @@ pub async fn run_upkeep(
                         None => Verdict::Fraud,
                     }
                 }
-                // Fragment qu'il doit héberger introuvable : échec PoS.
-                Ok(Ok(Response::Failure(Refusal::NotFound))) => Verdict::Fraud,
                 _ => Verdict::Timeout,
             };
             match verdict {
@@ -353,7 +371,11 @@ pub async fn run_upkeep(
             let mut indices: Vec<u16> = rec
                 .parity
                 .iter()
-                .filter(|(_, _, p)| frauds.contains(&id(p)) || up.retiring.contains(p))
+                .filter(|(i, _, p)| {
+                    frauds.contains(&id(p))
+                        || up.retiring.contains(p)
+                        || lost.contains(&(user.clone(), si, *i))
+                })
                 .map(|(i, _, _)| *i)
                 .collect();
             // 3. Volatilité : réparation dès que moins de k+2 sont disponibles.
