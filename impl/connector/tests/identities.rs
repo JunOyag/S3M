@@ -47,6 +47,22 @@ fn identities_are_listed_added_and_set_aside() {
     );
     assert!(a.join("logs").exists() && !a.join("connector.json").exists());
     assert_eq!(list(&a), vec![(3, d3.clone())]);
+    // Changement de Nœud : configuration mise de côté, phrase gardée —
+    // l'identité reste lancée (assistant) et son dossier n'est pas repris.
+    std::fs::write(d3.join("user.seed"), "mots").unwrap();
+    std::fs::remove_file(d3.join("connector.json")).unwrap();
+    assert_eq!(list(&a), vec![(3, d3.clone())]);
+    let (n4, _) = next_dir(&a).unwrap();
+    assert_ne!(n4, 3);
+    let back = app("retour");
+    std::fs::write(back.join("user.seed"), "mots").unwrap();
+    let (_, other) = next_dir(&back).unwrap();
+    std::fs::write(other.join("connector.json"), "{}").unwrap();
+    assert_eq!(
+        list(&back)[0],
+        (1, back.clone()),
+        "origine sans configuration mais avec sa phrase"
+    );
     // Dernière identité : l'origine ne se retire pas seule.
     let solo = app("solo");
     std::fs::write(solo.join("connector.json"), "{}").unwrap();

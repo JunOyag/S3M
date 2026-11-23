@@ -11,6 +11,12 @@ pub fn identities_dir(app: &Path) -> PathBuf {
     app.join("identites")
 }
 
+/// Identité créée : configurée, ou phrase présente (changement de Nœud en
+/// cours, assistant à rouvrir).
+fn started(dir: &Path) -> bool {
+    config_path(dir).exists() || dir.join("user.seed").exists()
+}
+
 /// Identités à lancer : l'identité d'origine (`app`, configurée ou non),
 /// puis les identités ajoutées configurées, par numéro croissant.
 pub fn list(app: &Path) -> Vec<(u32, PathBuf)> {
@@ -21,15 +27,16 @@ pub fn list(app: &Path) -> Vec<(u32, PathBuf)> {
         .filter_map(|e| {
             let n: u32 = e.file_name().to_str()?.parse().ok()?;
             let p = e.path();
-            (n >= 2 && config_path(&p).exists()).then_some((n, p))
+            (n >= 2 && started(&p)).then_some((n, p))
         })
         .collect();
     added.sort();
-    // L'identité d'origine est lancée si elle est configurée, ou s'il n'y a
-    // aucune autre identité (premier lancement) ; retirée, son dossier reste
-    // vide.
+    // L'identité d'origine est lancée si elle est configurée, si elle garde
+    // sa phrase (changement de Nœud : configuration mise de côté, assistant
+    // à rouvrir) ou s'il n'y a aucune autre identité (premier lancement) ;
+    // retirée, son dossier ne garde ni l'une ni l'autre.
     let mut out = Vec::new();
-    if config_path(app).exists() || added.is_empty() {
+    if started(app) || added.is_empty() {
         out.push((1, app.to_path_buf()));
     }
     out.extend(added);
@@ -46,7 +53,7 @@ pub fn next_dir(app: &Path) -> std::io::Result<(u32, PathBuf)> {
     let base = identities_dir(app);
     for n in 2u32.. {
         let p = base.join(n.to_string());
-        if !config_path(&p).exists() {
+        if !started(&p) {
             std::fs::create_dir_all(&p)?;
             return Ok((n, p));
         }
