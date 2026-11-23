@@ -626,6 +626,8 @@ pub struct Shared {
     pub unblacklist: Mutex<Vec<String>>,
     /// Redémarrage demandé depuis le dashboard (traité par l'exécutable).
     pub restart: tokio::sync::Notify,
+    /// Journal du processus : `(instant Unix, événement)`, borné.
+    pub journal: Mutex<Vec<(u64, String)>>,
     pub emergency_ui: Mutex<EmergencyUi>,
     pub peer_id: String,
     pub blocks_addr: Option<String>,
@@ -645,6 +647,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         a.extend(forms);
     }
     v["géolocalisation"] = geoip_status(sh);
+    v["journal"] = journal_rows(sh);
     v["republication DHT"] = republication_status(sh);
     volumes_status(sh, &mut v);
     v["administration à distance"] = admin_status(sh);
@@ -700,8 +703,9 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         { "id": "distance", "titre": "Administration à distance",
           "sections": ["administration à distance"], "actions": ["show_totp", "regenerate_totp"] },
         { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config"], "onglets": true },
-        { "id": "diagnostic", "titre": "Diagnostic", "autres": true,
-          "sections": ["migration"], "actions": [] }
+        { "id": "diagnostic", "titre": "Diagnostic", "autres": true, "sections": [], "actions": [],
+          "onglets de sections": [{ "titre": "Général", "sections": ["migration"] },
+                                  { "titre": "Avancé", "sections": ["journal"] }] }
     ]);
     v
 }
@@ -1574,6 +1578,7 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         return r;
     }
     if name == "restart_node" {
+        note(sh, "redémarrage demandé depuis le tableau de bord");
         sh.restart.notify_one();
         return Ok(json!({ "ok": true,
             "message": "Redémarrage en cours : le tableau de bord se reconnecte dans quelques secondes" }));
@@ -1585,6 +1590,10 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             .and_then(|b| b.try_into().ok())
             .ok_or("identifiant de Nœud invalide")?;
         sh.service.lock().unwrap().blacklisted.remove(&id);
+        note(
+            sh,
+            format!("{}… retiré de la liste noire", &n[..16.min(n.len())]),
+        );
         let msg = match sh.dispersal.try_lock() {
             Ok(mut d) => {
                 if !d.unblacklist(&n) {
@@ -1994,6 +2003,7 @@ pub async fn start_with(
         volumes_ui: Mutex::new(VolumesUi::default()),
         unblacklist: Mutex::new(Vec::new()),
         restart: tokio::sync::Notify::new(),
+        journal: Mutex::new(Vec::new()),
         emergency_ui: Mutex::new(EmergencyUi::default()),
     });
     {
@@ -2231,7 +2241,93 @@ pub async fn start_with(
             }
         }
     });
+    note(&shared, "Nœud démarré");
     Ok(shared)
+}
+
+/// Lignes gardées par le journal du processus.
+const JOURNAL_MAX: usize = 500;
+
+/// Inscrit un événement au journal du processus (onglet Diagnostic › Avancé).
+pub fn note(sh: &Shared, msg: impl Into<String>) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut j = sh.journal.lock().unwrap();
+    j.push((now, msg.into()));
+    let n = j.len();
+    if n > JOURNAL_MAX {
+        j.drain(..n - JOURNAL_MAX);
+    }
+}
+
+/// `"<instant> <texte>"` → `(instant, texte)`.
+fn split_event(e: &str) -> (u64, String) {
+    match e.split_once(' ') {
+        Some((t, m)) if t.parse::<u64>().is_ok() => (t.parse().unwrap_or(0), m.to_string()),
+        _ => (0, e.to_string()),
+    }
+}
+
+/// Journal fusionné du Nœud, le plus récent d'abord : processus, contrôles,
+/// partenariats, volumes, et la sortie d'erreur (`node.err.log` des Nœuds
+/// lancés par script).
+fn journal_rows(sh: &Shared) -> Value {
+    let mut rows: Vec<(u64, &'static str, String)> = sh
+        .journal
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(t, m)| (*t, "Nœud", m.clone()))
+        .collect();
+    if let Ok(d) = sh.dispersal.try_lock() {
+        rows.extend(d.upkeep.events.iter().map(|e| {
+            let (t, m) = split_event(e);
+            (t, "contrôles", m)
+        }));
+        rows.extend(d.partnering.events.iter().map(|e| {
+            let (t, m) = split_event(e);
+            (t, "partenaires", m)
+        }));
+    }
+    rows.extend(
+        sh.volumes_ui
+            .lock()
+            .unwrap()
+            .events
+            .iter()
+            .map(|(t, m)| (*t, "volumes", m.clone())),
+    );
+    if let Some(err) = sh
+        .config
+        .source
+        .as_deref()
+        .and_then(Path::parent)
+        .map(|d| d.join("node.err.log"))
+    {
+        if let Ok(text) = std::fs::read_to_string(&err) {
+            let mtime = std::fs::metadata(&err)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+            let start = lines.len().saturating_sub(100);
+            rows.extend(
+                lines[start..]
+                    .iter()
+                    .map(|l| (mtime, "sortie d'erreur", l.to_string())),
+            );
+        }
+    }
+    rows.sort_by_key(|r| std::cmp::Reverse(r.0));
+    rows.truncate(JOURNAL_MAX);
+    json!(rows
+        .into_iter()
+        .map(|(t, src, m)| json!({ "date": if t == 0 { Value::Null } else { json!(t) }, "source": src, "événement": m }))
+        .collect::<Vec<_>>())
 }
 
 // --------------------------------------------- gestion des volumes (écran)

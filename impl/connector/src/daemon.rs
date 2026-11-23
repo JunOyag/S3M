@@ -512,6 +512,8 @@ pub struct Shared {
     pub shares: Arc<Mutex<crate::shares::ShareStore>>,
     /// Client des Nœuds des propriétaires de partages reçus.
     pub share_client: Option<Arc<crate::exchange::BlockClient>>,
+    /// Démarrage du Connecteur (instant Unix).
+    pub started_at: u64,
 }
 
 fn queue_status(c: &Config) -> Value {
@@ -545,6 +547,8 @@ pub fn status(sh: &Shared) -> Value {
             "champs": ["nom"], "valeurs": { "nom": n.node_label },
             "aide": { "nom": "Remplace pour vous le nom choisi par l'opérateur ; l'empreinte reste toujours affichée" } }));
     }
+    v["santé"] = health_status(sh);
+    v["journal"] = journal_rows(sh);
     v["résumé"] = connector_summary(&v);
     // Titre (onglet du navigateur) : pseudo de l'identité s'il est saisi.
     let pseudo = sh.names.lock().unwrap().pseudo.clone();
@@ -577,6 +581,9 @@ pub fn status(sh: &Shared) -> Value {
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
           "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["set_pseudo"] },
+        { "id": "diagnostic", "titre": "Diagnostic", "sections": [], "actions": [],
+          "onglets de sections": [{ "titre": "État de santé", "sections": ["santé"] },
+                                  { "titre": "Avancé", "sections": ["journal"] }] },
         { "id": "parametres", "titre": "Paramètres", "autres": true,
           "sections": ["configuration"], "actions": [] }
     ]);
@@ -1281,6 +1288,103 @@ pub struct TrayView {
     pub last_message: Option<String>,
 }
 
+/// État de santé du Connecteur (Diagnostic) : chaque point dit ce qui va
+/// et, sinon, depuis quand et pourquoi.
+pub fn health_status(sh: &Shared) -> Value {
+    use std::sync::atomic::Ordering::Relaxed;
+    let now = (sh.clock)();
+    let view = tray_view(sh);
+    let h = sh.health.lock().unwrap().clone();
+    let ds = sh.drive_status.lock().unwrap().clone();
+    let a = sh.attach.lock().unwrap().clone();
+    let (received, broken) = {
+        let s = sh.shares.lock().unwrap();
+        let broken = s
+            .received
+            .iter()
+            .filter(|r| r.pointer.is_none() && r.last_error.is_some())
+            .count();
+        (s.received.len(), broken)
+    };
+    let given_errors = sh
+        .shares
+        .lock()
+        .unwrap()
+        .given
+        .iter()
+        .filter(|g| g.last_error.is_some())
+        .count();
+    json!({
+        "état général": view.text,
+        "nœud": {
+            "joignable": h.reachable,
+            "dernier contact": h.last_contact,
+            "injoignable depuis le": h.inactivity_detected_at,
+            "dernière erreur": h.last_error,
+        },
+        "synchronisation": {
+            "dernière synchronisation réussie": ds.last_sync,
+            "dernière erreur": ds.last_sync_error,
+            "modifications en attente": view.pending,
+            "suspendue": sh.paused.load(Relaxed),
+            "conflit": view.conflict,
+        },
+        "accès aux fichiers": {
+            "mode": access_mode(&sh.config),
+            "connecté": ds.mounted,
+            "emplacement": ds.folder.clone().or_else(|| view.mount_point.clone()),
+            "erreur": ds.mount_error,
+        },
+        "rattachement": {
+            "en cours": a.in_progress,
+            "quota accordé (octets)": a.attached_quota,
+            "dernière erreur": a.last_error,
+        },
+        "annuaire": if sh.dht.get().is_some() { "connecté" } else { "pas encore connecté" },
+        "partages": {
+            "reçus": received,
+            "reçus jamais lus (annuaire)": broken,
+            "donnés en erreur": given_errors,
+        },
+        "messages non lus": view.unread_messages,
+        "incidents d'intégrité": h.incidents.len(),
+        "processus": {
+            "version": env!("CARGO_PKG_VERSION"),
+            "démarré le": sh.started_at,
+            "en marche depuis (min)": now.saturating_sub(sh.started_at) / 60,
+        },
+    })
+}
+
+/// Journal de S3m (`logs\s3m.log` du dossier de l'application), le plus
+/// récent d'abord ; vide pour `s3m-connector` lancé seul.
+fn journal_rows(sh: &Shared) -> Value {
+    let Some(src) = sh.config.source.as_deref() else {
+        return json!([]);
+    };
+    let Some(dir) = src.parent() else {
+        return json!([]);
+    };
+    let base = match identity_number(src) {
+        Some(_) => dir.parent().and_then(Path::parent).unwrap_or(dir),
+        None => dir,
+    };
+    let Ok(text) = std::fs::read_to_string(base.join("logs").join("s3m.log")) else {
+        return json!([]);
+    };
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let start = lines.len().saturating_sub(500);
+    json!(lines[start..]
+        .iter()
+        .rev()
+        .map(|l| match l.split_once(' ') {
+            Some((t, m)) if t.parse::<u64>().is_ok() =>
+                json!({ "date": t.parse::<u64>().unwrap_or(0), "événement": m }),
+            _ => json!({ "date": Value::Null, "événement": l }),
+        })
+        .collect::<Vec<_>>())
+}
+
 /// Calcule la vue de l'état courant.
 pub fn tray_view(sh: &Shared) -> TrayView {
     use std::sync::atomic::Ordering::Relaxed;
@@ -1659,6 +1763,7 @@ pub async fn start(
         names: Mutex::new(load_names(&config).unwrap_or_default()),
         shares: crate::share_ops::load(&config.data_dir),
         share_client: crate::exchange::BlockClient::start().ok().map(Arc::new),
+        started_at: clock(),
         node_entry_read_at: Mutex::new(0),
         last_lan_search: Mutex::new(None),
         change_node: Default::default(),

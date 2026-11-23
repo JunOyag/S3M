@@ -1135,7 +1135,9 @@ function pagesOf(status) {
     .filter((p) => p["cadre"] !== "map.html" || status["carte"])
     .map((p) => ({ ...p, sections: [...(p.sections || [])] }));
   // Ce qu'aucun écran ne cite va dans l'écran « autres » (rien ne se perd).
-  const used = new Set(out.flatMap((p) => p.sections));
+  // `onglets de sections` : [{ titre, sections }], sections réparties en onglets.
+  const tabbed = (p) => (p["onglets de sections"] || []).flatMap((t) => t.sections || []);
+  const used = new Set(out.flatMap((p) => [...p.sections, ...tabbed(p)]));
   const other = out.find((p) => p["autres"]) || out[out.length - 1];
   all.filter((k) => !used.has(k)).forEach((k) => other.sections.push(k));
   const named = new Set(out.flatMap((p) => p.actions || []));
@@ -1293,14 +1295,41 @@ function show(status) {
     frag.appendChild(full);
   }
   formCacheNext = new Map();
-  p.sections.forEach((k) => {
+  const section = (k, into) => {
     if (!(k in status)) return;
     const s = el("section");
     s.dataset.scrollKey = page + "/" + k;
     s.appendChild(labelEl("h2", k));
     s.appendChild(render(status[k], k));
-    frag.appendChild(s);
-  });
+    into.appendChild(s);
+  };
+  p.sections.forEach((k) => section(k, frag));
+  // Onglets de sections ; l'onglet ouvert est retenu.
+  const groups = p["onglets de sections"] || [];
+  if (groups.length) {
+    const tabs = el("div", undefined, "tabs");
+    tabs.setAttribute("role", "tablist");
+    const panes = groups.map((g) => {
+      const pane = el("div");
+      (g.sections || []).forEach((k) => section(k, pane));
+      return pane;
+    });
+    const pick = (n) => {
+      tabState[page + "#sections"] = n;
+      [...tabs.children].forEach((b, j) => b.setAttribute("aria-selected", String(j === n)));
+      panes.forEach((x, j) => (x.hidden = j !== n));
+    };
+    groups.forEach((g, n) => {
+      const b = el("button", g.titre, "tab");
+      b.type = "button";
+      b.setAttribute("role", "tab");
+      b.addEventListener("click", () => pick(n));
+      tabs.appendChild(b);
+    });
+    frag.appendChild(tabs);
+    panes.forEach((x) => frag.appendChild(x));
+    pick(Math.min(tabState[page + "#sections"] || 0, groups.length - 1));
+  }
   formCache = formCacheNext;
   main.insertBefore(frag, frame || keep);
   main.querySelectorAll("[data-scroll-key]").forEach((x) => {
