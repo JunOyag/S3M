@@ -88,7 +88,7 @@ fn shared_folder_is_readable_by_the_recipient_and_read_only() {
     let src = owner_node.clone();
     let fetch: Fetch = Arc::new(move |_, _, _, h| {
         *f.lock().unwrap() += 1;
-        src.get(h)
+        src.get(h).ok_or(FetchError::Unavailable)
     });
     let mut bob = Drive::open(
         Arc::new(MemNode::default()),
@@ -140,13 +140,19 @@ fn shared_folder_is_readable_by_the_recipient_and_read_only() {
         bob.remove(&format!("{root}/vacances.txt")),
         Err(DriveError::ReadOnly)
     ));
-    // Partage retiré par le propriétaire : il disparaît.
-    store.lock().unwrap().received[0]
-        .pointer
-        .as_mut()
-        .unwrap()
-        .revoked = true;
+    // Retrait refusé par le Nœud du propriétaire avant la relecture de
+    // l'annuaire : le partage disparaît dès la lecture suivante.
+    // (blocs pas encore en mémoire : arbre neuf, comme après un redémarrage).
+    bob.shared = Some(Arc::new(ReceivedTree::new(store.clone(), denied_fetch())));
+    assert!(bob.list(&root).is_err());
     assert!(names(&mut bob, SHARED_DIR).is_empty());
+    assert!(
+        store.lock().unwrap().received[0]
+            .pointer
+            .as_ref()
+            .unwrap()
+            .revoked
+    );
 }
 
 #[test]
@@ -191,4 +197,8 @@ fn received_folder_name_survives_owner_rename() {
         ..Default::default()
     });
     assert_eq!(st.visible()[0].0, "Alice — Photos");
+}
+
+fn denied_fetch() -> Fetch {
+    Arc::new(|_, _, _, _| Err(FetchError::Denied))
 }

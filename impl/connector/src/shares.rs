@@ -18,7 +18,7 @@ pub const SHARES_FILE: &str = "shares.json";
 /// Republication du pointeur sans changement (`network.dht-directory`).
 pub const REPUBLISH_S: u64 = 2_592_000;
 /// Relecture des pointeurs reçus.
-pub const REFRESH_S: u64 = 600;
+pub const REFRESH_S: u64 = 120;
 
 fn hx(b: &[u8]) -> String {
     hex::encode(b)
@@ -214,7 +214,18 @@ impl ShareStore {
 
 /// Lecture d'un bloc d'un partage chez le Nœud de son propriétaire :
 /// `(adresses, autorisation, signature, hash)`.
-pub type Fetch = Arc<dyn Fn(&[String], &[u8], &[u8], &BlockHash) -> Option<Vec<u8>> + Send + Sync>;
+pub type Fetch =
+    Arc<dyn Fn(&[String], &[u8], &[u8], &BlockHash) -> Result<Vec<u8>, FetchError> + Send + Sync>;
+
+/// Échec de lecture d'un bloc partagé.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FetchError {
+    /// Le Nœud du propriétaire refuse l'autorisation : partage retiré ou
+    /// expiré.
+    Denied,
+    /// Nœud injoignable ou bloc absent.
+    Unavailable,
+}
 
 /// Dossier « Partagés avec moi » : lecture seule, blocs lus chez le Nœud
 /// du propriétaire et vérifiés comme les siens.
@@ -243,7 +254,21 @@ impl ReceivedTree {
             }
             let grant = hex::decode(&p.grant).ok()?;
             let sig = hex::decode(&p.grant_signature).ok()?;
-            let b = (self.fetch)(&p.node_addrs, &grant, &sig, h)?;
+            let b = match (self.fetch)(&p.node_addrs, &grant, &sig, h) {
+                Ok(b) => b,
+                // Refus du Nœud du propriétaire : le partage est retiré
+                // sans attendre la relecture de l'annuaire.
+                Err(FetchError::Denied) => {
+                    let mut s = self.store.lock().unwrap();
+                    for r in s.received.iter_mut() {
+                        if let Some(c) = r.pointer.as_mut().filter(|c| **c == *p) {
+                            c.revoked = true;
+                        }
+                    }
+                    return None;
+                }
+                Err(FetchError::Unavailable) => return None,
+            };
             let mut c = self.cache.lock().unwrap();
             if c.len() >= CACHE_BLOCKS {
                 c.clear();

@@ -8,8 +8,10 @@ use serde_json::{json, Value};
 
 use crate::daemon::Shared;
 use crate::drive::SHARED_DIR;
-use crate::shares::{CachedPointer, Fetch, GivenShare, ReceivedShare, ReceivedTree, ShareStore};
-use s3m_protocol::exchange::{Body, Credential, Request, Response};
+use crate::shares::{
+    CachedPointer, Fetch, FetchError, GivenShare, ReceivedShare, ReceivedTree, ShareStore,
+};
+use s3m_protocol::exchange::{Body, Credential, Refusal, Request, Response};
 use s3m_protocol::share::{
     open_share_entry, share_entry_envelope, sign_grant, ShareGrant, SharePointer, ShareToken,
 };
@@ -41,7 +43,7 @@ pub fn install_tree(sh: &Arc<Shared>) {
     let rt = tokio::runtime::Handle::current();
     let client = sh.share_client.clone();
     let fetch: Fetch = Arc::new(move |addrs, grant, sig, hash| {
-        let client = client.as_ref()?;
+        let client = client.as_ref().ok_or(FetchError::Unavailable)?;
         for a in addrs {
             let Ok(addr) = a.parse() else { continue };
             let req = Request {
@@ -53,11 +55,16 @@ pub fn install_tree(sh: &Arc<Shared>) {
                     hash: hash.to_vec(),
                 },
             };
-            if let Ok(Response::BlockData(d)) = wait(&rt, client.request(addr, req)) {
-                return Some(d);
+            match wait(&rt, client.request(addr, req)) {
+                Ok(Response::BlockData(d)) => return Ok(d),
+                Ok(Response::Failure(Refusal::Unauthorized))
+                | Err(crate::exchange::ExchangeError::Refused(Refusal::Unauthorized)) => {
+                    return Err(FetchError::Denied)
+                }
+                _ => {}
             }
         }
-        None
+        Err(FetchError::Unavailable)
     });
     drive.lock().unwrap().shared = Some(Arc::new(ReceivedTree::new(sh.shares.clone(), fetch)));
 }
