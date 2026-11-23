@@ -67,6 +67,10 @@ fn init(dir: &Path, identity: bool) -> Result<(), Box<dyn std::error::Error>> {
         // Identité neuve : la phrase reste dans node.seed (Nœud d'essai).
         let phrase = s3m_node::daemon::generate_mnemonic()?;
         std::fs::write(dir.join("node.seed"), phrase)?;
+        std::fs::write(
+            s3m_node::daemon::new_identity_marker(&dir.join("node.seed")),
+            b"",
+        )?;
         println!(
             "Identité neuve écrite dans {}",
             dir.join("node.seed").display()

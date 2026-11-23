@@ -12,7 +12,7 @@ use s3m_node::dht_directory::{DhtConfig, DhtNode};
 use s3m_node::dispersal_engine::*;
 use s3m_node::exchange::{BlockServer, NodeService, PartnerState, UserAccount};
 use s3m_node::publish::{publish_if_due, NodeEntryState};
-use s3m_node::recovery::recover;
+use s3m_node::recovery::{recover, restore_user, was_attached, Net, RestoreState, UserOrigin};
 use s3m_node::snapshot_engine::run_snapshot;
 
 const NODE: [u8; 32] = [0x10; 32];
@@ -44,6 +44,8 @@ async fn dht(seed: [u8; 32], bootstrap: Vec<libp2p::Multiaddr>, clock: &Clock) -
     .unwrap()
 }
 
+// Verrous relâchés explicitement (drop) avant chaque attente.
+#[allow(clippy::await_holding_lock)]
 #[tokio::test(flavor = "multi_thread")]
 async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block() {
     let cfg = EngineConfig {
@@ -210,4 +212,75 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
     assert_eq!(u.stripes.len(), 2);
     assert!(u.pointer.is_some() && !u.index.is_empty());
     assert!(state.snapshot.pointer.is_some());
+    drop(s);
+
+    // Reprise à la reconnexion : la fiche de dispersion existe pour ce
+    // Nœud avec ce sel seulement.
+    let third = Mutex::new(NodeService::new(NODE));
+    assert!(was_attached(&third, &dht2, &pk(&USER), &[7; 16])
+        .await
+        .unwrap());
+    assert!(!was_attached(&third, &dht2, &pk(&USER), &[8; 16])
+        .await
+        .unwrap());
+    third.lock().unwrap().users.insert(
+        pk(&USER),
+        UserAccount {
+            salt: vec![7; 16],
+            quota_bytes: 1 << 30,
+            used_bytes: 0,
+            root: [0; 32],
+        },
+    );
+    let addrs = Mutex::new(HashMap::new());
+    let net = Net {
+        server: &server,
+        dht: &dht2,
+        cfg: &cfg,
+        addrs: &addrs,
+    };
+    let mut st3 = DispersalState::default();
+    st3.users.entry(hex::encode(pk(&USER))).or_default().pending = vec!["ab".into()];
+    let r = restore_user(&third, &mut st3, &net, pk(&USER), &[7; 16], 3_000)
+        .await
+        .unwrap();
+    assert_eq!(r, (2, 3));
+    // Un second essai ne compte rien deux fois ; l'attente est gardée.
+    restore_user(&third, &mut st3, &net, pk(&USER), &[7; 16], 3_100)
+        .await
+        .unwrap();
+    let t = third.lock().unwrap();
+    assert_eq!(t.users[&pk(&USER)].used_bytes, 3 * 65_536);
+    for b in &originals {
+        assert!(t.store.get(Space::UserBlock, &hash_sha256(b)).is_some());
+    }
+    assert_eq!(
+        st3.users[&hex::encode(pk(&USER))].pending,
+        vec!["ab".to_string()]
+    );
+    assert!(t.partners.values().any(|p| p.ledger.hosted_for_partner > 0));
+}
+
+/// Étapes : gelé tant que la sauvegarde n'est pas reprise (sauf reprises
+/// seules), complet quand chaque Utilisateur est restauré.
+#[test]
+fn restore_state_freezes_until_the_snapshot_is_handled() {
+    let mut r = RestoreState::default();
+    assert!(r.frozen());
+    r.check_complete(10);
+    assert!(r.completed_at.is_none());
+    r.snapshot = Some(s3m_node::recovery::SnapshotOutcome::Absent);
+    r.add_user(&[1; 32], &[7; 16], UserOrigin::Snapshot);
+    assert!(!r.frozen());
+    assert_eq!(r.pending_users(), vec![([1; 32], vec![7; 16])]);
+    r.check_complete(11);
+    assert!(r.completed_at.is_none());
+    r.users.values_mut().for_each(|u| u.done_at = Some(12));
+    r.check_complete(12);
+    assert_eq!(r.completed_at, Some(12));
+    let only = RestoreState {
+        reconnect_only: true,
+        ..Default::default()
+    };
+    assert!(!only.frozen());
 }

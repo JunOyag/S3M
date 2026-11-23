@@ -30,7 +30,7 @@ use crate::local_http::{ActionFn, Asset, StatusFn};
 use crate::net::{NatState, NetConfig, RelayLimits};
 use crate::partnering::{excluded, run_partnering, score, Net, PartneringConfig, PartneringReport};
 use crate::publish::{ensure_node_proof, publish_entry, NodeEntryState};
-use crate::recovery::recover;
+use crate::recovery::{RestoreState, SnapshotOutcome, UserOrigin};
 use crate::snapshot_engine::run_snapshot;
 use crate::tombstones::PartnerLedger;
 use crate::upkeep::{run_upkeep, UpkeepConfig, UpkeepReport};
@@ -171,10 +171,6 @@ impl Config {
             out.push(self.listen.clone());
         }
         out
-    }
-
-    fn dht_bootstrap_is_empty(&self) -> bool {
-        self.bootstrap.is_empty()
     }
 
     pub fn load(path: &Path) -> Result<Self, DaemonError> {
@@ -625,7 +621,9 @@ pub struct Shared {
     /// `NodeSnapshotPointer` courant (sérialisé).
     pub snapshot_pointer: Mutex<Option<Vec<u8>>>,
     /// Résultat de la restauration au démarrage, s'il y en a eu une.
-    pub recovery: Mutex<Option<Value>>,
+    /// Restauration automatique (`deploiement.disaster-recovery`), si une
+    /// a eu lieu ou est en cours.
+    pub restore: Mutex<Option<RestoreState>>,
     pub excluded: Arc<Mutex<std::collections::HashSet<[u8; 32]>>>,
     /// Traversée de NAT.
     pub nat: Arc<Mutex<NatState>>,
@@ -702,7 +700,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
-          "sections": ["alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
+          "sections": ["restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
           "actions": ["attach_user", "set_attach_policy"] },
@@ -1179,6 +1177,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         "annuaire (entrée Node)": node_entry_status(sh),
         "traversée de NAT": nat_status(sh),
         "snapshot du nœud": snapshot_status(sh),
+        "restauration": restore_status(sh),
         "migration": {
             "anciens node_id couverts": s.previous_node_ids.iter().map(|i| hx(i)).collect::<Vec<_>>(),
             "délégations reçues": s.delegations.len(),
@@ -1433,9 +1432,8 @@ fn node_entry_status(sh: &Shared) -> Value {
 }
 
 fn snapshot_status(sh: &Shared) -> Value {
-    let recovery = sh.recovery.lock().unwrap().clone();
     let snap = match sh.dispersal.try_lock() {
-        Err(_) => return json!({ "état": "cycle en cours", "restauration": recovery }),
+        Err(_) => return json!({ "état": "cycle en cours" }),
         Ok(d) => d.snapshot.clone(),
     };
     json!({
@@ -1443,7 +1441,6 @@ fn snapshot_status(sh: &Shared) -> Value {
         "fragments placés": snap.stripe.as_ref().map(|s| s.parity.len()),
         "publié dans l'entrée Node": sh.node_entry.lock().unwrap().published_snapshot.is_some(),
         "erreur": snap.last_error,
-        "restauration au démarrage": recovery,
     })
 }
 
@@ -1857,6 +1854,287 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, St
     Some(r)
 }
 
+fn restore_path(c: &Config) -> PathBuf {
+    c.data_dir.join("restore.json")
+}
+
+/// Marqueur posé à côté de la seed quand l'identité vient d'être créée :
+/// aucune sauvegarde à chercher au premier démarrage.
+pub fn new_identity_marker(seed_file: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.nouvelle", seed_file.display()))
+}
+
+/// Nœud gelé : sauvegarde pas encore reprise (aucune publication, aucun
+/// partenariat, aucune dispersion).
+fn frozen(sh: &Shared) -> bool {
+    sh.restore
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|r| r.frozen())
+}
+
+/// Un tour de restauration automatique (`deploiement.disaster-recovery`
+/// § Restauration automatique) : reprises à la reconnexion, Nœuds joints,
+/// sauvegarde du Nœud, copie locale de chaque Utilisateur. Enregistré à
+/// chaque tour ; reprend après un redémarrage.
+async fn restore_tick(sh: &Shared, fabric: &NetFabric, d: &mut DispersalState, now: u64) {
+    use crate::recovery::{restore_snapshot, restore_user, was_attached, Net, ABSENT_AFTER_S};
+    let net = Net {
+        server: &fabric.server,
+        dht: &fabric.dht,
+        cfg: &sh.config.dispersal,
+        addrs: &sh.addrs,
+    };
+    let before = sh.restore.lock().unwrap().clone();
+    let mut r = before.clone();
+    // Reprise à la reconnexion : fiche de dispersion retrouvée.
+    let cands = std::mem::take(&mut sh.service.lock().unwrap().reclaim);
+    for (u, salt) in cands {
+        let id = hex::encode(u);
+        if r.as_ref().is_some_and(|r| r.users.contains_key(&id))
+            || d.users
+                .get(&id)
+                .is_some_and(|x| x.pointer.is_some() || !x.stripes.is_empty())
+        {
+            continue;
+        }
+        if !matches!(
+            was_attached(&sh.service, &fabric.dht, &u, &salt).await,
+            Ok(true)
+        ) {
+            continue;
+        }
+        {
+            let mut s = sh.service.lock().unwrap();
+            let quota = s.attach_policy.quota_bytes;
+            s.users.entry(u).or_insert(crate::exchange::UserAccount {
+                salt: salt.clone(),
+                quota_bytes: quota,
+                used_bytes: 0,
+                root: [0; 32],
+            });
+            s.adopt_next_root.insert(u);
+            s.restoring.insert(u);
+        }
+        let st = r.get_or_insert_with(|| RestoreState {
+            started_at: now,
+            reconnect_only: true,
+            ..Default::default()
+        });
+        st.add_user(&u, &salt, UserOrigin::Reconnect);
+        note(
+            sh,
+            format!(
+                "utilisateur {}… repris à sa reconnexion : restauration de ses fichiers",
+                &id[..16]
+            ),
+        );
+    }
+    let Some(st) = r.as_mut() else { return };
+    // Étapes 2 à 5 : Nœuds joints, sauvegarde du Nœud.
+    if st.frozen() {
+        let pub_node = sh.service.lock().unwrap().node_id();
+        let peers = fabric
+            .dht
+            .closest_peers(pub_node.to_vec())
+            .await
+            .map(|p| !p.is_empty())
+            .unwrap_or(false);
+        if peers && st.peers_at.is_none() {
+            st.peers_at = Some(now);
+        }
+        if st.peers_at.is_some() {
+            match restore_snapshot(&sh.service, d, &net, now).await {
+                Ok(Some((users, partners))) => {
+                    st.snapshot = Some(SnapshotOutcome::Restored {
+                        users: users.len(),
+                        partners,
+                    });
+                    st.snapshot_at = Some(now);
+                    st.last_error = None;
+                    let mut s = sh.service.lock().unwrap();
+                    for (u, salt) in &users {
+                        st.add_user(u, salt, UserOrigin::Snapshot);
+                        s.restoring.insert(*u);
+                    }
+                    drop(s);
+                    note(sh, format!("sauvegarde du Nœud reprise : {} utilisateur(s), {partners} partenaire(s)", users.len()));
+                }
+                Ok(None) => {
+                    let since = *st.absent_since.get_or_insert(now);
+                    if now >= since + ABSENT_AFTER_S {
+                        st.snapshot = Some(SnapshotOutcome::Absent);
+                        st.snapshot_at = Some(now);
+                        note(
+                            sh,
+                            "aucune sauvegarde publiée pour cette seed : démarrage comme Nœud neuf",
+                        );
+                    }
+                }
+                Err(e) => st.last_error = Some(e),
+            }
+        }
+    }
+    // Étape 6 : copie locale de chaque Utilisateur.
+    if !st.frozen() {
+        for (u, salt) in st.pending_users() {
+            let res = restore_user(&sh.service, d, &net, u, &salt, now).await;
+            let e = st.users.get_mut(&hex::encode(u)).expect("listé");
+            e.tries += 1;
+            match res {
+                Ok((stripes, blocks)) => {
+                    e.done_at = Some(now);
+                    e.stripes = stripes;
+                    e.blocks = blocks;
+                    e.error = None;
+                    sh.service.lock().unwrap().restoring.remove(&u);
+                }
+                Err(err) => e.error = Some(err),
+            }
+        }
+        let was = st.completed_at.is_some();
+        st.check_complete(now);
+        if !was && st.completed_at.is_some() {
+            note(sh, "restauration complète");
+        }
+    }
+    if r != before {
+        if let Some(st) = &r {
+            if let Ok(b) = serde_json::to_vec_pretty(st) {
+                let _ = std::fs::write(restore_path(&sh.config), b);
+            }
+        }
+        *sh.restore.lock().unwrap() = r;
+    }
+}
+
+/// Étapes de la restauration, faites et restantes.
+fn restore_status(sh: &Shared) -> Value {
+    let Some(r) = sh.restore.lock().unwrap().clone() else {
+        return Value::Null;
+    };
+    let entry = sh.node_entry.lock().unwrap();
+    let step = |n: u32, label: &str, state: &str, detail: Value| json!({ "étape": n, "description": label, "état": state, "détail": detail });
+    let mut steps = Vec::new();
+    if !r.reconnect_only {
+        steps.push(step(
+            1,
+            "Identité et preuve de travail",
+            if entry.proof_ready {
+                "fait"
+            } else if entry.proof_error.is_some() {
+                "erreur"
+            } else {
+                "en cours"
+            },
+            json!(entry.proof_error),
+        ));
+        steps.push(step(
+            2,
+            "Nœuds du réseau joints",
+            if r.peers_at.is_some() {
+                "fait"
+            } else {
+                "en cours"
+            },
+            json!(r
+                .peers_at
+                .map(|t| format!("le {t}"))
+                .unwrap_or_else(|| "recherche (réseau local, nœuds d'amorçage)…".into())),
+        ));
+        let (s3, d3) = match (&r.snapshot, r.absent_since) {
+            (Some(SnapshotOutcome::Restored { .. }), _) => ("fait", json!("sauvegarde trouvée")),
+            (Some(SnapshotOutcome::Absent), _) => ("fait", json!("aucune sauvegarde : Nœud neuf")),
+            (None, Some(t)) => (
+                "en cours",
+                json!(format!(
+                    "entrée introuvable depuis le {t} ; Nœud tenu pour neuf après {} min",
+                    crate::recovery::ABSENT_AFTER_S / 60
+                )),
+            ),
+            (None, None) if r.peers_at.is_some() => ("en cours", json!(r.last_error)),
+            _ => ("à faire", Value::Null),
+        };
+        steps.push(step(3, "Entrée du Nœud lue dans l'annuaire", s3, d3));
+        let restored = matches!(r.snapshot, Some(SnapshotOutcome::Restored { .. }));
+        let s45 = if r.snapshot.is_some() {
+            if restored {
+                "fait"
+            } else {
+                "sans objet"
+            }
+        } else if r.last_error.is_some() {
+            "erreur"
+        } else {
+            "à faire"
+        };
+        steps.push(step(
+            4,
+            "Sauvegarde reconstruite depuis les fragments",
+            s45,
+            json!(r.last_error),
+        ));
+        steps.push(step(
+            5,
+            "Utilisateurs, partenaires et liste noire restaurés",
+            s45,
+            match &r.snapshot {
+                Some(SnapshotOutcome::Restored { users, partners }) => {
+                    json!(format!("{users} utilisateur(s), {partners} partenaire(s)"))
+                }
+                _ => Value::Null,
+            },
+        ));
+    }
+    let users: Vec<Value> = r.users.iter().map(|(id, u)| json!({
+        "utilisateur": format!("{}…", &id[..16]),
+        "origine": match u.origin { UserOrigin::Snapshot => "sauvegarde", UserOrigin::Reconnect => "reconnexion" },
+        "état": if u.done_at.is_some() { "fait" } else if u.error.is_some() { "erreur (nouvel essai à chaque cycle)" } else { "à faire" },
+        "stripes reconstruits": u.stripes,
+        "blocs reconstruits": u.blocks,
+        "essais": u.tries,
+        "erreur": u.error,
+    })).collect();
+    let done = r.users.values().filter(|u| u.done_at.is_some()).count();
+    let by = |o: UserOrigin| r.users.values().filter(|u| u.origin == o).count();
+    steps.push(step(
+        6,
+        "Copie locale de chaque utilisateur (sauvegarde)",
+        if r.frozen() {
+            "à faire"
+        } else if r
+            .users
+            .values()
+            .filter(|u| u.origin == UserOrigin::Snapshot)
+            .all(|u| u.done_at.is_some())
+        {
+            "fait"
+        } else {
+            "en cours"
+        },
+        json!(format!("{} utilisateur(s)", by(UserOrigin::Snapshot))),
+    ));
+    steps.push(step(7, "Utilisateurs repris à leur reconnexion",
+        "continu", json!(format!("{} repris ; un utilisateur inconnu dont la fiche de dispersion existe pour ce Nœud est repris automatiquement", by(UserOrigin::Reconnect)))));
+    steps.push(step(
+        8,
+        "Restauration complète, publication rétablie",
+        if r.completed_at.is_some() {
+            "fait"
+        } else {
+            "à faire"
+        },
+        json!(r.completed_at.map(|t| format!("le {t}"))),
+    ));
+    json!({
+        "état": if r.completed_at.is_some() { "terminée" } else if r.frozen() { "en cours : Nœud gelé (aucune publication)" } else { "en cours" },
+        "utilisateurs restaurés": format!("{done} / {}", r.users.len()),
+        "étapes": steps,
+        "utilisateurs": users,
+    })
+}
+
 fn state_path(c: &Config) -> PathBuf {
     c.data_dir.join("state.json")
 }
@@ -1991,32 +2269,28 @@ pub async fn start_with(
     .map_err(|e| start(&e))?;
     let (dht, blocks, nat) = (node_net.dht, node_net.blocks, node_net.nat);
 
-    // Installation vide : restauration depuis le réseau (seed seule).
-    let restored = Arc::new(Mutex::new(HashMap::new()));
-    let mut recovery_report = None;
-    if fresh && !config.dht_bootstrap_is_empty() {
-        let attempt = tokio::time::timeout(
-            Duration::from_secs(300),
-            recover(
-                &service,
-                &mut dispersal,
-                &blocks,
-                &dht,
-                &config.dispersal,
-                &restored,
-                system_clock()(),
-            ),
-        )
-        .await;
-        recovery_report = Some(match attempt {
-            Err(_) => json!({ "erreur": "délai dépassé" }),
-            Ok(Err(e)) => json!({ "erreur": e }),
-            Ok(Ok(r)) => json!({ "utilisateurs": r.users, "partenaires": r.partners,
-                "stripes": r.stripes, "blocs reconstruits": r.blocks, "erreurs": r.errors }),
-        });
+    // Installation vide : restauration automatique depuis le réseau (seed
+    // seule), sauf identité tout juste créée.
+    let mut restore: Option<RestoreState> = std::fs::read(restore_path(&config))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok());
+    if fresh {
+        let marker = new_identity_marker(&config.seed_file);
+        if marker.exists() {
+            let _ = std::fs::remove_file(&marker);
+        } else {
+            restore = Some(RestoreState {
+                started_at: system_clock()(),
+                ..Default::default()
+            });
+        }
     }
-    let mut addrs = addrs;
-    addrs.extend(restored.lock().unwrap().drain());
+    if let Some(r) = &restore {
+        let mut s = service.lock().unwrap();
+        for (u, _) in r.pending_users() {
+            s.restoring.insert(u);
+        }
+    }
     let initial_pointer = dispersal
         .snapshot
         .pointer
@@ -2036,7 +2310,7 @@ pub async fn start_with(
         last_upkeep: Mutex::new(None),
         node_entry: Arc::new(Mutex::new(NodeEntryState::default())),
         snapshot_pointer: Mutex::new(initial_pointer),
-        recovery: Mutex::new(recovery_report),
+        restore: Mutex::new(restore),
         peer_id: blocks.peer_id().to_string(),
         blocks_addr: blocks.listen_addr().await.map(|a| a.to_string()),
         dht_addr: dht.listen_addr().await.map(|a| a.to_string()),
@@ -2125,6 +2399,12 @@ pub async fn start_with(
             };
             sh.node_entry.lock().unwrap().proof_ready = true;
             loop {
+                // Sauvegarde pas encore reprise : rien n'est publié (elle
+                // serait écrasée).
+                if frozen(&sh) {
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    continue;
+                }
                 let (direct, addrs) = {
                     let n = sh.nat.lock().unwrap();
                     (announced_direct(&sh.config, &n), n.announced())
@@ -2194,69 +2474,76 @@ pub async fn start_with(
             {
                 let now = clock();
                 let mut d = sh.dispersal.lock().await;
-                // Retraits de liste noire demandés pendant un cycle.
-                let pending = std::mem::take(&mut *sh.unblacklist.lock().unwrap());
-                for n in &pending {
-                    d.unblacklist(n);
+                restore_tick(&sh, &fabric, &mut d, now).await;
+                if frozen(&sh) {
+                    if let Err(e) = save_dispersal(&sh.config, &d) {
+                        eprintln!("sauvegarde de la dispersion : {e}");
+                    }
+                } else {
+                    // Retraits de liste noire demandés pendant un cycle.
+                    let pending = std::mem::take(&mut *sh.unblacklist.lock().unwrap());
+                    for n in &pending {
+                        d.unblacklist(n);
+                    }
+                    // Partenariats automatiques, puis exclusions de placement.
+                    sh.service.lock().unwrap().blacklisted = d
+                        .upkeep
+                        .blacklist
+                        .keys()
+                        .filter_map(|n| hex::decode(n).ok()?.try_into().ok())
+                        .collect();
+                    let own_entry = sh.node_entry.lock().unwrap().last_envelope.clone();
+                    let target = sh.config.dispersal.k * sh.config.dispersal.coef + 4;
+                    let net = Net {
+                        server: &fabric.server,
+                        dht: &fabric.dht,
+                        addrs: &sh.addrs,
+                        own_entry,
+                    };
+                    let pr = run_partnering(
+                        &sh.service,
+                        &mut d,
+                        &net,
+                        &sh.config.partnering,
+                        target,
+                        now,
+                    )
+                    .await;
+                    *sh.last_partnering.lock().unwrap() = Some((now, pr));
+                    let ex = excluded(&sh.config.partnering, &d);
+                    sh.service.lock().unwrap().no_credit = ex.clone();
+                    *sh.excluded.lock().unwrap() = ex;
+                    let up = run_upkeep(
+                        &sh.service,
+                        &mut d,
+                        &fabric,
+                        &sh.config.dispersal,
+                        &sh.config.upkeep,
+                        now,
+                    )
+                    .await;
+                    *sh.last_upkeep.lock().unwrap() = Some((now, up));
+                    let report =
+                        run_cycle(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await;
+                    let erased = crate::dispersal_engine::purge_released(&sh.service, &mut d, now);
+                    if erased > 0 {
+                        crate::daemon::note(
+                            &sh,
+                            format!("{erased} bloc(s) libéré(s) par leurs utilisateurs effacé(s)"),
+                        );
+                    }
+                    if run_snapshot(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await {
+                        *sh.snapshot_pointer.lock().unwrap() = d
+                            .snapshot
+                            .pointer
+                            .as_deref()
+                            .and_then(|p| hex::decode(p).ok());
+                    }
+                    if let Err(e) = save_dispersal(&sh.config, &d) {
+                        eprintln!("sauvegarde de la dispersion : {e}");
+                    }
+                    *sh.last_cycle.lock().unwrap() = Some((now, report));
                 }
-                // Partenariats automatiques, puis exclusions de placement.
-                sh.service.lock().unwrap().blacklisted = d
-                    .upkeep
-                    .blacklist
-                    .keys()
-                    .filter_map(|n| hex::decode(n).ok()?.try_into().ok())
-                    .collect();
-                let own_entry = sh.node_entry.lock().unwrap().last_envelope.clone();
-                let target = sh.config.dispersal.k * sh.config.dispersal.coef + 4;
-                let net = Net {
-                    server: &fabric.server,
-                    dht: &fabric.dht,
-                    addrs: &sh.addrs,
-                    own_entry,
-                };
-                let pr = run_partnering(
-                    &sh.service,
-                    &mut d,
-                    &net,
-                    &sh.config.partnering,
-                    target,
-                    now,
-                )
-                .await;
-                *sh.last_partnering.lock().unwrap() = Some((now, pr));
-                let ex = excluded(&sh.config.partnering, &d);
-                sh.service.lock().unwrap().no_credit = ex.clone();
-                *sh.excluded.lock().unwrap() = ex;
-                let up = run_upkeep(
-                    &sh.service,
-                    &mut d,
-                    &fabric,
-                    &sh.config.dispersal,
-                    &sh.config.upkeep,
-                    now,
-                )
-                .await;
-                *sh.last_upkeep.lock().unwrap() = Some((now, up));
-                let report =
-                    run_cycle(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await;
-                let erased = crate::dispersal_engine::purge_released(&sh.service, &mut d, now);
-                if erased > 0 {
-                    crate::daemon::note(
-                        &sh,
-                        format!("{erased} bloc(s) libéré(s) par leurs utilisateurs effacé(s)"),
-                    );
-                }
-                if run_snapshot(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await {
-                    *sh.snapshot_pointer.lock().unwrap() = d
-                        .snapshot
-                        .pointer
-                        .as_deref()
-                        .and_then(|p| hex::decode(p).ok());
-                }
-                if let Err(e) = save_dispersal(&sh.config, &d) {
-                    eprintln!("sauvegarde de la dispersion : {e}");
-                }
-                *sh.last_cycle.lock().unwrap() = Some((now, report));
             }
             if tick.is_multiple_of(120) {
                 let _ = refresh_successors(&sh.service, &fabric.dht).await;

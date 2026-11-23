@@ -42,7 +42,7 @@ use s3m_protocol::snapshot::{
 use crate::chunk_store::Space;
 use crate::dht_directory::DhtNode;
 use crate::dispersal_engine::{DispersalState, EngineConfig, StripeRec, UserDispersal};
-use crate::exchange::{BlockServer, NodeService, PartnerState, UserAccount};
+use crate::exchange::{BlockServer, NodeService, UserAccount};
 
 /// Bilan d'une restauration.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -197,60 +197,69 @@ fn record(s: &StripeDesc, table: &[PartnerDesc], data: &[Vec<u8>]) -> StripeRec 
     }
 }
 
-/// Restaure le Nœud depuis le réseau (installation vide, seed seule).
-pub async fn recover(
+/// Accès au réseau d'une restauration.
+pub struct Net<'a> {
+    pub server: &'a BlockServer,
+    pub dht: &'a DhtNode,
+    pub cfg: &'a EngineConfig,
+    pub addrs: &'a Mutex<HashMap<Id, String>>,
+}
+
+impl Net<'_> {
+    fn fetcher(&self) -> Fetcher<'_> {
+        Fetcher {
+            server: self.server,
+            dht: self.dht,
+            addrs: self.addrs,
+            coef: self.cfg.coef,
+            seen: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+/// Étapes 3 à 5 : sauvegarde du Nœud (snapshot du NodeManifest). Rend les
+/// Utilisateurs `(id, sel)` restaurés, `None` si aucune sauvegarde n'est
+/// publiée pour cette seed.
+pub async fn restore_snapshot(
     service: &Mutex<NodeService>,
     state: &mut DispersalState,
-    server: &BlockServer,
-    dht: &DhtNode,
-    cfg: &EngineConfig,
-    addrs: &Mutex<HashMap<Id, String>>,
+    net: &Net<'_>,
     now: u64,
-) -> Result<RecoveryReport, String> {
+) -> Result<Option<(Vec<(Id, Vec<u8>)>, usize)>, String> {
     let (priv_node, pub_node) = {
         let s = service.lock().unwrap();
         (s.priv_node(), s.node_id())
     };
-    let env = dht
+    let Some(env) = net
+        .dht
         .get(pub_node.to_vec())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or("aucune entrée Node publiée pour cette seed")?;
-    let pointer = open_node_entry_pointer(&priv_node, &env)
-        .map_err(|e| e.to_string())?
-        .ok_or("l'entrée Node ne porte pas de snapshot")?;
-    let f = Fetcher {
-        server,
-        dht,
-        addrs,
-        coef: cfg.coef,
-        seen: Mutex::new(HashMap::new()),
+    else {
+        return Ok(None);
     };
+    let Some(pointer) = open_node_entry_pointer(&priv_node, &env).map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let f = net.fetcher();
     let frames = f.data(&pointer.stripe, &pointer.partners).await?;
     let manifest = decode_snapshot(
         &open_snapshot(&priv_node, &pointer.salt, &frames).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    let mut report = RecoveryReport {
-        users: manifest.users.len(),
-        partners: manifest.partners.len(),
-        ..Default::default()
-    };
     {
         let mut s = service.lock().unwrap();
         for p in &manifest.partners {
-            s.partners.insert(p.node_id, PartnerState::default());
+            s.partners.entry(p.node_id).or_default();
         }
         for u in &manifest.users {
-            s.users.insert(
-                u.user_id,
-                UserAccount {
-                    salt: u.salt.clone(),
-                    quota_bytes: u.quota_bytes,
-                    used_bytes: 0,
-                    root: [0; 32],
-                },
-            );
+            s.users.entry(u.user_id).or_insert_with(|| UserAccount {
+                salt: u.salt.clone(),
+                quota_bytes: u.quota_bytes,
+                used_bytes: 0,
+                root: [0; 32],
+            });
             s.adopt_next_root.insert(u.user_id);
         }
     }
@@ -261,46 +270,223 @@ pub async fn recover(
         f.addr(&p.node_id, None).await;
     }
     state.snapshot.pointer = Some(hx(&encode_pointer(&pointer)));
-    state.snapshot.stripe = Some(record(&pointer.stripe, &pointer.partners, &frames));
+    let rec = record(&pointer.stripe, &pointer.partners, &frames);
+    count_hosted(service, std::slice::from_ref(&rec));
+    state.snapshot.stripe = Some(rec);
     state.snapshot.last_at = now;
+    Ok(Some((
+        manifest
+            .users
+            .iter()
+            .map(|u| (u.user_id, u.salt.clone()))
+            .collect(),
+        manifest.partners.len(),
+    )))
+}
 
-    // Étape 4 : copie locale intégrale de chaque Utilisateur.
-    for u in &manifest.users {
-        match recover_user(service, &f, &priv_node, u.user_id, &u.salt, now).await {
-            Ok((d, blocks)) => {
-                report.stripes += d.stripes.len();
-                report.blocks += blocks;
-                state.users.insert(hx(&u.user_id), d);
-            }
-            Err(e) => report
-                .errors
-                .push(format!("{}… : {e}", &hx(&u.user_id)[..16])),
-        }
-    }
-    // Adresses de tous les partenaires connus (entrée DHT, sinon tables).
-    for p in &manifest.partners {
-        let fallback = f.seen.lock().unwrap().get(&p.node_id).cloned();
-        f.addr(&p.node_id, fallback.as_ref()).await;
-    }
-    // Soldes : ce qu'on héberge chez chacun, recompté depuis les catalogues.
+/// Fragments confiés à chaque partenaire, recomptés depuis des stripes.
+fn count_hosted(service: &Mutex<NodeService>, recs: &[StripeRec]) {
     let mut s = service.lock().unwrap();
-    let all = state
-        .users
-        .values()
-        .flat_map(|d| d.stripes.iter().chain(d.index.iter()))
-        .chain(state.snapshot.stripe.iter());
-    for rec in all {
+    for rec in recs {
         for (_, _, p) in &rec.parity {
             if let Some(st) = hex::decode(p)
                 .ok()
                 .and_then(|v| <[u8; 32]>::try_from(v).ok())
-                .and_then(|id| s.partners.get_mut(&id))
+                .map(|id| s.partners.entry(id).or_default())
             {
                 st.ledger.hosted_for_partner += 1;
             }
         }
     }
+}
+
+/// Étape 6 : copie locale intégrale d'un Utilisateur (déjà dans
+/// `service.users`) depuis la parité. Les blocs reçus entre-temps restent en
+/// attente de dispersion. Rend `(stripes, blocs)`.
+pub async fn restore_user(
+    service: &Mutex<NodeService>,
+    state: &mut DispersalState,
+    net: &Net<'_>,
+    user: Id,
+    salt: &[u8],
+    now: u64,
+) -> Result<(usize, usize), String> {
+    let priv_node = service.lock().unwrap().priv_node();
+    let f = net.fetcher();
+    let (mut d, blocks) = recover_user(service, &f, &priv_node, user, salt, now).await?;
+    // Adresses des partenaires des catalogues (entrée DHT, sinon tables).
+    let seen: Vec<PartnerDesc> = f.seen.lock().unwrap().values().cloned().collect();
+    for p in &seen {
+        f.addr(&p.node_id, Some(p)).await;
+    }
+    let recs: Vec<StripeRec> = d.stripes.iter().chain(&d.index).cloned().collect();
+    count_hosted(service, &recs);
+    if let Some(old) = state.users.remove(&hx(&user)) {
+        d.pending = old.pending;
+        d.pending_since = old.pending_since;
+    }
+    let stripes = d.stripes.len();
+    state.users.insert(hx(&user), d);
+    Ok((stripes, blocks))
+}
+
+/// Reprise à la reconnexion : vrai si une fiche de dispersion existe pour
+/// cet Utilisateur sous `K_attach(ce Nœud, Utilisateur, sel)` — preuve
+/// qu'il était rattaché à ce Nœud.
+pub async fn was_attached(
+    service: &Mutex<NodeService>,
+    dht: &DhtNode,
+    user: &Id,
+    salt: &[u8],
+) -> Result<bool, String> {
+    let priv_node = service.lock().unwrap().priv_node();
+    let k_attach = derive_k_attach_as_node(&priv_node, user, salt).map_err(|e| e.to_string())?;
+    let Some(env) = dht
+        .get(dispersal_dht_key(&k_attach).to_vec())
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(false);
+    };
+    Ok(open_dispersal_entry(&k_attach, &env).is_ok())
+}
+
+/// Restaure le Nœud depuis le réseau en une fois (sauvegarde puis chaque
+/// Utilisateur).
+pub async fn recover(
+    service: &Mutex<NodeService>,
+    state: &mut DispersalState,
+    server: &BlockServer,
+    dht: &DhtNode,
+    cfg: &EngineConfig,
+    addrs: &Mutex<HashMap<Id, String>>,
+    now: u64,
+) -> Result<RecoveryReport, String> {
+    let net = Net {
+        server,
+        dht,
+        cfg,
+        addrs,
+    };
+    let (users, partners) = restore_snapshot(service, state, &net, now)
+        .await?
+        .ok_or("aucune sauvegarde publiée pour cette seed")?;
+    let mut report = RecoveryReport {
+        users: users.len(),
+        partners,
+        ..Default::default()
+    };
+    for (u, salt) in users {
+        match restore_user(service, state, &net, u, &salt, now).await {
+            Ok((s, b)) => {
+                report.stripes += s;
+                report.blocks += b;
+            }
+            Err(e) => report.errors.push(format!("{}… : {e}", &hx(&u)[..16])),
+        }
+    }
     Ok(report)
+}
+
+/// Origine d'un Utilisateur à restaurer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum UserOrigin {
+    /// Listé dans la sauvegarde du Nœud.
+    Snapshot,
+    /// Repris à sa reconnexion (fiche de dispersion retrouvée).
+    Reconnect,
+}
+
+/// Restauration d'un Utilisateur (étape 6).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct UserRestore {
+    pub salt: String,
+    pub origin: UserOrigin,
+    pub done_at: Option<u64>,
+    pub stripes: usize,
+    pub blocks: usize,
+    pub tries: u32,
+    pub error: Option<String>,
+}
+
+/// Issue des étapes 3 à 5.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SnapshotOutcome {
+    Restored {
+        users: usize,
+        partners: usize,
+    },
+    /// Aucune sauvegarde publiée : Nœud neuf.
+    Absent,
+}
+
+/// Délai sans entrée Node trouvée (Nœuds joints) avant de tenir le Nœud
+/// pour neuf (`deploiement.disaster-recovery` § Restauration automatique).
+pub const ABSENT_AFTER_S: u64 = 600;
+
+/// État persistant de la restauration automatique (`restore.json`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RestoreState {
+    pub started_at: u64,
+    /// Étape 2 : premier instant où des Nœuds ont été joints.
+    pub peers_at: Option<u64>,
+    /// Entrée Node introuvable depuis (Nœuds joints).
+    pub absent_since: Option<u64>,
+    /// Étapes 3 à 5.
+    pub snapshot: Option<SnapshotOutcome>,
+    pub snapshot_at: Option<u64>,
+    /// Étape 6 : par Utilisateur (hex).
+    pub users: std::collections::BTreeMap<String, UserRestore>,
+    pub last_error: Option<String>,
+    pub completed_at: Option<u64>,
+    /// Reprises à la reconnexion seulement (installation existante) :
+    /// jamais gelé.
+    #[serde(default)]
+    pub reconnect_only: bool,
+}
+
+impl RestoreState {
+    /// Nœud gelé (aucune publication) : sauvegarde pas encore reprise.
+    pub fn frozen(&self) -> bool {
+        !self.reconnect_only && self.snapshot.is_none()
+    }
+
+    /// Utilisateurs dont la copie locale reste à reconstruire.
+    pub fn pending_users(&self) -> Vec<(Id, Vec<u8>)> {
+        self.users
+            .iter()
+            .filter(|(_, u)| u.done_at.is_none())
+            .filter_map(|(id, u)| {
+                Some((
+                    hex::decode(id).ok()?.try_into().ok()?,
+                    hex::decode(&u.salt).ok()?,
+                ))
+            })
+            .collect()
+    }
+
+    pub fn add_user(&mut self, user: &Id, salt: &[u8], origin: UserOrigin) {
+        self.users.entry(hx(user)).or_insert(UserRestore {
+            salt: hx(salt),
+            origin,
+            done_at: None,
+            stripes: 0,
+            blocks: 0,
+            tries: 0,
+            error: None,
+        });
+        self.completed_at = None;
+    }
+
+    /// Tout est restauré : marque la fin.
+    pub fn check_complete(&mut self, now: u64) {
+        if !self.frozen()
+            && self.users.values().all(|u| u.done_at.is_some())
+            && self.completed_at.is_none()
+        {
+            self.completed_at = Some(now);
+        }
+    }
 }
 
 async fn recover_user(
@@ -344,10 +530,12 @@ async fn recover_user(
                     }
                     let h = hash_sha256(b);
                     let mut sv = service.lock().unwrap();
+                    // Reprise après un échec : jamais compté deux fois.
+                    let fresh = !sv.store.contains(&h);
                     sv.store
                         .put(Space::UserBlock, &user, &h, b)
                         .map_err(|e| e.to_string())?;
-                    if let Some(acc) = sv.users.get_mut(&user) {
+                    if let Some(acc) = sv.users.get_mut(&user).filter(|_| fresh) {
                         acc.used_bytes += b.len() as u64;
                     }
                     blocks += 1;

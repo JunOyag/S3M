@@ -773,7 +773,13 @@ pub async fn run_cycle(
     let mut report = CycleReport::default();
     let (users, queue, priv_node) = {
         let mut s = service.lock().unwrap();
-        let users: Vec<(Id, Vec<u8>)> = s.users.iter().map(|(i, a)| (*i, a.salt.clone())).collect();
+        // Copie locale en cours de restauration : rien n'est republié.
+        let users: Vec<(Id, Vec<u8>)> = s
+            .users
+            .iter()
+            .filter(|(i, _)| !s.restoring.contains(*i))
+            .map(|(i, a)| (*i, a.salt.clone()))
+            .collect();
         (users, std::mem::take(&mut s.dispersal_queue), s.priv_node())
     };
     for (user, hash) in queue {

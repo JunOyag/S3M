@@ -127,7 +127,15 @@ fn act(st: &mut State, seed_file: &PathBuf, name: &str, v: &Value) -> Result<Val
             st.phase = Phase::Choose;
             Ok(json!({ "ok": true, "message": "Retour au choix" }))
         }
-        ("confirm", Phase::Reveal { mnemonic, .. }) => {
+        ("confirm", Phase::Reveal { mnemonic, restored }) => {
+            // Identité neuve : aucune sauvegarde à chercher au démarrage.
+            let marker = crate::daemon::new_identity_marker(seed_file);
+            if *restored {
+                let _ = std::fs::remove_file(&marker);
+            } else if let Some(dir) = marker.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+                std::fs::write(&marker, b"").map_err(|e| e.to_string())?;
+            }
             if let Some(dir) = seed_file.parent() {
                 std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
             }

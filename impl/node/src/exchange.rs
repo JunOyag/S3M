@@ -173,6 +173,13 @@ pub struct NodeService {
     /// Partenaires sans crédit d'hébergement (score sous le seuil de
     /// placement, retrait) : troc strict avec eux.
     pub no_credit: std::collections::HashSet<Id>,
+    /// Utilisateurs dont la copie locale est en cours de restauration :
+    /// hors des cycles de dispersion (`deploiement.disaster-recovery`).
+    pub restoring: std::collections::HashSet<Id>,
+    /// Demandes de rattachement à vérifier pour une reprise : `(utilisateur,
+    /// sel)` dont la preuve est valide (`deploiement.disaster-recovery`
+    /// § Reprise à la reconnexion).
+    pub reclaim: Vec<(Id, Vec<u8>)>,
     /// Blocs libérés par leur Utilisateur, encore sur disque :
     /// `utilisateur → (hash → instant de libération)`
     /// (`protocols.echange-blocs` § Libération).
@@ -250,6 +257,8 @@ impl NodeService {
             missing_partners: 0,
             revoked_shares: Default::default(),
             no_credit: Default::default(),
+            restoring: Default::default(),
+            reclaim: Default::default(),
             released: HashMap::new(),
             share_rate: HashMap::new(),
             limiter: RescueLimiter::default(),
@@ -571,12 +580,20 @@ impl NodeService {
                     });
                 }
                 let p = self.attach_policy;
-                if !p.enabled || salt.len() != 16 {
+                if salt.len() != 16 {
                     return Err(Refusal::Unauthorized);
                 }
                 let k = derive_k_attach_as_node(&self.priv_node, &pub_user, &salt)
                     .map_err(|_| Refusal::Unauthorized)?;
                 if !verify_connector_proof(&k, from, local, proof) {
+                    return Err(Refusal::Unauthorized);
+                }
+                // Reprise possible : vérifiée hors de la requête (fiche de
+                // dispersion de cet Utilisateur pour ce Nœud dans l'annuaire).
+                if !self.reclaim.iter().any(|(u, _)| *u == pub_user) && self.reclaim.len() < 64 {
+                    self.reclaim.push((pub_user, salt.clone()));
+                }
+                if !p.enabled {
                     return Err(Refusal::Unauthorized);
                 }
                 let sig_pub = id32(&sig_pub_user)?;
