@@ -333,3 +333,71 @@ fn conflict_is_resolved_by_replaying_local_changes_on_the_new_root() {
     assert!(names(&mut fresh, "/").contains(&"logo.png".to_string()));
     assert!(names(&mut fresh, "/").contains(&"b.txt".to_string()));
 }
+
+/// Libération des anciens blocs (`protocols.echange-blocs` § Libération) :
+/// tout ce qui est annoncé libérable peut disparaître du Nœud sans que la
+/// version courante cesse d'être lisible ; un élément déplacé garde ses
+/// blocs.
+#[test]
+fn released_blocks_are_never_needed_by_the_new_root() {
+    let node = Arc::new(MemNode::default());
+    let ws = workspace("release");
+    let mut d = drive(&node, &ws);
+    let big: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    for (p, c) in [
+        ("/garde.txt", b"garde".to_vec()),
+        ("/modifie.txt", big.clone()),
+        ("/supprime.txt", b"x".to_vec()),
+        ("/deplace.txt", big.clone()),
+    ] {
+        d.create(p, false).unwrap();
+        d.write(p, 0, &c).unwrap();
+    }
+    d.create("/dossier", true).unwrap();
+    d.create("/dossier/a.txt", false).unwrap();
+    d.write("/dossier/a.txt", 0, b"a").unwrap();
+    d.sync().unwrap();
+    assert!(
+        d.pending_release(usize::MAX).is_empty(),
+        "première version : rien à libérer"
+    );
+    let blocks_v1 = node.blocks.lock().unwrap().len();
+
+    // Seconde version : modifié, supprimé, déplacé, dossier supprimé.
+    d.write("/modifie.txt", 0, b"NOUVEAU").unwrap();
+    d.remove("/supprime.txt").unwrap();
+    d.rename("/deplace.txt", "/ailleurs.txt", false).unwrap();
+    d.remove("/dossier/a.txt").unwrap();
+    d.remove("/dossier").unwrap();
+    d.sync().unwrap();
+    let released = d.pending_release(usize::MAX);
+    assert!(!released.is_empty());
+    assert!(released.len() < blocks_v1);
+
+    // Le Nœud efface tout ce qui est libéré : la version courante reste
+    // entière pour un autre appareil.
+    {
+        let mut b = node.blocks.lock().unwrap();
+        for h in &released {
+            b.remove(h);
+        }
+    }
+    let mut other = drive(&node, &workspace("release-lecteur"));
+    assert!(other.adopt_root(d.root()).unwrap());
+    let mut n = names(&mut other, "/");
+    n.sort();
+    assert_eq!(n, vec!["ailleurs.txt", "garde.txt", "modifie.txt"]);
+    assert_eq!(other.read("/garde.txt", 0, 100).unwrap(), b"garde");
+    assert_eq!(
+        other.read("/ailleurs.txt", 0, big.len()).unwrap(),
+        big,
+        "déplacé : blocs gardés"
+    );
+    let m = other.read("/modifie.txt", 0, big.len()).unwrap();
+    assert_eq!(&m[..7], b"NOUVEAU");
+    assert_eq!(&m[7..], &big[7..]);
+
+    // Accusé du Nœud : liste vidée.
+    d.confirm_release(&released).unwrap();
+    assert!(d.pending_release(usize::MAX).is_empty());
+}

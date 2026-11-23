@@ -35,10 +35,11 @@ async fn explorer_creates_uploads_reads_moves_and_deletes() {
         },
     );
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000_000);
+    let service = Arc::new(Mutex::new(ns));
     let node = BlockServer::start(
         NODE,
         "/ip4/127.0.0.1/tcp/0".parse().unwrap(),
-        Arc::new(Mutex::new(ns)),
+        service.clone(),
         clock.clone(),
     )
     .await
@@ -140,7 +141,26 @@ async fn explorer_creates_uploads_reads_moves_and_deletes() {
     )
     .is_err());
     // Suppression d'un dossier non vide, contenu compris.
+    // Synchronisation : blocs envoyés et comptés chez le Nœud.
+    let sync = |sh: &Arc<Shared>| {
+        let sh = sh.clone();
+        async move {
+            tokio::task::spawn_blocking(move || sync_drive(&sh))
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+        }
+    };
+    sync(&sh).await;
+    let used = |s: &Arc<Mutex<NodeService>>| s.lock().unwrap().users[&pub_user].used_bytes;
+    let before = used(&service);
+    assert!(before > 0);
     act("explorer_delete", json!({ "chemin": "/Photos" })).unwrap();
     assert!(!names("/").contains(&"Photos".to_string()));
+    // Suppression synchronisée : anciens blocs libérés, quota rendu.
+    sync(&sh).await;
+    let after = used(&service);
+    assert!(after < before, "quota rendu : {after} < {before}");
     s3m_connector::daemon::stop(sh.clone()).await;
 }

@@ -203,6 +203,10 @@ struct Journal {
     revision: u64,
     #[serde(default)]
     emergency: Option<SavedEmergency>,
+    /// Blocs de l'ancienne racine à libérer chez le Nœud, après un
+    /// `CommitRoot` confirmé (`protocols.echange-blocs` § Libération).
+    #[serde(default)]
+    to_release: Vec<String>,
 }
 
 /// Arborescence construite pour un dépôt d'urgence : racine de base,
@@ -1106,6 +1110,181 @@ impl Drive {
         if n == 0 {
             return Ok(0);
         }
+        // Blocs que la nouvelle racine remplacera, libérés après validation.
+        let release = self.release_set();
+        let r = self.sync_inner(n);
+        if r.is_ok() && !release.is_empty() {
+            self.journal
+                .to_release
+                .extend(release.iter().map(hex::encode));
+            self.journal.to_release.sort();
+            self.journal.to_release.dedup();
+            self.persist()?;
+        }
+        r
+    }
+
+    /// Blocs à libérer chez le Nœud (au plus `max`).
+    pub fn pending_release(&self, max: usize) -> Vec<BlockHash> {
+        self.journal
+            .to_release
+            .iter()
+            .take(max)
+            .map(|h| arr(h))
+            .collect()
+    }
+
+    /// Blocs atteints par la racine courante (rattrapage des anciennes
+    /// versions) ; `None` si une partie en est illisible (rien n'est alors
+    /// libéré).
+    pub fn reachable(&mut self) -> Option<std::collections::HashSet<BlockHash>> {
+        let root = self.root.clone();
+        if root.fs_root_hash == NO_ROOT {
+            return Some(Default::default());
+        }
+        let e = Entry {
+            first_block_hash: root.fs_root_hash,
+            encryption_salt: root.encryption_salt,
+            key_version: root.key_version,
+            mime_type: DIRECTORY_MIME.into(),
+            ..Default::default()
+        };
+        self.strict_subtree(&e).map(|v| v.into_iter().collect())
+    }
+
+    fn strict_subtree(&mut self, e: &Entry) -> Option<Vec<BlockHash>> {
+        let k = self.k_elem_of(e)?;
+        let io = self.io.clone();
+        let is_dir = e.mime_type == DIRECTORY_MIME;
+        let mut out =
+            crate::fs::chain_hashes(&e.first_block_hash, &k, is_dir, &|h| io.get(h)).ok()?;
+        if is_dir {
+            let children =
+                crate::fs::read_directory_elem(&e.first_block_hash, &k, &|h| io.get(h)).ok()?;
+            for c in children {
+                if c.first_block_hash == NO_ROOT {
+                    continue;
+                }
+                out.extend(self.strict_subtree(&c)?);
+            }
+        }
+        Some(out)
+    }
+
+    /// Ajoute des blocs à libérer (rattrapage).
+    pub fn queue_release(&mut self, hashes: &[BlockHash]) -> Result<(), DriveError> {
+        self.journal
+            .to_release
+            .extend(hashes.iter().map(hex::encode));
+        self.journal.to_release.sort();
+        self.journal.to_release.dedup();
+        self.persist()
+    }
+
+    /// Libération accusée par le Nœud.
+    pub fn confirm_release(&mut self, done: &[BlockHash]) -> Result<(), DriveError> {
+        let done: std::collections::HashSet<String> = done.iter().map(hex::encode).collect();
+        self.journal.to_release.retain(|h| !done.contains(h));
+        self.persist()
+    }
+
+    /// Clé d'élément d'une entrée.
+    fn k_elem_of(&self, e: &Entry) -> Option<[u8; 32]> {
+        let master = self.keys.get(&e.key_version)?;
+        s3m_core::k_block::derive_k_elem(master, &e.encryption_salt).ok()
+    }
+
+    /// Blocs de la chaîne d'une entrée (vide si illisible : jamais libéré).
+    fn chain_of(&mut self, e: &Entry) -> Vec<BlockHash> {
+        if e.first_block_hash == NO_ROOT {
+            return Vec::new();
+        }
+        let Some(k) = self.k_elem_of(e) else {
+            return Vec::new();
+        };
+        let io = self.io.clone();
+        crate::fs::chain_hashes(
+            &e.first_block_hash,
+            &k,
+            e.mime_type == DIRECTORY_MIME,
+            &|h| io.get(h),
+        )
+        .unwrap_or_default()
+    }
+
+    /// Blocs d'une entrée et, pour un répertoire, de tout son contenu.
+    fn subtree_of(&mut self, e: &Entry) -> Vec<BlockHash> {
+        let mut out = self.chain_of(e);
+        if e.mime_type == DIRECTORY_MIME && e.first_block_hash != NO_ROOT {
+            let Some(k) = self.k_elem_of(e) else {
+                return out;
+            };
+            let io = self.io.clone();
+            let children = crate::fs::read_directory_elem(&e.first_block_hash, &k, &|h| io.get(h))
+                .unwrap_or_default();
+            for c in children {
+                out.extend(self.subtree_of(&c));
+            }
+        }
+        out
+    }
+
+    /// Blocs de l'ancienne racine que la nouvelle ne référencera plus :
+    /// anciens répertoires réécrits, et tout ce qui se trouvait à un chemin
+    /// modifié, supprimé ou déplacé — sauf ce qu'emporte un élément déplacé.
+    fn release_set(&mut self) -> Vec<BlockHash> {
+        let old = self.root.clone();
+        if old.fs_root_hash == NO_ROOT {
+            return Vec::new();
+        }
+        let changes = self.journal.changes.clone();
+        let mut cand: std::collections::HashSet<BlockHash> = std::collections::HashSet::new();
+        // Répertoires réécrits : la racine et les ancêtres des modifications.
+        let mut dirs: std::collections::BTreeSet<String> = ["/".to_string()].into();
+        for p in changes.keys() {
+            let mut a = p.as_str();
+            while let Some((up, _)) = a.rsplit_once('/') {
+                if up.is_empty() {
+                    break;
+                }
+                dirs.insert(up.to_string());
+                a = up;
+            }
+        }
+        for d in &dirs {
+            let e = if d == "/" {
+                Some(Entry {
+                    first_block_hash: old.fs_root_hash,
+                    encryption_salt: old.encryption_salt,
+                    key_version: old.key_version,
+                    mime_type: DIRECTORY_MIME.into(),
+                    ..Default::default()
+                })
+            } else {
+                self.lookup_in(&old, d).ok().flatten()
+            };
+            if let Some(e) = e.filter(|e| e.mime_type == DIRECTORY_MIME) {
+                cand.extend(self.chain_of(&e));
+            }
+        }
+        for p in changes.keys() {
+            if let Some(e) = self.lookup_in(&old, p).ok().flatten() {
+                cand.extend(self.subtree_of(&e));
+            }
+        }
+        for c in changes.values() {
+            if let Change::Moved(se) = c {
+                for h in self.subtree_of(&Entry::from(se)) {
+                    cand.remove(&h);
+                }
+            }
+        }
+        let mut v: Vec<BlockHash> = cand.into_iter().collect();
+        v.sort();
+        v
+    }
+
+    fn sync_inner(&mut self, n: usize) -> Result<usize, DriveError> {
         if let Some(e) = self.current_emergency() {
             let dir = self.workspace.join("emergency");
             for f in std::fs::read_dir(&dir)?.flatten() {

@@ -578,6 +578,10 @@ pub fn status(sh: &Shared) -> Value {
         v["toujours sur cet appareil"] = keep_status(sh);
         let days = sh.free_after_s.load(std::sync::atomic::Ordering::Relaxed) / 86_400;
         if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+            a.push(json!({ "nom": "release_old_versions", "titre": "Anciennes versions chez le Nœud", "libellé": "Libérer les anciennes versions",
+                "texte": "Rend au quota la place des anciennes versions de vos fichiers accumulées chez votre Nœud. Vos autres appareils doivent être à jour et ne rien envoyer pendant l'opération.",
+                "champs": [],
+                "confirmer": "Libérer chez le Nœud tout ce que la version actuelle de vos fichiers n'utilise pas ?\n\nVos autres appareils doivent être synchronisés et ne rien envoyer pendant l'opération : un envoi en cours pourrait perdre des blocs." }));
             a.push(json!({ "nom": "free_space", "titre": "Libérer de l'espace", "libellé": "Libérer",
                 "texte": "Retire du disque le contenu des fichiers déjà envoyés à votre Nœud, sans les supprimer : ils restent visibles et reviennent à l'ouverture. Un fichier pas encore envoyé n'est jamais touché.",
                 "champs": ["dossier"], "types": { "dossier": "chemin" }, "explorateurs": { "dossier": "drive_browse" },
@@ -1727,10 +1731,108 @@ fn root_from_set_aside(sh: &Shared, current: BlockHash) -> Option<Root> {
     None
 }
 
+/// Envoie au Nœud les blocs à libérer (`protocols.echange-blocs`
+/// § Libération), par lots ; arrêt au premier échec, reprise à la
+/// synchronisation suivante.
+/// Rattrapage manuel (`protocols.echange-blocs` § Libération) : blocs
+/// encore comptés chez le Nœud que la version courante n'atteint pas.
+fn release_old_versions(sh: &Shared) -> Result<Value, String> {
+    let d = sh
+        .drive
+        .as_ref()
+        .ok_or("accès aux fichiers non configuré")?;
+    let rt = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
+    let mut drive = d.lock().unwrap();
+    if drive.pending() > 0 || drive.conflict.is_some() {
+        return Err("synchronisez d'abord (modifications en attente ou conflit)".into());
+    }
+    let keep = drive
+        .reachable()
+        .ok_or("version courante illisible en entier : rien n'est libéré")?;
+    let mut listed = Vec::new();
+    let mut after: Vec<u8> = Vec::new();
+    loop {
+        let (page, more) = rt
+            .block_on(
+                sh.session
+                    .list_blocks(&after, s3m_protocol::exchange::MAX_RELEASE_BLOCKS as u32),
+            )
+            .map_err(|e| format!("Nœud : {e}"))?;
+        if let Some(last) = page.last() {
+            after = last.to_vec();
+        }
+        listed.extend(page);
+        if !more || after.is_empty() {
+            break;
+        }
+    }
+    let old: Vec<BlockHash> = listed.into_iter().filter(|h| !keep.contains(h)).collect();
+    drive.queue_release(&old).map_err(|e| e.to_string())?;
+    send_releases(sh, &mut drive);
+    let left = drive.pending_release(usize::MAX).len();
+    Ok(json!({ "ok": true, "message": format!(
+        "{} bloc(s) d'anciennes versions libéré(s) (environ {} Mo){}",
+        old.len() - left.min(old.len()),
+        (old.len() - left.min(old.len())) as u64 * 64 / 1024,
+        if left > 0 { format!(" ; {left} en attente, renvoyés à la prochaine synchronisation") } else { String::new() }) }))
+}
+
+/// Espace local neuf (changement de Nœud, nouvel appareil) : reprend la
+/// version des fichiers que le Nœud détient, d'après un ancien espace local
+/// mis de côté, avant que des fichiers locaux ne soient enregistrés. À
+/// défaut, l'entrée User de l'annuaire la donnera.
+async fn adopt_known_root(sh: &Shared) {
+    let Some(d) = &sh.drive else { return };
+    {
+        let g = d.lock().unwrap();
+        if g.root().fs_root_hash != [0u8; 32] || g.pending() > 0 {
+            return;
+        }
+    }
+    // CommitRoot neutre : lit la racine courante sans rien changer.
+    let read = sh.session.commit_root(&[0u8; 32], &[0u8; 32]);
+    let Ok(Ok((_, cur))) = tokio::time::timeout(Duration::from_secs(10), read).await else {
+        return;
+    };
+    let Ok(cur) = <BlockHash>::try_from(cur.as_slice()) else {
+        return;
+    };
+    if cur == [0u8; 32] {
+        return;
+    }
+    if let Some(root) = root_from_set_aside(sh, cur) {
+        if d.lock().unwrap().adopt_root(root).unwrap_or(false) {
+            eprintln!("version des fichiers reprise de l'ancien espace local");
+        }
+    }
+}
+
+fn send_releases(sh: &Shared, drive: &mut crate::drive::Drive) {
+    let Ok(rt) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    loop {
+        let batch = drive.pending_release(s3m_protocol::exchange::MAX_RELEASE_BLOCKS);
+        if batch.is_empty() {
+            return;
+        }
+        match rt.block_on(sh.session.release_blocks(&batch)) {
+            Ok(_) => {
+                if drive.confirm_release(&batch).is_err() {
+                    return;
+                }
+            }
+            Err(_) => return,
+        }
+    }
+}
+
 pub fn sync_drive(sh: &Shared) -> Option<Result<usize, DriveError>> {
     let d = sh.drive.as_ref()?;
     let mut drive = d.lock().unwrap();
     sh.syncing.store(true, std::sync::atomic::Ordering::Relaxed);
+    // Libérations en attente d'abord : elles rendent du quota.
+    send_releases(sh, &mut drive);
     let mut r = drive.sync();
     // Conflit : un autre appareil a écrit. Sa racine (et son sel) est relue
     // dans l'entrée User ; les modifications locales sont rejouées dessus.
@@ -1743,6 +1845,7 @@ pub fn sync_drive(sh: &Shared) -> Option<Result<usize, DriveError>> {
             r = drive.sync();
         }
     }
+    send_releases(sh, &mut drive);
     sh.syncing
         .store(false, std::sync::atomic::Ordering::Relaxed);
     let mut st = sh.drive_status.lock().unwrap();
@@ -2096,6 +2199,7 @@ pub async fn start(
                 "add_contact" | "edit_contact" | "delete_contact" | "copy_my_id"
                 | "export_contacts" | "import_contacts" => contact_action(&sh, name, &v),
                 "free_space" => free_space_action(&sh, &v),
+                "release_old_versions" => release_old_versions(&sh),
                 "set_auto_free" => set_auto_free(&sh, &v),
                 "keep_offline" => keep_action(&sh, &v, true),
                 "unkeep_offline" => keep_action(&sh, &v, false),
@@ -2145,6 +2249,7 @@ pub async fn start(
         spawn_user_entry(shared.clone(), priv_user, pub_node, salt.clone());
     }
     if shared.drive.is_some() {
+        adopt_known_root(&shared).await;
         mount_drive(&shared);
         // Écriture différée : synchronisation quand un fichier modifié
         // atteint son échéance (`protocols.ecriture-differee`).

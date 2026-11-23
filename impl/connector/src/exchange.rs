@@ -397,6 +397,44 @@ impl NodeSession {
     }
 
     /// Retire un partage chez son Nœud (`protocols.partage#retrait`).
+    /// Libère des blocs de l'Utilisateur (`protocols.echange-blocs`
+    /// § Libération) ; rend le nombre libéré.
+    pub async fn release_blocks(&self, hashes: &[BlockHash]) -> Result<u64, ExchangeError> {
+        match self
+            .call(Body::ReleaseBlocks {
+                hashes: hashes.concat(),
+            })
+            .await?
+        {
+            Response::Ack { freed } => Ok(freed),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
+    /// Blocs de l'Utilisateur encore comptés, après `after` ; `(page, encore)`.
+    pub async fn list_blocks(
+        &self,
+        after: &[u8],
+        limit: u32,
+    ) -> Result<(Vec<BlockHash>, bool), ExchangeError> {
+        match self
+            .call(Body::ListBlocks {
+                after: after.to_vec(),
+                limit,
+            })
+            .await?
+        {
+            Response::BlockList { hashes, more } => Ok((
+                hashes
+                    .chunks(32)
+                    .filter_map(|c| c.try_into().ok())
+                    .collect(),
+                more,
+            )),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
     pub async fn revoke_share(&self, share_id: &[u8; 32]) -> Result<(), ExchangeError> {
         match self
             .call(Body::RevokeShare {

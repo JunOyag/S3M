@@ -87,6 +87,37 @@ fn seal_chain(
 /// Extrait le `next_hash` d'un bloc déchiffré.
 type NextOf<'a> = dyn Fn(&[u8]) -> Result<Option<BlockHash>, FsError> + 'a;
 
+/// Hashes de la chaîne d'un fichier ou d'un répertoire (déchiffrée pour
+/// suivre `next_hash`).
+pub fn chain_hashes(
+    first: &BlockHash,
+    k_elem: &[u8; 32],
+    is_dir: bool,
+    get: &dyn Fn(&BlockHash) -> Option<Vec<u8>>,
+) -> Result<Vec<BlockHash>, FsError> {
+    let parse = |clear: &[u8]| -> Result<Option<BlockHash>, FsError> {
+        if is_dir {
+            let b = flatbuffers::root::<fs::DirectoryBlock>(clear)
+                .map_err(|_| FsError::Format("DirectoryBlock"))?;
+            next_hash_of(b.next_hash())
+        } else {
+            let b = flatbuffers::root::<fs::FileBlock>(clear)
+                .map_err(|_| FsError::Format("FileBlock"))?;
+            next_hash_of(b.next_hash())
+        }
+    };
+    let mut out = Vec::new();
+    let mut cursor = Some(*first);
+    while let Some(h) = cursor {
+        let frame = get(&h).ok_or(FsError::MissingBlock)?;
+        let k = derive_k_block_from_elem(k_elem, out.len() as u32)?;
+        let clear = open_block(&k, &BLOCK_HEADER, &frame)?;
+        cursor = parse(&clear)?;
+        out.push(h);
+    }
+    Ok(out)
+}
+
 /// Lit et déchiffre la chaîne qui commence à `first` ; `next(clear)` rend le
 /// `next_hash` du bloc déchiffré.
 fn open_chain(
