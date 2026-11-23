@@ -203,6 +203,15 @@ fn spawn_tick(sh: &Arc<Shared>) {
     }
 }
 
+/// Propriétaire (identifiant hex) inscrit dans l'autorisation du pointeur.
+fn received_owner(p: &CachedPointer) -> Option<String> {
+    let g = hex::decode(&p.grant).ok()?;
+    let s = hex::decode(&p.grant_signature).ok()?;
+    s3m_protocol::share::verify_grant(&g, &s)
+        .ok()
+        .map(|g| hex::encode(g.owner_user_id))
+}
+
 /// Expiration inscrite dans l'autorisation du pointeur reçu (0 : aucune).
 fn received_expiry(p: &CachedPointer) -> Option<u64> {
     let g = hex::decode(&p.grant).ok()?;
@@ -210,12 +219,6 @@ fn received_expiry(p: &CachedPointer) -> Option<u64> {
     s3m_protocol::share::verify_grant(&g, &s)
         .ok()
         .map(|g| g.expires_at)
-}
-
-fn fingerprint_of(hex_id: &str) -> String {
-    hex::decode(hex_id)
-        .map(|b| s3m_protocol::pseudo::fingerprint(&b))
-        .unwrap_or_default()
 }
 
 /// Durée d'expiration saisie (jours, 0 : aucune).
@@ -260,6 +263,7 @@ fn new_share(
 
 /// Sections et actions de la page « Partages ».
 pub fn status(sh: &Shared, v: &mut Value) {
+    let contacts = sh.contacts.lock().unwrap().clone();
     let store = sh.shares.lock().unwrap().clone();
     v["partages donnés"] = json!(store
         .given
@@ -296,7 +300,7 @@ pub fn status(sh: &Shared, v: &mut Value) {
                 ),
                 (true, false) => (vec!["Retrait en cours de transmission à votre Nœud et à l'annuaire."], vec![]),
             };
-            let pour = g.recipient.as_ref().map(|r| fingerprint_of(r)).unwrap_or_else(|| "Lien public".into());
+            let pour = g.recipient.as_ref().map(|r| contacts.display(r)).unwrap_or_else(|| "Lien public".into());
             let expires = if g.expires_at == 0 { Value::Null } else { json!(g.expires_at) };
             let panel = json!({
                 "titre": format!("Partage de {}", g.path),
@@ -335,7 +339,10 @@ pub fn status(sh: &Shared, v: &mut Value) {
             };
             json!({
                 "nom": name,
-                "de": p.map(|p| p.owner_label.clone()).filter(|l| !l.is_empty()),
+                // Pseudo du contact, sinon celui choisi par le propriétaire.
+                "de": p.and_then(|p| received_owner(p).and_then(|o| contacts.pseudo_of(&o)))
+                    .or_else(|| p.map(|p| p.owner_label.clone()))
+                    .filter(|l| !l.is_empty()),
                 "type": p.map(|p| if p.is_dir { "dossier" } else { "fichier" }),
                 "taille (octets)": p.filter(|p| !p.is_dir).map(|p| p.size_bytes),
                 "ajouté le": r.added_at,
@@ -355,9 +362,10 @@ pub fn status(sh: &Shared, v: &mut Value) {
             ],
             "champs": ["élément", "destinataire", "expiration (jours)"],
             "types": { "élément": "chemin", "expiration (jours)": "number" },
+            "options": { "destinataire": contacts.pseudos() },
             "explorateurs": { "élément": "drive_browse" },
             "aide": { "élément": "Chemin dans votre espace S3m, par exemple /Photos ; « Parcourir… » pour le choisir (dossier, ou fichier en cliquant dessus)",
-                      "destinataire": "Identifiant (user_id, 64 caractères) de l'utilisateur S3m ; vérifiez avec lui son empreinte. Vide : un lien",
+                      "destinataire": "Pseudo d'un de vos contacts (page Contacts), ou identifiant S3m (64 caractères) ; vide : un lien public",
                       "expiration (jours)": "Vide ou 0 : sans expiration" } }));
         a.push(json!({ "nom": "add_received", "titre": "Ajouter un partage reçu", "libellé": "Ajouter",
             "champs": ["lien ou invitation"], "types": { "lien ou invitation": "texte" },
@@ -402,17 +410,13 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                 .shared_element(&path)
                 .map_err(|e| e.to_string())?
                 .ok_or("élément introuvable, ou pas encore synchronisé avec votre Nœud")?;
-            let recipient = match text("destinataire") {
-                r if r.is_empty() => None,
-                r => Some(
-                    hex::decode(&r)
-                        .ok()
-                        .and_then(|b| <[u8; 32]>::try_from(b).ok())
-                        .ok_or(
-                            "destinataire : identifiant de 64 caractères hexadécimaux attendu",
-                        )?,
-                ),
-            };
+            // Pseudo d'un contact ou identifiant.
+            let recipient = sh
+                .contacts
+                .lock()
+                .unwrap()
+                .resolve(&text("destinataire"))
+                .map_err(|e| format!("destinataire : {e}"))?;
             let (g, shared_text) = new_share(sh, path, e.is_dir, recipient, days_of(v), now)?;
             let store = {
                 let mut s = sh.shares.lock().unwrap();

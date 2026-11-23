@@ -9,6 +9,7 @@ pub mod bootstrap;
 pub mod channel;
 #[cfg(all(windows, feature = "folder"))]
 pub mod cloud_folder;
+pub mod contacts;
 pub mod daemon;
 pub mod dht_directory;
 pub mod drive;

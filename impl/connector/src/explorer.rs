@@ -88,8 +88,10 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                             .starts_with(&format!("{}/", k.to_lowercase()))
                 })
             };
+            let pseudos = sh.contacts.lock().unwrap().pseudos();
             Ok(json!({
                 "chemin": p,
+                "contacts": pseudos,
                 "mode dossier": folder,
                 "lecture seule": writable(&p).is_err() && p != "/",
                 "entrées": entries.iter().map(|(n, m)| {

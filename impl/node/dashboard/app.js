@@ -952,6 +952,18 @@ function actionForm(a, done) {
     } else {
       if (types[name] === "number") i.type = "number";
       if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
+      // `options` d'un champ texte : suggestions (ex. pseudos des contacts).
+      if (Array.isArray(options[name]) && options[name].length) {
+        const list = el("datalist");
+        list.id = "dl-" + Math.random().toString(36).slice(2);
+        options[name].forEach((o) => {
+          const x = el("option");
+          x.value = Array.isArray(o) ? o[0] : o;
+          list.appendChild(x);
+        });
+        i.setAttribute("list", list.id);
+        l.appendChild(list);
+      }
       l.append(el("span", text), i);
       if (tip) l.firstChild.appendChild(el("span", " ⓘ", "tip"));
     }

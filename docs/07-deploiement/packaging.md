@@ -251,6 +251,17 @@ dossier, « garder sur cet appareil ». Les contenus transitent par morceaux
 de 512 Kio sur l'API locale ; chaque modification est synchronisée avec le
 Nœud. « Partagés avec moi » y est en lecture seule.
 
+### Contacts {: #contacts }
+
+Ajout du 2026-11-23 : page « Contacts » du dashboard Connecteur. Un contact
+= identifiant S3m (`user_id`) et pseudo facultatif choisi par l'utilisateur,
+uniques ; conservés localement dans `contacts.json` (données de l'identité,
+jamais publiés). Édition par ligne (pseudo, identifiant, suppression). Le
+destinataire d'un partage accepte le pseudo d'un contact ou un identifiant ;
+les écrans affichent le pseudo d'un contact à la place de l'empreinte
+(destinataire d'un partage donné, propriétaire d'un partage reçu, lu dans
+son autorisation signée).
+
 ### Partages {: #partages }
 
 Ajout du 2026-11-22 : page « Partages » du dashboard Connecteur et

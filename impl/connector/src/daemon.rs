@@ -526,6 +526,8 @@ pub struct Shared {
     salt: Vec<u8>,
     /// Partages donnés et reçus (`protocols.partage`).
     pub shares: Arc<Mutex<crate::shares::ShareStore>>,
+    /// Contacts (`contacts.json`).
+    pub contacts: Mutex<crate::contacts::Contacts>,
     /// Client des Nœuds des propriétaires de partages reçus.
     pub share_client: Option<Arc<crate::exchange::BlockClient>>,
     /// Démarrage du Connecteur (instant Unix).
@@ -568,6 +570,7 @@ pub fn status(sh: &Shared) -> Value {
             "aide": { "nom": "Remplace pour vous le nom choisi par l'opérateur ; l'empreinte reste toujours affichée" } }));
     }
     v["santé"] = health_status(sh);
+    contacts_status(sh, &mut v);
     if access_mode(&sh.config) == "dossier" {
         v["libération d'espace"] = free_status(sh);
         v["toujours sur cet appareil"] = keep_status(sh);
@@ -613,6 +616,7 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "explorateur", "titre": "Explorateur", "cadre": "explorer.html", "sections": [], "actions": [] },
+        { "id": "contacts", "titre": "Contacts", "sections": ["contacts"], "actions": ["add_contact"] },
         { "id": "partages", "titre": "Partages",
           "sections": ["partages donnés", "partages reçus"], "actions": ["create_share", "add_received"] },
         { "id": "messages", "titre": "Messages du Nœud",
@@ -1329,6 +1333,76 @@ pub struct TrayView {
     pub last_message: Option<String>,
 }
 
+/// Page « Contacts » : liste, panneau d'édition, ajout.
+fn contacts_status(sh: &Shared, v: &mut Value) {
+    let list = sh.contacts.lock().unwrap().list.clone();
+    v["contacts"] = json!(list
+        .iter()
+        .map(|c| {
+            let fp = hex::decode(&c.user_id)
+                .map(|b| s3m_protocol::pseudo::fingerprint(&b))
+                .unwrap_or_default();
+            let name = if c.pseudo.is_empty() { fp.clone() } else { c.pseudo.clone() };
+            let panel = json!({
+                "titre": format!("Contact {name}"),
+                "contenu": { "pseudo": c.pseudo, "empreinte": fp, "identifiant": c.user_id },
+                "formulaires": [
+                    { "nom": "edit_contact", "titre": "Modifier", "libellé": "Enregistrer",
+                      "champs": ["pseudo", "identifiant"],
+                      "valeurs": { "pseudo": c.pseudo, "identifiant": c.user_id },
+                      "fixes": { "ancien": c.user_id },
+                      "aide": { "pseudo": "Visible par vous seul ; vide pour aucun",
+                                "identifiant": "Identifiant S3m (64 caractères) ; vérifiez l'empreinte avec la personne" } },
+                    { "nom": "delete_contact", "libellé": "Supprimer le contact", "style": "danger",
+                      "champs": [], "fixes": { "identifiant": c.user_id },
+                      "confirmer": "Supprimer ce contact ? Les partages déjà faits ne changent pas." }
+                ],
+            });
+            json!({ "pseudo": if c.pseudo.is_empty() { Value::Null } else { json!(c.pseudo) },
+                    "empreinte": fp, "identifiant": c.user_id,
+                    "_ouvrir": panel.clone(),
+                    "_actions": [{ "nom": "edit_contact", "libellé": "Éditer", "panneau": panel }] })
+        })
+        .collect::<Vec<_>>());
+    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        a.push(json!({ "nom": "add_contact", "titre": "Ajouter un contact", "libellé": "Ajouter",
+            "texte": "Le pseudo remplace l'identifiant dans S3m (partages) ; il n'est visible que par vous.",
+            "champs": ["pseudo", "identifiant"],
+            "aide": { "pseudo": "Nom de votre choix, unique dans vos contacts ; facultatif",
+                      "identifiant": "Identifiant S3m de la personne (64 caractères, page « Identité et sécurité » de son S3m) ; vérifiez ensemble l'empreinte" } }));
+    }
+}
+
+/// Ajout, modification et suppression de contacts.
+fn contact_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
+    let text = |k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let mut c = sh.contacts.lock().unwrap();
+    let msg = match name {
+        "add_contact" => {
+            c.upsert(None, &text("pseudo"), &text("identifiant"))?;
+            "Contact ajouté"
+        }
+        "edit_contact" => {
+            c.upsert(Some(&text("ancien")), &text("pseudo"), &text("identifiant"))?;
+            "Contact modifié"
+        }
+        _ => {
+            if !c.remove(&text("identifiant")) {
+                return Err("contact introuvable".into());
+            }
+            "Contact supprimé"
+        }
+    };
+    c.save(&sh.config.data_dir).map_err(|e| e.to_string())?;
+    Ok(json!({ "ok": true, "message": msg }))
+}
+
 /// État de santé du Connecteur (Diagnostic) : chaque point dit ce qui va
 /// et, sinon, depuis quand et pourquoi.
 pub fn health_status(sh: &Shared) -> Value {
@@ -1813,6 +1887,7 @@ pub async fn start(
         names_known: load_names(&config).is_some().into(),
         names: Mutex::new(load_names(&config).unwrap_or_default()),
         shares: crate::share_ops::load(&config.data_dir),
+        contacts: Mutex::new(crate::contacts::Contacts::load(&config.data_dir)),
         share_client: crate::exchange::BlockClient::start().ok().map(Arc::new),
         started_at: clock(),
         tasks: Mutex::new(Vec::new()),
@@ -1858,6 +1933,7 @@ pub async fn start(
             match name {
                 "set_mount_point" => set_mount_point(&sh, &v),
                 "set_access" => set_access(&sh, &v),
+                "add_contact" | "edit_contact" | "delete_contact" => contact_action(&sh, name, &v),
                 "free_space" => free_space_action(&sh, &v),
                 "set_auto_free" => set_auto_free(&sh, &v),
                 "keep_offline" => keep_action(&sh, &v, true),

@@ -21,6 +21,7 @@ let cwd = "/";
 let folderMode = false;
 let readOnly = false;
 let busy = 0;
+let contacts = [];
 
 const $ = (id) => document.getElementById(id);
 function el(tag, text, cls) {
@@ -79,6 +80,7 @@ async function load(path) {
     const r = await call("explorer_list", { chemin: path });
     cwd = r["chemin"];
     folderMode = !!r["mode dossier"];
+    contacts = r["contacts"] || [];
     readOnly = !!r["lecture seule"] || cwd === SHARED || cwd.startsWith(SHARED + "/");
     try {
       sessionStorage.setItem("s3m-explorer", cwd);
@@ -214,11 +216,22 @@ function dialog(title, fields, okLabel) {
     const d = $("dlg");
     const f = $("dlgform");
     f.replaceChildren(el("h3", title));
-    const inputs = fields.map(([label, value, help]) => {
+    const inputs = fields.map(([label, value, help, suggestions]) => {
       const l = el("label", label);
       const i = el("input");
       i.value = value || "";
       if (help) i.placeholder = help;
+      if (suggestions && suggestions.length) {
+        const list = el("datalist");
+        list.id = "dl-" + Math.random().toString(36).slice(2);
+        suggestions.forEach((s) => {
+          const o = el("option");
+          o.value = s;
+          list.appendChild(o);
+        });
+        i.setAttribute("list", list.id);
+        l.appendChild(list);
+      }
       l.appendChild(i);
       f.appendChild(l);
       return i;
@@ -298,7 +311,7 @@ async function share(path) {
   const v = await dialog(
     "Partager « " + base(path) + " »",
     [
-      ["Destinataire (identifiant S3m, vide : lien public)", "", "64 caractères hexadécimaux"],
+      ["Destinataire (pseudo d'un contact ou identifiant S3m ; vide : lien public)", "", "pseudo ou identifiant", contacts],
       ["Expiration (jours, vide : jamais)", "", "0"],
     ],
     "Partager",
