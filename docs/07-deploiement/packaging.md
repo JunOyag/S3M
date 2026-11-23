@@ -260,7 +260,12 @@ jamais publiés). Édition par ligne (pseudo, identifiant, suppression). Le
 destinataire d'un partage accepte le pseudo d'un contact ou un identifiant ;
 les écrans affichent le pseudo d'un contact à la place de l'empreinte
 (destinataire d'un partage donné, propriétaire d'un partage reçu, lu dans
-son autorisation signée).
+son autorisation signée). Fiche d'un contact : partages faits avec lui
+et reçus de lui, « Partager avec… ». Partage reçu d'un inconnu : « Ajouter
+aux contacts » (identifiant lu dans l'autorisation). « Mon identifiant » :
+identifiant, empreinte et QR code à communiquer. Export (fichier
+`contacts-s3m.json` ou texte à copier) et import (contacts déjà présents
+gardés, pseudo déjà pris abandonné).
 
 ### Partages {: #partages }
 

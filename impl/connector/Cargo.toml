@@ -22,6 +22,7 @@ s3m-core = { path = "../core" }
 s3m-protocol = { path = "../protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
 

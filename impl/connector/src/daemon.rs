@@ -616,7 +616,8 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "explorateur", "titre": "Explorateur", "cadre": "explorer.html", "sections": [], "actions": [] },
-        { "id": "contacts", "titre": "Contacts", "sections": ["contacts"], "actions": ["add_contact"] },
+        { "id": "contacts", "titre": "Contacts", "sections": ["contacts", "mon identifiant"],
+          "actions": ["add_contact", "copy_my_id", "import_contacts", "export_contacts"] },
         { "id": "partages", "titre": "Partages",
           "sections": ["partages donnés", "partages reçus"], "actions": ["create_share", "add_received"] },
         { "id": "messages", "titre": "Messages du Nœud",
@@ -1343,10 +1344,19 @@ fn contacts_status(sh: &Shared, v: &mut Value) {
                 .map(|b| s3m_protocol::pseudo::fingerprint(&b))
                 .unwrap_or_default();
             let name = if c.pseudo.is_empty() { fp.clone() } else { c.pseudo.clone() };
+            let (given, received) = crate::share_ops::shares_with(sh, &c.user_id);
             let panel = json!({
                 "titre": format!("Contact {name}"),
-                "contenu": { "pseudo": c.pseudo, "empreinte": fp, "identifiant": c.user_id },
+                "contenu": { "pseudo": c.pseudo, "empreinte": fp, "identifiant": c.user_id,
+                             "partagés avec lui": given, "reçus de lui": received },
                 "formulaires": [
+                    { "nom": "create_share", "titre": format!("Partager avec {name}"), "libellé": "Partager",
+                      "champs": ["élément", "expiration (jours)"],
+                      "types": { "élément": "chemin", "expiration (jours)": "number" },
+                      "explorateurs": { "élément": "drive_browse" },
+                      "fixes": { "destinataire": c.user_id },
+                      "aide": { "élément": "Fichier ou dossier de votre espace (« Parcourir… »)",
+                                "expiration (jours)": "Vide ou 0 : sans expiration" } },
                     { "nom": "edit_contact", "titre": "Modifier", "libellé": "Enregistrer",
                       "champs": ["pseudo", "identifiant"],
                       "valeurs": { "pseudo": c.pseudo, "identifiant": c.user_id },
@@ -1364,12 +1374,48 @@ fn contacts_status(sh: &Shared, v: &mut Value) {
                     "_actions": [{ "nom": "edit_contact", "libellé": "Éditer", "panneau": panel }] })
         })
         .collect::<Vec<_>>());
+    // Mon identifiant, à communiquer pour qu'on m'ajoute.
+    let me = hex::encode(sh.pub_user);
+    v["mon identifiant"] = json!({
+        "identifiant": me,
+        "empreinte": s3m_protocol::pseudo::fingerprint(&sh.pub_user),
+        "QR code": qr_svg(&me),
+    });
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        a.push(json!({ "nom": "copy_my_id", "titre": "Me partager quelque chose", "libellé": "Copier mon identifiant",
+            "texte": "Communiquez votre identifiant (ou faites scanner le QR code) : on vous ajoute à ses contacts, puis on peut vous partager des fichiers. Vérifiez ensemble l'empreinte.",
+            "champs": [] }));
+        a.push(json!({ "nom": "export_contacts", "titre": "Exporter les contacts", "libellé": "Exporter",
+            "champs": ["dossier"], "types": { "dossier": "chemin" },
+            "aide": { "dossier": "Dossier où écrire « contacts-s3m.json » ; vide : contenu affiché, à copier" } }));
+        a.push(json!({ "nom": "import_contacts", "titre": "Importer des contacts", "libellé": "Importer",
+            "champs": ["contacts"], "types": { "contacts": "texte" },
+            "aide": { "contacts": "Contenu d'un export, ou chemin complet du fichier « contacts-s3m.json » ; les contacts déjà présents sont gardés tels quels" } }));
         a.push(json!({ "nom": "add_contact", "titre": "Ajouter un contact", "libellé": "Ajouter",
             "texte": "Le pseudo remplace l'identifiant dans S3m (partages) ; il n'est visible que par vous.",
             "champs": ["pseudo", "identifiant"],
             "aide": { "pseudo": "Nom de votre choix, unique dans vos contacts ; facultatif",
                       "identifiant": "Identifiant S3m de la personne (64 caractères, page « Identité et sécurité » de son S3m) ; vérifiez ensemble l'empreinte" } }));
+    }
+}
+
+fn text_of(v: &Value, k: &str) -> String {
+    v.get(k)
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+/// QR code (SVG) d'un texte.
+fn qr_svg(text: &str) -> String {
+    match qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M) {
+        Ok(c) => c
+            .render::<qrcode::render::svg::Color>()
+            .min_dimensions(180, 180)
+            .quiet_zone(true)
+            .build(),
+        Err(_) => String::new(),
     }
 }
 
@@ -1382,7 +1428,47 @@ fn contact_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
             .trim()
             .to_string()
     };
+    if name == "copy_my_id" {
+        let me = hex::encode(sh.pub_user);
+        return Ok(
+            json!({ "ok": true, "message": "Identifiant affiché", "révéler": {
+            "titre": "Mon identifiant S3m",
+            "texte": [format!("Empreinte à vérifier ensemble : {}", s3m_protocol::pseudo::fingerprint(&sh.pub_user)),
+                      "La personne l'ajoute dans S3m, page Contacts, « Ajouter un contact ».".to_string()],
+            "à copier": me } }),
+        );
+    }
     let mut c = sh.contacts.lock().unwrap();
+    if name == "export_contacts" {
+        let text = serde_json::to_string_pretty(&*c).expect("sérialisable");
+        let dir = text_of(v, "dossier");
+        if dir.is_empty() {
+            return Ok(
+                json!({ "ok": true, "message": format!("{} contact(s)", c.list.len()),
+                "révéler": { "titre": "Export des contacts", "texte": ["À coller dans « Importer des contacts » sur un autre appareil."], "à copier": text } }),
+            );
+        }
+        let path = Path::new(&dir).join("contacts-s3m.json");
+        std::fs::write(&path, text).map_err(|e| format!("{} : {e}", path.display()))?;
+        return Ok(
+            json!({ "ok": true, "message": format!("{} contact(s) exporté(s) dans {}", c.list.len(), path.display()) }),
+        );
+    }
+    if name == "import_contacts" {
+        let raw = text_of(v, "contacts");
+        let content = if raw.starts_with('{') || raw.starts_with('[') {
+            raw
+        } else {
+            std::fs::read_to_string(raw.trim_matches('"'))
+                .map_err(|e| format!("fichier illisible : {e}"))?
+        };
+        let other = crate::contacts::Contacts::parse(&content)?;
+        let (added, skipped) = c.merge(&other);
+        c.save(&sh.config.data_dir).map_err(|e| e.to_string())?;
+        return Ok(
+            json!({ "ok": true, "message": format!("{added} contact(s) ajouté(s), {skipped} déjà présent(s)") }),
+        );
+    }
     let msg = match name {
         "add_contact" => {
             c.upsert(None, &text("pseudo"), &text("identifiant"))?;
@@ -1933,7 +2019,8 @@ pub async fn start(
             match name {
                 "set_mount_point" => set_mount_point(&sh, &v),
                 "set_access" => set_access(&sh, &v),
-                "add_contact" | "edit_contact" | "delete_contact" => contact_action(&sh, name, &v),
+                "add_contact" | "edit_contact" | "delete_contact" | "copy_my_id"
+                | "export_contacts" | "import_contacts" => contact_action(&sh, name, &v),
                 "free_space" => free_space_action(&sh, &v),
                 "set_auto_free" => set_auto_free(&sh, &v),
                 "keep_offline" => keep_action(&sh, &v, true),

@@ -129,6 +129,30 @@ impl Contacts {
         })
     }
 
+    /// Fusionne des contacts importés : identifiants absents ajoutés (pseudo
+    /// abandonné s'il est déjà pris), présents laissés tels quels. Rend
+    /// `(ajoutés, ignorés)`.
+    pub fn merge(&mut self, other: &Contacts) -> (usize, usize) {
+        let (mut added, mut skipped) = (0, 0);
+        for c in &other.list {
+            let ok = self.upsert(None, &c.pseudo, &c.user_id).is_ok()
+                || self.upsert(None, "", &c.user_id).is_ok();
+            if ok {
+                added += 1;
+            } else {
+                skipped += 1;
+            }
+        }
+        (added, skipped)
+    }
+
+    /// Contacts lus depuis un export (`{ "list": [...] }` ou une liste).
+    pub fn parse(text: &str) -> Result<Contacts, String> {
+        serde_json::from_str::<Contacts>(text)
+            .or_else(|_| serde_json::from_str::<Vec<Contact>>(text).map(|list| Contacts { list }))
+            .map_err(|_| "contenu non reconnu : export de contacts S3m attendu".to_string())
+    }
+
     /// Pseudos, pour les suggestions des champs « destinataire ».
     pub fn pseudos(&self) -> Vec<String> {
         self.list

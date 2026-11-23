@@ -203,6 +203,32 @@ fn spawn_tick(sh: &Arc<Shared>) {
     }
 }
 
+/// Partages avec un utilisateur (`user_id` hex) : `(donnés, reçus)`.
+pub fn shares_with(sh: &Shared, user_id: &str) -> (Vec<String>, Vec<String>) {
+    let id = user_id.to_lowercase();
+    let store = sh.shares.lock().unwrap().clone();
+    let given = store
+        .given
+        .iter()
+        .filter(|g| g.recipient.as_deref() == Some(id.as_str()))
+        .map(|g| {
+            let state = if g.revoked { " (retiré)" } else { "" };
+            format!("{}{state}", g.path)
+        })
+        .collect();
+    let received = store
+        .received
+        .iter()
+        .filter_map(|r| r.pointer.as_ref())
+        .filter(|p| received_owner(p).as_deref() == Some(id.as_str()))
+        .map(|p| {
+            let state = if p.revoked { " (retiré)" } else { "" };
+            format!("{}{state}", p.name)
+        })
+        .collect();
+    (given, received)
+}
+
 /// Propriétaire (identifiant hex) inscrit dans l'autorisation du pointeur.
 fn received_owner(p: &CachedPointer) -> Option<String> {
     let g = hex::decode(&p.grant).ok()?;
@@ -210,6 +236,32 @@ fn received_owner(p: &CachedPointer) -> Option<String> {
     s3m_protocol::share::verify_grant(&g, &s)
         .ok()
         .map(|g| hex::encode(g.owner_user_id))
+}
+
+/// Boutons d'un partage reçu : expéditeur à ajouter aux contacts, retrait.
+fn received_actions(
+    r: &crate::shares::ReceivedShare,
+    p: Option<&CachedPointer>,
+    contacts: &crate::contacts::Contacts,
+) -> Value {
+    let mut a = Vec::new();
+    if let Some((owner, label)) =
+        p.and_then(|p| received_owner(p).map(|o| (o, p.owner_label.clone())))
+    {
+        if !contacts.list.iter().any(|c| c.user_id == owner) {
+            a.push(json!({ "nom": "add_contact", "libellé": "Ajouter aux contacts", "panneau": {
+                "titre": "Ajouter l'expéditeur aux contacts",
+                "formulaires": [{ "nom": "add_contact", "titre": "Nouveau contact", "libellé": "Ajouter",
+                    "champs": ["pseudo", "identifiant"],
+                    "valeurs": { "pseudo": label, "identifiant": owner },
+                    "aide": { "pseudo": "Nom de votre choix (proposé : celui que l'expéditeur s'est donné)",
+                              "identifiant": "Identifiant S3m de l'expéditeur, lu dans l'autorisation signée du partage" } }] } }));
+        }
+    }
+    a.push(json!({ "nom": "remove_received", "libellé": "Retirer de la liste", "style": "danger",
+        "valeurs": { "id": r.id },
+        "confirmer": "Retirer ce partage de votre liste ? Vous pourrez le rajouter avec son lien ou son invitation." }));
+    json!(a)
 }
 
 /// Expiration inscrite dans l'autorisation du pointeur reçu (0 : aucune).
@@ -348,9 +400,7 @@ pub fn status(sh: &Shared, v: &mut Value) {
                 "ajouté le": r.added_at,
                 "expire le": p.and_then(received_expiry).filter(|t| *t != 0),
                 "état": state,
-                "_actions": [{ "nom": "remove_received", "libellé": "Retirer de la liste", "style": "danger",
-                               "valeurs": { "id": r.id },
-                               "confirmer": "Retirer ce partage de votre liste ? Vous pourrez le rajouter avec son lien ou son invitation." }],
+                "_actions": received_actions(r, p, &contacts),
             })
         })
         .collect::<Vec<_>>());

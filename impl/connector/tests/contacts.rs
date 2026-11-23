@@ -39,6 +39,26 @@ fn contacts_are_added_edited_resolved_and_removed() {
     assert!(c.remove(&n));
     assert!(!c.remove(&n));
     assert_eq!(c.list.len(), 1);
+    // Import : nouveaux ajoutés, présents gardés, pseudo pris abandonné.
+    let export = serde_json::to_string(&c).unwrap();
+    let mut other = Contacts::parse(&export).unwrap();
+    other.upsert(None, "Alice", &"ee".repeat(32)).unwrap_err();
+    other.upsert(None, "Eve", &"ee".repeat(32)).unwrap();
+    let mut clash = Contacts::default();
+    clash.upsert(None, "Eve", &"ff".repeat(32)).unwrap();
+    let (added, skipped) = clash.merge(&other);
+    assert_eq!(
+        (added, skipped),
+        (2, 0),
+        "Alice ajoutée, Eve (pseudo pris) sans pseudo"
+    );
+    assert_eq!(clash.pseudo_of(&"ee".repeat(32)), None);
+    assert_eq!(clash.pseudo_of(A).as_deref(), Some("Alice"));
+    assert_eq!(clash.merge(&other), (0, 2), "déjà présents");
+    assert!(Contacts::parse("n'importe quoi").is_err());
+    let list = serde_json::to_string(&c.list).unwrap();
+    assert_eq!(Contacts::parse(&list).unwrap(), c);
+
     // Conservation.
     let dir = std::env::temp_dir().join(format!("p2p-contacts-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
