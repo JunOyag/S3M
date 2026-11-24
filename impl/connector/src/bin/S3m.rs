@@ -101,7 +101,7 @@ fn set_autostart(on: bool) {
 /// Variable d'environnement du redémarrage « Changer de Nœud » : dossier de
 /// l'identité concernée (`1` : identité d'origine, anciennes versions).
 const CHANGE_NODE_ENV: &str = "S3M_CHANGE_NODE";
-/// Variable d'environnement du redémarrage « Retirer cette identité ».
+/// Variable d'environnement du redémarrage « Archiver cette identité ».
 const REMOVE_ENV: &str = "S3M_REMOVE_IDENTITY";
 
 /// Relance S3m avec `(variable, dossier)` ; l'instance courante doit
@@ -162,7 +162,6 @@ struct Ident {
     failed: bool,
     offline_notified: bool,
     after_setup: bool,
-    remove_armed: Option<Instant>,
     /// Nom affiché du sous-menu (pseudo · empreinte), suivi à chaque tour.
     label: String,
 }
@@ -177,7 +176,7 @@ impl Ident {
         let change = MenuItem::new("Changer de Nœud…", true, None);
         // L'identité d'origine ne se retire que s'il en reste une autre
         // (activé à chaque tour).
-        let remove = Some(MenuItem::new("Retirer cette identité…", num > 1, None));
+        let remove = Some(MenuItem::new(ARCHIVE_TEXT, num > 1, None));
         let sub = Submenu::new(format!("Identité {num}"), true);
         let _ = sub.append_items(&[
             &status,
@@ -210,7 +209,6 @@ impl Ident {
             failed: false,
             offline_notified: false,
             after_setup: false,
-            remove_armed: None,
             label: String::new(),
         }
     }
@@ -279,7 +277,7 @@ fn start_connector(
     });
 }
 
-const PURGE_TEXT: &str = "Supprimer définitivement…";
+const ARCHIVE_TEXT: &str = "Archiver cette identité";
 
 /// Entrée du menu « Identités archivées ».
 struct ArchivedItem {
@@ -287,7 +285,40 @@ struct ArchivedItem {
     sub: Submenu,
     restore: MenuItem,
     purge: MenuItem,
-    armed: Option<Instant>,
+}
+
+/// Fenêtre de confirmation de la suppression définitive (Oui / Non, « Non »
+/// par défaut) ; acceptée d'office en mode d'essai.
+fn confirm_purge(label: &str) -> bool {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDYES, MB_DEFBUTTON2, MB_ICONWARNING, MB_SETFOREGROUND, MB_TOPMOST,
+        MB_YESNO,
+    };
+    if headless() {
+        return true;
+    }
+    let text = format!(
+        "Supprimer définitivement « {label} » de ce poste ?\n\n\
+         Le dossier de cette identité est effacé, y compris sa phrase de \
+         récupération (24 mots). Seule cette phrase, si vous l'avez notée, \
+         permettra ensuite de retrouver l'accès à vos données.\n\n\
+         Sans aucun appareil connecté sous cette identité, ses entrées dans \
+         l'annuaire du réseau S3m expirent au bout de 6 mois : restaurez-la \
+         avec sa phrase avant ce délai pour retrouver vos données.\n\n\
+         Cette suppression est irréversible."
+    );
+    let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let (t, c) = (wide(&text), wide("S3m — suppression définitive"));
+    let r = unsafe {
+        MessageBoxW(
+            None,
+            PCWSTR(t.as_ptr()),
+            PCWSTR(c.as_ptr()),
+            MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND | MB_TOPMOST,
+        )
+    };
+    r == IDYES
 }
 
 /// (Re)construit le menu « Identités archivées » (grisé s'il est vide).
@@ -297,8 +328,8 @@ fn fill_archives(menu: &Submenu, items: &mut Vec<ArchivedItem>, app: &Path) {
     }
     for ar in s3m_connector::identities::archived(app) {
         let sub = Submenu::new(ar.label(), true);
-        let restore = MenuItem::new("Restaurer", true, None);
-        let purge = MenuItem::new(PURGE_TEXT, true, None);
+        let restore = MenuItem::new("Réactiver", true, None);
+        let purge = MenuItem::new("Supprimer définitivement…", true, None);
         let _ = sub.append_items(&[&restore, &purge]);
         let _ = menu.append(&sub);
         items.push(ArchivedItem {
@@ -306,7 +337,6 @@ fn fill_archives(menu: &Submenu, items: &mut Vec<ArchivedItem>, app: &Path) {
             sub,
             restore,
             purge,
-            armed: None,
         });
     }
     menu.set_enabled(!items.is_empty());
@@ -384,8 +414,8 @@ fn remove_identity(app: &Path, dir: &Path) {
         }
     }
     match s3m_connector::identities::set_aside(app, dir, clock()) {
-        Ok(to) => log(&format!("identité retirée : {}", to.display())),
-        Err(e) => log(&format!("retrait d'identité : {e}")),
+        Ok(to) => log(&format!("identité archivée : {}", to.display())),
+        Err(e) => log(&format!("archivage d'identité : {e}")),
     }
 }
 
@@ -600,14 +630,10 @@ fn main() {
                     return;
                 }
                 if let Some(k) = archives.iter().position(|a| a.purge.id() == &e.id) {
-                    let armed = archives[k].armed.is_some_and(|t| t.elapsed() < Duration::from_secs(10));
-                    if !armed {
-                        archives[k].armed = Some(Instant::now());
-                        archives[k].purge.set_text("Confirmer la suppression (cliquer à nouveau)");
-                        notify("Suppression définitive : la phrase de récupération de cette identité est effacée de ce poste. Notez-la avant si besoin, puis cliquez à nouveau.");
+                    let ar = archives[k].ar.clone();
+                    if !confirm_purge(&ar.label()) {
                         return;
                     }
-                    let ar = archives[k].ar.clone();
                     match s3m_connector::identities::purge(&dir, &ar.dir) {
                         Ok(()) => log(&format!("identité archivée supprimée : {}", ar.dir.display())),
                         Err(e) => notify(&format!("Suppression impossible : {e}")),
@@ -629,18 +655,10 @@ fn main() {
                     say(id, "Changement de Nœud : cette identité s'arrête puis l'assistant s'ouvre ; votre identité est conservée, les autres continuent.");
                     begin_change(&rt, i, id, proxy.clone());
                 } else if id.remove.as_ref().is_some_and(|r| r.id() == &e.id) {
-                    let armed = id.remove_armed.is_some_and(|t| t.elapsed() < Duration::from_secs(10));
-                    if armed {
-                        log(&format!("retrait demandé (identité {})", id.num));
-                        say(id, "S3m redémarre sans cette identité ; son dossier est mis de côté, rien n'est effacé.");
-                        restart_with(REMOVE_ENV, &id.dir);
-                        *flow = ControlFlow::Exit;
-                    } else {
-                        id.remove_armed = Some(Instant::now());
-                        if let Some(r) = &id.remove {
-                            r.set_text("Confirmer le retrait (cliquer à nouveau)");
-                        }
-                    }
+                    log(&format!("archivage demandé (identité {})", id.num));
+                    say(id, "Identité archivée : S3m redémarre sans elle. Rien n'est effacé ; menu « Identités archivées » pour la réactiver.");
+                    restart_with(REMOVE_ENV, &id.dir);
+                    *flow = ControlFlow::Exit;
                 } else if e.id == *id.dash.id() {
                     if let Some(u) = &id.url {
                         open(u);
@@ -662,19 +680,7 @@ fn main() {
                 }
             }
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
-                for a in archives.iter_mut() {
-                    if a.armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(10)) {
-                        a.armed = None;
-                        a.purge.set_text(PURGE_TEXT);
-                    }
-                }
                 for (i, id) in idents.iter_mut().enumerate() {
-                    if id.remove_armed.is_some_and(|t| t.elapsed() >= Duration::from_secs(10)) {
-                        id.remove_armed = None;
-                        if let Some(r) = &id.remove {
-                            r.set_text("Retirer cette identité…");
-                        }
-                    }
                     if id.num == 1 {
                         if let Some(r) = &id.remove {
                             r.set_enabled(many);

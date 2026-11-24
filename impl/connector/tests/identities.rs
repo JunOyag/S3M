@@ -89,8 +89,8 @@ fn archived_identities_are_restored_or_purged() {
     let ar = archived(&a);
     assert_eq!(ar.len(), 2);
     assert_eq!(ar[0].num, 3, "la plus récente d'abord");
-    assert_eq!(ar[1].label(), "Toto — retirée le 14/11/2023");
-    assert_eq!(ar[0].label(), "Identité 3 — retirée le 14/11/2023");
+    assert_eq!(ar[1].label(), "Toto — archivée le 14/11/2023");
+    assert_eq!(ar[0].label(), "Identité 3 — archivée le 14/11/2023");
     // Restauration : premier numéro libre ; dossier vide d'assistant réutilisé.
     std::fs::create_dir_all(a.join("identites").join("2")).unwrap();
     let (n, to) = restore(&a, &ar[1].dir).unwrap();

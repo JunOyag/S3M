@@ -302,20 +302,22 @@ identités Utilisateur, chacune comme un Connecteur complet et indépendant.
 - **Une icône** : sa couleur suit l'identité dans le pire état ; le menu a
   un sous-menu par identité, nommé `pseudo · empreinte` (ouvrir les
   fichiers, le tableau de bord — un par identité, sur son propre port —,
-  synchroniser, suspendre, changer de Nœud, retirer l'identité).
-- **Retrait** (second clic de confirmation ; l'identité d'origine seulement
-  s'il en reste une autre) : S3m redémarre sans elle ; son dossier est
+  synchroniser, suspendre, changer de Nœud, archiver l'identité).
+- **Archivage** (« Archiver cette identité », sans confirmation ; l'identité
+  d'origine seulement s'il en reste une autre) : S3m redémarre sans elle ; son dossier est
   renommé `<n>.retiree-<horodatage>` (pour l'origine, ses fichiers vont
   dans `identites\1.retiree-<horodatage>`, le dossier de l'application
   gardant journaux et identités), jamais effacé d'office (voir ci-dessous), et
   son dossier synchronisé déconnecté. Le nom du sous-menu suit le pseudo
   de l'identité.
 - **Identités archivées** (menu de l'icône, grisé s'il n'y en a pas) : une
-  entrée par identité retirée, `pseudo — retirée le JJ/MM/AAAA`, avec
-  *Restaurer* (relancée aussitôt sous le premier numéro libre, à partir
-  de 2) et *Supprimer définitivement* (second clic de confirmation ; son
-  dossier est effacé de ce poste, phrase de récupération comprise : seule
-  la phrase notée permet ensuite de la retrouver).
+  entrée par identité archivée, `pseudo — archivée le JJ/MM/AAAA`, avec
+  *Réactiver* (relancée aussitôt sous le premier numéro libre, à partir
+  de 2) et *Supprimer définitivement* (fenêtre de confirmation, « Non » par
+  défaut, rappelant que seule la phrase de récupération notée permet
+  ensuite de retrouver les données et que, sans appareil connecté, les
+  entrées de l'identité dans l'annuaire expirent au bout de 6 mois ; son
+  dossier est effacé de ce poste, phrase de récupération comprise).
 - Deux identités peuvent être rattachées au même Nœud (deux Utilisateurs
   distincts pour lui) ou à des Nœuds différents.
 

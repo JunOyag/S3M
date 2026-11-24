@@ -115,7 +115,7 @@ impl Archived {
             true => format!("Identité {}", self.num),
             false => self.pseudo.clone(),
         };
-        format!("{who} — retirée le {}", date_fr(self.retired_at))
+        format!("{who} — archivée le {}", date_fr(self.retired_at))
     }
 }
 
