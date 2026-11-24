@@ -64,6 +64,19 @@ fn peer_of(node_id: &[u8; 32]) -> Option<PeerId> {
     Some(identity::PublicKey::from(pk).to_peer_id())
 }
 
+/// Adresse déclarée d'un partenaire dans le catalogue (ip, port).
+fn desc_addr(p: &PartnerDesc) -> Option<Multiaddr> {
+    let ip: std::net::IpAddr = p.ip.parse().ok()?;
+    let mut m = Multiaddr::empty();
+    m.push(match ip {
+        std::net::IpAddr::V4(v) => Protocol::Ip4(v),
+        std::net::IpAddr::V6(v) => Protocol::Ip6(v),
+    });
+    m.push(Protocol::Tcp(p.port));
+    m.push(Protocol::P2p(peer_of(&p.node_id)?));
+    Some(m)
+}
+
 impl Rescue {
     pub fn attach(&self, sh: Weak<Shared>) {
         let _ = self.shared.set(sh);
@@ -188,10 +201,10 @@ impl Rescue {
     }
 
     /// Partenaires en ligne parmi ceux qui hébergent la parité :
-    /// `(en ligne, total)` ; `None` si le catalogue est illisible (annuaire
+    /// `(en ligne, total)` ; erreur si le catalogue est illisible (annuaire
     /// injoignable : hors réseau).
-    pub async fn partners_online(&self, sh: &Shared) -> Option<(usize, usize)> {
-        self.index(sh, false).await.ok()?;
+    pub async fn partners_online(&self, sh: &Shared) -> Result<(usize, usize), String> {
+        self.index(sh, false).await?;
         let partners = self.partners.lock().unwrap().clone();
         let mut up = 0;
         for p in &partners {
@@ -213,7 +226,18 @@ impl Rescue {
                 self.addrs.lock().unwrap().remove(&p.node_id);
             }
         }
-        Some((up, partners.len()))
+        Ok((up, partners.len()))
+    }
+
+    /// Adresses des partenaires du dernier catalogue relu (déclarées par le
+    /// Nœud) : points d'entrée de l'annuaire quand le Nœud est hors ligne.
+    pub fn partner_addrs(&self) -> Vec<Multiaddr> {
+        self.partners
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(desc_addr)
+            .collect()
     }
 
     /// Adresse d'un partenaire : son entrée DHT Node, sinon le catalogue.
@@ -230,15 +254,7 @@ impl Rescue {
             }
         }
         if a.is_none() {
-            let ip: std::net::IpAddr = p.ip.parse().ok()?;
-            let mut m = Multiaddr::empty();
-            m.push(match ip {
-                std::net::IpAddr::V4(v) => Protocol::Ip4(v),
-                std::net::IpAddr::V6(v) => Protocol::Ip6(v),
-            });
-            m.push(Protocol::Tcp(p.port));
-            m.push(Protocol::P2p(peer_of(&p.node_id)?));
-            a = Some(m);
+            a = desc_addr(p);
         }
         let a = a?;
         self.addrs.lock().unwrap().insert(p.node_id, a.clone());

@@ -39,6 +39,17 @@ toutes les 2 minutes. L'adresse qui répond est retenue (fichier `node.addr`
 des données du Connecteur, ignoré s'il désigne un autre `PeerId`) et
 préférée au démarrage suivant ; la configuration n'est pas réécrite.
 
+**Annuaire sans le Nœud** (ajout du 2026-11-24) : le Nœud est souvent le
+seul Nœud d'amorçage DHT d'un Connecteur. Tant que l'annuaire répond, le
+Connecteur garde (fichier `dht_peers.json`, 32 adresses au plus) les
+adresses des partenaires de son catalogue de dispersion et celles de sa
+table de routage ; il s'en sert comme Nœuds d'amorçage supplémentaires au
+démarrage, et les ajoute — avec les autres Nœuds trouvés sur le réseau
+local — quand son Nœud est hors ligne. L'écriture d'urgence
+([`protocols.espace-secours`](../04-protocols/espace-secours.md)) et la
+lecture de secours ([`protocols.integrite-lecture`](../04-protocols/integrite-lecture.md#noeud-hors-ligne))
+restent ainsi possibles.
+
 ## Chemin rapide (cache local présent)
 
 Le Connecteur interroge en priorité son **cache local** pour obtenir

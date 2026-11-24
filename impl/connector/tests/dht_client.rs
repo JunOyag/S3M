@@ -171,3 +171,27 @@ async fn connector_refuses_entries_it_cannot_verify() {
         Err(DhtClientError::Rejected(DhtError::InvalidVdf))
     ));
 }
+
+/// Nœud d'amorçage hors ligne : les Nœuds vus auparavant (table de
+/// routage gardée) servent de points d'entrée.
+#[tokio::test(flavor = "multi_thread")]
+async fn known_peers_reach_the_directory_when_the_bootstrap_node_is_down() {
+    let (a, b, addr) = nodes().await;
+    let c = client(addr.clone(), true).await;
+    let known = c.known_peers().await.unwrap();
+    assert!(known.contains(&addr), "{known:?}");
+    let env = dispersal_envelope(&[0x53; 32]);
+    a.put(b"cle-secours".to_vec(), env.clone()).await.unwrap();
+    // Client amorcé sur un Nœud éteint : rien, puis les Nœuds connus.
+    let dead: libp2p::Multiaddr = format!(
+        "/ip4/127.0.0.1/tcp/9/p2p/{}",
+        libp2p::PeerId::random()
+    )
+    .parse()
+    .unwrap();
+    let c2 = client(dead, true).await;
+    assert_eq!(get(&c2, b"cle-secours").await, None);
+    c2.add_peers(vec![b.listen_addr().await.unwrap()]).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(get(&c2, b"cle-secours").await, Some(env));
+}

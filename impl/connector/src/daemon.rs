@@ -1242,16 +1242,47 @@ fn attached_at(dir: &Path, now: u64) -> u64 {
     now
 }
 
+/// Nœuds de l'annuaire vus en dernier (`dht_peers.json`), au plus 32.
+const DHT_PEERS_FILE: &str = "dht_peers.json";
+
+fn load_dht_peers(dir: &std::path::Path) -> Vec<Multiaddr> {
+    std::fs::read(dir.join(DHT_PEERS_FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Vec<String>>(&b).ok())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|a| a.parse().ok())
+        .collect()
+}
+
+fn save_dht_peers(dir: &std::path::Path, peers: &[Multiaddr]) {
+    if peers.is_empty() {
+        return;
+    }
+    let mut list: Vec<String> = Vec::new();
+    for a in peers.iter().map(|a| a.to_string()) {
+        if !list.contains(&a) && list.len() < 32 {
+            list.push(a);
+        }
+    }
+    if let Ok(b) = serde_json::to_vec_pretty(&list) {
+        let _ = std::fs::write(dir.join(DHT_PEERS_FILE), b);
+    }
+}
+
 /// Entrée DHT User : restauration de la racine, preuve VDF, publication à
 /// chaque nouvelle racine.
 fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], salt: Vec<u8>) {
     spawn_tracked(&sh.clone(), async move {
-        let bootstrap: Vec<Multiaddr> = sh
+        let mut bootstrap: Vec<Multiaddr> = sh
             .config
             .dht_bootstrap
             .iter()
             .filter_map(|a| a.parse().ok())
             .collect();
+        // Nœuds vus lors des sessions précédentes : l'annuaire reste
+        // joignable si le Nœud d'amorçage est hors ligne au démarrage.
+        bootstrap.extend(load_dht_peers(&sh.config.data_dir));
         let client = match DhtClient::start(DhtClientConfig {
             bootstrap,
             vdf: chiavdf_verifier(),
@@ -2053,6 +2084,15 @@ pub async fn watch_once(sh: &Shared) {
             let found = crate::lan::scan(Duration::from_secs(4))
                 .await
                 .unwrap_or_default();
+            // Autres Nœuds du réseau local : points d'entrée de l'annuaire.
+            if let Some(dht) = sh.dht.get() {
+                let addrs = found
+                    .iter()
+                    .filter(|n| !n.to_configure)
+                    .filter_map(|n| n.addr.parse().ok())
+                    .collect();
+                let _ = dht.add_peers(addrs).await;
+            }
             for n in found
                 .iter()
                 .filter(|n| n.node_id == sh.pub_node && !n.to_configure)
@@ -2088,12 +2128,27 @@ pub async fn watch_once(sh: &Shared) {
             h.last_error = probe.err().map(|e| e.to_string());
         }
     }
+    // Points d'entrée de l'annuaire : gardés tant qu'il répond, rajoutés
+    // quand le Nœud (souvent seul Nœud d'amorçage) est hors ligne.
+    if let Some(dht) = sh.dht.get() {
+        if ok {
+            if let Ok(known) = dht.known_peers().await {
+                let mut peers = sh.rescue.partner_addrs();
+                peers.extend(known);
+                save_dht_peers(&sh.config.data_dir, &peers);
+            }
+        } else {
+            let _ = dht.add_peers(load_dht_peers(&sh.config.data_dir)).await;
+        }
+    }
     // Nœud hors ligne : la parité reste-t-elle lisible ?
     let (partners, dispersal) = if ok {
         (None, Some(sh.rescue.dispersal_partners(sh).await))
     } else {
-        let p = sh.rescue.partners_online(sh).await;
-        (p, p.map(|(_, n)| Ok(n)))
+        match sh.rescue.partners_online(sh).await {
+            Ok(p) => (Some(p), Some(Ok(p.1))),
+            Err(e) => (None, Some(Err(e))),
+        }
     };
     {
         let mut h = sh.health.lock().unwrap();

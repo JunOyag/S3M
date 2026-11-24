@@ -85,6 +85,8 @@ enum Command {
     Get(Vec<u8>, oneshot::Sender<Option<Vec<u8>>>),
     Listeners(oneshot::Sender<usize>),
     Closest(Vec<u8>, oneshot::Sender<Vec<PeerId>>),
+    AddPeers(Vec<Multiaddr>),
+    Known(oneshot::Sender<Vec<Multiaddr>>),
 }
 
 type PendingGets = HashMap<kad::QueryId, (Vec<u8>, oneshot::Sender<Option<Vec<u8>>>)>;
@@ -178,6 +180,26 @@ impl DhtClient {
         rx.await.map_err(|_| DhtClientError::Stopped)
     }
 
+    /// Ajoute des points d'entrée (`/…/p2p/<PeerId>`) et relance
+    /// l'amorçage : Nœuds vus auparavant ou trouvés sur le réseau local,
+    /// quand le seul Nœud d'amorçage configuré est injoignable.
+    pub async fn add_peers(&self, addrs: Vec<Multiaddr>) -> Result<(), DhtClientError> {
+        self.tx
+            .send(Command::AddPeers(addrs))
+            .await
+            .map_err(|_| DhtClientError::Stopped)
+    }
+
+    /// Adresses des Nœuds de la table de routage (`/…/p2p/<PeerId>`).
+    pub async fn known_peers(&self) -> Result<Vec<Multiaddr>, DhtClientError> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Command::Known(tx))
+            .await
+            .map_err(|_| DhtClientError::Stopped)?;
+        rx.await.map_err(|_| DhtClientError::Stopped)
+    }
+
     /// Lit sur le réseau la première enveloppe valide publiée sous `key`.
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>, DhtClientError> {
         let (tx, rx) = oneshot::channel();
@@ -227,6 +249,30 @@ async fn run(
                 Some(Command::Get(key, reply)) => {
                     let id = swarm.behaviour_mut().kad.get_record(RecordKey::new(&key));
                     gets.insert(id, (key, reply));
+                }
+                Some(Command::AddPeers(addrs)) => {
+                    for addr in addrs {
+                        if let Some(Protocol::P2p(peer)) = addr.iter().last() {
+                            swarm.behaviour_mut().kad.add_address(&peer, addr);
+                        }
+                    }
+                    let _ = swarm.behaviour_mut().kad.bootstrap();
+                }
+                Some(Command::Known(reply)) => {
+                    let mut out = Vec::new();
+                    for b in swarm.behaviour_mut().kad.kbuckets() {
+                        for e in b.iter() {
+                            let peer = *e.node.key.preimage();
+                            for a in e.node.value.iter() {
+                                let mut a = a.clone();
+                                if !matches!(a.iter().last(), Some(Protocol::P2p(_))) {
+                                    a.push(Protocol::P2p(peer));
+                                }
+                                out.push(a);
+                            }
+                        }
+                    }
+                    let _ = reply.send(out);
                 }
                 Some(Command::Closest(key, reply)) => {
                     let id = swarm.behaviour_mut().kad.get_closest_peers(key);
