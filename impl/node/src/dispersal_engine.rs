@@ -82,7 +82,7 @@ impl Default for EngineConfig {
         Self {
             k: K,
             coef: COEF,
-            idle_timeout_s: 300,
+            idle_timeout_s: 60,
             grace_s: 3_600,
             min_confirmations: 0,
         }
@@ -297,6 +297,49 @@ fn random<const N: usize>() -> [u8; N] {
     b
 }
 
+/// Place des fragments chez des partenaires distincts, en parallèle :
+/// chaque tour confie chaque fragment non placé au candidat suivant (ordre
+/// donné, distance XOR) et tous les envois du tour partent ensemble ; un
+/// refus passe au tour suivant. Rend `(index, hash, partenaire)` des
+/// fragments dont le reçu est valide ; le grand livre est mis à jour.
+pub(crate) async fn place(
+    service: &Mutex<NodeService>,
+    fabric: &dyn Fabric,
+    frags: Vec<(u16, Vec<u8>)>,
+    candidates: &[Id],
+) -> Vec<(u16, Id, Id)> {
+    let me = service.lock().unwrap().node_id();
+    let mut todo = frags;
+    let mut next = 0;
+    let mut placed = Vec::new();
+    while !todo.is_empty() && next < candidates.len() {
+        let n = todo.len().min(candidates.len() - next);
+        let round: Vec<((u16, Vec<u8>), Id)> = todo
+            .drain(..n)
+            .zip(&candidates[next..next + n])
+            .map(|(f, p)| (f, *p))
+            .collect();
+        next += n;
+        let sent = futures::future::join_all(
+            round.iter().map(|((_, frag), p)| fabric.store(p, frag.clone())),
+        )
+        .await;
+        for (((i, frag), p), r) in round.into_iter().zip(sent) {
+            let h = hash_sha256(&frag);
+            match r {
+                Ok(sig) if verify_receipt(&p, &h, &me, &sig) => {
+                    if let Some(st) = service.lock().unwrap().partners.get_mut(&p) {
+                        st.ledger.hosted_for_partner += 1;
+                    }
+                    placed.push((i, h, p));
+                }
+                _ => todo.push((i, frag)),
+            }
+        }
+    }
+    placed
+}
+
 /// Disperse un stripe de k blocs de 65 536 o.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn disperse(
@@ -313,27 +356,19 @@ pub(crate) async fn disperse(
     let sid = stripe_id(&hashes);
     let refs: Vec<&[u8]> = data.iter().map(|d| d.as_slice()).collect();
     let parity = encode_parity(&refs, cfg.coef).map_err(|e| e.to_string())?;
-    let me = service.lock().unwrap().node_id();
     let mut candidates: Vec<Id> = fabric.partners().iter().map(|p| p.node_id).collect();
     by_xor_distance(&mut candidates, &sid);
-    let mut next = 0;
-    let mut placed: Vec<(u16, String, String)> = Vec::new();
-    for (i, frag) in parity.into_iter().enumerate() {
-        let h = hash_sha256(&frag);
-        while next < candidates.len() {
-            let p = candidates[next];
-            next += 1;
-            if let Ok(sig) = fabric.store(&p, frag.clone()).await {
-                if verify_receipt(&p, &h, &me, &sig) {
-                    if let Some(st) = service.lock().unwrap().partners.get_mut(&p) {
-                        st.ledger.hosted_for_partner += 1;
-                    }
-                    placed.push(((cfg.k + i) as u16, hx(&h), hx(&p)));
-                    break;
-                }
-            }
-        }
-    }
+    let frags = parity
+        .into_iter()
+        .enumerate()
+        .map(|(i, f)| ((cfg.k + i) as u16, f))
+        .collect();
+    let mut placed: Vec<(u16, String, String)> = place(service, fabric, frags, &candidates)
+        .await
+        .into_iter()
+        .map(|(i, h, p)| (i, hx(&h), hx(&p)))
+        .collect();
+    placed.sort();
     // Partenaires manquants (`protocols.partenariat-automatique`) : la
     // recherche relève sa cible d'autant.
     service.lock().unwrap().missing_partners =

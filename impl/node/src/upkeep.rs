@@ -28,12 +28,12 @@ use std::time::{Duration, Instant};
 use s3m_core::erasure::{encode_parity, padding_block, reconstruct_data};
 use s3m_core::symmetric_suite::hash_sha256;
 use s3m_protocol::dispersal::{by_xor_distance, Id};
-use s3m_protocol::exchange::{verify_receipt, Body, Refusal, Request, Response};
+use s3m_protocol::exchange::{Body, Refusal, Request, Response};
 use serde::{Deserialize, Serialize};
 
 use crate::blacklist::REASON_POS_INVALID;
 use crate::chunk_store::Space;
-use crate::dispersal_engine::{DispersalState, EngineConfig, Fabric, Retired, StripeRec};
+use crate::dispersal_engine::{place, DispersalState, EngineConfig, Fabric, Retired, StripeRec};
 use crate::exchange::NodeService;
 use crate::pos::{challenge_response, judge, LatencyTracker, Verdict};
 use crate::volatility::{analyze, Holder};
@@ -171,7 +171,6 @@ async fn replace_fragments(
     retired: &mut Vec<Retired>,
     now: u64,
 ) -> usize {
-    let me = service.lock().unwrap().node_id();
     let taken: HashSet<String> = rec.parity.iter().map(|(_, _, p)| p.clone()).collect();
     let mut candidates: Vec<Id> = fabric
         .partners()
@@ -180,38 +179,25 @@ async fn replace_fragments(
         .filter(|p| !taken.contains(&hx(p)) && !up.is_blacklisted(p))
         .collect();
     by_xor_distance(&mut candidates, &id(&rec.id));
-    let mut next = 0;
-    let mut done = 0;
-    for &i in indices {
-        let Some(frag) = parity.get(i as usize - cfg.k) else {
-            continue;
-        };
-        let h = hash_sha256(frag);
-        while next < candidates.len() {
-            let p = candidates[next];
-            next += 1;
-            if let Ok(sig) = fabric.store(&p, frag.clone()).await {
-                if verify_receipt(&p, &h, &me, &sig) {
-                    if let Some(st) = service.lock().unwrap().partners.get_mut(&p) {
-                        st.ledger.hosted_for_partner += 1;
-                    }
-                    if let Some(slot) = rec.parity.iter_mut().find(|(x, _, _)| *x == i) {
-                        retired.push(Retired {
-                            at: now,
-                            hash: slot.1.clone(),
-                            partner: slot.2.clone(),
-                        });
-                        *slot = (i, hx(&h), hx(&p));
-                    } else {
-                        rec.parity.push((i, hx(&h), hx(&p)));
-                    }
-                    done += 1;
-                    break;
-                }
-            }
+    let frags = indices
+        .iter()
+        .filter_map(|&i| Some((i, parity.get((i as usize).checked_sub(cfg.k)?)?.clone())))
+        .collect();
+    let placed = place(service, fabric, frags, &candidates).await;
+    for (i, h, p) in &placed {
+        if let Some(slot) = rec.parity.iter_mut().find(|(x, _, _)| x == i) {
+            retired.push(Retired {
+                at: now,
+                hash: slot.1.clone(),
+                partner: slot.2.clone(),
+            });
+            *slot = (*i, hx(h), hx(p));
+        } else {
+            rec.parity.push((*i, hx(h), hx(p)));
         }
     }
-    done
+    rec.parity.sort();
+    placed.len()
 }
 
 /// Rupture avec un partenaire fraudeur.
@@ -353,6 +339,16 @@ pub async fn run_upkeep(
     if analysis_due {
         up.last_analysis = now;
     }
+    // Rattrapage : partenaires qui ne portent encore rien d'un stripe
+    // incomplet ; arrêté au premier stripe qui ne progresse pas (partenaires
+    // pleins), repris au cycle suivant.
+    let partners: Vec<String> = fabric
+        .partners()
+        .iter()
+        .map(|p| hx(&p.node_id))
+        .filter(|p| !up.blacklist.contains_key(p) && !up.retiring.contains(p))
+        .collect();
+    let mut catch_up = true;
     let users: Vec<String> = state.users.keys().cloned().collect();
     for user in &users {
         let uid = id(user);
@@ -392,15 +388,26 @@ pub async fn run_upkeep(
                 let plan = analyze(&holders, cfg.k, now, ucfg.available_window_s);
                 indices.extend(plan.repair.iter().map(|i| *i as u16));
                 // Fragments jamais placés (dispersion partielle).
+            }
+            // Fragments jamais placés (dispersion partielle) : à chaque cycle,
+            // dès qu'un partenaire libre existe.
+            let unplaced: Vec<u16> = {
                 let placed: HashSet<u16> = rec.parity.iter().map(|(i, _, _)| *i).collect();
-                let up_count = rec.parity.iter().filter(|(_, _, p)| available(p)).count();
-                if up_count < cfg.min_confirmations() {
-                    indices.extend(
-                        (cfg.k..cfg.k * (1 + cfg.coef))
-                            .map(|i| i as u16)
-                            .filter(|i| !placed.contains(i)),
-                    );
-                }
+                (cfg.k..cfg.k * (1 + cfg.coef))
+                    .map(|i| i as u16)
+                    .filter(|i| !placed.contains(i))
+                    .collect()
+            };
+            let catching_up = indices.is_empty() && !unplaced.is_empty();
+            if !unplaced.is_empty()
+                && (analysis_due || catch_up)
+                && partners
+                    .iter()
+                    .any(|p| !rec.parity.iter().any(|(_, _, x)| x == p))
+            {
+                indices.extend(unplaced);
+            } else if catching_up {
+                continue;
             }
             indices.sort();
             indices.dedup();
@@ -444,7 +451,10 @@ pub async fn run_upkeep(
                     ),
                 );
             }
-            if n < indices.len() {
+            if catching_up && n == 0 {
+                catch_up = false;
+            }
+            if n < indices.len() && (!catching_up || analysis_due) {
                 up.log(
                     now,
                     format!(

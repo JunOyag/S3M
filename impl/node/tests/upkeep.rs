@@ -216,3 +216,105 @@ async fn fraud_absence_and_local_corruption_are_repaired_automatically() {
         .iter()
         .any(|e| e.contains("liste noire")));
 }
+
+/// Fragments non placés faute de partenaires : complétés au cycle suivant
+/// l'arrivée de nouveaux partenaires, sans attendre l'analyse quotidienne.
+#[tokio::test(flavor = "multi_thread")]
+async fn unplaced_fragments_are_completed_at_the_next_cycle() {
+    let cfg = EngineConfig {
+        k: 2,
+        coef: 2,
+        idle_timeout_s: 100,
+        grace_s: 0,
+        min_confirmations: 1,
+    };
+    let ucfg = UpkeepConfig {
+        challenges_per_cycle: 0,
+        ..Default::default()
+    };
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000);
+    let listen: libp2p::Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
+    let mut servers = Vec::new();
+    let mut addrs = HashMap::new();
+    let mut later = Vec::new();
+    let mut service = NodeService::new(NODE);
+    for i in 0..4u8 {
+        let seed = [0x60 + i; 32];
+        let mut ps = NodeService::new(seed);
+        ps.partners.insert(
+            pk(&NODE),
+            PartnerState {
+                ledger: s3m_node::tombstones::PartnerLedger {
+                    hosted_for_partner: 1_000,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        let ps = Arc::new(Mutex::new(ps));
+        let s = BlockServer::start(seed, listen.clone(), ps, clock.clone())
+            .await
+            .unwrap();
+        addrs.insert(pk(&seed), s.listen_addr().await.unwrap().to_string());
+        if i < 2 {
+            service.partners.insert(pk(&seed), PartnerState::default());
+        } else {
+            later.push(pk(&seed));
+        }
+        servers.push(s);
+    }
+    service.users.insert(
+        pk(&USER),
+        UserAccount {
+            salt: vec![7; 16],
+            quota_bytes: 1 << 30,
+            used_bytes: 0,
+            root: [0; 32],
+        },
+    );
+    let service = Arc::new(Mutex::new(service));
+    for b in [block(1), block(2)] {
+        let mut s = service.lock().unwrap();
+        let h = hash_sha256(&b);
+        s.store.put(Space::UserBlock, &pk(&USER), &h, &b).unwrap();
+        s.dispersal_queue.push((pk(&USER), h));
+    }
+    let dht = DhtNode::start(DhtConfig {
+        node_seed: NODE,
+        listen: listen.clone(),
+        bootstrap: vec![],
+        vdf: Arc::new(|_, _| Ok(true)),
+        clock: clock.clone(),
+    })
+    .await
+    .unwrap();
+    let fabric = NetFabric {
+        server: Arc::new(
+            BlockServer::start(NODE, listen, service.clone(), clock)
+                .await
+                .unwrap(),
+        ),
+        dht: Arc::new(dht),
+        service: service.clone(),
+        addrs: Arc::new(Mutex::new(addrs)),
+        excluded: Default::default(),
+    };
+    let mut state = DispersalState::default();
+    let user = hex::encode(pk(&USER));
+    let r = run_cycle(&service, &mut state, &fabric, &cfg, 1_000).await;
+    assert_eq!(r.stripes_dispersed, 1, "{r:?}");
+    assert_eq!(state.users[&user].stripes[0].parity.len(), 2);
+    // Sans partenaire libre : rien n'est tenté.
+    let r = run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, 1_010).await;
+    assert_eq!(r.repaired, 0, "{r:?}");
+    for p in later {
+        service.lock().unwrap().partners.insert(p, PartnerState::default());
+    }
+    let r = run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, 1_040).await;
+    assert_eq!(r.repaired, 2, "{r:?}");
+    let s = &state.users[&user].stripes[0];
+    let mut holders: Vec<_> = s.parity.iter().map(|(_, _, p)| p.clone()).collect();
+    holders.sort();
+    holders.dedup();
+    assert_eq!((s.parity.len(), holders.len()), (4, 4));
+}

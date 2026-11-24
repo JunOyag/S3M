@@ -67,7 +67,11 @@ avec le crédit d'hébergement local de chaque Nœud (ajout du 2026-11-23).
 **Partenaires manquants** : si un stripe ne trouve pas coef×k partenaires
 distincts qui acceptent l'échange, le Nœud relève sa cible du nombre
 manquant et propose de nouveaux partenariats ; la cible revient à sa valeur
-réglée quand les stripes sont placés.
+réglée quand les stripes sont placés. Les fragments non placés sont
+complétés à chaque cycle d'entretien (30 s) dès qu'un partenaire ne portant
+encore rien du stripe existe, sans attendre l'analyse quotidienne ; le
+rattrapage s'arrête pour le cycle au premier stripe qui ne progresse pas
+(partenaires pleins) (ajout du 2026-11-24).
 
 ## Placement et retrait
 
