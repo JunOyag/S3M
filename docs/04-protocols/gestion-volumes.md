@@ -61,6 +61,9 @@ reconstruits depuis la parité par le scrubbing, déclenché aussitôt
 les fragments hébergés pour des partenaires sont retirés de leur solde, et
 chaque partenaire les reconstruit de son côté à son prochain échec de
 challenge ([`securite.pos-challenges`](../05-securite/pos-challenges.md)).
+Des fichiers de conteneurs disparus sans déclaration (dossier supprimé)
+sont détectés et traités automatiquement, volume conservé
+([`securite.integrite-autoreparation#maintenance`](../05-securite/integrite-autoreparation.md#maintenance)).
 
 ## Import d'un volume contenant déjà des blocs {: #import }
 

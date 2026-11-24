@@ -12,10 +12,10 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_ERROR_CODE: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_ERROR_CODE: u8 = 6;
+pub const ENUM_MAX_ERROR_CODE: u8 = 7;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_ERROR_CODE: [ErrorCode; 7] = [
+pub const ENUM_VALUES_ERROR_CODE: [ErrorCode; 8] = [
   ErrorCode::NotFound,
   ErrorCode::Unauthorized,
   ErrorCode::QuotaExceeded,
@@ -23,6 +23,7 @@ pub const ENUM_VALUES_ERROR_CODE: [ErrorCode; 7] = [
   ErrorCode::Malformed,
   ErrorCode::RateLimited,
   ErrorCode::Replayed,
+  ErrorCode::Maintenance,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -37,9 +38,10 @@ impl ErrorCode {
   pub const Malformed: Self = Self(4);
   pub const RateLimited: Self = Self(5);
   pub const Replayed: Self = Self(6);
+  pub const Maintenance: Self = Self(7);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 6;
+  pub const ENUM_MAX: u8 = 7;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NotFound,
     Self::Unauthorized,
@@ -48,6 +50,7 @@ impl ErrorCode {
     Self::Malformed,
     Self::RateLimited,
     Self::Replayed,
+    Self::Maintenance,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -59,6 +62,7 @@ impl ErrorCode {
       Self::Malformed => Some("Malformed"),
       Self::RateLimited => Some("RateLimited"),
       Self::Replayed => Some("Replayed"),
+      Self::Maintenance => Some("Maintenance"),
       _ => None,
     }
   }

@@ -61,6 +61,41 @@ Nœud lui-même à partir de k fragments (blocs locaux sains et parité
 récupérée chez les partenaires, dont le hash est vérifié), puis réécrit —
 sans attendre qu'un Connecteur le relise.
 
+## Perte d'un volume : maintenance automatique {: #maintenance }
+
+Ajout du 2026-11-24. À chaque cycle d'entretien (30 s), le Nœud vérifie
+que le fichier de chacun de ses conteneurs
+([`protocols.stockage-physique`](../04-protocols/stockage-physique.md))
+existe encore. Des fichiers disparus (dossier d'un volume supprimé, disque
+remplacé à vide) font passer le Nœud **en maintenance**, état conservé sur
+disque :
+
+1. Les conteneurs disparus sont oubliés, le volume reste en service et son
+   dossier est recréé ; les fragments perdus sont retirés du solde de
+   chaque partenaire ([`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md)),
+   les dépôts d'urgence perdus sont oubliés.
+2. Les Utilisateurs sont prévenus par un message `Info`
+   ([`protocols.canal-noeud`](../04-protocols/canal-noeud.md)) ; leurs
+   lectures continuent, un bloc encore absent étant reconstruit par le
+   Connecteur lui-même ([`protocols.integrite-lecture`](../04-protocols/integrite-lecture.md)).
+3. Le scrubbing est lancé à chaque cycle, sans attendre sa période : chaque
+   bloc perdu est reconstruit depuis la parité (§ Auto-réparation par le
+   Nœud seul).
+4. Envers les partenaires, le Nœud refuse tout `StoreFragment` et répond
+   `Maintenance` (au lieu de `NotFound`) à un `Challenge` ou un
+   `FetchFragment` sur un fragment perdu
+   ([`network.BlockResponse`](../02-schemas/network/BlockResponse.md)).
+   Le partenaire replace ce fragment ailleurs **sans compter de
+   manquement** ([`node.PartnerAccount#manquements`](../02-schemas/node/PartnerAccount.md#manquements)) :
+   la perte est déclarée, pas dissimulée.
+
+La maintenance prend fin quand un passage n'a plus rien à reconstruire, ou
+après 10 passages (environ 5 minutes) ; les Utilisateurs reçoivent alors un
+second message, avec le nombre de blocs irrécupérables le cas échéant —
+ceux qui n'étaient pas encore dispersés au moment de la perte, que seul un
+appareil ayant encore le fichier peut renvoyer. Le dashboard affiche l'état
+et la progression (section « Maintenance » de la vue d'ensemble).
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par

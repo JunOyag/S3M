@@ -997,6 +997,8 @@ entries:
       - self_repair::repair_replaces_corrupted_copy_only_with_a_block_matching_its_hash
       - self_repair::scrubbing_detects_corruption_and_flags_failing_volumes
       - upkeep::fraud_absence_and_local_corruption_are_repaired_automatically
+      - maintenance::a_deleted_volume_is_rebuilt_from_the_network
+      - maintenance::a_partner_in_maintenance_is_not_penalised
     notes: >-
       connector : IntegrityLog::pending_repairs, le bloc reconstruit après
       incohérence est mis en attente de retransmission au Nœud, même

@@ -11,7 +11,8 @@ enum ErrorCode : ubyte {
   TooLarge = 3,        // message au-delà de 1 048 576 o
   Malformed = 4,       // message illisible ou version inconnue
   RateLimited = 5,     // débit de secours dépassé
-  Replayed = 6         // avis de suppression non plus récent que le dernier appliqué
+  Replayed = 6,        // avis de suppression non plus récent que le dernier appliqué
+  Maintenance = 7      // Nœud en maintenance après la perte d'un volume (securite.integrite-autoreparation#maintenance)
 }
 
 table Failure {

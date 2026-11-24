@@ -65,6 +65,8 @@ pub enum Refusal {
     RateLimited,
     #[error("avis rejoué")]
     Replayed,
+    #[error("Nœud en maintenance")]
+    Maintenance,
 }
 
 impl Refusal {
@@ -77,6 +79,7 @@ impl Refusal {
             Self::Malformed => fb::ErrorCode::Malformed,
             Self::RateLimited => fb::ErrorCode::RateLimited,
             Self::Replayed => fb::ErrorCode::Replayed,
+            Self::Maintenance => fb::ErrorCode::Maintenance,
         }
     }
 
@@ -89,6 +92,7 @@ impl Refusal {
             fb::ErrorCode::Malformed => Self::Malformed,
             fb::ErrorCode::RateLimited => Self::RateLimited,
             fb::ErrorCode::Replayed => Self::Replayed,
+            fb::ErrorCode::Maintenance => Self::Maintenance,
             _ => return Err(Refusal::Malformed),
         })
     }

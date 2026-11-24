@@ -208,6 +208,11 @@ enum Mutation {
     ForgetVolume {
         volume_id: u32,
     },
+    /// Fichiers de conteneurs disparus du disque : conteneurs oubliés
+    /// (`securite.integrite-autoreparation#maintenance`).
+    ForgetContainers {
+        container_ids: Vec<u32>,
+    },
 }
 
 /// Blocs perdus d'un volume, par propriétaire.
@@ -946,20 +951,49 @@ impl PhysicalStore {
         Ok(true)
     }
 
-    /// Volume perdu : ses conteneurs et emplacements sont oubliés et le
-    /// volume retiré. Rend les blocs perdus, par propriétaire.
-    pub fn forget_volume(&mut self, volume_id: u32) -> Result<LostBlocks, StorageError> {
-        if !self.volumes.contains_key(&volume_id) {
-            return Err(StorageError::MissingVolume(volume_id));
-        }
-        let containers: Vec<ContainerFile> = self
+    /// Conteneurs dont le fichier a disparu du disque (dossier du volume
+    /// supprimé, disque remplacé…).
+    pub fn missing_containers(&self) -> Vec<u32> {
+        let mut v: Vec<u32> = self
             .containers_cache
             .values()
-            .filter(|c| c.volume_id == volume_id)
-            .cloned()
+            .filter(|c| self.absolute_path(c).map_or(true, |p| !p.exists()))
+            .map(|c| c.container_id)
             .collect();
-        let mut lost: Vec<(Owner, Vec<Vec<u8>>)> = Vec::new();
+        v.sort_unstable();
+        v
+    }
+
+    /// Oublie des conteneurs dont le fichier a disparu (le volume reste en
+    /// service, son dossier est recréé). Rend les blocs perdus, par
+    /// propriétaire.
+    pub fn forget_containers(&mut self, ids: &[u32]) -> Result<LostBlocks, StorageError> {
+        let containers: Vec<ContainerFile> = ids
+            .iter()
+            .filter_map(|i| self.containers_cache.get(i).cloned())
+            .collect();
+        let lost = self.lost_blocks(&containers)?;
+        let container_ids: Vec<u32> = containers.iter().map(|c| c.container_id).collect();
+        let del = container_ids.clone();
+        self.persist_mutation(Mutation::ForgetContainers { container_ids }, |tx| {
+            for i in &del {
+                tx.execute("DELETE FROM containers WHERE container_id = ?1", params![i])?;
+            }
+            Ok(())
+        })?;
         for c in &containers {
+            self.containers_cache.remove(&c.container_id);
+        }
+        for v in self.volumes.values() {
+            fs::create_dir_all(&v.mount_path)?;
+        }
+        self.maybe_compact_mutation_log()?;
+        Ok(lost)
+    }
+
+    fn lost_blocks(&self, containers: &[ContainerFile]) -> Result<LostBlocks, StorageError> {
+        let mut lost: Vec<(Owner, Vec<Vec<u8>>)> = Vec::new();
+        for c in containers {
             let mut st = self
                 .connection
                 .prepare("SELECT block_hash FROM block_locations WHERE container_id = ?1")?;
@@ -975,6 +1009,22 @@ impl PhysicalStore {
                 None => lost.push((owner, hashes)),
             }
         }
+        Ok(lost)
+    }
+
+    /// Volume perdu : ses conteneurs et emplacements sont oubliés et le
+    /// volume retiré. Rend les blocs perdus, par propriétaire.
+    pub fn forget_volume(&mut self, volume_id: u32) -> Result<LostBlocks, StorageError> {
+        if !self.volumes.contains_key(&volume_id) {
+            return Err(StorageError::MissingVolume(volume_id));
+        }
+        let containers: Vec<ContainerFile> = self
+            .containers_cache
+            .values()
+            .filter(|c| c.volume_id == volume_id)
+            .cloned()
+            .collect();
+        let lost = self.lost_blocks(&containers)?;
         self.persist_mutation(Mutation::ForgetVolume { volume_id }, |tx| {
             tx.execute(
                 "DELETE FROM containers WHERE volume_id = ?1",

@@ -96,7 +96,31 @@ pub struct UpkeepState {
     pub filler_next: u64,
     #[serde(default)]
     pub filler_cursor: usize,
+    /// Maintenance en cours après la perte d'un volume.
+    #[serde(default)]
+    pub maintenance: Option<Maintenance>,
+    /// Dernière maintenance terminée (dashboard).
+    #[serde(default)]
+    pub last_maintenance: Option<Maintenance>,
 }
+
+/// Maintenance après la perte de fichiers de conteneurs
+/// (`securite.integrite-autoreparation#maintenance`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Maintenance {
+    pub since: u64,
+    pub lost_user_blocks: usize,
+    pub lost_fragments: usize,
+    pub lost_emergency: usize,
+    pub repaired: usize,
+    pub irrecoverable: usize,
+    pub passes: u32,
+    #[serde(default)]
+    pub ended_at: Option<u64>,
+}
+
+/// Passages de reconstruction au plus avant de sortir de maintenance.
+pub const MAINTENANCE_PASSES: u32 = 10;
 
 /// Fragments de remplissage déposés ou libérés par partenaire et par cycle.
 pub const FILLER_BATCH: usize = 16;
@@ -341,9 +365,11 @@ async fn fillers(
         let answer = tokio::time::timeout(Duration::from_secs(10), fabric.request(&pid, req)).await;
         report.challenged += 1;
         match answer {
-            Ok(Ok(Response::Failure(Refusal::NotFound))) => {
-                *up.pos_fail.entry(partner.clone()).or_default() += 1;
-                service.lock().unwrap().record_failure(&pid, now);
+            Ok(Ok(Response::Failure(r @ (Refusal::NotFound | Refusal::Maintenance)))) => {
+                if r == Refusal::NotFound {
+                    *up.pos_fail.entry(partner.clone()).or_default() += 1;
+                    service.lock().unwrap().record_failure(&pid, now);
+                }
                 if let Some(v) = up.fillers.get_mut(partner) {
                     v.retain(|(i, _)| i != index);
                 }
@@ -407,6 +433,8 @@ pub async fn run_upkeep(
 ) -> UpkeepReport {
     let mut report = UpkeepReport::default();
     let mut up = std::mem::take(&mut state.upkeep);
+    detect_loss(service, &mut up, now);
+    service.lock().unwrap().maintenance = up.maintenance.is_some();
 
     // 1. Challenges, à tour de rôle sur tous les fragments de données.
     let targets: Vec<(String, usize, u16, String, String)> = state
@@ -463,6 +491,19 @@ pub async fn run_upkeep(
             report.challenged += 1;
             // Introuvable : perte, pas fraude (`securite.blacklist-fraude`
             // § Fragment introuvable) — échec compté, fragment replacé.
+            // En maintenance : perte déclarée, sans manquement.
+            if matches!(answer, Ok(Ok(Response::Failure(Refusal::Maintenance)))) {
+                lost.insert((user.clone(), *si, *index));
+                report.lost += 1;
+                up.log(
+                    now,
+                    format!(
+                        "fragment perdu chez {}… (en maintenance) : replacé",
+                        &partner[..16.min(partner.len())]
+                    ),
+                );
+                continue;
+            }
             if matches!(answer, Ok(Ok(Response::Failure(Refusal::NotFound)))) {
                 *up.pos_fail.entry(partner.clone()).or_default() += 1;
                 service.lock().unwrap().record_failure(&pid, now);
@@ -680,8 +721,9 @@ pub async fn run_upkeep(
     }
 
     // 4. Scrubbing de la copie locale.
-    if now >= up.last_scrub + ucfg.scrub_period_s {
+    if now >= up.last_scrub + ucfg.scrub_period_s || up.maintenance.is_some() {
         up.last_scrub = now;
+        let mut failed = 0usize;
         for user in &users {
             let uid = id(user);
             let stripes = state.users[user].stripes.clone();
@@ -706,6 +748,7 @@ pub async fn run_upkeep(
                             format!("bloc local {}… reconstruit depuis la parité", &h[..12]),
                         );
                     } else {
+                        failed += 1;
                         up.log(
                             now,
                             format!("bloc local {}… altéré, reconstruction impossible", &h[..12]),
@@ -714,9 +757,120 @@ pub async fn run_upkeep(
                 }
             }
         }
+        end_pass(service, &mut up, report.local_repaired, failed, now);
     }
     state.upkeep = up;
     report
+}
+
+/// Fichiers de conteneurs disparus : conteneurs oubliés, soldes des
+/// partenaires corrigés, passage en maintenance et message aux Utilisateurs.
+fn detect_loss(service: &Mutex<NodeService>, up: &mut UpkeepState, now: u64) {
+    let mut s = service.lock().unwrap();
+    let Some(phys) = s.store.physical() else {
+        return;
+    };
+    let missing = phys.missing_containers();
+    if missing.is_empty() {
+        return;
+    }
+    let lost = match phys.forget_containers(&missing) {
+        Ok(l) => l,
+        Err(e) => {
+            drop(s);
+            up.log(now, format!("conteneurs disparus, oubli impossible : {e}"));
+            return;
+        }
+    };
+    let (mut users, mut frags, mut emergency) = (0, 0, 0);
+    for (owner, hashes) in &lost {
+        match owner.owner_type {
+            crate::OwnerType::AttachedUser => users += hashes.len(),
+            crate::OwnerType::Partner => {
+                frags += hashes.len();
+                if let Some(st) = <[u8; 32]>::try_from(owner.owner_id.as_slice())
+                    .ok()
+                    .and_then(|p| s.partners.get_mut(&p))
+                {
+                    st.ledger.hosted_by_partner =
+                        st.ledger.hosted_by_partner.saturating_sub(hashes.len() as u64);
+                }
+            }
+            crate::OwnerType::EmergencyDepositor => emergency += hashes.len(),
+        }
+    }
+    let fresh = up.maintenance.is_none();
+    let m = up.maintenance.get_or_insert(Maintenance {
+        since: now,
+        ..Default::default()
+    });
+    m.lost_user_blocks += users;
+    m.lost_fragments += frags;
+    m.lost_emergency += emergency;
+    m.passes = 0;
+    up.last_scrub = 0;
+    s.maintenance = true;
+    if fresh && users > 0 {
+        let priv_node = s.priv_node();
+        let _ = s.channel.post_info(
+            &priv_node,
+            "Maintenance : une partie du stockage de votre Nœud a été perdue. Il reconstruit vos fichiers depuis le réseau ; ils restent lisibles pendant ce temps.",
+            now,
+        );
+    }
+    drop(s);
+    up.log(
+        now,
+        format!(
+            "{} conteneur(s) disparu(s) du disque ({users} blocs d'Utilisateurs, {frags} fragments de partenaires, {emergency} dépôts d'urgence) : maintenance, reconstruction depuis le réseau",
+            missing.len()
+        ),
+    );
+}
+
+/// Fin d'un passage de reconstruction : sortie de maintenance quand tout
+/// est reconstruit, ou après `MAINTENANCE_PASSES` passages.
+fn end_pass(
+    service: &Mutex<NodeService>,
+    up: &mut UpkeepState,
+    repaired: usize,
+    failed: usize,
+    now: u64,
+) {
+    let Some(m) = up.maintenance.as_mut() else {
+        return;
+    };
+    m.passes += 1;
+    m.repaired += repaired;
+    if failed > 0 && m.passes < MAINTENANCE_PASSES {
+        return;
+    }
+    let mut m = up.maintenance.take().unwrap();
+    m.irrecoverable = m.lost_user_blocks.saturating_sub(m.repaired);
+    m.ended_at = Some(now);
+    let text = if m.irrecoverable == 0 {
+        format!("maintenance terminée : {} bloc(s) reconstruit(s)", m.repaired)
+    } else {
+        format!(
+            "maintenance terminée : {} bloc(s) reconstruit(s), {} irrécupérable(s)",
+            m.repaired, m.irrecoverable
+        )
+    };
+    {
+        let mut s = service.lock().unwrap();
+        s.maintenance = false;
+        if m.lost_user_blocks > 0 {
+            let priv_node = s.priv_node();
+            let msg = if m.irrecoverable == 0 {
+                "Maintenance terminée : tous vos fichiers ont été reconstruits.".to_string()
+            } else {
+                format!("Maintenance terminée : {} bloc(s) n'ont pas pu être reconstruits ; un fichier illisible devra être renvoyé depuis un appareil qui en a encore une copie.", m.irrecoverable)
+            };
+            let _ = s.channel.post_info(&priv_node, &msg, now);
+        }
+    }
+    up.log(now, text);
+    up.last_maintenance = Some(m);
 }
 
 /// Reconstruit le bloc de données `pos` d'un stripe depuis la parité et le

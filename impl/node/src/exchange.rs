@@ -244,6 +244,10 @@ pub struct NodeService {
     /// Partenaires qui refusent un vrai fragment à quota atteint : du
     /// remplissage y sera libéré.
     pub need_room: std::collections::HashSet<Id>,
+    /// Maintenance après la perte d'un volume : dépôts des partenaires
+    /// refusés, fragments perdus signalés `Maintenance`
+    /// (`securite.integrite-autoreparation#maintenance`).
+    pub maintenance: bool,
     /// Utilisateurs dont la copie locale est en cours de restauration :
     /// hors des cycles de dispersion (`deploiement.disaster-recovery`).
     pub restoring: std::collections::HashSet<Id>,
@@ -329,6 +333,7 @@ impl NodeService {
             revoked_shares: Default::default(),
             subnets: HashMap::new(),
             need_room: Default::default(),
+            maintenance: false,
             restoring: Default::default(),
             reclaim: Default::default(),
             released: HashMap::new(),
@@ -529,6 +534,9 @@ impl NodeService {
             }
             Body::StoreFragment { data } => {
                 let p = self.partner(from_node, now)?;
+                if self.maintenance {
+                    return Err(Refusal::Maintenance);
+                }
                 let hash = hash_sha256(&data);
                 if !self.store.contains(&hash) {
                     let st = self.partners.get(&p).ok_or(Refusal::Unauthorized)?;
@@ -571,7 +579,7 @@ impl NodeService {
                 let (owner, data) = self
                     .store
                     .get(Space::Fragment, &id32(&hash)?)
-                    .ok_or(Refusal::NotFound)?;
+                    .ok_or(self.missing())?;
                 let successors = &self.successors;
                 if !covers(&grant, &owner, &|o| successors.get(o).copied()) {
                     return Err(Refusal::Unauthorized);
@@ -1052,7 +1060,16 @@ impl NodeService {
     fn owned_fragment(&self, hash: &[u8], owner: &Id) -> Result<Vec<u8>, Refusal> {
         match self.store.get(Space::Fragment, &id32(hash)?) {
             Some((o, d)) if o == *owner => Ok(d),
-            _ => Err(Refusal::NotFound),
+            _ => Err(self.missing()),
+        }
+    }
+
+    /// Fragment absent : perdu avec un volume pendant la maintenance.
+    fn missing(&self) -> Refusal {
+        if self.maintenance {
+            Refusal::Maintenance
+        } else {
+            Refusal::NotFound
         }
     }
 

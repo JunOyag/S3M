@@ -708,6 +708,16 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "en attente de redémarrage": if pending.is_empty() { json!("rien") } else { json!(pending) },
     });
     v["résumé"] = node_summary(&v);
+    let in_maintenance = sh.service.lock().unwrap().maintenance;
+    if in_maintenance {
+        let m = v.pointer("/contrôles et réparation/maintenance").cloned().unwrap_or(Value::Null);
+        v["maintenance"] = m.clone();
+        if let Some(cards) = v["résumé"].as_array_mut() {
+            cards.insert(0, json!({ "libellé": "Maintenance", "valeur": format!("{} / {} blocs reconstruits",
+                m["blocs reconstruits"].as_u64().unwrap_or(0), m["blocs d'Utilisateurs perdus"].as_u64().unwrap_or(0)),
+                "détail": "Stockage perdu : reconstruction depuis le réseau", "état": "probleme", "page": "accueil" }));
+        }
+    }
     // Signalé une fois à l'ouverture du tableau de bord, et en bandeau sur
     // la page Messages.
     let unread = sh.service.lock().unwrap().channel.inbox.unread(None);
@@ -726,7 +736,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
-          "sections": ["restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
+          "sections": ["maintenance", "restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
           "actions": ["attach_user", "set_attach_policy"] },
@@ -1403,7 +1413,28 @@ fn upkeep_status(sh: &Shared) -> Value {
             "réussis": r.passed, "sans réponse": r.timeouts, "fraudes": r.frauds.len(),
             "fragments replacés": r.repaired, "blocs locaux réparés": r.local_repaired })),
         "liste noire": blacklist,
+        "maintenance": maintenance_status(up.maintenance.as_ref().or(up.last_maintenance.as_ref())),
         "événements récents": up.events.iter().rev().take(15).cloned().collect::<Vec<_>>(),
+    })
+}
+
+/// Maintenance après la perte d'un volume
+/// (`securite.integrite-autoreparation#maintenance`).
+fn maintenance_status(m: Option<&crate::upkeep::Maintenance>) -> Value {
+    let Some(m) = m else { return Value::Null };
+    json!({
+        "état": match m.ended_at {
+            None => format!("en cours : reconstruction depuis le réseau (passage {} sur {} au plus)", m.passes + 1, crate::upkeep::MAINTENANCE_PASSES),
+            Some(_) => "terminée".to_string(),
+        },
+        "depuis": m.since,
+        "terminée le": m.ended_at,
+        "blocs d'Utilisateurs perdus": m.lost_user_blocks,
+        "blocs reconstruits": m.repaired,
+        "blocs irrécupérables": if m.ended_at.is_some() { json!(m.irrecoverable) } else { Value::Null },
+        "fragments de partenaires perdus (replacés par eux)": m.lost_fragments,
+        "dépôts d'urgence perdus": m.lost_emergency,
+        "_note": "Fichiers de stockage disparus du disque : le Nœud les reconstruit depuis la parité gardée par ses partenaires. Pendant ce temps il refuse les dépôts de partenaires et leur signale ses fragments perdus, sans manquement.",
     })
 }
 

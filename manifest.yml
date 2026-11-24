@@ -1158,7 +1158,7 @@ pages:
     path: 05-securite/integrite-autoreparation.md
     title: "Intégrité des Blocs Locaux & Auto-réparation"
     section: "§5.4"
-    refs: [protocols.integrite-lecture]
+    refs: [protocols.integrite-lecture, protocols.stockage-physique, protocols.canal-noeud, network.BlockResponse, node.PartnerAccount]
     verified_by:
       - integrity::reconstructed_block_is_queued_for_retransmission_to_the_node
       - self_repair::repair_replaces_corrupted_copy_only_with_a_block_matching_its_hash
