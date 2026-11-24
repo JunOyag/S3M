@@ -521,6 +521,8 @@ function refreshPanel(status) {
 
 function openPanel(p) {
   const { d, close } = modal(p["titre"] || "Modifier");
+  // `large` : panneau élargi (tableaux).
+  d.classList.toggle("wide", !!p["large"]);
   const texts = Array.isArray(p["texte"]) ? p["texte"] : p["texte"] ? [p["texte"]] : [];
   texts.forEach((t) => d.appendChild(el("p", t, "muted")));
   const body = panelBody(p);
@@ -842,15 +844,30 @@ function render(value, key) {
     return box;
   }
   if (value !== null && typeof value === "object") {
+    // `_note` : texte d'aide sous le tableau ; `_détails` : bouton qui
+    // ouvre un panneau (ex. tableau complet derrière un agrégat).
     const t = el("table", undefined, "kv");
-    Object.entries(value).forEach(([k, v]) => {
-      const r = t.insertRow();
-      r.appendChild(labelEl("th", k));
-      const td = el("td");
-      td.appendChild(valueNode(v, k));
-      r.appendChild(td);
-    });
-    return t;
+    Object.entries(value)
+      .filter(([k]) => k !== "_note" && k !== "_détails")
+      .forEach(([k, v]) => {
+        const r = t.insertRow();
+        r.appendChild(labelEl("th", k));
+        const td = el("td");
+        td.appendChild(valueNode(v, k));
+        r.appendChild(td);
+      });
+    if (!value["_note"] && !value["_détails"]) return t;
+    const box = el("div", undefined, "kv-box");
+    box.appendChild(t);
+    if (value["_note"]) box.appendChild(el("p", value["_note"], "muted kv-note"));
+    if (value["_détails"]) {
+      const p = value["_détails"];
+      const b = el("button", p["libellé"] || "Détails", "secondary small");
+      b.type = "button";
+      b.addEventListener("click", () => openPanel(p));
+      box.appendChild(b);
+    }
+    return box;
   }
   return el("p", cell(value));
 }

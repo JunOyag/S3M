@@ -816,7 +816,7 @@ unsafe extern "system" fn on_rename(
 pub use crate::folder_sync::Freed;
 
 /// Libère la place des fichiers téléchargés et à jour sous `dir` (dossier
-/// synchronisé ou l'un de ses sous-dossiers) sans les supprimer : ils
+/// synchronisé, l'un de ses sous-dossiers, ou un seul fichier) sans les supprimer : ils
 /// restent visibles et reviennent à l'ouverture. `older_than_s` : seulement
 /// ceux ni ouverts ni modifiés depuis ce délai. Un fichier pas encore
 /// envoyé au Nœud n'est jamais touché.
@@ -830,14 +830,23 @@ pub fn free_space(
 ) -> Freed {
     use std::os::windows::fs::MetadataExt;
     let mut out = Freed::default();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else {
-            continue;
+    // Un seul fichier : traité comme le contenu d'un dossier à une entrée.
+    let single = dir.is_file().then(|| dir.to_path_buf());
+    let mut stack = if single.is_some() { vec![] } else { vec![dir.to_path_buf()] };
+    let mut first = single.into_iter();
+    loop {
+        let batch: Vec<PathBuf> = match first.next() {
+            Some(f) => vec![f],
+            None => {
+                let Some(d) = stack.pop() else { break };
+                let Ok(rd) = std::fs::read_dir(&d) else {
+                    continue;
+                };
+                rd.flatten().map(|e| e.path()).collect()
+            }
         };
-        for e in rd.flatten() {
-            let Ok(m) = e.metadata() else { continue };
-            let p = e.path();
+        for p in batch {
+            let Ok(m) = std::fs::metadata(&p) else { continue };
             if m.is_dir() {
                 stack.push(p);
                 continue;

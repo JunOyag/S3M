@@ -1204,7 +1204,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                 "mis en retrait": r.retiring, "terminés": r.ended })),
         },
         "alertes d'intégrité signalées": s.incidents.iter().map(|i| hx(i)).collect::<Vec<_>>(),
-        "dispersion": dispersal_status(sh),
+        "dispersion": dispersal_status(sh, &s.user_labels),
         "contrôles et réparation": upkeep_status(sh),
         "annuaire (entrée Node)": node_entry_status(sh),
         "traversée de NAT": nat_status(sh),
@@ -1317,26 +1317,50 @@ fn emergency_status(sh: &Shared, s: &NodeService) -> Value {
     })
 }
 
-fn dispersal_status(sh: &Shared) -> Value {
+/// `labels` : étiquettes des Utilisateurs (verrou du service déjà tenu
+/// par l'appelant).
+fn dispersal_status(sh: &Shared, labels: &HashMap<[u8; 32], String>) -> Value {
     let cycle = sh.last_cycle.lock().unwrap().clone();
-    let users: Vec<Value> = match sh.dispersal.try_lock() {
-        Err(_) => vec![json!({ "état": "cycle en cours" })],
+    let users: Value = match sh.dispersal.try_lock() {
+        Err(_) => json!({ "état": "cycle en cours" }),
         Ok(d) => {
             *sh.last_redundancy.lock().unwrap() =
                 crate::dispersal_engine::redundancy(&d, sh.config.dispersal.k);
-            d
-            .users
-            .iter()
-            .map(|(u, x)| {
-                json!({ "utilisateur": u, "stripes": x.stripes.len(),
-                        "blocs en attente": x.pending.len(),
-                        "stripes d'index": x.index.len(),
-                        "publié le": if x.published_at == 0 { Value::Null } else { json!(x.published_at) },
-                        "à republier": x.dirty,
-                        "fragments à purger": x.retired.len(),
-                        "erreur": x.last_error })
+            let rows: Vec<Value> = d
+                .users
+                .iter()
+                .map(|(u, x)| {
+                    let id: Option<[u8; 32]> = hex::decode(u).ok().and_then(|v| v.try_into().ok());
+                    let name = id.map(|id| {
+                        s3m_protocol::pseudo::display(&[labels.get(&id).map(String::as_str)], &id)
+                    });
+                    json!({ "nom": name, "utilisateur": u, "stripes": x.stripes.len(),
+                            "blocs en attente": x.pending.len(),
+                            "stripes d'index": x.index.len(),
+                            "publié le": if x.published_at == 0 { Value::Null } else { json!(x.published_at) },
+                            "à republier": x.dirty,
+                            "fragments à purger": x.retired.len(),
+                            "erreur": x.last_error })
+                })
+                .collect();
+            let sum = |f: fn(&crate::dispersal_engine::UserDispersal) -> usize| -> usize {
+                d.users.values().map(f).sum()
+            };
+            let last = d.users.values().map(|x| x.published_at).max().filter(|t| *t > 0);
+            let errors: Vec<&String> = d.users.values().filter_map(|x| x.last_error.as_ref()).collect();
+            json!({
+                "utilisateurs": d.users.len(),
+                "stripes": sum(|x| x.stripes.len()),
+                "blocs en attente": sum(|x| x.pending.len()),
+                "stripes d'index": sum(|x| x.index.len()),
+                "fragments à purger": sum(|x| x.retired.len()),
+                "à republier": d.users.values().filter(|x| x.dirty).count(),
+                "dernière publication": last,
+                "utilisateurs en erreur": errors.len(),
+                "dernière erreur": errors.first(),
+                "_détails": { "libellé": "Détails", "titre": "Dispersion par utilisateur",
+                              "clé": "dispersion-utilisateurs", "large": true, "contenu": rows },
             })
-            .collect()
         }
     };
     let red = *sh.last_redundancy.lock().unwrap();
@@ -1345,7 +1369,7 @@ fn dispersal_status(sh: &Shared) -> Value {
             "taux (%)": g.round(),
             "stripe le plus faible (%)": m.round(),
             "objectif (%)": sh.config.dispersal.coef * 100,
-            "lecture": "100 % : au moins l'équivalent d'une copie complète dispersée ; 300 % : les 12 fragments de parité de chaque stripe placés" })),
+            "_note": "100 % : au moins l'équivalent d'une copie complète dispersée ; 300 % : les 12 fragments de parité de chaque stripe placés." })),
         "paramètres": { "k": sh.config.dispersal.k, "coef": sh.config.dispersal.coef,
                         "partenaires requis par stripe": sh.config.dispersal.k * sh.config.dispersal.coef,
                         "partenaires minimum par stripe": sh.config.dispersal.min_confirmations(),

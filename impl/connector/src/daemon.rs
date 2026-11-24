@@ -2802,8 +2802,11 @@ fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
         return Err("seulement en accès « Dossier synchronisé »".into());
     }
     let root = folder_path(&sh.config);
+    // `dossier` (page Accès aux fichiers) ou `élément` (Explorateur) :
+    // dossier ou fichier de l'espace.
     let rel = v
         .get("dossier")
+        .or_else(|| v.get("élément"))
         .and_then(|x| x.as_str())
         .unwrap_or("")
         .trim();
@@ -2811,8 +2814,8 @@ fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
     for part in rel.split('/').filter(|p| !p.is_empty()) {
         dir.push(part);
     }
-    if !dir.is_dir() {
-        return Err(format!("dossier introuvable : {}", dir.display()));
+    if !dir.exists() {
+        return Err(format!("élément introuvable : {}", dir.display()));
     }
     let keep = sh.keep_offline.lock().unwrap().clone();
     let f = crate::cloud_folder::free_space(

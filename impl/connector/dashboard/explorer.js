@@ -149,6 +149,7 @@ function rows(entries) {
       btn("Renommer / déplacer", () => move(path));
       if (folderMode) {
         btn(e["gardé"] ? "Ne plus garder" : "Garder hors ligne", () => keep(path, !e["gardé"]));
+        if (!e["gardé"]) btn("Libérer l'espace", () => freeSpace(path));
       }
       btn("Supprimer", () => remove(path, e["dossier"]), "danger");
       // Glisser l'élément sur un dossier : déplacement.
@@ -372,6 +373,12 @@ function remove(path, isDir) {
 function keep(path, on) {
   run(on ? "Mise hors ligne" : "Retrait", () =>
     call(on ? "keep_offline" : "unkeep_offline", { "élément": path }));
+}
+
+// Retire de ce disque le contenu déjà envoyé au Nœud (reste visible,
+// revient à l'ouverture).
+function freeSpace(path) {
+  run("Libération de l'espace", () => call("free_space", { "élément": path }));
 }
 
 async function share(path) {

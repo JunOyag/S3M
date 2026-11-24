@@ -259,7 +259,9 @@ dossier, « garder sur cet appareil ». Les contenus transitent par morceaux
 de 512 Kio sur l'API locale ; chaque modification est synchronisée avec le
 Nœud. « Partagés avec moi » y est en lecture seule. Les actions d'un
 élément sont regroupées dans un menu « ⋯ » en bout de ligne, ouvert aussi
-par un clic droit sur la ligne (ajout du 2026-11-24).
+par un clic droit sur la ligne (ajout du 2026-11-24) ; en mode dossier, il
+propose aussi « Libérer l'espace » (fichier ou dossier non gardé : contenu
+déjà envoyé au Nœud retiré du disque, comme « Libérer de l'espace »).
 
 ### Contacts {: #contacts }
 
