@@ -79,6 +79,8 @@ pub struct NetConfig {
     pub assume_listen_public: bool,
     /// Annonce et découverte sur le réseau local (mDNS).
     pub mdns: bool,
+    /// Entrées de l'annuaire gardées sur disque (`None` : en mémoire seule).
+    pub records_file: Option<std::path::PathBuf>,
 }
 
 /// État de la traversée de NAT (dashboard, entrée Node).
@@ -336,6 +338,17 @@ pub async fn start(cfg: NetConfig) -> Result<NodeNet, String> {
     } else {
         drop(utx);
     }
+    if let Some(path) = &cfg.records_file {
+        let n = crate::dht_directory::load_records(
+            swarm.behaviour_mut().kad.store_mut(),
+            path,
+            (cfg.clock)(),
+        );
+        if n > 0 {
+            eprintln!("annuaire : {n} entrée(s) rechargée(s) depuis le disque");
+        }
+    }
+    let records = cfg.records_file.clone().map(|p| (p, cfg.clock.clone()));
     let dl = DhtLoop::new(cfg.vdf, cfg.clock.clone());
     let el = ExchangeLoop::new(peer_id, Some(cfg.service), cfg.clock);
     let opts = RunOpts {
@@ -343,6 +356,7 @@ pub async fn start(cfg: NetConfig) -> Result<NodeNet, String> {
         force_relay: cfg.force_relay,
         assume_listen_public: cfg.assume_listen_public,
         upnp_addrs: urx,
+        records,
     };
     tokio::spawn(run(swarm, drx, brx, dl, el, nat.clone(), opts));
     Ok(NodeNet {
@@ -358,6 +372,8 @@ struct RunOpts {
     assume_listen_public: bool,
     /// Adresses externes ouvertes sur la box (`upnp.rs`).
     upnp_addrs: mpsc::Receiver<Multiaddr>,
+    /// Fichier des entrées de l'annuaire, sauvegardé toutes les minutes.
+    records: Option<(std::path::PathBuf, Arc<dyn Fn() -> u64 + Send + Sync>)>,
 }
 
 async fn run(
@@ -374,7 +390,9 @@ async fn run(
         force_relay,
         assume_listen_public,
         upnp_addrs: mut urx,
+        records,
     } = opts;
+    let mut save_tick = tokio::time::interval(Duration::from_secs(60));
     let me = *swarm.local_peer_id();
     // Pairs capables de relayer, avec leurs adresses (Identify).
     let mut relay_capable: HashMap<PeerId, Vec<Multiaddr>> = HashMap::new();
@@ -397,6 +415,11 @@ async fn run(
                 Some(c) => el.on_cmd(&mut swarm, c),
             },
             Some(a) = urx.recv() => swarm.add_external_address(a),
+            _ = save_tick.tick(), if records.is_some() => {
+                if let Some((path, clock)) = &records {
+                    crate::dht_directory::save_records(swarm.behaviour_mut().kad.store_mut(), path, clock());
+                }
+            }
             _ = tick.tick() => {
                 // Derrière un NAT (ou forcé) : réservations chez des relais.
                 let active = nat.lock().unwrap().relayed.len();

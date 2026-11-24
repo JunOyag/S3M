@@ -205,6 +205,63 @@ fn accept(
     accept_record(key, envelope, previous, now, &|id, p| vdf(id, p))
 }
 
+/// Entrée de l'annuaire gardée sur disque (`dht_records.json`) :
+/// `(clé, enveloppe, expiration Unix)`, en hexadécimal.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedRecord {
+    k: String,
+    v: String,
+    exp: u64,
+}
+
+/// Recharge les entrées gardées sur disque (vérifiées à leur réception),
+/// sauf celles expirées. Rend le nombre d'entrées rechargées.
+pub fn load_records(store: &mut MemoryStore, path: &std::path::Path, now: u64) -> usize {
+    let Ok(bytes) = std::fs::read(path) else {
+        return 0;
+    };
+    let Ok(list) = serde_json::from_slice::<Vec<SavedRecord>>(&bytes) else {
+        return 0;
+    };
+    let mut n = 0;
+    for r in list.into_iter().filter(|r| r.exp > now) {
+        let (Ok(k), Ok(v)) = (hex::decode(&r.k), hex::decode(&r.v)) else {
+            continue;
+        };
+        let mut rec = Record::new(RecordKey::new(&k), v);
+        rec.expires = Some(expiry_instant(r.exp, now));
+        if store.put(rec).is_ok() {
+            n += 1;
+        }
+    }
+    n
+}
+
+/// Écrit les entrées détenues par ce Nœud sur disque (remplacement
+/// atomique) : un redémarrage, même de tout le réseau, ne les perd pas.
+pub fn save_records(store: &mut MemoryStore, path: &std::path::Path, now: u64) {
+    let at = Instant::now();
+    let list: Vec<SavedRecord> = store
+        .records()
+        .map(|r| SavedRecord {
+            k: hex::encode(r.key.as_ref()),
+            v: hex::encode(&r.value),
+            exp: r
+                .expires
+                .map(|e| now + e.saturating_duration_since(at).as_secs())
+                .unwrap_or(now + 15_552_000),
+        })
+        .filter(|r| r.exp > now)
+        .collect();
+    let Ok(json) = serde_json::to_vec(&list) else {
+        return;
+    };
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, json).is_ok() {
+        let _ = std::fs::rename(&tmp, path);
+    }
+}
+
 fn expiry_instant(expires_at: u64, now: u64) -> Instant {
     Instant::now() + Duration::from_secs(expires_at.saturating_sub(now))
 }

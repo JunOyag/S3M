@@ -41,6 +41,7 @@ async fn node(
         force_relay,
         external: vec![],
         mdns: false,
+        records_file: None,
         assume_listen_public: seed == 0x71,
     })
     .await

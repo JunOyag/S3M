@@ -2320,6 +2320,7 @@ pub async fn start_with(
         external: declared_external(&config),
         assume_listen_public: false,
         mdns: config.mdns,
+        records_file: Some(config.data_dir.join("dht_records.json")),
     })
     .await
     .map_err(|e| start(&e))?;

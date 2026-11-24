@@ -143,6 +143,14 @@ ses fragments de parité. D'où la nécessité de publier, dans le
 ainsi que le sel du nœud racine (`dispersal_root_salt`, voir
 [`crypto.k-dispersal`](../03-crypto/k-dispersal.md)).
 
+**Conservation sur disque** (ajout du 2026-11-24) : chaque Nœud écrit
+toutes les minutes les entrées qu'il détient (`dht_records.json` dans ses
+données, avec leur expiration) et les recharge au démarrage, sauf celles
+échues ; la réplication périodique de Kademlia les redistribue ensuite.
+Sans cela, un redémarrage simultané de tous les Nœuds effaçait l'annuaire,
+y compris les entrées d'un Nœud disparu que personne ne republierait (sa
+sauvegarde, [`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md)).
+
 ## Expiration & republication — trois régimes {: #expiration-et-republication }
 
 Les durées sont des **constantes de protocole en secondes fixes** ;

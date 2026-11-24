@@ -96,6 +96,7 @@ async fn running_node_with_the_same_identity_is_detected_on_the_lan() {
         force_relay: false,
         external: vec![],
         mdns: true,
+        records_file: None,
         assume_listen_public: false,
     })
     .await
