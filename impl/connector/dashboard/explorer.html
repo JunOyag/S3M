@@ -36,7 +36,13 @@
   td.name .ico { display: inline-block; width: 1.4em; }
   td.num, th.num { text-align: right; white-space: nowrap; color: var(--muted); }
   td.acts { white-space: nowrap; text-align: right; }
-  td.acts button { margin-left: 4px; }
+  td.acts { width: 1%; }
+  button.more { background: none; border: 1px solid transparent; color: var(--muted); border-radius: 5px; padding: 0 8px; cursor: pointer; font: inherit; font-size: 18px; line-height: 1.4; }
+  button.more:hover, button.more:focus-visible { border-color: var(--line); color: var(--fg); }
+  .menu { position: fixed; z-index: 10; min-width: 190px; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px #0003; }
+  .menu button { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--fg); padding: 6px 10px; border-radius: 5px; cursor: pointer; font: inherit; }
+  .menu button:hover, .menu button:focus-visible { background: var(--drop); outline: none; }
+  .menu button.danger { color: var(--bad); }
   .muted { color: var(--muted); }
   .tag { font-size: 11px; color: var(--accent); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 6px; }
   #status { min-height: 1.5em; padding: 6px 16px; color: var(--muted); font-size: 13px; }

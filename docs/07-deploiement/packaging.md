@@ -257,7 +257,9 @@ glisser-déposer sur un dossier), suppression (dossier avec son contenu),
 partage ([`protocols.partage`](../04-protocols/partage.md)) et, en mode
 dossier, « garder sur cet appareil ». Les contenus transitent par morceaux
 de 512 Kio sur l'API locale ; chaque modification est synchronisée avec le
-Nœud. « Partagés avec moi » y est en lecture seule.
+Nœud. « Partagés avec moi » y est en lecture seule. Les actions d'un
+élément sont regroupées dans un menu « ⋯ » en bout de ligne, ouvert aussi
+par un clic droit sur la ligne (ajout du 2026-11-24).
 
 ### Contacts {: #contacts }
 

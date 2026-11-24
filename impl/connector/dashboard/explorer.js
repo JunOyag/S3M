@@ -140,15 +140,9 @@ function rows(entries) {
     const t = e["modifié"];
     tr.appendChild(el("td", t > 1.4e9 ? new Date(t * 1000).toLocaleString() : "", "num date"));
     const acts = el("td", undefined, "acts");
-    const btn = (label, fn, cls) => {
-      const b = el("button", label, "small" + (cls ? " " + cls : ""));
-      b.type = "button";
-      b.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        fn();
-      });
-      acts.appendChild(b);
-    };
+    // Actions de la ligne : menu « ⋯ » (et clic droit sur la ligne).
+    const items = [];
+    const btn = (label, fn, cls) => items.push({ label, fn, cls });
     if (!e["dossier"]) btn("Télécharger", () => download(path, e["taille"]));
     if (!e["lecture seule"]) {
       btn("Partager", () => share(path));
@@ -165,10 +159,83 @@ function rows(entries) {
       });
     }
     if (e["dossier"]) dropTarget(tr, path);
+    if (items.length) {
+      const more = el("button", "⋯", "more");
+      more.type = "button";
+      more.title = "Actions";
+      more.setAttribute("aria-label", "Actions sur " + e["nom"]);
+      more.setAttribute("aria-haspopup", "menu");
+      more.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const r = more.getBoundingClientRect();
+        openMenu(items, r.right, r.bottom, more);
+      });
+      tr.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        openMenu(items, ev.clientX, ev.clientY, more);
+      });
+      acts.appendChild(more);
+    }
     tr.appendChild(acts);
     tb.appendChild(tr);
   }
 }
+
+// Menu contextuel unique : `items` = [{ label, fn, cls }], aligné à
+// droite sur (x, y) et gardé dans la fenêtre ; fermé par un clic ailleurs,
+// Échap, le défilement ou un choix. Flèches haut / bas entre les entrées.
+let menuEl = null;
+function closeMenu(refocus) {
+  if (!menuEl) return;
+  const back = menuEl._opener;
+  menuEl.remove();
+  menuEl = null;
+  if (refocus && back) back.focus();
+}
+function openMenu(items, x, y, opener) {
+  closeMenu();
+  const m = el("div", undefined, "menu");
+  m.setAttribute("role", "menu");
+  m._opener = opener;
+  for (const it of items) {
+    const b = el("button", it.label, it.cls || "");
+    b.type = "button";
+    b.setAttribute("role", "menuitem");
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      closeMenu();
+      it.fn();
+    });
+    m.appendChild(b);
+  }
+  m.addEventListener("keydown", (ev) => {
+    const list = [...m.querySelectorAll("button")];
+    const i = list.indexOf(document.activeElement);
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeMenu(true);
+    } else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const n = list.length;
+      list[(i + (ev.key === "ArrowDown" ? 1 : n - 1)) % n].focus();
+    } else if (ev.key === "Tab") {
+      closeMenu();
+    }
+  });
+  document.body.appendChild(m);
+  menuEl = m;
+  const w = m.offsetWidth;
+  const h = m.offsetHeight;
+  m.style.left = Math.max(4, Math.min(x - w, innerWidth - w - 4)) + "px";
+  m.style.top = Math.max(4, y + h > innerHeight - 4 ? y - h : y) + "px";
+  m.querySelector("button").focus();
+}
+document.addEventListener("click", () => closeMenu());
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") closeMenu(true);
+});
+addEventListener("scroll", () => closeMenu(), true);
+addEventListener("resize", () => closeMenu());
 
 // Cible de dépôt : élément déplacé dedans, ou fichiers envoyés dedans.
 function dropTarget(node, dir) {
