@@ -129,23 +129,8 @@ impl Rescue {
                 }
             }
         }
-        let dht = sh.dht.get().ok_or("annuaire (DHT) pas encore joint")?;
-        let k_attach = sh.session.k_attach();
-        let kdc = derive_k_dispersal_content(&k_attach).map_err(|e| e.to_string())?;
-        let env = dht
-            .get(dispersal_dht_key(&k_attach).to_vec())
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or("aucun catalogue de dispersion publié par le Nœud")?;
-        let pointer = open_dispersal_entry(&k_attach, &env).map_err(|e| e.to_string())?;
-        let root = self
-            .data(sh, &pointer.root_stripe, &pointer.partners)
-            .await?;
-        let clear = open_index_node(&kdc, &pointer.salt, &CURRENT_HEADER, &root[0])
-            .map_err(|e| e.to_string())?;
-        let manifest = decode_manifest(&clear).map_err(|e| e.to_string())?;
+        let (kdc, manifest) = self.manifest(sh).await?;
         let table = Arc::new(manifest.partners.clone());
-        *self.partners.lock().unwrap() = manifest.partners.clone();
         let mut map = HashMap::new();
         let mut level = vec![manifest.root];
         while let Some(node) = level.pop() {
@@ -170,6 +155,36 @@ impl Rescue {
         let map = Arc::new(map);
         *self.index.lock().unwrap() = Some((t, map.clone()));
         Ok(map)
+    }
+
+    /// Catalogue de dispersion publié par le Nœud (racine seule).
+    async fn manifest(
+        &self,
+        sh: &Shared,
+    ) -> Result<([u8; 32], s3m_protocol::dispersal::ManifestDesc), String> {
+        let dht = sh.dht.get().ok_or("annuaire (DHT) pas encore joint")?;
+        let k_attach = sh.session.k_attach();
+        let kdc = derive_k_dispersal_content(&k_attach).map_err(|e| e.to_string())?;
+        let env = dht
+            .get(dispersal_dht_key(&k_attach).to_vec())
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("aucun catalogue de dispersion publié par le Nœud")?;
+        let pointer = open_dispersal_entry(&k_attach, &env).map_err(|e| e.to_string())?;
+        let root = self
+            .data(sh, &pointer.root_stripe, &pointer.partners)
+            .await?;
+        let clear = open_index_node(&kdc, &pointer.salt, &CURRENT_HEADER, &root[0])
+            .map_err(|e| e.to_string())?;
+        let manifest = decode_manifest(&clear).map_err(|e| e.to_string())?;
+        *self.partners.lock().unwrap() = manifest.partners.clone();
+        Ok((kdc, manifest))
+    }
+
+    /// Nombre de partenaires du Nœud qui hébergent les stripes de cet
+    /// Utilisateur (catalogue de dispersion relu, racine seule).
+    pub async fn dispersal_partners(&self, sh: &Shared) -> Result<usize, String> {
+        Ok(self.manifest(sh).await?.1.partners.len())
     }
 
     /// Partenaires en ligne parmi ceux qui hébergent la parité :

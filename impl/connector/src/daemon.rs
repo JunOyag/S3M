@@ -484,6 +484,9 @@ pub struct Health {
     /// Nœud hors ligne : partenaires en ligne `(en ligne, total)` ; `None`
     /// si l'annuaire est injoignable (hors réseau).
     pub partners_online: Option<(usize, usize)>,
+    /// Partenaires du Nœud hébergeant les stripes de l'Utilisateur
+    /// (catalogue de dispersion) ; erreur de lecture sinon.
+    pub dispersal_partners: Option<Result<usize, String>>,
 }
 
 /// Demande de remontage du lecteur : `(lettre, réponse)`.
@@ -1152,8 +1155,12 @@ fn emergency_status(sh: &Shared, now: u64) -> Value {
         } else {
             "Nœud injoignable : dépôt en cours ou en échec".to_string()
         }
+    } else if h.reachable == Some(false) {
+        "Nœud injoignable : aucune modification en attente".to_string()
     } else if blocks > 0 {
-        "Nœud revenu : libération des partenaires en cours".to_string()
+        "Nœud revenu : libération des Nœuds de secours en cours".to_string()
+    } else if h.reachable.is_none() {
+        "inactive (joignabilité du Nœud en cours de vérification)".to_string()
     } else {
         "inactive (Nœud joignable)".to_string()
     };
@@ -1164,13 +1171,19 @@ fn emergency_status(sh: &Shared, now: u64) -> Value {
         .collect();
     json!({
         "état": etat,
+        "partenaires de dispersion du Nœud (stripes de l'Utilisateur)": match &h.dispersal_partners {
+            Some(Ok(n)) => json!(n),
+            Some(Err(e)) => json!(format!("inconnu ({e})")),
+            None => json!("lecture en cours…"),
+        },
+        "partenaires de dispersion en ligne": h.partners_online.map(|(up, n)| format!("{up}/{n}")),
         "partenaires de secours (n_secours)": sh.config.n_secours,
         "Q_max (octets)": sh.config.q_max_bytes,
         "dernier dépôt": e.last_deposit_at,
         "dernière tentative": e.last_attempt,
         "séquence publiée": e.published_seq,
         "blocs déposés à libérer": blocks,
-        "partenaires": partners,
+        "dépôts par Nœud de secours": partners,
         "blocs libérés": e.released_blocks,
         "dernière réconciliation": e.reconciled_at,
         "erreur": e.last_error,
@@ -2076,12 +2089,19 @@ pub async fn watch_once(sh: &Shared) {
         }
     }
     // Nœud hors ligne : la parité reste-t-elle lisible ?
-    let partners = if ok {
-        None
+    let (partners, dispersal) = if ok {
+        (None, Some(sh.rescue.dispersal_partners(sh).await))
     } else {
-        sh.rescue.partners_online(sh).await
+        let p = sh.rescue.partners_online(sh).await;
+        (p, p.map(|(_, n)| Ok(n)))
     };
-    sh.health.lock().unwrap().partners_online = partners;
+    {
+        let mut h = sh.health.lock().unwrap();
+        h.partners_online = partners;
+        if dispersal.is_some() {
+            h.dispersal_partners = dispersal;
+        }
+    }
     channel_tick(sh, now, ok).await;
     if ok {
         // Lecture du quota et de l'occupation : validation sans changement
