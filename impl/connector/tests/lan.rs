@@ -40,3 +40,18 @@ async fn local_node_is_found_by_mdns_and_confirmed_by_probe() {
         "nœud local introuvable : {found:?}"
     );
 }
+
+/// Recherches répétées (Nœud injoignable : toutes les 2 minutes) : aucune
+/// tâche mDNS ne survit à une recherche.
+#[tokio::test(flavor = "multi_thread")]
+async fn repeated_scans_leave_no_task_behind() {
+    let metrics = tokio::runtime::Handle::current().metrics();
+    let before = metrics.num_alive_tasks();
+    for _ in 0..3 {
+        scan(Duration::from_millis(500)).await.unwrap();
+    }
+    // Les clients réseau abandonnés s'arrêtent en tâche de fond.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let after = metrics.num_alive_tasks();
+    assert!(after <= before, "tâches restées vivantes : {before} → {after}");
+}

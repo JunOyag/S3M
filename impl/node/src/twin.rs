@@ -39,6 +39,34 @@ pub fn twins(found: &[(PeerId, Multiaddr)], me: &PeerId) -> Vec<String> {
 /// Écoute les annonces mDNS pendant `duration` (identité réseau
 /// éphémère) et renvoie les adresses où `me` est déjà annoncé.
 pub async fn scan(me: PeerId, duration: Duration) -> Result<Vec<String>, String> {
+    isolated(move || listen(me, duration)).await
+}
+
+/// Exécute `f` sur un runtime tokio à part, détruit ensuite : libp2p-mdns
+/// lance une tâche par interface réseau qu'il n'arrête jamais quand son
+/// `Behaviour` est abandonné (aucun `Drop`) ; la destruction du runtime les
+/// arrête toutes. Sans cela, chaque recherche en laissait tourner,
+/// s'interrogeant les unes les autres (consommation processeur croissante).
+async fn isolated<F, Fut, T>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<T, String>>,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let r = rt.block_on(f());
+        rt.shutdown_background();
+        r
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+async fn listen(me: PeerId, duration: Duration) -> Result<Vec<String>, String> {
     let net = |e: &dyn std::fmt::Display| e.to_string();
     let mut swarm = libp2p::SwarmBuilder::with_new_identity()
         .with_tokio()

@@ -69,6 +69,36 @@ fn rank(a: &Multiaddr) -> u8 {
 /// Recherche les Nœuds du réseau local ; seuls ceux qui répondent à un
 /// `Probe` sont rendus.
 pub async fn scan(duration: Duration) -> Result<Vec<FoundNode>, String> {
+    let found = isolated(move || listen(duration)).await?;
+    probe_found(found).await
+}
+
+/// Exécute `f` sur un runtime tokio à part, détruit ensuite : libp2p-mdns
+/// lance une tâche par interface réseau qu'il n'arrête jamais quand son
+/// `Behaviour` est abandonné (aucun `Drop`) ; la destruction du runtime les
+/// arrête toutes. Sans cela, chaque recherche en laissait tourner,
+/// s'interrogeant les unes les autres (consommation processeur croissante).
+async fn isolated<F, Fut, T>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<T, String>>,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let r = rt.block_on(f());
+        rt.shutdown_background();
+        r
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Annonces mDNS reçues pendant `duration`.
+async fn listen(duration: Duration) -> Result<BTreeMap<PeerId, Vec<Multiaddr>>, String> {
     let net = |e: &dyn std::fmt::Display| e.to_string();
     let mut swarm = libp2p::SwarmBuilder::with_new_identity()
         .with_tokio()
@@ -100,6 +130,11 @@ pub async fn scan(duration: Duration) -> Result<Vec<FoundNode>, String> {
         }
     }
     drop(swarm);
+    Ok(found)
+}
+
+/// Garde les Nœuds trouvés qui répondent à un `Probe`.
+async fn probe_found(found: BTreeMap<PeerId, Vec<Multiaddr>>) -> Result<Vec<FoundNode>, String> {
     let client = BlockClient::start().map_err(|e| e.to_string())?;
     let admin = crate::admin_client::AdminClient::start()?;
     let mut out = Vec::new();
