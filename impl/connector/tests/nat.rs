@@ -42,6 +42,7 @@ async fn node(
         relays,
         external: vec![],
         mdns: false,
+        records_file: None,
         assume_listen_public: listen,
     })
     .await

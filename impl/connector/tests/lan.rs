@@ -31,6 +31,7 @@ async fn local_node_is_found_by_mdns_and_confirmed_by_probe() {
         external: vec![],
         assume_listen_public: false,
         mdns: true,
+        records_file: None,
     })
     .await
     .unwrap();

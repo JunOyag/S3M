@@ -720,6 +720,9 @@ fn main() {
                         if v.attach_error.is_some() && prev.as_ref().is_none_or(|p| p.attach_error != v.attach_error) {
                             say(id, &format!("Rattachement refusé : {}", v.attach_error.clone().unwrap_or_default()));
                         }
+                        if v.files_missing && prev.as_ref().is_none_or(|p| !p.files_missing) {
+                            say(id, s3m_connector::daemon::FILES_MISSING);
+                        }
                         if v.sync_error.is_some() && prev.as_ref().is_none_or(|p| p.sync_error.is_none()) {
                             say(id, &format!("Erreur de synchronisation : {}", v.sync_error.clone().unwrap_or_default()));
                         }

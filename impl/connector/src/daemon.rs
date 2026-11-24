@@ -487,7 +487,13 @@ pub struct Health {
     /// Partenaires du Nœud hébergeant les stripes de l'Utilisateur
     /// (catalogue de dispersion) ; erreur de lecture sinon.
     pub dispersal_partners: Option<Result<usize, String>>,
+    /// Le Nœud n'a pas le bloc racine des fichiers (Nœud recréé sans
+    /// restauration) : la racine ne lui est pas transmise.
+    pub files_missing: bool,
 }
+
+/// Fichiers introuvables chez le Nœud : conseil à l'Utilisateur.
+pub const FILES_MISSING: &str = "Vos fichiers sont introuvables chez votre Nœud (Nœud recréé sans restauration ?). S'il ne les restaure pas, ils sont perdus : créez une nouvelle identité.";
 
 /// Demande de remontage du lecteur : `(lettre, réponse)`.
 pub type RemountTx = std::sync::mpsc::Sender<(String, std::sync::mpsc::Sender<Result<(), String>>)>;
@@ -1417,6 +1423,7 @@ pub struct TrayView {
     pub messages_received: u64,
     pub unread_messages: usize,
     pub last_message: Option<String>,
+    pub files_missing: bool,
 }
 
 /// Page « Contacts » : liste, panneau d'édition, ajout.
@@ -1691,6 +1698,8 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         )
     } else if h.reachable.is_none() {
         (TrayState::Starting, "Démarrage…".to_string())
+    } else if h.files_missing {
+        (TrayState::Error, FILES_MISSING.into())
     } else if let Some(e) = &ds.mount_error {
         (TrayState::Error, format!("Lecteur non monté : {e}"))
     } else if conflict {
@@ -1745,6 +1754,7 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         messages_received,
         unread_messages,
         last_message,
+        files_missing: h.files_missing,
     }
 }
 
@@ -2165,7 +2175,16 @@ pub async fn watch_once(sh: &Shared) {
             .drive
             .as_ref()
             .map_or([0; 32], |d| d.lock().unwrap().root_hash());
-        let _ = sh.session.commit_root(&root, &root).await;
+        // Racine dont le Nœud n'a pas le bloc : ne pas la lui transmettre.
+        let missing = root != [0; 32]
+            && matches!(
+                sh.session.get_block(&root).await,
+                Err(ExchangeError::Refused(Refusal::NotFound))
+            );
+        sh.health.lock().unwrap().files_missing = missing;
+        if !missing {
+            let _ = sh.session.commit_root(&root, &root).await;
+        }
         let mut k = sh.keeper.lock().await;
         if k.refresh(&sh.session, now).await.is_ok() {
             if let Some(g) = &k.grant {

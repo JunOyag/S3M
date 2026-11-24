@@ -70,8 +70,15 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
         "explorer_list" => {
             let p = norm(&text(v, "chemin"));
             let mut d = drive.lock().unwrap();
-            let mut entries = d.list(&p).map_err(|e| e.to_string())?;
+            let listed = d.list(&p);
             drop(d);
+            let mut entries = listed.map_err(|e| {
+                if sh.health.lock().unwrap().files_missing {
+                    crate::daemon::FILES_MISSING.to_string()
+                } else {
+                    e.to_string()
+                }
+            })?;
             entries.sort_by(|a, b| {
                 b.1.is_dir
                     .cmp(&a.1.is_dir)

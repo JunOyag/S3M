@@ -58,6 +58,7 @@ async fn connector_finds_its_node_again_after_an_address_change() {
         external: vec![],
         assume_listen_public: false,
         mdns: true,
+        records_file: None,
     })
     .await
     .unwrap();

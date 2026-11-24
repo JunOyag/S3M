@@ -84,6 +84,8 @@ quelle (comme pour tout Utilisateur dont il ne connaît encore aucune racine) et
 une installation existante qui aurait perdu la liste de ses Utilisateurs
 (sauvegarde écrasée) ; elle n'est alors jamais gelée.
 
+Un Connecteur ne transmet pas au Nœud une racine dont celui-ci n'a pas le bloc (Nœud recréé sans sauvegarde ni fiche de dispersion retrouvée) : il signale ses fichiers introuvables chez le Nœud et, faute de restauration, conseille de créer une nouvelle identité.
+
 ## Procédure de restauration
 
 1. Réinitialisation d'un nœud à partir de la seed « Node ».
