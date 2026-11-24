@@ -251,7 +251,11 @@ pub async fn restore_snapshot(
     {
         let mut s = service.lock().unwrap();
         for p in &manifest.partners {
-            s.partners.entry(p.node_id).or_default();
+            // Quota négocié repris ; la confiance repart de sa valeur initiale.
+            let st = s.partners.entry(p.node_id).or_default();
+            if st.quota == 0 {
+                st.quota = p.allowance;
+            }
         }
         for u in &manifest.users {
             s.users.entry(u.user_id).or_insert_with(|| UserAccount {

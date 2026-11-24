@@ -58,11 +58,24 @@ acceptent des propositions. La proposition porte l'entrée DHT Node signée
 du demandeur, que le destinataire vérifie lui-même (preuve VDF comprise).
 Le destinataire accepte automatiquement si sa politique le permet (nombre
 maximal de partenaires, demandeur hors liste noire) et répond
-`PartnershipAnswer` : 0 = refus, toute autre valeur = accepté. Depuis le
-2026-11-21, aucun solde n'est négocié : `allowance_blocks` et
-`granted_blocks` valent 1 et ne bornent rien, l'échange suivant la règle
-d'équilibre de [`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md#equilibre),
-avec le crédit d'hébergement local de chaque Nœud (ajout du 2026-11-23).
+`PartnershipAnswer` : 0 = refus, toute autre valeur = quota accordé.
+
+### Négociation du quota {: #negociation }
+
+Depuis le 2026-11-24, `allowance_blocks` et `granted_blocks` portent le
+quota égal Q de l'échange sur l'offre
+([`node.PartnerAccount`](../02-schemas/node/PartnerAccount.md#quota)) : le
+demandeur propose ce qu'il peut promettre, le destinataire accorde le plus
+petit des deux (jamais moins que ce qu'il stocke déjà chez le demandeur).
+Chaque partenariat est **renégocié** à chaque période de découverte
+(10 minutes) : la confiance, l'espace offert et les manquements y sont
+repris. Un destinataire accepte un nouveau partenariat s'il n'a pas atteint
+son nombre maximal de partenaires et, sauf réglage contraire, si la
+**diversité des adresses** est respectée : au plus
+`partner_policy.subnet_limit` partenaires (**2 par défaut ; 0 =
+désactivé**, pour des essais sur une seule machine) par sous-réseau IPv4
+/24 ou IPv6 /48. La même limite s'applique aux candidats que le Nœud
+démarche.
 
 **Partenaires manquants** : si un stripe ne trouve pas coef×k partenaires
 distincts qui acceptent l'échange, le Nœud relève sa cible du nombre

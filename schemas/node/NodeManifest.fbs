@@ -22,7 +22,7 @@ table PartnerAccount {
   partner_node_id: [ubyte];
   blocks_hosted_for_partner: uint64;   // blocs de CE nœud stockés chez le partenaire (troc sortant)
   blocks_hosted_by_partner: uint64;    // blocs du partenaire stockés par CE nœud (troc entrant)
-  allowance_blocks: uint64;            // ajout 2026-11-20, ignoré depuis le 2026-11-21 (troc strict, voir node.PartnerAccount)
+  allowance_blocks: uint64;            // ajout 2026-11-20 ; quota égal Q négocié depuis le 2026-11-24 (node.PartnerAccount#quota)
 }
 
 /// Configuration opérationnelle du Nœud.

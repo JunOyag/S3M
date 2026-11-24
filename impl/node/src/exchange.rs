@@ -40,13 +40,33 @@ pub struct UserAccount {
     pub root: Id,
 }
 
-/// Partenaire de troc (`node.PartnerAccount`).
+/// Partenaire d'échange (`node.PartnerAccount`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PartnerState {
     pub ledger: PartnerLedger,
     /// Dernier échange (secondes Unix).
     pub last_seen: u64,
+    /// Quota égal Q négocié (fragments) ; 0 : pas encore négocié
+    /// (confiance initiale).
+    pub quota: u64,
+    /// Confiance de ce Nœud envers le partenaire (fragments) ; 0 : initiale.
+    pub trust: u64,
+    /// Début de la période de confiance en cours.
+    pub trust_since: u64,
+    /// Dernier contrôle de stockage réussi chez lui.
+    pub proved_at: u64,
+    /// Manquements dans la période en cours.
+    pub failures: u32,
+    /// Plus aucun nouveau placement chez lui avant cet instant.
+    pub suspended_until: u64,
+    /// Dernière négociation du quota.
+    pub negotiated_at: u64,
 }
+
+/// Taille d'un fragment (octets).
+pub const FRAGMENT_BYTES: u64 = 65_536;
+/// Manquements dans une période qui font passer un partenaire en retrait.
+pub const MAX_FAILURES: u32 = 3;
 
 /// Politique de rattachement automatique (`protocols.partenariat-automatique`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -70,23 +90,23 @@ impl Default for AttachPolicy {
     }
 }
 
-/// Politique d'acceptation des propositions de partenariat.
+/// Politique des partenariats : échange sur l'offre
+/// (`node.PartnerAccount#equilibre`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct PartnerPolicy {
     pub accept: bool,
     pub max_partners: usize,
-    /// Crédit d'hébergement : fragments hébergés pour un partenaire au-delà
-    /// de ce qu'il héberge pour ce Nœud (`node.PartnerAccount#equilibre`) ;
-    /// 0 = troc strict.
-    #[serde(default = "default_credit_blocks")]
-    pub credit_blocks: u64,
-}
-
-/// Crédit d'hébergement par défaut : 256 fragments (16 Mio).
-pub const DEFAULT_CREDIT_BLOCKS: u64 = 256;
-
-fn default_credit_blocks() -> u64 {
-    DEFAULT_CREDIT_BLOCKS
+    /// Espace offert aux partenaires (octets).
+    pub offer_bytes: u64,
+    /// Confiance initiale envers un partenaire (fragments).
+    pub trust_initial_blocks: u64,
+    /// Période de confiance (secondes).
+    pub trust_period_s: u64,
+    /// Remplissage de l'espace promis (preuve d'espace).
+    pub filler: bool,
+    /// Partenaires au plus par sous-réseau /24 ou /48 ; 0 : désactivé.
+    pub subnet_limit: usize,
 }
 
 impl Default for PartnerPolicy {
@@ -94,7 +114,56 @@ impl Default for PartnerPolicy {
         Self {
             accept: true,
             max_partners: 32,
-            credit_blocks: DEFAULT_CREDIT_BLOCKS,
+            offer_bytes: 10 << 30,
+            trust_initial_blocks: 256,
+            trust_period_s: 7 * 86_400,
+            filler: true,
+            subnet_limit: 2,
+        }
+    }
+}
+
+impl PartnerPolicy {
+    /// Quota que ce Nœud peut promettre à chaque partenaire (fragments).
+    pub fn per_partner(&self) -> u64 {
+        self.offer_bytes / FRAGMENT_BYTES / self.max_partners.max(1) as u64
+    }
+
+    /// Confiance effective envers un partenaire.
+    pub fn trust_of(&self, st: &PartnerState) -> u64 {
+        if st.trust == 0 {
+            self.trust_initial_blocks
+        } else {
+            st.trust
+        }
+    }
+
+    /// Ce que ce Nœud promet à un partenaire : `min(q, T)`.
+    pub fn promise(&self, st: &PartnerState) -> u64 {
+        self.per_partner().min(self.trust_of(st))
+    }
+
+    /// Quota en vigueur avec un partenaire (confiance initiale tant qu'il
+    /// n'est pas négocié).
+    pub fn limit(&self, st: &PartnerState) -> u64 {
+        if st.quota == 0 {
+            self.per_partner().min(self.trust_initial_blocks)
+        } else {
+            st.quota
+        }
+    }
+}
+
+/// Sous-réseau d'une adresse IP : /24 (IPv4) ou /48 (IPv6).
+pub fn subnet(ip: &str) -> Option<String> {
+    match ip.parse::<std::net::IpAddr>().ok()? {
+        std::net::IpAddr::V4(v) => {
+            let o = v.octets();
+            Some(format!("{}.{}.{}", o[0], o[1], o[2]))
+        }
+        std::net::IpAddr::V6(v) => {
+            let s = v.segments();
+            Some(format!("{:x}:{:x}:{:x}", s[0], s[1], s[2]))
         }
     }
 }
@@ -170,9 +239,11 @@ pub struct NodeService {
     pub missing_partners: usize,
     /// Partages retirés par leur propriétaire (`protocols.partage`).
     pub revoked_shares: std::collections::HashSet<Id>,
-    /// Partenaires sans crédit d'hébergement (score sous le seuil de
-    /// placement, retrait) : troc strict avec eux.
-    pub no_credit: std::collections::HashSet<Id>,
+    /// Sous-réseau de chaque partenaire (diversité des adresses).
+    pub subnets: HashMap<Id, String>,
+    /// Partenaires qui refusent un vrai fragment à quota atteint : du
+    /// remplissage y sera libéré.
+    pub need_room: std::collections::HashSet<Id>,
     /// Utilisateurs dont la copie locale est en cours de restauration :
     /// hors des cycles de dispersion (`deploiement.disaster-recovery`).
     pub restoring: std::collections::HashSet<Id>,
@@ -256,7 +327,8 @@ impl NodeService {
             emergency_verified: Default::default(),
             missing_partners: 0,
             revoked_shares: Default::default(),
-            no_credit: Default::default(),
+            subnets: HashMap::new(),
+            need_room: Default::default(),
             restoring: Default::default(),
             reclaim: Default::default(),
             released: HashMap::new(),
@@ -460,13 +532,8 @@ impl NodeService {
                 let hash = hash_sha256(&data);
                 if !self.store.contains(&hash) {
                     let st = self.partners.get(&p).ok_or(Refusal::Unauthorized)?;
-                    // Troc 1:1 avec crédit (`node.PartnerAccount#equilibre`).
-                    let credit = if self.no_credit.contains(&p) {
-                        0
-                    } else {
-                        self.partner_policy.credit_blocks
-                    };
-                    if !barter_allows(&st.ledger, credit) {
+                    // Échange sur l'offre (`node.PartnerAccount#equilibre`).
+                    if st.ledger.hosted_by_partner >= self.partner_policy.limit(st) {
                         return Err(Refusal::QuotaExceeded);
                     }
                     self.store
@@ -558,10 +625,10 @@ impl NodeService {
                     && self.partners.len() < self.partner_policy.max_partners,
             }),
             Body::ProposePartnership {
-                allowance_blocks: _,
+                allowance_blocks,
                 node_entry,
             } => Ok(Response::PartnershipAnswer {
-                granted_blocks: self.propose(from_node, &node_entry, now),
+                granted_blocks: self.propose(from_node, &node_entry, allowance_blocks, now),
             }),
             Body::Attach {
                 salt,
@@ -859,13 +926,82 @@ impl NodeService {
 
     /// Proposition de partenariat : 1 = accepté, 0 = refus (aucun solde,
     /// `node.PartnerAccount#equilibre`).
-    fn propose(&mut self, from_node: Option<Id>, entry: &[u8], now: u64) -> u64 {
+    /// Quota accordé à un partenaire qui propose `allowance` :
+    /// `max(min(allowance, promesse), ce que ce Nœud stocke chez lui)`.
+    fn grant(&self, st: &PartnerState, allowance: u64) -> u64 {
+        allowance
+            .min(self.partner_policy.promise(st))
+            .max(st.ledger.hosted_for_partner)
+    }
+
+    /// Enregistre le quota accordé par un partenaire (négociation à
+    /// l'initiative de ce Nœud).
+    pub fn set_quota(&mut self, p: &Id, granted: u64, now: u64) {
+        if let Some(st) = self.partners.get_mut(p) {
+            st.quota = granted.max(st.ledger.hosted_for_partner);
+            st.negotiated_at = now;
+        }
+    }
+
+    /// Manquement d'un partenaire (`node.PartnerAccount#manquements`) :
+    /// confiance initiale, plus de nouveau placement jusqu'à la fin de la
+    /// période. Rend le nombre de manquements de la période.
+    pub fn record_failure(&mut self, p: &Id, now: u64) -> u32 {
+        let period = self.partner_policy.trust_period_s;
+        let Some(st) = self.partners.get_mut(p) else {
+            return 0;
+        };
+        if st.failures == 0 {
+            st.trust_since = now;
+        }
+        st.failures += 1;
+        st.trust = 0;
+        st.suspended_until = st.trust_since + period;
+        st.failures
+    }
+
+    /// Partenaires suspendus (manquement) : exclus des placements.
+    pub fn suspended(&self, now: u64) -> std::collections::HashSet<Id> {
+        self.partners
+            .iter()
+            .filter(|(_, s)| s.suspended_until > now)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// Fin de période de confiance : doublement si aucun manquement, un
+    /// contrôle réussi et (remplissage actif) le quota tenu.
+    pub fn ramp_trust(&mut self, now: u64) {
+        let pol = self.partner_policy;
+        for st in self.partners.values_mut() {
+            if st.trust_since == 0 {
+                st.trust_since = now;
+                continue;
+            }
+            if now < st.trust_since + pol.trust_period_s {
+                continue;
+            }
+            let held = !pol.filler || st.ledger.hosted_for_partner >= pol.limit(st);
+            if st.failures == 0 && st.proved_at >= st.trust_since && held {
+                st.trust = (pol.trust_of(st) * 2).min(pol.per_partner());
+            }
+            st.failures = 0;
+            st.trust_since = now;
+        }
+    }
+
+    fn propose(&mut self, from_node: Option<Id>, entry: &[u8], allowance: u64, now: u64) -> u64 {
         let Some(p) = from_node else { return 0 };
         if self.blacklisted.contains(&p) {
             return 0;
         }
-        if self.partners.contains_key(&p) {
-            return 1;
+        if let Some(st) = self.partners.get(&p) {
+            // Renégociation.
+            let q = self.grant(st, allowance);
+            let st = self.partners.get_mut(&p).expect("partenaire");
+            st.quota = q;
+            st.negotiated_at = now;
+            return q;
         }
         let pol = self.partner_policy;
         if !pol.accept || self.partners.len() >= pol.max_partners {
@@ -882,15 +1018,35 @@ impl NodeService {
         if addrs.is_empty() {
             return 0;
         }
-        self.partners.insert(
-            p,
-            PartnerState {
-                last_seen: now,
-                ..Default::default()
-            },
-        );
+        // Diversité des adresses (`protocols.partenariat-automatique#negociation`).
+        let net = addrs
+            .first()
+            .and_then(|a| crate::partnering::ip_of(a))
+            .and_then(|ip| subnet(&ip));
+        if pol.subnet_limit > 0 {
+            if let Some(n) = &net {
+                if self.subnets.values().filter(|s| *s == n).count() >= pol.subnet_limit {
+                    return 0;
+                }
+            }
+        }
+        let mut st = PartnerState {
+            last_seen: now,
+            trust_since: now,
+            negotiated_at: now,
+            ..Default::default()
+        };
+        st.quota = self.grant(&st, allowance);
+        if st.quota == 0 {
+            return 0;
+        }
+        let q = st.quota;
+        self.partners.insert(p, st);
+        if let Some(n) = net {
+            self.subnets.insert(p, n);
+        }
         self.new_partners.push((p, addrs));
-        1
+        q
     }
 
     fn owned_fragment(&self, hash: &[u8], owner: &Id) -> Result<Vec<u8>, Refusal> {
@@ -1421,9 +1577,4 @@ async fn run(
     }
 }
 
-/// Troc strict 1:1 (`node.PartnerAccount#equilibre`) : un nouveau fragment
-/// du partenaire est accepté si, après dépôt, les fragments reçus de lui ne
-/// dépassent pas de plus de 1 ceux qui lui sont confiés.
-pub fn barter_allows(ledger: &PartnerLedger, credit: u64) -> bool {
-    ledger.hosted_by_partner <= ledger.hosted_for_partner.saturating_add(credit)
-}
+

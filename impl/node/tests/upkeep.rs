@@ -50,6 +50,7 @@ async fn fraud_absence_and_local_corruption_are_repaired_automatically() {
     let mut servers: HashMap<[u8; 32], BlockServer> = HashMap::new();
     let mut addrs = HashMap::new();
     let mut service = NodeService::new(NODE);
+    service.partner_policy.filler = false;
     for i in 0..7u8 {
         let seed = [0x60 + i; 32];
         let mut ps = NodeService::new(seed);
@@ -238,6 +239,7 @@ async fn unplaced_fragments_are_completed_at_the_next_cycle() {
     let mut addrs = HashMap::new();
     let mut later = Vec::new();
     let mut service = NodeService::new(NODE);
+    service.partner_policy.filler = false;
     for i in 0..4u8 {
         let seed = [0x60 + i; 32];
         let mut ps = NodeService::new(seed);
@@ -317,4 +319,98 @@ async fn unplaced_fragments_are_completed_at_the_next_cycle() {
     holders.sort();
     holders.dedup();
     assert_eq!((s.parity.len(), holders.len()), (4, 4));
+}
+
+/// Remplissage de l'espace promis (`node.PartnerAccount#remplissage`) :
+/// déposé jusqu'au quota, contrôlé, libéré quand la place manque, et un
+/// fragment de remplissage perdu est un manquement.
+#[tokio::test(flavor = "multi_thread")]
+async fn filler_fills_the_quota_is_checked_and_released_on_demand() {
+    let cfg = EngineConfig {
+        k: 2,
+        coef: 2,
+        idle_timeout_s: 100,
+        grace_s: 0,
+        min_confirmations: 1,
+    };
+    let ucfg = UpkeepConfig {
+        challenges_per_cycle: 8,
+        ..Default::default()
+    };
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000);
+    let listen: libp2p::Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
+    let mut servers = Vec::new();
+    let mut addrs = HashMap::new();
+    let mut hosts = Vec::new();
+    let mut service = NodeService::new(NODE);
+    service.partner_policy.trust_initial_blocks = 4;
+    for i in 0..2u8 {
+        let seed = [0x70 + i; 32];
+        let mut ps = NodeService::new(seed);
+        ps.partners.insert(pk(&NODE), PartnerState::default());
+        let ps = Arc::new(Mutex::new(ps));
+        let s = BlockServer::start(seed, listen.clone(), ps.clone(), clock.clone())
+            .await
+            .unwrap();
+        addrs.insert(pk(&seed), s.listen_addr().await.unwrap().to_string());
+        service.partners.insert(pk(&seed), PartnerState::default());
+        hosts.push((pk(&seed), ps));
+        servers.push(s);
+    }
+    let service = Arc::new(Mutex::new(service));
+    let dht = DhtNode::start(DhtConfig {
+        node_seed: NODE,
+        listen: listen.clone(),
+        bootstrap: vec![],
+        vdf: Arc::new(|_, _| Ok(true)),
+        clock: clock.clone(),
+    })
+    .await
+    .unwrap();
+    let fabric = NetFabric {
+        server: Arc::new(
+            BlockServer::start(NODE, listen, service.clone(), clock)
+                .await
+                .unwrap(),
+        ),
+        dht: Arc::new(dht),
+        service: service.clone(),
+        addrs: Arc::new(Mutex::new(addrs)),
+        excluded: Default::default(),
+    };
+    let mut state = DispersalState::default();
+    let (p0, p1) = (hosts[0].0, hosts[1].0);
+    let held = |p: &[u8; 32]| service.lock().unwrap().partners[p].ledger.hosted_for_partner;
+
+    run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, 1_000).await;
+    assert_eq!((held(&p0), held(&p1)), (4, 4));
+    assert_eq!(state.upkeep.fillers[&hex::encode(p0)].len(), 4);
+    // Quota atteint : rien de plus ; contrôles réussis.
+    let r = run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, 1_030).await;
+    assert_eq!((held(&p0), held(&p1)), (4, 4));
+    assert!(r.passed >= 2, "{r:?}");
+    assert!(service.lock().unwrap().partners[&p0].proved_at >= 1_000);
+    // Place demandée chez p0 : remplissage libéré, pas de nouveau dépôt.
+    service.lock().unwrap().need_room.insert(p0);
+    run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, 1_060).await;
+    assert_eq!(held(&p0), 0);
+    assert_eq!(
+        hosts[0].1.lock().unwrap().partners[&pk(&NODE)].ledger.hosted_by_partner,
+        0
+    );
+    // Remplissage perdu chez p1 : manquement au contrôle.
+    {
+        let mut h = hosts[1].1.lock().unwrap();
+        for (_, hash) in &state.upkeep.fillers[&hex::encode(p1)] {
+            let hash: [u8; 32] = hex::decode(hash).unwrap().try_into().unwrap();
+            h.store.remove(Space::Fragment, &pk(&NODE), &hash);
+        }
+    }
+    let mut t = 1_090;
+    while service.lock().unwrap().partners[&p1].failures == 0 && t < 1_400 {
+        run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, t).await;
+        t += 30;
+    }
+    assert!(service.lock().unwrap().partners[&p1].failures >= 1);
+    assert!(service.lock().unwrap().suspended(t).contains(&p1));
 }

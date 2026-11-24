@@ -125,7 +125,7 @@ table Probe {
 }
 // Nœud → Nœud candidat : proposition de partenariat de troc 1:1.
 table ProposePartnership {
-  allowance_blocks: uint64;   // ignoré depuis le 2026-11-21 (troc strict) ; envoyé à 1
+  allowance_blocks: uint64;   // quota proposé (échange sur l'offre, 2026-11-24, node.PartnerAccount#quota)
   node_entry: [ubyte];        // entrée DHT Node du demandeur (enveloppe signée, preuve VDF)
 }
 // Connecteur → Nœud : rattachement automatique (credential UserCredential

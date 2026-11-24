@@ -10,7 +10,7 @@ verified_by: []
 
 # PartnerAccount
 
-Solde du troc 1:1 avec un partenaire.
+Quota et solde de l'échange avec un partenaire.
 
 ## Champs
 
@@ -33,43 +33,80 @@ rupture avec un partenaire fraudeur s'applique à l'ensemble de la relation
 Nœud↔Partenaire, donc à tous les Utilisateurs concernés d'un coup — pas
 fichier par fichier ni utilisateur par utilisateur.
 
-## Règle d'équilibre {: #equilibre }
+## Règle d'équilibre : échange sur l'offre {: #equilibre }
 
-Ajout du 2026-11-21 : le troc est strictement 1 pour 1, **sans solde
-négocié** (`allowance_blocks` est ignoré). Un Nœud accepte un fragment de
-parité d'un partenaire P (`StoreFragment`) seulement si, après ce dépôt,
+Depuis le 2026-11-24, l'échange porte sur l'espace **promis** et non plus
+sur l'espace déjà utilisé (le troc 1 pour 1 du 2026-11-21 et son crédit
+d'hébergement du 2026-11-23 sont abandonnés) : deux partenaires
+s'accordent un **quota égal Q** (en fragments de 64 Kio), et chacun peut
+déposer jusqu'à Q fragments chez l'autre, quoi qu'il héberge lui-même.
+Un Nœud accepte un fragment de parité d'un partenaire P (`StoreFragment`)
+seulement si, après ce dépôt,
 
-`blocks_hosted_by_partner ≤ blocks_hosted_for_partner + 1`
+`blocks_hosted_by_partner ≤ Q`
 
-sinon il répond `QuotaExceeded`. Les deux Nœuds déposent donc en
-alternance, l'écart ne dépasse jamais un fragment, et un partenaire qui n'a
-rien à placer ne reçoit rien de plus : l'expéditeur passe au partenaire
-suivant ([`protocols.dispersion-transactionnelle`](../../04-protocols/dispersion-transactionnelle.md#orchestration)).
-Seul l'espace disque peut encore faire refuser un dépôt conforme.
+sinon il répond `QuotaExceeded` ; seul l'espace disque peut encore faire
+refuser un dépôt conforme. Un fragment déjà hébergé (même hash) n'est pas
+recompté.
 
-**Crédit d'hébergement** (ajout du 2026-11-23) : pour
-stabiliser un petit réseau aux charges inégales, un Nœud peut héberger pour
-un partenaire jusqu'à S fragments de plus que ce que ce partenaire héberge
-pour lui ; la règle devient
+### Espace offert et quota {: #quota }
 
-`blocks_hosted_by_partner ≤ blocks_hosted_for_partner + 1 + S`
+- **Espace offert** : réglage local `partner_policy.offer_bytes`
+  (**10 Gio par défaut**). Le quota par partenaire que le Nœud peut
+  promettre vaut `q = offer_bytes / 65 536 / max_partners` : la somme des
+  promesses ne dépasse jamais l'espace offert.
+- **Confiance** : le Nœud ne promet à P que `min(q, T_P)`, où `T_P` est sa
+  confiance envers P ([ci-dessous](#confiance)).
+- **Négociation** (`ProposePartnership.allowance_blocks` /
+  `PartnershipAnswer.granted_blocks`, [`protocols.partenariat-automatique`](../../04-protocols/partenariat-automatique.md#negociation)) :
+  le demandeur propose `allowance = min(q, T)` ; le destinataire accorde
+  `Q = max(min(allowance, q', T'), ce qu'il stocke déjà chez le demandeur)`,
+  ou 0 pour refuser. Les deux côtés retiennent ce même Q.
+- **Pas de baisse sous l'usage** : un Nœud ne peut fixer Q en dessous de ce
+  que lui-même stocke chez ce partenaire ; pour descendre plus bas, il
+  libère d'abord ses propres fragments. Une baisse n'efface jamais rien :
+  elle bloque seulement les nouveaux dépôts.
 
-S est un réglage local du Nœud qui reçoit (`partner_policy.credit_blocks`,
-**256 fragments, soit 16 Mio, par défaut** ; 0 = troc strict), appliqué sans
-négociation : l'expéditeur ne connaît pas le crédit de son partenaire et
-passe au suivant sur `QuotaExceeded`. Vu des deux côtés, c'est le même
-réglage : un partenaire peut disperser un peu plus qu'il n'héberge, et un
-Nœud avec peu ou pas d'Utilisateurs héberge un peu plus qu'il ne disperse.
-Aucun crédit n'est accordé à un partenaire exclu des nouveaux placements
-(score sous le seuil de placement ou en retrait,
-[`protocols.partenariat-automatique`](../../04-protocols/partenariat-automatique.md#placement-et-retrait)) :
-avec lui, le troc reste strict. L'exposition d'un Nœud reste bornée à
-S × nombre de partenaires (environ 256 Mio pour 16 partenaires).
+### Confiance progressive {: #confiance }
 
-Une suppression retire des fragments d'un seul côté : l'écart qui en
-résulte est toléré, et seuls les dépôts suivants, soumis à la même règle,
-le résorbent ; aucun fragment n'est détruit pour rétablir l'équilibre.
-Un fragment déjà hébergé (même hash) n'est pas recompté.
+`T_P` part de `partner_policy.trust_initial_blocks` (**256 fragments, soit
+16 Mio**) et double à la fin de chaque période
+(`partner_policy.trust_period_s`, **7 jours**) sans manquement, si P a
+réussi au moins un contrôle de stockage dans la période et — remplissage
+actif — garde de ce Nœud au moins Q fragments (réels ou de remplissage). Il
+plafonne à q. Une identité neuve n'obtient donc beaucoup qu'après avoir
+longtemps prouvé qu'elle stocke.
+
+### Remplissage {: #remplissage }
+
+L'espace promis mais inutilisé est vérifié en le remplissant
+(`partner_policy.filler`, actif par défaut) : tant qu'un partenaire garde
+moins de Q fragments de ce Nœud, celui-ci lui dépose, au plus 16 par cycle
+de 30 s, des **fragments de remplissage** de 64 Kio, pseudo-aléatoires
+sous une clé dérivée de `priv_node` que lui seul connaît
+(`SHA-256(clé ‖ indice ‖ j)`, j = 0…2047) : il les régénère sans les
+stocker. Ils sont contrôlés comme les autres fragments
+([`securite.pos-challenges`](../../05-securite/pos-challenges.md)) et, quand
+un vrai fragment ne trouve plus de place (`QuotaExceeded` à Q atteint),
+libérés par avis de suppression ([`protocols.tombstones`](../../04-protocols/tombstones.md))
+au cycle suivant, 16 à la fois. Remplir coûte de l'espace disque réel aux
+partenaires : c'est la preuve que la promesse est tenue.
+
+### Manquements {: #manquements }
+
+Constituent un **manquement** de P : refuser (`QuotaExceeded`) un dépôt
+alors que ce Nœud garde chez lui moins de Q fragments, ou ne plus détenir
+un fragment confié (contrôle `NotFound`). Un manquement ramène `T_P` à sa
+valeur initiale et suspend tout nouveau placement chez P jusqu'à la fin de
+la période en cours ; **3 manquements dans une période** font passer P en
+retrait ([`protocols.partenariat-automatique`](../../04-protocols/partenariat-automatique.md#placement-et-retrait)) :
+ses fragments sont replacés, puis le partenariat prend fin. Un manquement
+prouvé (reçu signé suivi d'une réponse fausse) relève de la liste noire
+([`securite.blacklist-fraude`](../../05-securite/blacklist-fraude.md)). Les
+manquements restent des observations locales, jamais diffusées.
+
+Une suppression libère des fragments d'un seul côté ; le quota Q reste
+inchangé.
 
 Libéré bilatéralement lors d'une suppression légitime — voir
 [`protocols.tombstones`](../../04-protocols/tombstones.md).

@@ -7,7 +7,7 @@
 //! des partenaires durablement sous le seuil, fin du partenariat une fois
 //! leurs fragments replacés et purgés.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -19,7 +19,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::dht_directory::DhtNode;
 use crate::dispersal_engine::DispersalState;
-use crate::exchange::{entry_multiaddrs, node_id_of, BlockServer, NodeService, PartnerState};
+use crate::exchange::{
+    entry_multiaddrs, node_id_of, subnet, BlockServer, NodeService, PartnerState, MAX_FAILURES,
+};
 
 /// Paramètres des partenariats automatiques.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -274,6 +276,7 @@ pub async fn run_partnering(
 ) -> PartneringReport {
     let mut report = PartneringReport::default();
     let me = service.lock().unwrap().node_id();
+    service.lock().unwrap().ramp_trust(now);
     let mut st = std::mem::take(&mut state.partnering);
 
     // Partenariats acceptés à la demande d'autres Nœuds.
@@ -441,8 +444,22 @@ pub async fn run_partnering(
         if p.status != "partenaire" && p.status != "retrait" {
             continue;
         }
+        let failures = id(n)
+            .and_then(|nid| service.lock().unwrap().partners.get(&nid).map(|s| s.failures))
+            .unwrap_or(0);
+        if failures >= MAX_FAILURES && p.status == "partenaire" {
+            p.status = "retrait".into();
+            report.retiring += 1;
+            state.upkeep.retiring.insert(n.clone());
+            st.log(now, format!("retrait de {}… ({failures} manquements)", &n[..12]));
+            continue;
+        }
         let s = score(cfg, p, ok, fail).total;
-        if s >= cfg.exit_threshold {
+        if s >= cfg.exit_threshold && p.status == "partenaire" {
+            p.below_since = None;
+            continue;
+        }
+        if s >= cfg.exit_threshold && failures < MAX_FAILURES {
             p.below_since = None;
             if p.status == "retrait" {
                 p.status = "partenaire".into();
@@ -483,13 +500,40 @@ pub async fn run_partnering(
         .values()
         .filter(|p| p.status == "partenaire")
         .count();
+    let pol = service.lock().unwrap().partner_policy;
+    // Sous-réseaux des partenaires actifs (diversité des adresses).
+    {
+        let mut s = service.lock().unwrap();
+        let nets: HashMap<Id, String> = st
+            .peers
+            .iter()
+            .filter(|(_, p)| p.status == "partenaire" || p.status == "retrait")
+            .filter_map(|(n, p)| Some((id(n)?, subnet(&p.ip)?)))
+            .collect();
+        s.subnets = nets;
+    }
+    let crowded = |st: &PartneringState, ip: &str| {
+        pol.subnet_limit > 0
+            && subnet(ip).is_some_and(|n| {
+                st.peers
+                    .values()
+                    .filter(|p| p.status == "partenaire" || p.status == "retrait")
+                    .filter(|p| subnet(&p.ip).as_deref() == Some(n.as_str()))
+                    .count()
+                    >= pol.subnet_limit
+            })
+    };
     if cfg.enabled && active < target {
         if let Some(entry) = &net.own_entry {
+            let snapshot = st.clone();
             let mut cands: Vec<(f64, String)> = st
                 .peers
                 .iter()
                 .filter(|(_, p)| {
-                    p.status == "candidat" && p.accepting && now >= p.proposed_at + 3_600
+                    p.status == "candidat"
+                        && p.accepting
+                        && now >= p.proposed_at + 3_600
+                        && !crowded(&snapshot, &p.ip)
                 })
                 .map(|(n, p)| {
                     let (ok, fail) = pos_counts(state, n);
@@ -499,6 +543,9 @@ pub async fn run_partnering(
                 .collect();
             cands.sort_by(|a, b| b.0.total_cmp(&a.0));
             for (_, n) in cands.into_iter().take(target - active) {
+                if crowded(&st, &st.peers[&n].ip) {
+                    continue;
+                }
                 let p = st.peers.get_mut(&n).unwrap();
                 p.proposed_at = now;
                 let Ok(addr) = p.addr.parse::<Multiaddr>() else {
@@ -507,7 +554,7 @@ pub async fn run_partnering(
                 let req = Request {
                     credential: None,
                     body: Body::ProposePartnership {
-                        allowance_blocks: 1,
+                        allowance_blocks: pol.promise(&PartnerState::default()),
                         node_entry: entry.clone(),
                     },
                 };
@@ -517,18 +564,60 @@ pub async fn run_partnering(
                 {
                     if granted_blocks > 0 {
                         let Some(nid) = id(&n) else { continue };
-                        service.lock().unwrap().partners.insert(
-                            nid,
-                            PartnerState {
-                                last_seen: now,
-                                ..Default::default()
-                            },
-                        );
+                        {
+                            let mut s = service.lock().unwrap();
+                            s.partners.insert(
+                                nid,
+                                PartnerState {
+                                    last_seen: now,
+                                    trust_since: now,
+                                    ..Default::default()
+                                },
+                            );
+                            s.set_quota(&nid, granted_blocks, now);
+                        }
                         net.addrs.lock().unwrap().insert(nid, p.addr.clone());
                         p.status = "partenaire".into();
                         report.accepted += 1;
                         st.log(now, format!("nouveau partenaire {}…", &n[..12]));
                     }
+                }
+            }
+        }
+    }
+    // 5. Renégociation des quotas (`protocols.partenariat-automatique#negociation`).
+    if let Some(entry) = &net.own_entry {
+        let due: Vec<(Id, u64)> = {
+            let s = service.lock().unwrap();
+            s.partners
+                .iter()
+                .filter(|(_, p)| now >= p.negotiated_at + cfg.discovery_period_s)
+                .map(|(n, p)| (*n, s.partner_policy.promise(p)))
+                .take(32)
+                .collect()
+        };
+        for (nid, allowance) in due {
+            let Some(addr) = net
+                .addrs
+                .lock()
+                .unwrap()
+                .get(&nid)
+                .and_then(|a| a.parse::<Multiaddr>().ok())
+            else {
+                continue;
+            };
+            let req = Request {
+                credential: None,
+                body: Body::ProposePartnership {
+                    allowance_blocks: allowance,
+                    node_entry: entry.clone(),
+                },
+            };
+            let answer =
+                tokio::time::timeout(Duration::from_secs(5), net.server.request(addr, req)).await;
+            if let Ok(Ok(Response::PartnershipAnswer { granted_blocks })) = answer {
+                if granted_blocks > 0 {
+                    service.lock().unwrap().set_quota(&nid, granted_blocks, now);
                 }
             }
         }

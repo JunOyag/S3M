@@ -133,8 +133,13 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
 #[test]
 fn partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance() {
     let mut p = NodeService::new(PARTNER);
-    p.partner_policy.credit_blocks = 0;
-    p.partners.insert(pk(&NODE), PartnerState::default());
+    p.partners.insert(
+        pk(&NODE),
+        PartnerState {
+            quota: 1,
+            ..Default::default()
+        },
+    );
     let me = Some(pk(&NODE));
     let h = hash_sha256(&[9; 40]);
     let r = p.handle(
@@ -158,7 +163,7 @@ fn partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance() {
             NOW
         ),
         Response::Failure(Refusal::QuotaExceeded),
-        "troc 1:1 : rien confié en retour"
+        "quota atteint"
     );
     let challenge = plain(Body::Challenge {
         hash: h.to_vec(),
@@ -192,13 +197,19 @@ fn partner_gets_signed_receipt_challenge_and_tombstone_within_barter_balance() {
     );
 }
 
-/// Troc strict 1:1 (`node.PartnerAccount#equilibre`) : dépôts en alternance,
-/// écart d'un fragment au plus, doublon non recompté.
+/// Échange sur l'offre (`node.PartnerAccount#equilibre`) : jusqu'à Q
+/// fragments quoi que le Nœud héberge en retour ; doublon non recompté ;
+/// quota non négocié = confiance initiale.
 #[test]
-fn barter_is_strictly_one_for_one() {
+fn offer_quota_bounds_deposits_whatever_is_hosted_in_return() {
     let mut p = NodeService::new(PARTNER);
-    p.partner_policy.credit_blocks = 0;
-    p.partners.insert(pk(&NODE), PartnerState::default());
+    p.partners.insert(
+        pk(&NODE),
+        PartnerState {
+            quota: 2,
+            ..Default::default()
+        },
+    );
     let me = Some(pk(&NODE));
     let store = |p: &mut NodeService, b: u8| {
         p.handle(
@@ -214,47 +225,89 @@ fn barter_is_strictly_one_for_one() {
         matches!(store(&mut p, 1), Response::FragmentReceipt { .. }),
         "doublon"
     );
-    assert_eq!(store(&mut p, 2), Response::Failure(Refusal::QuotaExceeded));
-    // Le partenaire confie à son tour un fragment au Nœud.
+    assert!(matches!(store(&mut p, 2), Response::FragmentReceipt { .. }));
+    assert_eq!(store(&mut p, 3), Response::Failure(Refusal::QuotaExceeded));
+    assert_eq!(p.partners[&pk(&NODE)].ledger.hosted_by_partner, 2);
+    // Quota pas encore négocié : confiance initiale.
+    p.partner_policy.trust_initial_blocks = 3;
+    p.partners.get_mut(&pk(&NODE)).unwrap().quota = 0;
+    assert!(matches!(store(&mut p, 3), Response::FragmentReceipt { .. }));
+    assert_eq!(store(&mut p, 4), Response::Failure(Refusal::QuotaExceeded));
+}
+
+/// Négociation (`node.PartnerAccount#quota`) : le plus petit des deux,
+/// jamais sous ce que le Nœud stocke déjà chez le demandeur.
+#[test]
+fn quota_negotiation_takes_the_smaller_promise_never_below_own_usage() {
+    let mut p = NodeService::new(PARTNER);
+    p.partner_policy.offer_bytes = 32 * 1_000 * 65_536; // q = 1 000
+    p.partner_policy.trust_initial_blocks = 400;
+    p.partners.insert(pk(&NODE), PartnerState::default());
+    let propose = |p: &mut NodeService, allowance: u64| {
+        p.handle(
+            b"n",
+            Some(pk(&NODE)),
+            b"p",
+            plain(Body::ProposePartnership {
+                allowance_blocks: allowance,
+                node_entry: vec![],
+            }),
+            NOW,
+        )
+    };
+    let granted = |r: Response| match r {
+        Response::PartnershipAnswer { granted_blocks } => granted_blocks,
+        r => panic!("{r:?}"),
+    };
+    assert_eq!(granted(propose(&mut p, 5_000)), 400, "confiance");
+    assert_eq!(granted(propose(&mut p, 100)), 100, "offre du demandeur");
+    assert_eq!(p.partners[&pk(&NODE)].quota, 100);
     p.partners
         .get_mut(&pk(&NODE))
         .unwrap()
         .ledger
-        .hosted_for_partner += 1;
-    assert!(matches!(store(&mut p, 2), Response::FragmentReceipt { .. }));
-    assert_eq!(store(&mut p, 3), Response::Failure(Refusal::QuotaExceeded));
-    assert_eq!(p.partners[&pk(&NODE)].ledger.hosted_by_partner, 2);
+        .hosted_for_partner = 250;
+    assert_eq!(granted(propose(&mut p, 100)), 250, "pas sous l'usage");
+    p.partners.get_mut(&pk(&NODE)).unwrap().trust = 4_000;
+    assert_eq!(granted(propose(&mut p, 5_000)), 1_000, "offre / partenaires");
 }
 
-/// Crédit d'hébergement (`node.PartnerAccount#equilibre`) : jusqu'à S
-/// fragments d'avance, aucun pour un partenaire exclu (score bas, retrait).
+/// Manquements et confiance (`node.PartnerAccount#confiance`).
 #[test]
-fn hosting_credit_allows_a_bounded_imbalance() {
+fn failures_suspend_and_reset_trust_which_doubles_after_a_clean_period() {
     let mut p = NodeService::new(PARTNER);
-    assert_eq!(p.partner_policy.credit_blocks, DEFAULT_CREDIT_BLOCKS);
-    p.partner_policy.credit_blocks = 3;
-    p.partners.insert(pk(&NODE), PartnerState::default());
-    let me = Some(pk(&NODE));
-    let store = |p: &mut NodeService, b: u8| {
-        p.handle(
-            b"n",
-            me,
-            b"p",
-            plain(Body::StoreFragment { data: vec![b; 40] }),
-            NOW,
-        )
-    };
-    // Rien hébergé pour ce Nœud : 1 + S fragments acceptés.
-    for b in 1..=4 {
-        assert!(matches!(store(&mut p, b), Response::FragmentReceipt { .. }));
-    }
-    assert_eq!(store(&mut p, 5), Response::Failure(Refusal::QuotaExceeded));
-    // Partenaire exclu : troc strict, plus aucun crédit.
-    p.partner_policy.credit_blocks = 10;
-    p.no_credit.insert(pk(&NODE));
-    assert_eq!(store(&mut p, 5), Response::Failure(Refusal::QuotaExceeded));
-    p.no_credit.clear();
-    assert!(matches!(store(&mut p, 5), Response::FragmentReceipt { .. }));
+    p.partner_policy.filler = false;
+    p.partner_policy.trust_initial_blocks = 100;
+    p.partner_policy.trust_period_s = 1_000;
+    let n = pk(&NODE);
+    p.partners.insert(n, PartnerState::default());
+    p.ramp_trust(NOW);
+    // Période propre avec contrôle réussi : doublement.
+    p.partners.get_mut(&n).unwrap().proved_at = NOW + 10;
+    p.ramp_trust(NOW + 1_000);
+    assert_eq!(p.partner_policy.trust_of(&p.partners[&n]), 200);
+    // Sans contrôle réussi : inchangée.
+    p.ramp_trust(NOW + 2_000);
+    assert_eq!(p.partner_policy.trust_of(&p.partners[&n]), 200);
+    // Manquement : confiance initiale, placements suspendus.
+    assert_eq!(p.record_failure(&n, NOW + 2_100), 1);
+    assert_eq!(p.partner_policy.trust_of(&p.partners[&n]), 100);
+    assert!(p.suspended(NOW + 2_500).contains(&n));
+    assert!(!p.suspended(NOW + 3_100).contains(&n));
+    assert_eq!(p.record_failure(&n, NOW + 2_200), 2);
+    assert_eq!(p.record_failure(&n, NOW + 2_300), MAX_FAILURES);
+    // Période suivante : manquements remis à zéro, pas de doublement.
+    p.partners.get_mut(&n).unwrap().proved_at = NOW + 2_900;
+    p.ramp_trust(NOW + 3_100);
+    assert_eq!(p.partners[&n].failures, 0);
+    assert_eq!(p.partner_policy.trust_of(&p.partners[&n]), 100);
+}
+
+#[test]
+fn subnets_are_slash_24_and_slash_48() {
+    assert_eq!(subnet("192.168.13.235").as_deref(), Some("192.168.13"));
+    assert_eq!(subnet("2001:db8:1:2::5").as_deref(), Some("2001:db8:1"));
+    assert_eq!(subnet("pas une ip"), None);
 }
 
 fn partner_hosting_node_fragment() -> (NodeService, Id) {

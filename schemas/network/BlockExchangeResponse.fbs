@@ -60,7 +60,7 @@ table ProbeReply {
 }
 // ProposePartnership
 table PartnershipAnswer {
-  granted_blocks: uint64;     // 0 : refusé ; toute autre valeur : accepté (1 depuis le 2026-11-21, troc strict)
+  granted_blocks: uint64;     // 0 : refusé ; sinon quota égal Q accordé (2026-11-24, node.PartnerAccount#quota)
 }
 // Attach
 table Attached {

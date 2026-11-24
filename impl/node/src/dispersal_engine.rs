@@ -307,6 +307,7 @@ pub(crate) async fn place(
     fabric: &dyn Fabric,
     frags: Vec<(u16, Vec<u8>)>,
     candidates: &[Id],
+    now: u64,
 ) -> Vec<(u16, Id, Id)> {
     let me = service.lock().unwrap().node_id();
     let mut todo = frags;
@@ -333,11 +334,32 @@ pub(crate) async fn place(
                     }
                     placed.push((i, h, p));
                 }
+                Err(e) => {
+                    if e.contains("QuotaExceeded") {
+                        refused(service, &p, now);
+                    }
+                    todo.push((i, frag));
+                }
                 _ => todo.push((i, frag)),
             }
         }
     }
     placed
+}
+
+/// Refus `QuotaExceeded` d'un partenaire : manquement s'il garde moins
+/// que le quota de ce Nœud, sinon du remplissage y sera libéré
+/// (`node.PartnerAccount#manquements`).
+pub(crate) fn refused(service: &Mutex<NodeService>, p: &Id, now: u64) {
+    let mut s = service.lock().unwrap();
+    let Some(st) = s.partners.get(p).copied() else {
+        return;
+    };
+    if st.ledger.hosted_for_partner < s.partner_policy.limit(&st) {
+        s.record_failure(p, now);
+    } else {
+        s.need_room.insert(*p);
+    }
 }
 
 /// Disperse un stripe de k blocs de 65 536 o.
@@ -363,7 +385,7 @@ pub(crate) async fn disperse(
         .enumerate()
         .map(|(i, f)| ((cfg.k + i) as u16, f))
         .collect();
-    let mut placed: Vec<(u16, String, String)> = place(service, fabric, frags, &candidates)
+    let mut placed: Vec<(u16, String, String)> = place(service, fabric, frags, &candidates, now)
         .await
         .into_iter()
         .map(|(i, h, p)| (i, hx(&h), hx(&p)))

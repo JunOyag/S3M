@@ -112,8 +112,8 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
     let r = b.handle(b"a", Some(pk(&A)), b"b", propose(500, entry(&A)), NOW);
     assert_eq!(
         r,
-        Response::PartnershipAnswer { granted_blocks: 1 },
-        "accepté, sans solde"
+        Response::PartnershipAnswer { granted_blocks: 256 },
+        "accepté : quota = confiance initiale"
     );
     assert!(b.partners.contains_key(&pk(&A)));
     assert_eq!(b.new_partners.len(), 1);
@@ -122,8 +122,8 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
     let r = b.handle(b"a", Some(pk(&A)), b"b", propose(500, entry(&A)), NOW);
     assert_eq!(
         r,
-        Response::PartnershipAnswer { granted_blocks: 1 },
-        "idempotent"
+        Response::PartnershipAnswer { granted_blocks: 256 },
+        "renégociation"
     );
     let c = [0x30; 32];
     let r = b.handle(b"c", Some(pk(&c)), b"b", propose(10, entry(&c)), NOW);
@@ -153,6 +153,21 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
         Response::PartnershipAnswer { granted_blocks: 0 },
         "liste noire"
     );
+    // Diversité des adresses : même /24 refusé au-delà de la limite,
+    // accepté si elle est désactivée (essais sur une seule machine).
+    for (limit, want) in [(1, 0), (0, 256)] {
+        let mut b3 = NodeService::new(B);
+        b3.vdf = Some(permissive());
+        b3.partner_policy.subnet_limit = limit;
+        let r = b3.handle(b"a", Some(pk(&A)), b"b", propose(500, entry(&A)), NOW);
+        assert_eq!(r, Response::PartnershipAnswer { granted_blocks: 256 });
+        let r = b3.handle(b"c", Some(pk(&c)), b"b", propose(500, entry(&c)), NOW);
+        assert_eq!(
+            r,
+            Response::PartnershipAnswer { granted_blocks: want },
+            "limite {limit}"
+        );
+    }
 }
 
 fn attach_req(user: &[u8; 32], salt: [u8; 16], sig_seed: Option<[u8; 32]>) -> Request {

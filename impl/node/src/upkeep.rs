@@ -28,13 +28,14 @@ use std::time::{Duration, Instant};
 use s3m_core::erasure::{encode_parity, padding_block, reconstruct_data};
 use s3m_core::symmetric_suite::hash_sha256;
 use s3m_protocol::dispersal::{by_xor_distance, Id};
-use s3m_protocol::exchange::{Body, Refusal, Request, Response};
+use s3m_protocol::exchange::{verify_receipt, Body, Refusal, Request, Response};
 use serde::{Deserialize, Serialize};
 
 use crate::blacklist::REASON_POS_INVALID;
 use crate::chunk_store::Space;
 use crate::dispersal_engine::{place, DispersalState, EngineConfig, Fabric, Retired, StripeRec};
-use crate::exchange::NodeService;
+use crate::exchange::{NodeService, PartnerState};
+use crate::tombstones::{apply_acknowledged, TombstoneNotice};
 use crate::pos::{challenge_response, judge, LatencyTracker, Verdict};
 use crate::volatility::{analyze, Holder};
 
@@ -87,6 +88,32 @@ pub struct UpkeepState {
     /// Partenaires en retrait (`partnering`) : fragments à replacer.
     #[serde(default)]
     pub retiring: BTreeSet<String>,
+    /// Fragments de remplissage confiés : `partenaire → [(indice, hash)]`
+    /// (`node.PartnerAccount#remplissage`).
+    #[serde(default)]
+    pub fillers: BTreeMap<String, Vec<(u64, String)>>,
+    #[serde(default)]
+    pub filler_next: u64,
+    #[serde(default)]
+    pub filler_cursor: usize,
+}
+
+/// Fragments de remplissage déposés ou libérés par partenaire et par cycle.
+pub const FILLER_BATCH: usize = 16;
+
+/// Fragment de remplissage `index` : 64 Kio pseudo-aléatoires sous une clé
+/// dérivée de `priv_node`, régénérables par ce Nœud seul.
+pub fn filler_data(priv_node: &[u8; 32], index: u64) -> Vec<u8> {
+    let key = hash_sha256(&[&priv_node[..], b"s3m-filler-v1"].concat());
+    let mut out = Vec::with_capacity(65_536);
+    let mut buf = [0u8; 48];
+    buf[..32].copy_from_slice(&key);
+    buf[32..40].copy_from_slice(&index.to_be_bytes());
+    for j in 0..2048u64 {
+        buf[40..].copy_from_slice(&j.to_be_bytes());
+        out.extend_from_slice(&hash_sha256(&buf));
+    }
+    out
 }
 
 const MAX_EVENTS: usize = 50;
@@ -183,7 +210,7 @@ async fn replace_fragments(
         .iter()
         .filter_map(|&i| Some((i, parity.get((i as usize).checked_sub(cfg.k)?)?.clone())))
         .collect();
-    let placed = place(service, fabric, frags, &candidates).await;
+    let placed = place(service, fabric, frags, &candidates, now).await;
     for (i, h, p) in &placed {
         if let Some(slot) = rec.parity.iter_mut().find(|(x, _, _)| x == i) {
             retired.push(Retired {
@@ -198,6 +225,160 @@ async fn replace_fragments(
     }
     rec.parity.sort();
     placed.len()
+}
+
+/// Remplissage de l'espace promis (`node.PartnerAccount#remplissage`) :
+/// libère du remplissage chez les partenaires qui manquent de place pour
+/// un vrai fragment, en dépose chez ceux qui gardent moins que le quota,
+/// et en contrôle quelques-uns.
+#[allow(clippy::too_many_arguments)]
+async fn fillers(
+    service: &Mutex<NodeService>,
+    fabric: &dyn Fabric,
+    up: &mut UpkeepState,
+    last_tombstone: &mut BTreeMap<String, u64>,
+    frauds: &mut BTreeSet<Id>,
+    ucfg: &UpkeepConfig,
+    report: &mut UpkeepReport,
+    now: u64,
+) {
+    let (priv_node, me, pol, need, partners, suspended) = {
+        let mut s = service.lock().unwrap();
+        let need: Vec<Id> = s.need_room.drain().collect();
+        let partners: Vec<(Id, PartnerState)> = s.partners.iter().map(|(i, p)| (*i, *p)).collect();
+        (s.priv_node(), s.node_id(), s.partner_policy, need, partners, s.suspended(now))
+    };
+    // Partenariats terminés : leur remplissage est oublié.
+    up.fillers
+        .retain(|k, _| partners.iter().any(|(p, _)| hx(p) == *k));
+    // Libération : place pour de vrais fragments (pas de nouveau
+    // remplissage chez eux ce cycle-ci).
+    for p in &need {
+        let p = *p;
+        let key = hx(&p);
+        let Some(list) = up.fillers.get_mut(&key) else {
+            continue;
+        };
+        let n = list.len().min(FILLER_BATCH);
+        if n == 0 {
+            continue;
+        }
+        let batch: Vec<(u64, String)> = list.split_off(list.len() - n);
+        let last = last_tombstone.get(&key).copied().unwrap_or(0);
+        let ts = now.max(last + 1);
+        let notice = TombstoneNotice::sign(&priv_node, ts, batch.iter().map(|(_, h)| id(h)).collect());
+        match fabric.tombstone(&p, &notice).await {
+            Ok(freed) => {
+                last_tombstone.insert(key, ts);
+                if let Some(st) = service.lock().unwrap().partners.get_mut(&p) {
+                    apply_acknowledged(&mut st.ledger, freed);
+                }
+            }
+            Err(_) => up.fillers.get_mut(&key).unwrap().extend(batch),
+        }
+    }
+    // Dépôt.
+    if pol.filler {
+        for (p, st) in &partners {
+            let key = hx(p);
+            if up.is_blacklisted(p)
+                || up.retiring.contains(&key)
+                || suspended.contains(p)
+                || need.contains(p)
+            {
+                continue;
+            }
+            let room = pol.limit(st).saturating_sub(st.ledger.hosted_for_partner);
+            for _ in 0..room.min(FILLER_BATCH as u64) {
+                let index = up.filler_next;
+                let data = filler_data(&priv_node, index);
+                let h = hash_sha256(&data);
+                match fabric.store(p, data).await {
+                    Ok(sig) if verify_receipt(p, &h, &me, &sig) => {
+                        up.filler_next += 1;
+                        if let Some(s) = service.lock().unwrap().partners.get_mut(p) {
+                            s.ledger.hosted_for_partner += 1;
+                        }
+                        up.fillers.entry(key.clone()).or_default().push((index, hx(&h)));
+                    }
+                    Err(e) => {
+                        if e.contains("QuotaExceeded") {
+                            crate::dispersal_engine::refused(service, p, now);
+                        }
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+        }
+    }
+    // Contrôle, à tour de rôle.
+    let all: Vec<(String, u64, String)> = up
+        .fillers
+        .iter()
+        .flat_map(|(p, v)| v.iter().map(move |(i, h)| (p.clone(), *i, h.clone())))
+        .collect();
+    if all.is_empty() {
+        return;
+    }
+    let n = (ucfg.challenges_per_cycle / 4).max(1).min(all.len());
+    for j in 0..n {
+        let (partner, index, hash) = &all[(up.filler_cursor + j) % all.len()];
+        let pid = id(partner);
+        if frauds.contains(&pid) || up.is_blacklisted(&pid) {
+            continue;
+        }
+        let data = filler_data(&priv_node, *index);
+        let nonce = random32();
+        let expected = challenge_response(&data, &nonce);
+        let req = Request {
+            credential: None,
+            body: Body::Challenge {
+                hash: id(hash).to_vec(),
+                nonce: nonce.to_vec(),
+            },
+        };
+        let answer = tokio::time::timeout(Duration::from_secs(10), fabric.request(&pid, req)).await;
+        report.challenged += 1;
+        match answer {
+            Ok(Ok(Response::Failure(Refusal::NotFound))) => {
+                *up.pos_fail.entry(partner.clone()).or_default() += 1;
+                service.lock().unwrap().record_failure(&pid, now);
+                if let Some(v) = up.fillers.get_mut(partner) {
+                    v.retain(|(i, _)| i != index);
+                }
+                if let Some(st) = service.lock().unwrap().partners.get_mut(&pid) {
+                    st.ledger.hosted_for_partner = st.ledger.hosted_for_partner.saturating_sub(1);
+                }
+                report.lost += 1;
+            }
+            Ok(Ok(Response::ChallengeResponse(d))) => {
+                let d: Option<[u8; 32]> = d.try_into().ok();
+                match judge(&expected, d.as_ref()) {
+                    Verdict::Passed => {
+                        up.last_seen.insert(partner.clone(), now);
+                        *up.pos_ok.entry(partner.clone()).or_default() += 1;
+                        if let Some(st) = service.lock().unwrap().partners.get_mut(&pid) {
+                            st.proved_at = now;
+                        }
+                        report.passed += 1;
+                    }
+                    Verdict::Fraud => {
+                        frauds.insert(pid);
+                    }
+                    Verdict::Timeout => {
+                        *up.pos_fail.entry(partner.clone()).or_default() += 1;
+                        report.timeouts += 1;
+                    }
+                }
+            }
+            _ => {
+                *up.pos_fail.entry(partner.clone()).or_default() += 1;
+                report.timeouts += 1;
+            }
+        }
+    }
+    up.filler_cursor = (up.filler_cursor + n) % all.len();
 }
 
 /// Rupture avec un partenaire fraudeur.
@@ -284,6 +465,7 @@ pub async fn run_upkeep(
             // § Fragment introuvable) — échec compté, fragment replacé.
             if matches!(answer, Ok(Ok(Response::Failure(Refusal::NotFound)))) {
                 *up.pos_fail.entry(partner.clone()).or_default() += 1;
+                service.lock().unwrap().record_failure(&pid, now);
                 lost.insert((user.clone(), *si, *index));
                 report.lost += 1;
                 up.log(
@@ -314,6 +496,9 @@ pub async fn run_upkeep(
                         .insert(partner.clone(), lat.mean_ms().unwrap_or(ms));
                     up.last_seen.insert(partner.clone(), now);
                     *up.pos_ok.entry(partner.clone()).or_default() += 1;
+                    if let Some(st) = service.lock().unwrap().partners.get_mut(&pid) {
+                        st.proved_at = now;
+                    }
                     up.challenges_passed += 1;
                     report.passed += 1;
                 }
@@ -329,6 +514,9 @@ pub async fn run_upkeep(
         }
         up.cursor = (up.cursor + n) % targets.len();
     }
+
+    // 1 bis. Remplissage : libération, dépôt, contrôle.
+    fillers(service, fabric, &mut up, &mut state.last_tombstone, &mut frauds, ucfg, &mut report, now).await;
 
     // 2. Fraude : rupture et réparation immédiate.
     for p in &frauds {

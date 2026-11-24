@@ -297,6 +297,19 @@ pub struct SavedPartner {
     pub hosted_by_partner: u64,
     pub last_tombstone_at: u64,
     pub last_seen: u64,
+    /// Échange sur l'offre (`node.PartnerAccount#equilibre`).
+    #[serde(default)]
+    pub quota: u64,
+    #[serde(default)]
+    pub trust: u64,
+    #[serde(default)]
+    pub trust_since: u64,
+    #[serde(default)]
+    pub proved_at: u64,
+    #[serde(default)]
+    pub failures: u32,
+    #[serde(default)]
+    pub suspended_until: u64,
 }
 
 /// État du service hors blocs (les blocs sont dans le stockage physique).
@@ -362,6 +375,12 @@ impl SavedState {
                 hosted_by_partner: p.ledger.hosted_by_partner,
                 last_tombstone_at: p.ledger.last_tombstone_at,
                 last_seen: p.last_seen,
+                quota: p.quota,
+                trust: p.trust,
+                trust_since: p.trust_since,
+                proved_at: p.proved_at,
+                failures: p.failures,
+                suspended_until: p.suspended_until,
             })
             .collect();
         partners.sort_by(|a, b| a.node_id.cmp(&b.node_id));
@@ -437,6 +456,13 @@ impl SavedState {
                         last_tombstone_at: p.last_tombstone_at,
                     },
                     last_seen: p.last_seen,
+                    quota: p.quota,
+                    trust: p.trust,
+                    trust_since: p.trust_since,
+                    proved_at: p.proved_at,
+                    failures: p.failures,
+                    suspended_until: p.suspended_until,
+                    negotiated_at: 0,
                 },
             );
         }
@@ -1021,6 +1047,10 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             )
         })
         .unwrap_or_default();
+    let fillers = d
+        .as_ref()
+        .map(|d| d.upkeep.fillers.clone())
+        .unwrap_or_default();
     drop(d);
     let country = |ip: Option<&String>| {
         ip.and_then(|i| sh.geo.read().unwrap().locate(i))
@@ -1100,9 +1130,11 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                             "dernier challenge réussi": pos.2.get(&n),
                             "fragments confiés": p.ledger.hosted_for_partner,
                             "fragments reçus": p.ledger.hosted_by_partner,
-                            "crédit d'hébergement utilisé (fragments)": format!("{} / {}",
-                                p.ledger.hosted_by_partner.saturating_sub(p.ledger.hosted_for_partner),
-                                if s.no_credit.contains(id) { 0 } else { s.partner_policy.credit_blocks }),
+                            "quota négocié (fragments)": s.partner_policy.limit(p),
+                            "confiance (fragments)": s.partner_policy.trust_of(p),
+                            "remplissage confié (fragments)": fillers.get(&n).map_or(0, |v| v.len()),
+                            "manquements (période en cours)": p.failures,
+                            "placements suspendus jusqu'au": if p.suspended_until > now { json!(p.suspended_until) } else { Value::Null },
                             "adresse": addrs.get(id),
                             "dernier échange": p.last_seen,
                             "purge à venir": if p.last_seen == 0 { Value::Null } else { json!(purge) },
@@ -2510,8 +2542,8 @@ pub async fn start_with(
                     )
                     .await;
                     *sh.last_partnering.lock().unwrap() = Some((now, pr));
-                    let ex = excluded(&sh.config.partnering, &d);
-                    sh.service.lock().unwrap().no_credit = ex.clone();
+                    let mut ex = excluded(&sh.config.partnering, &d);
+                    ex.extend(sh.service.lock().unwrap().suspended(now));
                     *sh.excluded.lock().unwrap() = ex;
                     let up = run_upkeep(
                         &sh.service,
