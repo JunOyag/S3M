@@ -708,6 +708,17 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         "en attente de redémarrage": if pending.is_empty() { json!("rien") } else { json!(pending) },
     });
     v["résumé"] = node_summary(&v);
+    // Défaillances matérielles des volumes : alerte à l'opérateur.
+    let faults = disk_alerts(sh);
+    let n_faults = faults.len();
+    if n_faults > 0 {
+        let first = faults[0]["alerte"].as_str().unwrap_or("").to_string();
+        v["alertes matérielles"] = json!(faults);
+        if let Some(cards) = v["résumé"].as_array_mut() {
+            cards.insert(0, json!({ "libellé": "Disques", "valeur": format!("{n_faults} alerte(s)"),
+                "détail": first, "état": "probleme", "page": "accueil" }));
+        }
+    }
     let in_maintenance = sh.service.lock().unwrap().maintenance;
     if in_maintenance {
         let m = v.pointer("/contrôles et réparation/maintenance").cloned().unwrap_or(Value::Null);
@@ -734,9 +745,14 @@ pub fn status(sh: &Shared, now: u64) -> Value {
             if unread > 1 { "s" } else { "" }
         ));
     }
+    if n_faults > 0 {
+        v["à signaler"] = json!(format!(
+            "Alerte disque : {n_faults} défaillance(s) de volume — voir la vue d'ensemble, section « Alertes matérielles »"
+        ));
+    }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
-          "sections": ["maintenance", "restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
+          "sections": ["alertes matérielles", "maintenance", "restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
           "actions": ["attach_user", "set_attach_policy"] },
@@ -1418,6 +1434,30 @@ fn upkeep_status(sh: &Shared) -> Value {
     })
 }
 
+/// Défaillances matérielles des volumes, avec la conduite à tenir
+/// (`securite.integrite-autoreparation#defaillance`).
+fn disk_alerts(sh: &Shared) -> Vec<Value> {
+    let faults = match sh.service.lock().unwrap().store.physical() {
+        Some(p) => p.faults(),
+        None => return Vec::new(),
+    };
+    faults
+        .iter()
+        .map(|f| json!({
+            "alerte": f.title(),
+            "volume": f.volume_id,
+            "chemin": f.mount_path.display().to_string(),
+            "erreur rencontrée": f.error,
+            "occurrences": f.count,
+            "depuis": f.first_at,
+            "dernière": f.last_at,
+            "que faire": f.advice(),
+            "_actions": [{ "nom": "disk_alert_resolved", "libellé": "Résolu", "valeurs": { "volume": f.volume_id.to_string() },
+                "confirmer": "Effacer les alertes de ce volume ? Elles réapparaîtront si l'erreur se reproduit." }],
+        }))
+        .collect()
+}
+
 /// Maintenance après la perte d'un volume
 /// (`securite.integrite-autoreparation#maintenance`).
 fn maintenance_status(m: Option<&crate::upkeep::Maintenance>) -> Value {
@@ -1710,6 +1750,14 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         sh.restart.notify_one();
         return Ok(json!({ "ok": true,
             "message": "Redémarrage en cours : le tableau de bord se reconnecte dans quelques secondes" }));
+    }
+    if name == "disk_alert_resolved" {
+        let vid: u32 = field(&v, "volume")?.parse().map_err(|_| "volume invalide")?;
+        if let Some(p) = sh.service.lock().unwrap().store.physical() {
+            p.clear_faults(vid);
+        }
+        note(sh, format!("alertes du volume {vid} déclarées résolues"));
+        return Ok(json!({ "ok": true, "message": format!("Alertes du volume {vid} effacées ; elles réapparaîtront si l'erreur se reproduit") }));
     }
     if name == "unblacklist" {
         let n = field(&v, "nœud")?.to_lowercase();

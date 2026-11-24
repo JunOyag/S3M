@@ -269,6 +269,7 @@ const LABELS = {
   "dernier snapshot": ["Dernière sauvegarde", ""],
   "publié dans l'entrée Node": ["Publiée dans l'annuaire", ""],
   "restauration": ["Restauration", ""],
+  "alertes matérielles": ["Alertes matérielles", "Erreurs de disque constatées sur les volumes, avec la conduite à tenir."],
   "maintenance": ["Maintenance", "Reconstruction automatique après la perte de fichiers de stockage."],
   "mise en route": ["Mise en route", "Étapes avant de pouvoir utiliser pleinement une nouvelle identité."],
   "restauration au démarrage": ["Restauration au démarrage", ""],

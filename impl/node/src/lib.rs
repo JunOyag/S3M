@@ -248,6 +248,71 @@ pub struct PhysicalStore {
     containers_cache: HashMap<u32, ContainerFile>,
     /// Volumes en vidage : plus aucune allocation (`protocols.gestion-volumes`).
     draining: std::collections::BTreeSet<u32>,
+    /// Défaillances matérielles constatées, par volume et par sorte
+    /// (`securite.integrite-autoreparation#defaillance`).
+    faults: std::sync::Mutex<BTreeMap<(u32, FaultKind), VolumeFault>>,
+}
+
+/// Sorte de défaillance d'un volume.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+pub enum FaultKind {
+    /// Disque ou dossier parent introuvable (débranché, lettre changée).
+    Unreachable,
+    /// Erreur d'entrée-sortie en lecture.
+    Read,
+    /// Erreur d'entrée-sortie en écriture.
+    Write,
+    /// Bloc relu dont le contenu ne correspond plus à son hash.
+    Corrupted,
+    /// Droits insuffisants sur le dossier du volume.
+    Permission,
+    /// Disque plein.
+    Full,
+}
+
+/// Défaillance d'un volume, à signaler à l'opérateur.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct VolumeFault {
+    pub volume_id: u32,
+    pub mount_path: PathBuf,
+    pub kind: FaultKind,
+    pub error: String,
+    pub count: u64,
+    pub first_at: u64,
+    pub last_at: u64,
+}
+
+impl VolumeFault {
+    /// Libellé de la défaillance.
+    pub fn title(&self) -> String {
+        let v = self.volume_id;
+        match self.kind {
+            FaultKind::Unreachable => format!("Volume {v} introuvable"),
+            FaultKind::Read => format!("Erreurs de lecture sur le volume {v}"),
+            FaultKind::Write => format!("Erreurs d'écriture sur le volume {v}"),
+            FaultKind::Corrupted => format!("Blocs altérés sur le volume {v}"),
+            FaultKind::Permission => format!("Accès refusé au volume {v}"),
+            FaultKind::Full => format!("Disque du volume {v} plein"),
+        }
+    }
+
+    /// Conduite à tenir.
+    pub fn advice(&self) -> String {
+        let v = self.volume_id;
+        let p = self.mount_path.display();
+        let replace = format!("Remplacez le disque défectueux : ajoutez un volume sur un disque sain (page Volumes), puis retirez le volume {v} (ses blocs sont déplacés) ou, s'il n'est plus lisible, déclarez-le perdu (ses blocs sont reconstruits depuis le réseau).");
+        match self.kind {
+            FaultKind::Unreachable => format!("Le disque ou le dossier qui contient {p} est introuvable. Rebranchez le disque ; s'il a changé de lettre ou d'emplacement, modifiez le point de montage du volume {v} (page Volumes) ; s'il est perdu, déclarez le volume {v} perdu. Rien n'est effacé en attendant."),
+            FaultKind::Read | FaultKind::Write | FaultKind::Corrupted => format!("Le disque qui porte {p} est probablement défectueux (vérifiez son état SMART et son câble). {replace}"),
+            FaultKind::Permission => format!("Le Nœud n'a pas le droit d'écrire dans {p} : rendez ce dossier accessible en lecture et écriture au compte qui exécute le Nœud, ou modifiez le point de montage du volume {v}."),
+            FaultKind::Full => format!("Le disque qui porte {p} est plein, alors que la capacité configurée du volume {v} ne l'est pas : libérez de la place sur ce disque ou réduisez la capacité du volume {v} (page Volumes)."),
+        }
+    }
+}
+
+/// Volume dont le disque ou le dossier parent est introuvable.
+fn unreachable(v: &VolumeConfig) -> bool {
+    !v.mount_path.exists() && !v.mount_path.parent().is_some_and(|p| p.exists())
 }
 
 impl PhysicalStore {
@@ -260,7 +325,8 @@ impl PhysicalStore {
     ) -> Result<Self, StorageError> {
         let mut volume_map = BTreeMap::new();
         for volume in volumes {
-            fs::create_dir_all(&volume.mount_path)?;
+            // Dossiers créés par `check_volumes` (disque absent : signalé,
+            // le Nœud démarre quand même).
             if volume_map.insert(volume.volume_id, volume).is_some() {
                 return Err(StorageError::InvalidContainer(
                     "duplicate volume_id in configuration".to_owned(),
@@ -318,7 +384,9 @@ impl PhysicalStore {
             volumes: volume_map,
             containers_cache,
             draining: Default::default(),
+            faults: Default::default(),
         };
+        store.check_volumes();
         store.restore_container_files()?;
         store.validate_location_bitmaps()?;
         Ok(store)
@@ -599,11 +667,20 @@ impl PhysicalStore {
         };
         let container = self.container(location.container_id)?;
         let path = self.absolute_path(&container)?;
-        let mut file = File::open(path)?;
-        file.seek(SeekFrom::Start(slot_offset(location.slot_index)))?;
-        let mut bytes = vec![0; BLOCK_SIZE];
-        file.read_exact(&mut bytes)?;
-        Ok(Some(bytes))
+        let read = || -> std::io::Result<Vec<u8>> {
+            let mut file = File::open(&path)?;
+            file.seek(SeekFrom::Start(slot_offset(location.slot_index)))?;
+            let mut bytes = vec![0; BLOCK_SIZE];
+            file.read_exact(&mut bytes)?;
+            Ok(bytes)
+        };
+        match read() {
+            Ok(b) => Ok(Some(b)),
+            Err(e) => {
+                self.record_io(container.volume_id, false, &e);
+                Err(e.into())
+            }
+        }
     }
 
     /// Hashes des blocs d'un propriétaire.
@@ -951,12 +1028,97 @@ impl PhysicalStore {
         Ok(true)
     }
 
-    /// Conteneurs dont le fichier a disparu du disque (dossier du volume
-    /// supprimé, disque remplacé…).
+    /// Défaillances matérielles constatées.
+    pub fn faults(&self) -> Vec<VolumeFault> {
+        self.faults.lock().unwrap().values().cloned().collect()
+    }
+
+    /// Défaillances d'un volume tenues pour résolues par l'opérateur.
+    pub fn clear_faults(&self, volume_id: u32) {
+        self.faults
+            .lock()
+            .unwrap()
+            .retain(|(v, _), _| *v != volume_id);
+    }
+
+    fn record_fault(&self, volume_id: u32, kind: FaultKind, error: String) {
+        let Some(vol) = self.volumes.get(&volume_id) else {
+            return;
+        };
+        let now = now_seconds();
+        let mut f = self.faults.lock().unwrap();
+        let e = f.entry((volume_id, kind)).or_insert_with(|| VolumeFault {
+            volume_id,
+            mount_path: vol.mount_path.clone(),
+            kind,
+            error: String::new(),
+            count: 0,
+            first_at: now,
+            last_at: now,
+        });
+        e.count += 1;
+        e.last_at = now;
+        e.error = error;
+    }
+
+    /// Erreur d'entrée-sortie sur un volume ; un fichier absent relève de
+    /// la maintenance (`missing_containers`), pas d'une défaillance.
+    fn record_io(&self, volume_id: u32, write: bool, e: &std::io::Error) {
+        use std::io::ErrorKind as K;
+        let kind = match e.kind() {
+            K::NotFound => return,
+            K::PermissionDenied => FaultKind::Permission,
+            _ if matches!(e.raw_os_error(), Some(112) | Some(39) | Some(28)) => FaultKind::Full,
+            _ if write => FaultKind::Write,
+            _ => FaultKind::Read,
+        };
+        self.record_fault(volume_id, kind, e.to_string());
+    }
+
+    /// Bloc relu dont le contenu ne correspond plus à son hash (scrubbing).
+    pub fn note_corrupted(&self, block_hash: &[u8]) {
+        if let Ok(Some(loc)) = self.location(block_hash) {
+            if let Ok(c) = self.container(loc.container_id) {
+                self.record_fault(
+                    c.volume_id,
+                    FaultKind::Corrupted,
+                    format!("bloc {}… altéré", hex::encode(&block_hash[..6.min(block_hash.len())])),
+                );
+            }
+        }
+    }
+
+    /// Disques introuvables signalés ; retirés de la liste quand ils
+    /// réapparaissent.
+    pub fn check_volumes(&self) {
+        for v in self.volumes.values() {
+            let holds = self.containers_cache.values().any(|c| c.volume_id == v.volume_id);
+            let r = if holds && unreachable(v) {
+                let parent = v.mount_path.parent().unwrap_or(&v.mount_path);
+                Err(format!("{} introuvable", parent.display()))
+            } else {
+                fs::create_dir_all(&v.mount_path).map_err(|e| e.to_string())
+            };
+            match r {
+                Err(e) => self.record_fault(v.volume_id, FaultKind::Unreachable, e),
+                Ok(()) => {
+                    self.faults
+                        .lock()
+                        .unwrap()
+                        .remove(&(v.volume_id, FaultKind::Unreachable));
+                }
+            }
+        }
+    }
+
+    /// Conteneurs dont le fichier a disparu alors que le disque est là
+    /// (dossier du volume supprimé, disque remplacé à vide) ; un disque
+    /// introuvable n'en fait pas partie (`check_volumes`).
     pub fn missing_containers(&self) -> Vec<u32> {
         let mut v: Vec<u32> = self
             .containers_cache
             .values()
+            .filter(|c| self.volumes.get(&c.volume_id).is_some_and(|v| !unreachable(v)))
             .filter(|c| self.absolute_path(c).map_or(true, |p| !p.exists()))
             .map(|c| c.container_id)
             .collect();
@@ -984,8 +1146,8 @@ impl PhysicalStore {
         for c in &containers {
             self.containers_cache.remove(&c.container_id);
         }
-        for v in self.volumes.values() {
-            fs::create_dir_all(&v.mount_path)?;
+        for v in self.volumes.values().filter(|v| !unreachable(v)) {
+            let _ = fs::create_dir_all(&v.mount_path);
         }
         self.maybe_compact_mutation_log()?;
         Ok(lost)
@@ -1093,7 +1255,7 @@ impl PhysicalStore {
     fn least_loaded_volume(&self) -> Result<&VolumeConfig, StorageError> {
         let mut selected: Option<(&VolumeConfig, u64)> = None;
         for volume in self.volumes.values() {
-            if self.draining.contains(&volume.volume_id) {
+            if self.draining.contains(&volume.volume_id) || unreachable(volume) {
                 continue;
             }
             let used = self.physical_usage(volume.volume_id)?;
@@ -1191,26 +1353,41 @@ impl PhysicalStore {
             ));
         }
         let path = self.absolute_path(container)?;
-        let mut file = OpenOptions::new().read(true).write(true).open(path)?;
-        file.seek(SeekFrom::Start(slot_offset(slot_index)))?;
-        file.write_all(block)?;
-        file.sync_data()?;
-        Ok(())
+        let write = || -> std::io::Result<()> {
+            let mut file = OpenOptions::new().read(true).write(true).open(&path)?;
+            file.seek(SeekFrom::Start(slot_offset(slot_index)))?;
+            file.write_all(block)?;
+            file.sync_data()
+        };
+        write().map_err(|e| {
+            self.record_io(container.volume_id, true, &e);
+            e.into()
+        })
     }
 
     fn write_bitmap_header(&self, container_id: u32) -> Result<(), StorageError> {
         let container = self.container(container_id)?;
         let path = self.absolute_path(&container)?;
-        write_header(path, &container.occupied_bitmap)
+        let r = write_header(path, &container.occupied_bitmap);
+        if let Err(StorageError::Io(e)) = &r {
+            self.record_io(container.volume_id, true, e);
+        }
+        r
     }
 
     fn restore_container_files(&self) -> Result<(), StorageError> {
         for container in load_all_containers(&self.connection)? {
             validate_container(&container)?;
+            // Disque introuvable : signalé (`check_volumes`), rien n'est touché.
+            if self.volumes.get(&container.volume_id).is_some_and(unreachable) {
+                continue;
+            }
             let path = self.absolute_path(&container)?;
             if !path.exists() {
+                // Fichier occupé disparu : oublié puis reconstruit depuis le
+                // réseau au premier cycle (`missing_containers`).
                 if occupied_count(&container.occupied_bitmap) > 0 {
-                    return Err(StorageError::MissingOccupiedContainer(path));
+                    continue;
                 }
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)?;

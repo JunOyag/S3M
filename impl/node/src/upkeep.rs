@@ -732,12 +732,17 @@ pub async fn run_upkeep(
                     if rec.padding[pos] {
                         continue;
                     }
-                    let ok = service
-                        .lock()
-                        .unwrap()
-                        .store
-                        .get(Space::UserBlock, &id(h))
-                        .is_some_and(|(o, b)| o == uid && hx(&hash_sha256(&b)) == *h);
+                    let ok = {
+                        let mut s = service.lock().unwrap();
+                        let got = s.store.get(Space::UserBlock, &id(h));
+                        // Contenu relu différent : altération du disque.
+                        if got.as_ref().is_some_and(|(o, b)| *o == uid && hx(&hash_sha256(b)) != *h) {
+                            if let Some(p) = s.store.physical() {
+                                p.note_corrupted(&id(h));
+                            }
+                        }
+                        got.is_some_and(|(o, b)| o == uid && hx(&hash_sha256(&b)) == *h)
+                    };
                     if ok {
                         continue;
                     }
@@ -770,6 +775,7 @@ fn detect_loss(service: &Mutex<NodeService>, up: &mut UpkeepState, now: u64) {
     let Some(phys) = s.store.physical() else {
         return;
     };
+    phys.check_volumes();
     let missing = phys.missing_containers();
     if missing.is_empty() {
         return;

@@ -96,6 +96,32 @@ ceux qui n'étaient pas encore dispersés au moment de la perte, que seul un
 appareil ayant encore le fichier peut renvoyer. Le dashboard affiche l'état
 et la progression (section « Maintenance » de la vue d'ensemble).
 
+Un disque **introuvable** (dossier parent du volume absent alors que le
+volume contient des données : disque débranché, lettre changée) n'est pas
+une perte : rien n'est oublié, aucune allocation n'y est faite, et le Nœud
+démarre quand même ; il est signalé comme défaillance (§ suivant).
+
+## Défaillances matérielles {: #defaillance }
+
+Ajout du 2026-11-24. Toute erreur rencontrée sur un volume est signalée à
+l'opérateur du Nœud, par volume et par sorte, avec l'erreur, le nombre
+d'occurrences, les dates et la **conduite à tenir** :
+
+| Sorte | Origine | Conduite à tenir |
+|---|---|---|
+| Introuvable | dossier parent du volume absent | rebrancher le disque, sinon modifier le point de montage du volume ([`protocols.gestion-volumes`](../04-protocols/gestion-volumes.md)), sinon le déclarer perdu |
+| Lecture, écriture | erreur d'entrée-sortie | remplacer le disque défectueux : ajouter un volume sain, puis retirer ou déclarer perdu l'ancien |
+| Blocs altérés | scrubbing : contenu relu différent de son hash | idem |
+| Accès refusé | droits insuffisants sur le dossier | rendre le dossier accessible au compte du Nœud, ou modifier le point de montage |
+| Disque plein | disque plein avant la capacité configurée | libérer de la place ou réduire la capacité du volume |
+
+Le dashboard l'affiche en bandeau à l'ouverture, en carte « Disques » et
+dans la section « Alertes matérielles » de la vue d'ensemble ; l'opérateur
+efface les alertes d'un volume (« Résolu ») une fois le problème traité —
+elles réapparaissent si l'erreur se reproduit. Un disque introuvable qui
+réapparaît retire seul son alerte. Un fichier de conteneur absent sur un
+disque présent relève de la maintenance (§ précédent), pas d'une alerte.
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par
