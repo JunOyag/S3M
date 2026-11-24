@@ -98,6 +98,11 @@ d'ensemble (`résumé` : libellé, valeur, état ok / attention / problème,
   réseau, administration à distance, configuration, diagnostic.
 - **Connecteur** : vue d'ensemble, fichiers et synchronisation, mon Nœud,
   identité et sécurité, paramètres.
+  Tant qu'une identité nouvelle n'est pas rattachée (autorisation de secours
+  encore jamais reçue) ou que l'accès à ses fichiers n'est pas ouvert, sa vue
+  d'ensemble affiche la **mise en route** : identité créée, preuve d'identité
+  (VDF, 1 à 2 min une seule fois), rattachement au Nœud, accès aux fichiers,
+  protection continue — chaque étape avec son état et son explication.
 
 Les tailles s'affichent en unités lisibles, les instants en date locale ;
 chaque tableau se trie par colonne, se pagine au-delà de 25 lignes et

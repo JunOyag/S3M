@@ -269,6 +269,7 @@ const LABELS = {
   "dernier snapshot": ["Dernière sauvegarde", ""],
   "publié dans l'entrée Node": ["Publiée dans l'annuaire", ""],
   "restauration": ["Restauration", ""],
+  "mise en route": ["Mise en route", "Étapes avant de pouvoir utiliser pleinement une nouvelle identité."],
   "restauration au démarrage": ["Restauration au démarrage", ""],
 
   // ---- Espace de secours (Nœud)

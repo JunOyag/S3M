@@ -621,7 +621,22 @@ pub fn status(sh: &Shared) -> Value {
         }
     }
     v["journal"] = journal_rows(sh);
+    let setup = onboarding(sh);
     v["résumé"] = connector_summary(&v);
+    if let Some(m) = &setup {
+        let steps = m["étapes"].as_array().cloned().unwrap_or_default();
+        let done = steps.iter().filter(|s| s["état"] == "fait").count();
+        let current = steps
+            .iter()
+            .find(|s| s["état"] != "fait")
+            .map(|s| s["description"].clone())
+            .unwrap_or(Value::Null);
+        if let Some(cards) = v["résumé"].as_array_mut() {
+            cards.insert(0, json!({ "libellé": "Mise en route", "valeur": format!("{done} étape(s) sur {}", steps.len() - 1),
+                "détail": current, "état": "attention", "page": "accueil" }));
+        }
+        v["mise en route"] = m.clone();
+    }
     // Titre (onglet du navigateur) : pseudo de l'identité s'il est saisi.
     let pseudo = sh.names.lock().unwrap().pseudo.clone();
     v["titre"] = json!(if pseudo.is_empty() {
@@ -639,7 +654,8 @@ pub fn status(sh: &Shared) -> Value {
         ));
     }
     v["pages"] = json!([
-        { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "sections": [], "actions": ["sync_now"] },
+        { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true,
+          "sections": if setup.is_some() { json!(["mise en route"]) } else { json!([]) }, "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
           "sections": ["accès aux fichiers", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture"],
           "actions": ["sync_now", "free_space", "set_auto_free", "keep_offline"] },
@@ -666,6 +682,67 @@ pub fn status(sh: &Shared) -> Value {
     v
 }
 
+/// Étapes d'une identité nouvelle avant de pouvoir l'utiliser pleinement ;
+/// `None` une fois le Nœud joint et l'accès aux fichiers prêt.
+fn onboarding(sh: &Shared) -> Option<Value> {
+    let h = sh.health.lock().unwrap().clone();
+    let a = sh.attach.lock().unwrap().clone();
+    let ds = sh.drive_status.lock().unwrap().clone();
+    // Rattachement prouvé une fois pour toutes par l'autorisation de
+    // secours reçue du Nœud (un Nœud seulement hors ligne n'y revient pas).
+    let attached = h.reachable == Some(true) || sh.config.data_dir.join("grant.bin").exists();
+    let access = sh.drive.is_some();
+    if attached && (ds.mounted || !access) {
+        return None;
+    }
+    let step = |n: u32, label: &str, state: &str, detail: String| {
+        json!({ "étape": n, "description": label, "état": state, "détail": detail })
+    };
+    let proof = if attached || sh.config.data_dir.join("vdf_proof.bin").exists() {
+        "fait"
+    } else if a.in_progress {
+        "en cours"
+    } else {
+        "à faire"
+    };
+    let (attach, attach_detail) = if attached {
+        ("fait", "Votre Nœud a vérifié la preuve et vous a attribué un espace.".to_string())
+    } else if let Some(e) = &a.last_error {
+        ("erreur", format!("Refusé : {e}. Nouvel essai automatique toutes les 10 minutes ; si le refus persiste, demandez à l'opérateur du Nœud d'accepter votre identité."))
+    } else if h.reachable == Some(false) {
+        ("en attente", "Votre Nœud ne répond pas encore : nouvel essai automatique.".to_string())
+    } else if proof == "fait" {
+        ("en cours", "Votre Nœud vérifie la preuve puis vous attribue un espace (quelques secondes).".to_string())
+    } else {
+        ("à faire", "Après la preuve d'identité.".to_string())
+    };
+    let (files, files_detail) = if !access {
+        ("à faire", "Aucun accès choisi : page « Fichiers et synchronisation ».".to_string())
+    } else if ds.mounted {
+        ("fait", match &ds.folder {
+            Some(f) => format!("Dossier synchronisé {f}"),
+            None => format!("Lecteur {}", drive_letter(sh).unwrap_or_default()),
+        })
+    } else if let Some(e) = &ds.mount_error {
+        ("erreur", e.clone())
+    } else {
+        ("en attente", "Ouvert dès que le Nœud est joint.".to_string())
+    };
+    Some(json!({
+        "_note": "Une nouvelle identité doit d'abord prouver qu'elle n'est pas créée en masse, puis être acceptée par votre Nœud. Vos fichiers deviennent accessibles ensuite ; cette section disparaît alors.",
+        "étapes": [
+            step(1, "Identité créée", "fait",
+                "Votre phrase de récupération est le seul moyen de retrouver vos fichiers : gardez-la en lieu sûr.".into()),
+            step(2, "Preuve d'identité", proof,
+                "Calcul fait une seule fois par identité, sur cet appareil (1 à 2 min) : il empêche de créer des identités en masse.".into()),
+            step(3, "Rattachement à votre Nœud", attach, attach_detail),
+            step(4, "Accès à vos fichiers", files, files_detail),
+            step(5, "Protection de vos fichiers", "continu",
+                "Chaque fichier est chiffré sur cet appareil, gardé par votre Nœud puis dispersé chez ses partenaires dans les minutes qui suivent.".into()),
+        ],
+    }))
+}
+
 /// Message d'état du Nœud hors ligne : partenaires en ligne (lecture de
 /// secours possible) ou hors réseau (seul le stockage local reste).
 fn offline_message(h: &Health) -> Value {
@@ -687,7 +764,7 @@ fn connector_summary(v: &Value) -> Value {
     let (node, node_state) = match p("/nœud rattaché/joignable") {
         Value::Bool(true) => ("en ligne", "ok"),
         Value::Bool(false) => ("hors ligne", "probleme"),
-        _ => ("vérification…", "neutre"),
+        _ => ("connexion en cours…", "neutre"),
     };
     let offline = p("/nœud rattaché/état");
     let pending = p("/lecteur/modifications en attente").as_u64().unwrap_or(0);

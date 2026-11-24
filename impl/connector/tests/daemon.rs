@@ -111,6 +111,8 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
         let h = shared.health.lock().unwrap();
         assert_eq!(h.reachable, Some(true), "{:?}", h.last_error);
     }
+    // Rattachée : plus de mise en route, même Nœud arrêté ensuite.
+    assert!(status(&shared).get("mise en route").is_none());
     assert_eq!(*shared.grant_expiry.lock().unwrap(), Some(NOW + 15_552_000));
     assert!(dir.join("data/grant.bin").exists());
     assert!(dir.join("data/device.key").exists());
@@ -135,6 +137,7 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
         assert_eq!(h.reachable, Some(false));
         assert_eq!(h.inactivity_detected_at, Some(NOW));
     }
+    assert!(status(&shared).get("mise en route").is_none());
 
     // Arrêt de l'identité sans quitter le processus (changement de Nœud) :
     // plus aucune référence, port du tableau de bord libéré, configuration
@@ -198,4 +201,49 @@ fn stale_folders_spares_folders_in_use() {
         ]
     );
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Identité nouvelle, Nœud pas encore joint : étapes de mise en route.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_identity_explains_its_setup_steps() {
+    let dir = std::env::temp_dir().join(format!("p2p-onboard-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("user.seed"), MNEMONIC).unwrap();
+    let config = Config {
+        seed_file: dir.join("user.seed"),
+        identity_index: 0,
+        data_dir: dir.join("data"),
+        node: NodeLink {
+            addr: format!("/ip4/127.0.0.1/tcp/9/p2p/{}", libp2p::PeerId::from(libp2p::identity::PublicKey::from(
+                libp2p::identity::ed25519::PublicKey::try_from_bytes(&pk(&NODE)).unwrap()))),
+            node_id: hex::encode(pk(&NODE)),
+            salt: hex::encode([7u8; 16]),
+        },
+        api_port: 0,
+        q_max_bytes: DEFAULT_Q_MAX_BYTES,
+        watch_interval_s: 3600,
+        mount_point: None,
+        access: None,
+        folder: None,
+        dht_bootstrap: vec![],
+        auto_attach: true,
+        emergency_write: false,
+        n_secours: 4,
+        free_after_days: 0,
+        keep_offline: vec![],
+        source: None,
+    };
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| NOW);
+    let (shared, _) = start(config, clock).await.unwrap();
+    watch_once(&shared).await;
+    let st = status(&shared);
+    let steps = &st["mise en route"]["étapes"];
+    assert_eq!(steps[0]["état"], "fait");
+    assert_eq!(steps[1]["état"], "à faire");
+    assert_eq!(steps[2]["état"], "en attente");
+    assert_eq!(st["résumé"][0]["libellé"], "Mise en route");
+    assert_eq!(st["résumé"][0]["valeur"], "1 étape(s) sur 4");
+    assert_eq!(st["pages"][0]["sections"][0], "mise en route");
+    let _ = std::fs::remove_dir_all(&dir);
 }
