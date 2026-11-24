@@ -92,8 +92,10 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
         base_root: vec![base; 32],
         new_root: vec![new; 32],
     };
+    // Aucune racine connue (Utilisateur repris) : une base ancienne est
+    // acceptée telle quelle, une seule fois.
     assert_eq!(
-        call(&mut s, commit(0, 5)),
+        call(&mut s, commit(9, 5)),
         Response::RootState {
             committed: true,
             current_root: vec![5; 32],

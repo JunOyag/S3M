@@ -419,7 +419,9 @@ impl NodeService {
                 let (base, new) = (id32(&base_root)?, id32(&new_root)?);
                 let adopt = self.adopt_next_root.remove(&u);
                 let acc = self.users.get_mut(&u).ok_or(Refusal::Unauthorized)?;
-                let committed = adopt || acc.root == base;
+                // Aucune racine connue (Utilisateur restauré ou repris, même
+                // après un redémarrage du Nœud) : la sienne est adoptée.
+                let committed = adopt || acc.root == base || acc.root == [0; 32];
                 if committed {
                     acc.root = new;
                 }

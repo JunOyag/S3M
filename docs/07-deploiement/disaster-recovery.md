@@ -80,7 +80,7 @@ rattachement, si son `DispersalManifest` existe dans la DHT sous
 `K_attach(ce Nœud, Utilisateur, sel)` : seul ce Nœud a pu le publier avec ce
 sel, c'est la preuve d'un rattachement passé. Le Nœud lui attribue le quota
 du rattachement automatique (modifiable), accepte sa prochaine racine telle
-quelle et reconstruit sa copie locale (étape 6). La reprise vaut aussi pour
+quelle (comme pour tout Utilisateur dont il ne connaît encore aucune racine) et reconstruit sa copie locale (étape 6). La reprise vaut aussi pour
 une installation existante qui aurait perdu la liste de ses Utilisateurs
 (sauvegarde écrasée) ; elle n'est alors jamais gelée.
 
