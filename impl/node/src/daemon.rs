@@ -289,6 +289,12 @@ pub struct SavedUser {
     /// Descripteur scellé de la racine (`crypto.k-self#k-root`).
     #[serde(default)]
     pub root_seal: String,
+    /// Dernière activité (`protocols.partenariat-automatique#inactivite`).
+    #[serde(default)]
+    pub last_active: u64,
+    /// Durée d'inactivité propre (jours, 0 : éternel).
+    #[serde(default)]
+    pub inactivity_days: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -352,6 +358,9 @@ pub struct SavedState {
     /// Blocs libérés par leur Utilisateur : `(utilisateur, hash, instant)`.
     #[serde(default)]
     pub released: Vec<(String, String, u64)>,
+    /// Instant de l'enregistrement (temps d'arrêt rendu aux Utilisateurs).
+    #[serde(default)]
+    pub saved_at: u64,
 }
 
 impl SavedState {
@@ -366,6 +375,8 @@ impl SavedState {
                 used_bytes: u.used_bytes,
                 root: hx(&u.root),
                 root_seal: s.root_seals.get(id).map(|v| hx(v)).unwrap_or_default(),
+                last_active: s.last_active.get(id).copied().unwrap_or(0),
+                inactivity_days: s.inactivity_days.get(id).copied(),
             })
             .collect();
         users.sort_by(|a, b| a.user_id.cmp(&b.user_id));
@@ -389,6 +400,7 @@ impl SavedState {
             .collect();
         partners.sort_by(|a, b| a.node_id.cmp(&b.node_id));
         Self {
+            saved_at: system_clock()(),
             users,
             partners,
             previous_node_ids: s.previous_node_ids.iter().map(|i| hx(i)).collect(),
@@ -449,6 +461,12 @@ impl SavedState {
                 if !v.is_empty() {
                     s.root_seals.insert(unhex32(&u.user_id)?, v);
                 }
+            }
+            if u.last_active > 0 {
+                s.last_active.insert(unhex32(&u.user_id)?, u.last_active);
+            }
+            if let Some(d) = u.inactivity_days {
+                s.inactivity_days.insert(unhex32(&u.user_id)?, d);
             }
         }
         for p in &self.partners {
@@ -1102,6 +1120,12 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                     "quota (octets)": u.quota_bytes,
                     "utilisé (octets)": u.used_bytes,
                     "rattachement": if s.auto_attached.contains(id) { "automatique" } else { "manuel" },
+                    "dernière activité": s.last_active.get(id).map(|t| format!("le {t}")),
+                    "jours avant suppression": match crate::inactivity::remaining_days(&s, id, now) {
+                        None => json!("∞"),
+                        Some(d) => json!(d),
+                    },
+                    "_gras": crate::inactivity::remaining_days(&s, id, now).is_some_and(|d| d <= 30),
                     "pays": country(s.last_user_ip.get(id)),
                     "racine": hx(&u.root),
                     "_actions": [{ "nom": "edit_user", "libellé": "Éditer", "panneau": {
@@ -1111,6 +1135,12 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                               "champs": ["quota (Gio)"], "fixes": { "user_id": hx(id) },
                               "valeurs": { "quota (Gio)": gib }, "types": { "quota (Gio)": "number" },
                               "aide": { "quota (Gio)": format!("Utilisé : {:.2} Gio", u.used_bytes as f64 / (1u64 << 30) as f64) } },
+                            { "nom": "set_user_inactivity", "titre": "Durée d'inactivité avant suppression", "libellé": "Enregistrer",
+                              "champs": ["jours"], "fixes": { "utilisateur": hx(id) },
+                              "valeurs": { "jours": s.inactivity_days.get(id).map_or(String::new(), |d| d.to_string()) },
+                              "aide": { "jours": format!("Vide : politique du Nœud ({}) ; 0 : éternel ; sinon au moins {} jours sans connexion avant suppression définitive",
+                                  if s.auto_attached.contains(id) { format!("{} j", s.attach_policy.inactivity_days) } else { "éternel, rattachement manuel".into() },
+                                  crate::inactivity::MIN_DAYS) } },
                             { "nom": "set_user_label", "titre": "Étiquette", "libellé": "Enregistrer",
                               "champs": ["étiquette"], "fixes": { "utilisateur": hx(id) },
                               "valeurs": { "étiquette": s.user_labels.get(id).cloned().unwrap_or_default() },
@@ -1296,13 +1326,15 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "aide": { "addr": "/ip4/…/tcp/…/p2p/…" } },
             { "nom": "set_attach_policy", "titre": "Rattachement automatique des utilisateurs",
               "libellé": "Enregistrer",
-              "champs": ["enabled", "quota par utilisateur (Gio)", "max_users"],
+              "champs": ["enabled", "quota par utilisateur (Gio)", "max_users", "inactivité avant suppression (jours)"],
               "libellés": { "enabled": "accepter automatiquement les nouveaux utilisateurs", "max_users": "utilisateurs au plus" },
               "valeurs": { "enabled": s.attach_policy.enabled,
                            "quota par utilisateur (Gio)": s.attach_policy.quota_bytes as f64 / (1u64 << 30) as f64,
-                           "max_users": s.attach_policy.max_users },
-              "types": { "enabled": "bool", "quota par utilisateur (Gio)": "number", "max_users": "number" },
-              "aide": { "max_users": "Budget total réservé = quota par utilisateur × utilisateurs au plus" } },
+                           "max_users": s.attach_policy.max_users,
+                           "inactivité avant suppression (jours)": s.attach_policy.inactivity_days },
+              "types": { "enabled": "bool", "quota par utilisateur (Gio)": "number", "max_users": "number", "inactivité avant suppression (jours)": "number" },
+              "aide": { "max_users": "Budget total réservé = quota par utilisateur × utilisateurs au plus",
+                        "inactivité avant suppression (jours)": format!("Utilisateurs rattachés automatiquement : supprimés définitivement, données comprises, après ce nombre de jours sans connexion ; 0 : éternels ; au moins {} jours", crate::inactivity::MIN_DAYS) } },
             { "nom": "set_emergency_policy", "titre": "Accueil des utilisateurs en détresse",
               "libellé": "Enregistrer",
               "champs": ["utilisateurs accueillis au plus", "espace par utilisateur (Gio)"],
@@ -1829,6 +1861,21 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             s.partners.entry(id).or_default();
             sh.addrs.lock().unwrap().insert(id, addr.to_string());
         }
+        "set_user_inactivity" => {
+            let id = unhex32(field(&v, "utilisateur")?)?;
+            if !s.users.contains_key(&id) {
+                return Err("utilisateur inconnu".into());
+            }
+            match field(&v, "jours").map(str::trim).unwrap_or("") {
+                "" => {
+                    s.inactivity_days.remove(&id);
+                }
+                x => {
+                    let d: u64 = x.parse().map_err(|_| "nombre de jours invalide")?;
+                    s.inactivity_days.insert(id, crate::inactivity::validate_days(d)?);
+                }
+            }
+        }
         "set_quota" => {
             let id = unhex32(field(&v, "user_id")?)?;
             let q = gib(&v, "quota (Gio)")?
@@ -1870,6 +1917,9 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             if let Ok(m) = number(&v, "max_users") {
                 p.max_users = m as usize;
             }
+            if let Ok(d) = number(&v, "inactivité avant suppression (jours)") {
+                p.inactivity_days = crate::inactivity::validate_days(d)?;
+            }
             // Budget total : quota par utilisateur × nombre maximal d'utilisateurs.
             p.budget_bytes = p.quota_bytes.saturating_mul(p.max_users as u64);
             s.attach_policy = p;
@@ -1882,6 +1932,7 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         "attach_user" => "Utilisateur rattaché",
         "add_partner" => "Partenaire ajouté",
         "set_quota" => "Quota modifié",
+        "set_user_inactivity" => "Durée d'inactivité enregistrée",
         "set_emergency_policy" => "Accueil des utilisateurs en détresse enregistré",
         _ => "Rattachement automatique enregistré",
     };
@@ -2343,9 +2394,9 @@ pub async fn start_with(
     let vdf = chiavdf_verifier();
     let check: VdfCheck = Arc::new(move |id, proof| vdf(id, proof).unwrap_or(false));
     service.vdf = Some(check);
-    let addrs = load_state(&state_path(&config))?
-        .restore(&mut service)
-        .map_err(DaemonError::Config)?;
+    let saved = load_state(&state_path(&config))?;
+    let addrs = saved.restore(&mut service).map_err(DaemonError::Config)?;
+    crate::inactivity::credit_downtime(&mut service, saved.saved_at, system_clock()());
     service.rebuild_emergency(system_clock()());
     let service = Arc::new(Mutex::new(service));
     let fresh = !state_path(&config).exists() && !dispersal_path(&config).exists();
@@ -2668,6 +2719,12 @@ pub async fn start_with(
                     )
                     .await;
                     *sh.last_upkeep.lock().unwrap() = Some((now, up));
+                    for u in crate::inactivity::purge_expired(&sh.service, &mut d, now) {
+                        crate::daemon::note(
+                            &sh,
+                            format!("utilisateur {}… supprimé définitivement (durée d'inactivité écoulée)", &hx(&u)[..16]),
+                        );
+                    }
                     let report =
                         run_cycle(&sh.service, &mut d, &fabric, &sh.config.dispersal, now).await;
                     let erased = crate::dispersal_engine::purge_released(&sh.service, &mut d, now);

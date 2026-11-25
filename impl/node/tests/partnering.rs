@@ -205,14 +205,23 @@ fn users_attach_automatically_within_quota_budget_with_one_use_vdf_identities() 
         quota_bytes: 1_000,
         max_users: 5,
         budget_bytes: 2_500,
+        ..Default::default()
     };
     let r = b.handle(b"c", None, b"n", attach_req(&USER, [1; 16], None), NOW);
-    assert_eq!(r, Response::Attached { quota_bytes: 1_000 });
+    assert_eq!(r, Response::Attached { quota_bytes: 1_000, salt: vec![] });
     assert!(b.auto_attached.contains(&pk(&USER)));
     assert_eq!(b.users[&pk(&USER)].salt, vec![1; 16]);
     // Déjà rattaché : idempotent.
     let r = b.handle(b"c", None, b"n", attach_req(&USER, [1; 16], None), NOW);
-    assert_eq!(r, Response::Attached { quota_bytes: 1_000 });
+    assert_eq!(r, Response::Attached { quota_bytes: 1_000, salt: vec![] });
+    // Appareil neuf sous un autre sel : le sel enregistré lui est rendu,
+    // rien ne change (`protocols.partenariat-automatique#sel-retrouve`).
+    let r = b.handle(b"c", None, b"n", attach_req(&USER, [9; 16], None), NOW);
+    assert_eq!(r, Response::Attached { quota_bytes: 1_000, salt: vec![1; 16] });
+    assert_eq!(b.users[&pk(&USER)].salt, vec![1; 16]);
+    // Preuve d'une autre connexion : refus.
+    let r = b.handle(b"x", None, b"n", attach_req(&USER, [9; 16], None), NOW);
+    assert_eq!(r, Response::Failure(Refusal::Unauthorized));
     // Même identité VDF pour un autre Utilisateur : refus.
     let shared_sig = derive_sig_priv_user(&USER, &pk(&USER)).unwrap();
     let r = b.handle(
@@ -231,7 +240,7 @@ fn users_attach_automatically_within_quota_budget_with_one_use_vdf_identities() 
         attach_req(&[0x42; 32], [3; 16], None),
         NOW,
     );
-    assert_eq!(r, Response::Attached { quota_bytes: 1_000 });
+    assert_eq!(r, Response::Attached { quota_bytes: 1_000, salt: vec![] });
     let r = b.handle(
         b"c",
         None,

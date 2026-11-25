@@ -118,6 +118,40 @@ même si la politique le refuse
 ([`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md#reprise)) ;
 le Connecteur le renvoie toutes les 10 minutes tant qu'il est refusé.
 
+### Sel retrouvé {: #sel-retrouve }
+
+Ajout du 2026-11-25. Un appareil neuf sans entrée User tire un nouveau sel ;
+son identifiant est alors refusé par un Nœud qui connaît déjà l'Utilisateur
+sous un autre sel. À un `Attach` d'un Utilisateur déjà rattaché dont
+l'identifiant, calculé avec le sel proposé, prouve la possession de
+`priv_user`, le Nœud répond `Attached` avec le **sel enregistré**
+(`Attached.salt`, vide sinon) sans rien modifier. Le sel n'est pas secret ;
+seul le titulaire de l'identité peut l'obtenir. Le Connecteur l'écrit dans sa
+configuration et redémarre l'identité avec lui.
+
+### Durée d'inactivité {: #inactivite }
+
+Ajout du 2026-11-25. Un Utilisateur dont aucun Connecteur ne s'est adressé
+au Nœud (toute requête authentifiée, la surveillance comprise ; les lectures
+de partages par d'autres ne comptent pas) depuis sa **durée d'inactivité**
+est supprimé définitivement : compte, blocs locaux, descripteur de racine
+([`crypto.k-self#k-root`](../03-crypto/k-self.md#k-root)) ; ses fragments
+sont libérés chez les partenaires par avis de suppression
+([`protocols.suppression-dispersal`](suppression-dispersal.md)) et sa fiche
+de dispersion, plus republiée, expire. Revenu ensuite, il est un Utilisateur
+nouveau.
+
+- Politique : 180 jours par défaut pour les Utilisateurs rattachés
+  automatiquement ; 0 = éternel ; sinon au moins 180 jours, sans maximum.
+- Utilisateur rattaché à la main : éternel par défaut. L'opérateur fixe
+  aussi une durée propre à un Utilisateur (0 ou au moins 180 jours).
+- Le temps d'arrêt du Nœud ne compte pas : il est rendu à chaque
+  Utilisateur au redémarrage (dernier enregistrement de l'état, toutes les
+  30 s). Un Nœud restauré depuis son snapshot repart du jour de sa
+  restauration.
+- Le tableau des Utilisateurs affiche la dernière activité et les jours
+  restants avant suppression (∞ si éternel), en évidence sous 30 jours.
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par

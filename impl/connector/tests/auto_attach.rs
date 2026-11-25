@@ -38,6 +38,7 @@ async fn unattached_connector_attaches_itself_with_the_node_policy_quota() {
         quota_bytes: 5 << 30,
         max_users: 3,
         budget_bytes: 20 << 30,
+        ..Default::default()
     };
     let ns = Arc::new(Mutex::new(ns));
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000_000);

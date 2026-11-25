@@ -77,6 +77,14 @@ pub struct AttachPolicy {
     pub max_users: usize,
     /// Somme maximale des quotas attribués automatiquement.
     pub budget_bytes: u64,
+    /// Durée d'inactivité avant suppression (jours) ; 0 : éternel
+    /// (`protocols.partenariat-automatique#inactivite`).
+    #[serde(default = "default_inactivity_days")]
+    pub inactivity_days: u64,
+}
+
+fn default_inactivity_days() -> u64 {
+    crate::inactivity::DEFAULT_DAYS
 }
 
 impl Default for AttachPolicy {
@@ -86,6 +94,7 @@ impl Default for AttachPolicy {
             quota_bytes: 10 << 30,
             max_users: 10,
             budget_bytes: 100 << 30,
+            inactivity_days: crate::inactivity::DEFAULT_DAYS,
         }
     }
 }
@@ -220,6 +229,11 @@ pub struct NodeService {
     /// Descripteur scellé de la racine courante de chaque Utilisateur, gardé
     /// sans pouvoir le lire (`crypto.k-self#k-root`).
     pub root_seals: HashMap<Id, Vec<u8>>,
+    /// Dernière requête d'un Connecteur de chaque Utilisateur.
+    pub last_active: HashMap<Id, u64>,
+    /// Durée d'inactivité fixée par l'opérateur pour un Utilisateur (jours,
+    /// 0 : éternel) ; absente : celle de la politique.
+    pub inactivity_days: HashMap<Id, u64>,
     pub attach_policy: AttachPolicy,
     pub partner_policy: PartnerPolicy,
     /// Vérification des preuves VDF (rattachement et partenariat
@@ -317,6 +331,8 @@ impl NodeService {
             dispersal_queue: Vec::new(),
             adopt_next_root: Default::default(),
             root_seals: Default::default(),
+            last_active: Default::default(),
+            inactivity_days: Default::default(),
             attach_policy: AttachPolicy::default(),
             partner_policy: PartnerPolicy::default(),
             vdf: None,
@@ -365,8 +381,18 @@ impl NodeService {
         req: Request,
         now: u64,
     ) -> Response {
-        self.dispatch(from, from_node, local, req, now)
-            .unwrap_or_else(Response::Failure)
+        let user = match &req.credential {
+            Some(Credential::User { user_id, .. }) => id32(user_id).ok(),
+            _ => None,
+        };
+        let r = self.dispatch(from, from_node, local, req, now);
+        // Activité de l'Utilisateur (`protocols.partenariat-automatique#inactivite`).
+        if let Some(u) = user {
+            if !matches!(r, Err(Refusal::Unauthorized)) && self.users.contains_key(&u) {
+                self.last_active.insert(u, now);
+            }
+        }
+        r.unwrap_or_else(Response::Failure)
     }
 
     /// Lecteur d'un partage : autorisation signée par un Utilisateur de ce
@@ -668,9 +694,25 @@ impl NodeService {
                 let pub_user = id32(user_id)?;
                 if self.users.contains_key(&pub_user) {
                     // Déjà rattaché : réponse idempotente si l'identifiant est bon.
-                    self.user(cred, from, local)?;
+                    if self.user(cred, from, local).is_ok() {
+                        return Ok(Response::Attached {
+                            quota_bytes: self.users[&pub_user].quota_bytes,
+                            salt: Vec::new(),
+                        });
+                    }
+                    // Autre sel (appareil neuf sans entrée User) : la preuve,
+                    // qui exige priv_user, désigne bien cet Utilisateur ; le
+                    // sel enregistré lui est rendu, rien n'est modifié
+                    // (`protocols.partenariat-automatique#sel-retrouve`).
+                    let k = derive_k_attach_as_node(&self.priv_node, &pub_user, &salt)
+                        .map_err(|_| Refusal::Unauthorized)?;
+                    if salt.len() != 16 || !verify_connector_proof(&k, from, local, proof) {
+                        return Err(Refusal::Unauthorized);
+                    }
+                    let acc = &self.users[&pub_user];
                     return Ok(Response::Attached {
-                        quota_bytes: self.users[&pub_user].quota_bytes,
+                        quota_bytes: acc.quota_bytes,
+                        salt: acc.salt.clone(),
                     });
                 }
                 let p = self.attach_policy;
@@ -728,6 +770,7 @@ impl NodeService {
                 self.used_attach_identities.insert(sig_pub);
                 Ok(Response::Attached {
                     quota_bytes: p.quota_bytes,
+                    salt: Vec::new(),
                 })
             }
             Body::EmergencyPut { data } => {

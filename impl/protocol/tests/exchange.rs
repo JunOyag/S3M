@@ -128,6 +128,7 @@ fn every_request_and_response_roundtrips() {
         Response::PartnershipAnswer { granted_blocks: 42 },
         Response::Attached {
             quota_bytes: 1 << 30,
+            salt: vec![7; 16],
         },
     ] {
         assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);

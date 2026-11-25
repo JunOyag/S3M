@@ -26,6 +26,7 @@ impl<'a> flatbuffers::Follow<'a> for Attached<'a> {
 
 impl<'a> Attached<'a> {
   pub const VT_QUOTA_BYTES: flatbuffers::VOffsetT = 4;
+  pub const VT_SALT: flatbuffers::VOffsetT = 6;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -34,10 +35,11 @@ impl<'a> Attached<'a> {
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args AttachedArgs
+    args: &'args AttachedArgs<'args>
   ) -> flatbuffers::WIPOffset<Attached<'bldr>> {
     let mut builder = AttachedBuilder::new(_fbb);
     builder.add_quota_bytes(args.quota_bytes);
+    if let Some(x) = args.salt { builder.add_salt(x); }
     builder.finish()
   }
 
@@ -49,6 +51,13 @@ impl<'a> Attached<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u64>(Attached::VT_QUOTA_BYTES, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn salt(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(Attached::VT_SALT, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for Attached<'_> {
@@ -59,18 +68,21 @@ impl flatbuffers::Verifiable for Attached<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<u64>("quota_bytes", Self::VT_QUOTA_BYTES, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("salt", Self::VT_SALT, false)?
      .finish();
     Ok(())
   }
 }
-pub struct AttachedArgs {
+pub struct AttachedArgs<'a> {
     pub quota_bytes: u64,
+    pub salt: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
 }
-impl<'a> Default for AttachedArgs {
+impl<'a> Default for AttachedArgs<'a> {
   #[inline]
   fn default() -> Self {
     AttachedArgs {
       quota_bytes: 0,
+      salt: None,
     }
   }
 }
@@ -83,6 +95,10 @@ impl<'a: 'b, 'b> AttachedBuilder<'a, 'b> {
   #[inline]
   pub fn add_quota_bytes(&mut self, quota_bytes: u64) {
     self.fbb_.push_slot::<u64>(Attached::VT_QUOTA_BYTES, quota_bytes, 0);
+  }
+  #[inline]
+  pub fn add_salt(&mut self, salt: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Attached::VT_SALT, salt);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> AttachedBuilder<'a, 'b> {
@@ -103,6 +119,7 @@ impl core::fmt::Debug for Attached<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("Attached");
       ds.field("quota_bytes", &self.quota_bytes());
+      ds.field("salt", &self.salt());
       ds.finish()
   }
 }

@@ -560,14 +560,15 @@ impl NodeSession {
     }
 
     /// Rattachement automatique (`protocols.partenariat-automatique`) :
-    /// rend le quota attribué.
+    /// rend le quota attribué et, si l'Utilisateur était déjà rattaché sous
+    /// un autre sel, ce sel (`#sel-retrouve`) ; vide sinon.
     pub async fn attach(
         &self,
         salt: &[u8],
         sig_pub_user: &Id,
         proof: &s3m_core::vdf::VdfProof,
         signature: Vec<u8>,
-    ) -> Result<u64, ExchangeError> {
+    ) -> Result<(u64, Vec<u8>), ExchangeError> {
         let body = Body::Attach {
             salt: salt.to_vec(),
             sig_pub_user: sig_pub_user.to_vec(),
@@ -576,7 +577,7 @@ impl NodeSession {
             signature,
         };
         match self.call(body).await? {
-            Response::Attached { quota_bytes } => Ok(quota_bytes),
+            Response::Attached { quota_bytes, salt } => Ok((quota_bytes, salt)),
             _ => Err(ExchangeError::Unexpected),
         }
     }

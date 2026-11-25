@@ -287,6 +287,9 @@ pub enum Response {
     },
     Attached {
         quota_bytes: u64,
+        /// Sel enregistré d'un Utilisateur déjà rattaché sous un autre sel
+        /// (`protocols.partenariat-automatique#sel-retrouve`) ; vide sinon.
+        salt: Vec<u8>,
     },
     /// Un bit par hash demandé (bit `i % 8` de l'octet `i / 8`).
     OwnershipAnswer {
@@ -958,11 +961,13 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             );
             (fb::ResponseBody::PartnershipAnswer, o.as_union_value())
         }
-        Response::Attached { quota_bytes } => {
+        Response::Attached { quota_bytes, salt } => {
+            let s = (!salt.is_empty()).then(|| b.create_vector(salt));
             let o = fb::Attached::create(
                 &mut b,
                 &fb::AttachedArgs {
                     quota_bytes: *quota_bytes,
+                    salt: s,
                 },
             );
             (fb::ResponseBody::Attached, o.as_union_value())
@@ -1085,9 +1090,13 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
         fb::ResponseBody::OwnershipAnswer => Response::OwnershipAnswer {
             owned: bytes(r.body_as_ownership_answer().ok_or(m)?.owned()),
         },
-        fb::ResponseBody::Attached => Response::Attached {
-            quota_bytes: r.body_as_attached().ok_or(m)?.quota_bytes(),
-        },
+        fb::ResponseBody::Attached => {
+            let a = r.body_as_attached().ok_or(m)?;
+            Response::Attached {
+                quota_bytes: a.quota_bytes(),
+                salt: bytes(a.salt()),
+            }
+        }
         fb::ResponseBody::Messages => {
             let body = r.body_as_messages().ok_or(m)?;
             Response::Messages {

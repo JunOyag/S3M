@@ -84,6 +84,9 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
         call(&mut s, Body::GetBlock { hash: h.to_vec() }),
         Response::BlockData(vec![1; 60])
     );
+    // Toute requête de son Connecteur compte comme activité
+    // (`protocols.partenariat-automatique#inactivite`).
+    assert_eq!(s.last_active.values().copied().collect::<Vec<_>>(), vec![NOW]);
     assert_eq!(
         call(&mut s, Body::PutBlock { data: vec![2; 60] }),
         Response::Failure(Refusal::QuotaExceeded)

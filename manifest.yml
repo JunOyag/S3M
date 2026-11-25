@@ -849,7 +849,7 @@ pages:
     path: 04-protocols/partenariat-automatique.md
     title: "Partenariats et Rattachements Automatiques"
     section: "§3.3"
-    refs: [protocols.echange-blocs, network.dht-directory, network.vdf-identity, securite.pos-challenges, securite.blacklist-fraude, protocols.volatilite-reparation, protocols.dispersion-transactionnelle, node.PartnerAccount, node.AttachedUser, crypto.k-attach, deploiement.packaging]
+    refs: [protocols.echange-blocs, network.dht-directory, network.vdf-identity, securite.pos-challenges, securite.blacklist-fraude, protocols.volatilite-reparation, protocols.dispersion-transactionnelle, node.PartnerAccount, node.AttachedUser, crypto.k-attach, deploiement.packaging, protocols.suppression-dispersal, crypto.k-self]
     verified_by:
       - partnering::score_combines_reliability_availability_and_speed
       - partnering::proposals_are_accepted_within_policy_and_verified_entries_only

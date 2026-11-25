@@ -1246,6 +1246,10 @@ entries:
     status: done
     owner: claude-code
     tests:
+      - inactivity::zero_means_eternal_and_the_minimum_is_180_days
+      - inactivity::auto_attached_users_follow_the_policy_and_manual_ones_are_eternal
+      - inactivity::a_stopped_node_gives_its_downtime_back
+      - inactivity::an_expired_user_is_deleted_with_its_blocks_and_fragments
       - partnering::score_combines_reliability_availability_and_speed
       - partnering::proposals_are_accepted_within_policy_and_verified_entries_only
       - partnering::users_attach_automatically_within_quota_budget_with_one_use_vdf_identities

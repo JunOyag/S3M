@@ -69,6 +69,10 @@ table PartnershipAnswer {
 // Attach
 table Attached {
   quota_bytes: uint64;
+  // Ajout du 2026-11-25 : Utilisateur déjà rattaché sous un autre sel (appareil
+  // neuf sans entrée User) : sel enregistré, à reprendre ; vide sinon
+  // (protocols.partenariat-automatique#sel-retrouve).
+  salt: [ubyte];
 }
 
 // OwnershipQuery (ajout du 2026-11-20, protocols.gestion-volumes)

@@ -2067,10 +2067,40 @@ async fn auto_attach(sh: &Shared) -> Result<u64, String> {
         .map_err(|e| e.to_string())?;
     let sig_pub = s3m_core::keys::derive_sig_pub_user(&sig_priv);
     let signature = s3m_protocol::exchange::attach_signature(&sig_priv, &sh.pub_user, &sh.pub_node);
-    sh.session
+    let (quota, salt) = sh
+        .session
         .attach(&sh.salt, &sig_pub, &proof, signature)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if salt.len() == 16 && salt != sh.salt {
+        adopt_attach_salt(sh, &salt)?;
+    }
+    Ok(quota)
+}
+
+/// Sel d'un rattachement antérieur rendu par le Nœud
+/// (`protocols.partenariat-automatique#sel-retrouve`) : écrit dans la
+/// configuration, l'identité redémarre avec lui.
+fn adopt_attach_salt(sh: &Shared, salt: &[u8]) -> Result<(), String> {
+    let path = sh
+        .config
+        .source
+        .clone()
+        .ok_or("fichier de configuration inconnu")?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    raw["node"]["salt"] = json!(hex::encode(salt));
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&raw).expect("sérialisable"))
+        .and_then(|_| std::fs::rename(&tmp, &path))
+        .map_err(|e| e.to_string())?;
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::write(dir.join("attach.salt"), hex::encode(salt));
+    }
+    eprintln!("sel du rattachement antérieur repris : l'identité redémarre");
+    sh.restart_identity
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
 }
 
 /// Multiaddrs du Nœud publiées dans son entrée DHT, directe d'abord.
