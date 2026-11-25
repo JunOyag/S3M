@@ -271,6 +271,8 @@ entries:
     status: in_progress
     owner: claude-code
     tests:
+      - clock_guard::a_jump_of_more_than_a_day_is_detected
+      - clock_guard::a_frozen_clock_deletes_nothing_until_confirmed
       - local_api::binding_must_be_loopback_ipv4
       - local_api::token_is_handed_over_in_the_url_fragment
       - local_api::http_requests_require_bearer_token_host_and_matching_origin

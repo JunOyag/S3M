@@ -377,6 +377,9 @@ pub struct SavedState {
     /// Identités révoquées après rotation.
     #[serde(default)]
     pub revoked_users: Vec<String>,
+    /// Gel des suppressions après un saut d'horloge.
+    #[serde(default)]
+    pub clock_freeze: Option<crate::clock_guard::Freeze>,
 }
 
 impl SavedState {
@@ -428,6 +431,7 @@ impl SavedState {
         Self {
             saved_at: system_clock()(),
             revoked_users: sorted(s.revoked_users.iter().map(|i| hx(i))),
+            clock_freeze: s.clock_freeze.clone(),
             users,
             partners,
             previous_node_ids: s.previous_node_ids.iter().map(|i| hx(i)).collect(),
@@ -574,6 +578,7 @@ impl SavedState {
         for u in &self.revoked_users {
             s.revoked_users.insert(unhex32(u)?);
         }
+        s.clock_freeze = self.clock_freeze.clone();
         for u in &self.used_attach_identities {
             s.used_attach_identities.insert(unhex32(u)?);
         }
@@ -792,6 +797,19 @@ pub fn status(sh: &Shared, now: u64) -> Value {
                 "détail": first, "état": "probleme", "page": "accueil" }));
         }
     }
+    let freeze = sh.service.lock().unwrap().clock_freeze.clone();
+    if let Some(f) = &freeze {
+        let text = crate::clock_guard::describe(f);
+        v["horloge"] = json!({
+            "_contenu": { "alerte": text, "détectée le": format!("le {}", f.at), "heure actuelle de la machine": format!("le {}", system_clock()()) },
+            "_formulaires": [{ "nom": "clock_confirm", "libellé": "L'heure est juste : reprendre", "champs": [],
+                "confirmer": "L'heure affichée par cette machine est-elle juste ? Les suppressions liées au temps reprendront aussitôt (utilisateurs inactifs, versions expirées, partenaires silencieux, dépôts de secours)." }],
+        });
+        if let Some(cards) = v["résumé"].as_array_mut() {
+            cards.insert(0, json!({ "libellé": "Horloge", "valeur": "à vérifier", "détail": text, "état": "probleme", "page": "accueil" }));
+        }
+        v["à signaler"] = json!(format!("Horloge à vérifier : {text}"));
+    }
     let in_maintenance = sh.service.lock().unwrap().maintenance;
     if in_maintenance {
         let m = v.pointer("/contrôles et réparation/maintenance").cloned().unwrap_or(Value::Null);
@@ -825,7 +843,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
-          "sections": ["alertes matérielles", "maintenance", "restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
+          "sections": ["horloge", "alertes matérielles", "maintenance", "restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
           "actions": ["attach_user", "set_attach_policy"] },
@@ -1840,6 +1858,12 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         return Ok(json!({ "ok": true,
             "message": "Redémarrage en cours : le tableau de bord se reconnecte dans quelques secondes" }));
     }
+    if name == "clock_confirm" {
+        sh.service.lock().unwrap().clock_freeze = None;
+        note(sh, "heure confirmée par l'opérateur : suppressions liées au temps reprises");
+        let _ = save(sh);
+        return Ok(json!({ "ok": true, "message": "Heure confirmée" }));
+    }
     if name == "disk_alert_resolved" {
         let vid: u32 = field(&v, "volume")?.parse().map_err(|_| "volume invalide")?;
         if let Some(p) = sh.service.lock().unwrap().store.physical() {
@@ -2446,6 +2470,20 @@ pub async fn start_with(
     let saved = load_state(&state_path(&config))?;
     let addrs = saved.restore(&mut service).map_err(DaemonError::Config)?;
     crate::inactivity::credit_downtime(&mut service, saved.saved_at, system_clock()());
+    // Long arrêt (ou heure reculée) : à confirmer avant toute suppression.
+    {
+        let now = system_clock()();
+        if saved.saved_at > 0 && service.clock_freeze.is_none() {
+            let gap = now as i64 - saved.saved_at as i64;
+            if gap < -crate::clock_guard::MAX_JUMP_S || gap as u64 > crate::clock_guard::LONG_STOP_S && gap > 0 {
+                service.clock_freeze = Some(crate::clock_guard::Freeze {
+                    at: now,
+                    jump_s: gap,
+                    reason: if gap < 0 { "heure antérieure au dernier arrêt".into() } else { "Nœud arrêté longtemps".into() },
+                });
+            }
+        }
+    }
     service.rebuild_emergency(system_clock()());
     let service = Arc::new(Mutex::new(service));
     let fresh = !state_path(&config).exists() && !dispersal_path(&config).exists();
@@ -2713,11 +2751,23 @@ pub async fn start_with(
     let sh = shared.clone();
     tokio::spawn(async move {
         let mut tick: u64 = 0;
+        let mut last = (clock(), std::time::Instant::now());
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
             tick += 1;
             {
                 let now = clock();
+                // Garde-fou d'horloge (`deploiement.packaging#horloge`).
+                if let Some(j) = crate::clock_guard::jump(last.0, last.1.elapsed().as_secs(), now) {
+                    let f = crate::clock_guard::Freeze {
+                        at: now,
+                        jump_s: j,
+                        reason: if j > 0 { "heure avancée brusquement".into() } else { "heure reculée brusquement".into() },
+                    };
+                    note(&sh, crate::clock_guard::describe(&f));
+                    sh.service.lock().unwrap().clock_freeze = Some(f);
+                }
+                last = (now, std::time::Instant::now());
                 let mut d = sh.dispersal.lock().await;
                 restore_tick(&sh, &fabric, &mut d, now).await;
                 if frozen(&sh) {

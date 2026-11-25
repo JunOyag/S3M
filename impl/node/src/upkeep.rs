@@ -604,7 +604,9 @@ pub async fn run_upkeep(
         rupture(service, &mut up, p, now);
         report.frauds.push(*p);
     }
-    let analysis_due = now >= up.last_analysis + ucfg.analysis_period_s;
+    // Horloge douteuse : disponibilité et purges des partenaires non évaluées.
+    let analysis_due = now >= up.last_analysis + ucfg.analysis_period_s
+        && service.lock().unwrap().clock_freeze.is_none();
     if analysis_due {
         up.last_analysis = now;
     }

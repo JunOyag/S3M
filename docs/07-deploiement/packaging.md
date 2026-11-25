@@ -83,6 +83,21 @@ réglages au prochain redémarrage, que le dashboard signale. Identité,
 répertoires, volumes et paramètres d'effacement (k, coef) ne sont pas
 modifiables ainsi (risque de perte de données).
 
+### Garde-fou d'horloge {: #horloge }
+
+Ajout du 2026-11-25. À chaque cycle (30 s), le Nœud compare l'heure système
+au temps réellement écoulé ; un écart de plus d'un jour (heure avancée ou
+reculée), une heure antérieure au dernier arrêt ou un arrêt de plus de
+7 jours **gèlent les suppressions liées au temps** : Utilisateurs
+inactifs ([`protocols.partenariat-automatique#inactivite`](../04-protocols/partenariat-automatique.md#inactivite)),
+versions expirées ([`protocols.historique-versions`](../04-protocols/historique-versions.md)),
+blocs libérés, partenaires silencieux et analyse de leur disponibilité
+([`protocols.volatilite-reparation`](../04-protocols/volatilite-reparation.md)),
+dépôts de secours. Le gel survit à un redémarrage ; le tableau de bord
+l'affiche (bandeau, carte « Horloge », section de la vue d'ensemble) et
+l'opérateur le lève après avoir vérifié l'heure (« L'heure est juste :
+reprendre »).
+
 ## Dashboards : écrans et menu {: #ecrans }
 
 Ajout du 2026-11-20. Chaque dashboard est découpé en écrans reliés par un

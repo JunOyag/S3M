@@ -73,6 +73,9 @@ pub fn purge_expired(
 ) -> Vec<Id> {
     let expired: Vec<Id> = {
         let mut s = service.lock().unwrap();
+        if s.clock_freeze.is_some() {
+            return Vec::new();
+        }
         let users: Vec<Id> = s.users.keys().copied().collect();
         for u in &users {
             s.last_active.entry(*u).or_insert(now);

@@ -447,6 +447,9 @@ pub const RELEASE_GRACE_S: u64 = 86_400;
 /// libéré garde ses blocs (les contrôles PoS en recalculent la parité).
 /// Rend le nombre de blocs effacés.
 pub fn purge_released(service: &Mutex<NodeService>, state: &mut DispersalState, now: u64) -> usize {
+    if service.lock().unwrap().clock_freeze.is_some() {
+        return 0;
+    }
     let due: Vec<(Id, std::collections::HashSet<Id>)> = {
         let s = service.lock().unwrap();
         s.released

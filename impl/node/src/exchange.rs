@@ -253,6 +253,9 @@ pub struct NodeService {
     pub revoked_users: std::collections::HashSet<Id>,
     /// Rotations à reporter dans l'état de dispersion : `(ancienne, nouvelle)`.
     pub renamed_users: Vec<(Id, Id)>,
+    /// Saut d'horloge : suppressions liées au temps gelées
+    /// (`deploiement.packaging#horloge`).
+    pub clock_freeze: Option<crate::clock_guard::Freeze>,
     /// Durée d'inactivité fixée par l'opérateur pour un Utilisateur (jours,
     /// 0 : éternel) ; absente : celle de la politique.
     pub inactivity_days: HashMap<Id, u64>,
@@ -361,6 +364,7 @@ impl NodeService {
             undispersed: Default::default(),
             revoked_users: Default::default(),
             renamed_users: Vec::new(),
+            clock_freeze: None,
             inactivity_days: Default::default(),
             attach_policy: AttachPolicy::default(),
             partner_policy: PartnerPolicy::default(),
@@ -1079,6 +1083,9 @@ impl NodeService {
 
     /// Purge les dépôts de secours jamais libérés ; rend leur nombre.
     pub fn purge_emergency(&mut self, now: u64) -> usize {
+        if self.clock_freeze.is_some() {
+            return 0;
+        }
         let expired = self.emergency.expired(now);
         for d in &expired {
             self.store.remove_owner(Space::Emergency, d);
@@ -1276,6 +1283,9 @@ impl NodeService {
 
     /// Versions au-delà de la durée de conservation oubliées.
     fn prune_history(&mut self, u: &Id, now: u64) {
+        if self.clock_freeze.is_some() {
+            return;
+        }
         let keep = self.history_retention_s;
         if let Some(h) = self.root_history.get_mut(u) {
             h.retain(|v| keep > 0 && v.replaced_at.saturating_add(keep) > now);
@@ -1297,6 +1307,9 @@ impl NodeService {
     /// Purge les fragments des Nœuds silencieux depuis au moins
     /// `SILENT_NODE_RETENTION_SECONDS` ; rend le nombre de Nœuds purgés.
     pub fn purge_silent_partners(&mut self, now: u64) -> usize {
+        if self.clock_freeze.is_some() {
+            return 0;
+        }
         let silent: Vec<Id> = self
             .partners
             .iter()

@@ -8,6 +8,7 @@
 pub mod admin;
 pub mod blacklist;
 pub mod channel;
+pub mod clock_guard;
 pub mod inactivity;
 pub mod chunk_store;
 pub mod daemon;
