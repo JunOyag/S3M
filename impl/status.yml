@@ -272,6 +272,9 @@ entries:
     owner: claude-code
     tests:
       - clock_guard::a_jump_of_more_than_a_day_is_detected
+      - alerts::an_alert_is_sent_when_it_appears_and_again_if_it_comes_back
+      - alerts::the_webhook_receives_the_alert_as_json
+      - alerts::a_bad_smtp_configuration_is_reported
       - clock_guard::a_frozen_clock_deletes_nothing_until_confirmed
       - local_api::binding_must_be_loopback_ipv4
       - local_api::token_is_handed_over_in_the_url_fragment

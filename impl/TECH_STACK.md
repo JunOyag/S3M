@@ -101,6 +101,7 @@ RFC 5869, RFC 4231, RFC 6234).
 | Sérialisation | `flatbuffers` = 23.5.26, types générés par `flatc` 23.5.26 (paquet Debian `flatbuffers-compiler`, `impl/protocol/gen.sh`) — les deux versions doivent rester identiques |
 | Réseau / DHT | `rust-libp2p` (Kademlia), Nœud et Connecteur |
 | Stockage local (Nœud) | `rusqlite` (WAL) |
+| Alertes du Nœud ([`deploiement.packaging`](../docs/07-deploiement/packaging.md#alertes)) | courriel `lettre` (SMTP, rustls), webhook `ureq` |
 | Fichiers creux (Nœud) | `libc` (`fallocate`) |
 | Lecteur monté (Connecteur) | backend WinFsp (Windows) puis FUSE (`fuser`) derrière un trait commun — crate WinFsp **à trancher** au démarrage de la tâche |
 | API locale HTTP / WebSocket | **à trancher** au démarrage de la tâche (contraintes : liaison `127.0.0.1`, contrôle `Origin`/`Host`, voir [`deploiement.packaging`](../docs/07-deploiement/packaging.md#api-locale)) |

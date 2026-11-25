@@ -28,6 +28,10 @@ thiserror = "2"
 sha1 = "0.10"
 hmac = "0.12"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls-tls", "builder", "hostname"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [features]
 default = []

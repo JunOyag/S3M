@@ -98,6 +98,18 @@ l'affiche (bandeau, carte « Horloge », section de la vue d'ensemble) et
 l'opérateur le lève après avoir vérifié l'heure (« L'heure est juste :
 reprendre »).
 
+### Alertes hors tableau de bord {: #alertes }
+
+Ajout du 2026-11-25. Les alertes critiques du Nœud — défaillance d'un
+disque ([`securite.integrite-autoreparation#defaillance`](../05-securite/integrite-autoreparation.md#defaillance)),
+maintenance, horloge à vérifier (§ précédent) — sont envoyées à leur
+apparition, et de nouveau si elles disparaissent puis reviennent, sur les
+canaux de l'onglet « Alertes » de la configuration : fenêtre sur le bureau
+de la machine du Nœud (Windows, activée par défaut), appel HTTP POST
+`{"nœud", "alerte", "détail"}` (webhook), courriel (serveur SMTP, STARTTLS
+ou TLS, destinataires séparés par des virgules). Un envoi en échec est
+noté au journal ; « Envoyer une alerte d'essai » vérifie les canaux.
+
 ## Dashboards : écrans et menu {: #ecrans }
 
 Ajout du 2026-11-20. Chaque dashboard est découpé en écrans reliés par un

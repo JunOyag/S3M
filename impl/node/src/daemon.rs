@@ -113,6 +113,9 @@ pub struct Config {
     /// `protocols.historique-versions`).
     #[serde(default = "default_history_days")]
     pub history_days: u64,
+    /// Alertes critiques hors tableau de bord (`deploiement.packaging#alertes`).
+    #[serde(default)]
+    pub alerts: crate::alerts::AlertConfig,
     /// Ouverture automatique du port sur la box (UPnP).
     #[serde(default = "default_true")]
     pub upnp: bool,
@@ -726,6 +729,9 @@ pub struct Shared {
     pub last_redundancy: Mutex<Option<(f64, f64)>>,
     /// Dernier cycle de contrôle : `(instant, bilan)`.
     pub last_upkeep: Mutex<Option<(u64, UpkeepReport)>>,
+    /// Canaux d'alerte (modifiables à chaud) et alertes déjà envoyées.
+    pub alert_cfg: Mutex<crate::alerts::AlertConfig>,
+    pub alerts_sent: Mutex<std::collections::BTreeMap<String, u64>>,
     /// Entrée DHT Node.
     pub node_entry: Arc<Mutex<NodeEntryState>>,
     /// `NodeSnapshotPointer` courant (sérialisé).
@@ -771,6 +777,9 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         a.push(json!({ "nom": "restart_node", "titre": "Redémarrage",
             "libellé": "Redémarrer le Nœud", "champs": [],
             "confirmer": "Redémarrer le Nœud ? Il est indisponible quelques secondes ; l'état est enregistré avant l'arrêt. Le tableau de bord se recharge ensuite." }));
+        a.push(json!({ "nom": "test_alerts", "titre": "Alertes", "style": "secondary",
+            "libellé": "Envoyer une alerte d'essai", "champs": [],
+            "texte": "Envoie une alerte d'essai sur les canaux configurés (onglet Alertes de la configuration) : fenêtre, webhook, courriel." }));
         a.push(json!({ "nom": "geoip_update", "titre": "Géolocalisation",
             "libellé": "Mettre à jour la base de géolocalisation", "champs": [] }));
         a.extend(forms);
@@ -870,7 +879,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "sections": ["traversée de NAT", "annuaire (entrée Node)", "republication DHT", "géolocalisation"], "actions": ["geoip_update"] },
         { "id": "distance", "titre": "Administration à distance",
           "sections": ["administration à distance"], "actions": ["show_totp", "regenerate_totp"] },
-        { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config"], "onglets": true },
+        { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config", "test_alerts"], "onglets": true },
         { "id": "diagnostic", "titre": "Diagnostic", "autres": true, "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "Général", "sections": ["migration"] },
                                   { "titre": "Avancé", "sections": ["journal"] }] }
@@ -1142,6 +1151,7 @@ fn set_config(sh: &Shared, v: &Value) -> Result<Value, String> {
         s.record_user_ips = a.config.record_user_ips;
         s.history_retention_s = a.config.history_days * 86_400;
     }
+    *sh.alert_cfg.lock().unwrap() = a.config.alerts.clone();
     let message = if a.restart.is_empty() {
         "Configuration enregistrée et appliquée".to_string()
     } else {
@@ -1548,6 +1558,51 @@ fn upkeep_status(sh: &Shared) -> Value {
 
 /// Défaillances matérielles des volumes, avec la conduite à tenir
 /// (`securite.integrite-autoreparation#defaillance`).
+/// Alertes critiques en cours : disques, maintenance, horloge.
+pub fn critical_alerts(sh: &Shared) -> Vec<crate::alerts::Alert> {
+    let mut out = Vec::new();
+    let mut s = sh.service.lock().unwrap();
+    if let Some(f) = &s.clock_freeze {
+        out.push(("horloge".into(), "Horloge à vérifier".into(), crate::clock_guard::describe(f)));
+    }
+    if s.maintenance {
+        out.push((
+            "maintenance".into(),
+            "Maintenance du stockage".into(),
+            "Une partie du stockage a été perdue ou altérée : le Nœud reconstruit les fichiers depuis le réseau (tableau de bord, vue d'ensemble).".into(),
+        ));
+    }
+    if let Some(p) = s.store.physical() {
+        for f in p.faults() {
+            out.push((format!("disque:{}:{:?}", f.volume_id, f.kind), f.title(), format!("{} — {}", f.error, f.advice())));
+        }
+    }
+    out
+}
+
+/// Envoie les alertes apparues depuis le dernier cycle.
+async fn alert_tick(sh: &Arc<Shared>, now: u64) {
+    let current = critical_alerts(sh);
+    let fresh = crate::alerts::new_alerts(&current, &mut sh.alerts_sent.lock().unwrap(), now);
+    if fresh.is_empty() {
+        return;
+    }
+    let cfg = sh.alert_cfg.lock().unwrap().clone();
+    let node = {
+        let s = sh.service.lock().unwrap();
+        s3m_protocol::pseudo::display(&[s.name.as_deref()], &s.node_id())
+    };
+    let sh2 = sh.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        for (_, title, text) in fresh {
+            for e in crate::alerts::dispatch(&cfg, &node, &title, &text) {
+                note(&sh2, format!("alerte « {title} » non envoyée — {e}"));
+            }
+        }
+    })
+    .await;
+}
+
 fn disk_alerts(sh: &Shared) -> Vec<Value> {
     let faults = match sh.service.lock().unwrap().store.physical() {
         Some(p) => p.faults(),
@@ -1863,6 +1918,21 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         sh.restart.notify_one();
         return Ok(json!({ "ok": true,
             "message": "Redémarrage en cours : le tableau de bord se reconnecte dans quelques secondes" }));
+    }
+    if name == "test_alerts" {
+        let cfg = sh.alert_cfg.lock().unwrap().clone();
+        let node = {
+            let s = sh.service.lock().unwrap();
+            s3m_protocol::pseudo::display(&[s.name.as_deref()], &s.node_id())
+        };
+        let errors = tokio::task::block_in_place(|| {
+            crate::alerts::dispatch(&cfg, &node, "Alerte d'essai", "Les alertes de ce Nœud vous parviennent.")
+        });
+        return if errors.is_empty() {
+            Ok(json!({ "ok": true, "message": "Alerte d'essai envoyée sur les canaux configurés" }))
+        } else {
+            Err(errors.join(" ; "))
+        };
     }
     if name == "clock_confirm" {
         sh.service.lock().unwrap().clock_freeze = None;
@@ -2601,6 +2671,8 @@ pub async fn start_with(
         last_cycle: Mutex::new(None),
         last_redundancy: Mutex::new(None),
         last_upkeep: Mutex::new(None),
+        alert_cfg: Mutex::new(config.alerts.clone()),
+        alerts_sent: Mutex::new(Default::default()),
         node_entry: Arc::new(Mutex::new(NodeEntryState::default())),
         snapshot_pointer: Mutex::new(initial_pointer),
         restore: Mutex::new(restore),
@@ -2778,6 +2850,7 @@ pub async fn start_with(
                     sh.service.lock().unwrap().clock_freeze = Some(f);
                 }
                 last = (now, std::time::Instant::now());
+                alert_tick(&sh, now).await;
                 let mut d = sh.dispersal.lock().await;
                 restore_tick(&sh, &fabric, &mut d, now).await;
                 if frozen(&sh) {
