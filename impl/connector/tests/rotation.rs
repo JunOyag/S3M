@@ -94,6 +94,9 @@ async fn a_compromised_phrase_is_replaced_without_losing_files() {
     let words = blocking(move || {
         put(&s, "/a.txt", "contenu A");
         put(&s, "/b.txt", "contenu B");
+        s.drive.as_ref().unwrap().lock().unwrap().create("/d", true).unwrap();
+        put(&s, "/d/x.txt", "contenu X");
+        put(&s, "/d/y.txt", "contenu Y");
         sync_drive(&s).unwrap().unwrap();
         let r = rotate_identity(&s, &json!({ "je confirme": true })).unwrap();
         r["24 mots"].as_str().unwrap().to_string()
@@ -124,7 +127,7 @@ async fn a_compromised_phrase_is_replaced_without_losing_files() {
             l["entrées"].as_array().unwrap().iter().find(|e| e["nom"] == n).unwrap()["ancienne clé"] == true
         };
         assert!(old(&listed, "a.txt") && old(&listed, "b.txt"), "marqués : ancienne clé");
-        assert_eq!(listed["éléments à l'ancienne clé"], 2);
+        assert_eq!(listed["éléments à l'ancienne clé"], 3, "a.txt, b.txt et le dossier d");
         assert!(names.contains(&"a.txt") && !names.contains(&".s3m"), "trousseau masqué : {names:?}");
         s3m_connector::explorer::action(&s, "explorer_reencrypt", &json!({ "chemin": "/a.txt" }))
             .unwrap()
@@ -139,6 +142,14 @@ async fn a_compromised_phrase_is_replaced_without_losing_files() {
             .unwrap()
             .unwrap();
         assert!(again["message"].as_str().unwrap().contains("rien à rechiffrer"));
+        // Un seul fichier d'un dossier rechiffré : le dossier est reconstruit
+        // sous la nouvelle clé, son voisin reste lisible.
+        s3m_connector::explorer::action(&s, "explorer_reencrypt", &json!({ "chemin": "/d/x.txt" }))
+            .unwrap()
+            .unwrap();
+        sync_drive(&s).unwrap().unwrap();
+        assert_eq!(read(&s, "/d/x.txt"), "contenu X");
+        assert_eq!(read(&s, "/d/y.txt"), "contenu Y");
         // Nouvelle phrase réaffichée jusqu'à confirmation.
         let st = status(&s);
         assert_eq!(st["nouvelle phrase de récupération"]["_contenu"]["24 mots"].as_str().unwrap().split_whitespace().count(), 24);

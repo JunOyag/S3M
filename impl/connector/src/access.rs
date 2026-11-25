@@ -89,7 +89,21 @@ impl<'a> Volume<'a> {
         version: u16,
     ) -> Result<Vec<Entry>, AccessError> {
         let key = self.key(version)?;
-        Ok(read_directory(first, key, salt, &|h| self.get(h))?)
+        match read_directory(first, key, salt, &|h| self.get(h)) {
+            Err(e) if aead_failed(&e) => {
+                // Version d'entrée erronée (dossier reconstruit sous une
+                // autre clé) : les autres clés connues sont essayées.
+                for (v, k) in self.master_keys {
+                    if *v != version {
+                        if let Ok(x) = read_directory(first, k, salt, &|h| self.get(h)) {
+                            return Ok(x);
+                        }
+                    }
+                }
+                Err(e.into())
+            }
+            r => Ok(r?),
+        }
     }
 
     /// Entrée désignée par `path` (`/a/b/c`), en ne lisant que les
@@ -143,12 +157,26 @@ impl<'a> Volume<'a> {
     /// Lit le fichier désigné par une entrée déjà résolue.
     pub fn read_entry(&self, e: &Entry) -> Result<Vec<u8>, AccessError> {
         let key = self.key(e.key_version)?;
-        Ok(read_file(
-            &e.first_block_hash,
-            e.size_bytes,
-            key,
-            &e.encryption_salt,
-            &|h| self.get(h),
-        )?)
+        let read = |k: &[u8; 32]| {
+            read_file(&e.first_block_hash, e.size_bytes, k, &e.encryption_salt, &|h| self.get(h))
+        };
+        match read(key) {
+            Err(err) if aead_failed(&err) => {
+                for (v, k) in self.master_keys {
+                    if *v != e.key_version {
+                        if let Ok(x) = read(k) {
+                            return Ok(x);
+                        }
+                    }
+                }
+                Err(err.into())
+            }
+            r => Ok(r?),
+        }
     }
+}
+
+/// Échec d'authentification du chiffrement : clé (version) inadaptée.
+fn aead_failed(e: &FsError) -> bool {
+    matches!(e, FsError::Core(s3m_core::CoreError::AeadFailure))
 }

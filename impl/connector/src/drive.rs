@@ -1264,6 +1264,8 @@ impl Drive {
                 if let Some(e) = entries.get_mut(&name) {
                     e.first_block_hash = first;
                     e.encryption_salt = salt;
+                    // Reconstruit sous la clé courante : sa version aussi.
+                    e.key_version = self.version;
                     e.modified_at = now;
                 }
             }
@@ -1350,11 +1352,19 @@ impl Drive {
     }
 
     fn strict_subtree(&mut self, e: &Entry) -> Option<Vec<BlockHash>> {
-        let k = self.k_elem_of(e)?;
         let io = self.io.clone();
         let is_dir = e.mime_type == DIRECTORY_MIME;
-        let mut out =
-            crate::fs::chain_hashes(&e.first_block_hash, &k, is_dir, &|h| io.get(h)).ok()?;
+        // Clé de sa version d'abord, puis les autres (version d'entrée
+        // erronée d'un dossier reconstruit après une rotation).
+        let mut versions = vec![e.key_version];
+        versions.extend(self.keys.keys().copied().filter(|v| *v != e.key_version));
+        let (k, mut out) = versions.iter().find_map(|v| {
+            let mut x = e.clone();
+            x.key_version = *v;
+            let k = self.k_elem_of(&x)?;
+            let out = crate::fs::chain_hashes(&e.first_block_hash, &k, is_dir, &|h| io.get(h)).ok()?;
+            Some((k, out))
+        })?;
         if is_dir {
             let children =
                 crate::fs::read_directory_elem(&e.first_block_hash, &k, &|h| io.get(h)).ok()?;
