@@ -217,13 +217,22 @@ table BlockStatus {
   hashes: [ubyte];            // SHA-256 concaténés (32 o chacun, 2048 au plus)
 }
 
+// Ajout du 2026-11-25 (securite.incidents-compromissions#rotation-user) :
+// Connecteur → son Nœud, sous l'identifiant de l'ANCIENNE identité : le
+// compte (quota, racine, blocs, historique) passe à la nouvelle identité,
+// l'ancienne est révoquée. Réponse : Ack.
+table RotateUser {
+  new_user_id: [ubyte];       // pub_user de la nouvelle identité
+  new_salt: [ubyte];          // sel du nouvel attachement (16 o)
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
   StoreFragment, Challenge, FetchFragment, Tombstone,
   Probe, ProposePartnership, Attach, OwnershipQuery,
   EmergencyPut, EmergencyGet, EmergencyRelease,
   ReadMessages, PostMessage, RevokeShare,
-  ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots, BlockStatus
+  ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots, BlockStatus, RotateUser
 }
 
 // Requête : une par flux libp2p request-response.

@@ -569,6 +569,9 @@ pub struct Shared {
     /// Dernière lecture de l'entrée du Nœud (0 : jamais).
     pub node_entry_read_at: Mutex<u64>,
     pub(crate) priv_user: [u8; 32],
+    /// Phrase de récupération (dérivation des clés maîtresses de chaque
+    /// version, `crypto.master-key-chain`).
+    pub(crate) mnemonic: String,
     pub(crate) pub_node: [u8; 32],
     salt: Vec<u8>,
     /// Partages donnés et reçus (`protocols.partage`).
@@ -710,7 +713,7 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
-          "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["set_pseudo"] },
+          "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["set_pseudo", "rotate_identity"] },
         { "id": "diagnostic", "titre": "Diagnostic", "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "État de santé", "sections": ["santé"] },
                                   { "titre": "Avancé", "sections": ["journal"] }] },
@@ -1218,6 +1221,10 @@ fn status_base(sh: &Shared) -> Value {
               "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration"],
               "aide": { "code 2FA": "Code à 6 chiffres de votre application d'authentification",
                         "adresse d'administration": "Facultatif : par défaut, IP du Nœud et port 4003" } },
+            { "nom": "rotate_identity", "titre": "Ma phrase de récupération a été compromise",
+              "libellé": "Changer d'identité", "style": "danger", "champs": ["je confirme"], "types": { "je confirme": "bool" },
+              "texte": "Une nouvelle phrase de récupération est créée et votre Nœud transfère votre compte (fichiers, quota, historique) à la nouvelle identité ; l'ancienne phrase ne donne plus accès à votre Nœud. Vos fichiers restent lisibles ; rechiffrez-les ensuite avec la nouvelle clé depuis l'Explorateur. Agissez vite : la personne qui détient l'ancienne phrase pourrait le faire avant vous.",
+              "confirmer": "Changer d'identité maintenant ? Vous devrez noter la nouvelle phrase de 24 mots qui va s'afficher : l'ancienne ne servira plus." },
             { "nom": "change_node", "titre": "Changer de Nœud",
               "libellé": "Changer de Nœud", "champs": ["je confirme"], "types": { "je confirme": "bool" },
               "aide": { "je confirme": "Cette identité s'arrête puis l'assistant de choix du Nœud s'ouvre (votre identité est conservée) ; les autres identités continuent. L'ancienne configuration et les données locales sont mises de côté, pas effacées." } }
@@ -2062,6 +2069,125 @@ pub async fn unsent_tick(sh: &Shared) {
     }
 }
 
+/// Appareil neuf après une rotation : la racine adoptée est chiffrée sous
+/// une clé de version plus récente ; elle est dérivée de la phrase, puis
+/// les anciennes clés sont lues dans l'espace (`keychain::TREE_PATH`).
+pub fn ensure_keys(sh: &Shared) {
+    let Some(d) = &sh.drive else { return };
+    let mut drive = d.lock().unwrap();
+    let v = drive.root().key_version;
+    if drive.keys().contains_key(&v) {
+        return;
+    }
+    let Ok(master) = master_key(&sh.mnemonic, v) else { return };
+    let mut keys = drive.keys();
+    keys.insert(v, master);
+    drive.set_keys(keys.clone(), v);
+    let Ok(b) = drive.read(crate::keychain::TREE_PATH, 0, usize::MAX) else {
+        eprintln!("trousseau introuvable dans l'espace : anciens fichiers illisibles");
+        return;
+    };
+    let Some(kc) = crate::keychain::Keychain::decode(&b) else { return };
+    match kc.keys(&master) {
+        Ok(all) => {
+            drive.set_keys(all, kc.version.max(v));
+            let _ = kc.save(&sh.config.data_dir);
+            eprintln!("trousseau repris de l'espace : {} ancienne(s) clé(s)", kc.chain.len());
+        }
+        Err(e) => eprintln!("{e}"),
+    }
+}
+
+/// Phrase de récupération compromise : nouvelle identité, compte transféré
+/// par le Nœud, ancienne révoquée ; anciennes clés gardées dans le
+/// trousseau (`securite.incidents-compromissions#rotation-user`).
+pub fn rotate_identity(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let ok = v
+        .get("je confirme")
+        .is_some_and(|x| x.as_bool() == Some(true) || x.as_str() == Some("true"));
+    if !ok {
+        return Err("cochez « je confirme »".into());
+    }
+    let new_words = generate_mnemonic().map_err(|e| e.to_string())?;
+    let (_, new_pub) = user_keys(&new_words, 0).map_err(|e| e.to_string())?;
+    let mut salt = [0u8; 16];
+    getrandom::getrandom(&mut salt).map_err(|e| e.to_string())?;
+    let (cur_keys, cur_version) = match &sh.drive {
+        Some(d) => {
+            let d = d.lock().unwrap();
+            (d.keys(), d.key_version())
+        }
+        None => {
+            let m = master_key(&sh.mnemonic, KEY_VERSION).map_err(|e| e.to_string())?;
+            ([(KEY_VERSION, m)].into(), KEY_VERSION)
+        }
+    };
+    let new_version = cur_version + 1;
+    let new_master = master_key(&new_words, new_version).map_err(|e| e.to_string())?;
+    let kc = crate::keychain::Keychain::wrap(&cur_keys, &new_master, new_version)?;
+    let path = sh.config.source.clone().ok_or("fichier de configuration inconnu")?;
+    let rt = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
+    // Copie du trousseau dans l'espace, écrite tant que l'ancienne identité
+    // lit encore l'arborescence (synchronisée sous la nouvelle).
+    let restore_keys = |sh: &Shared| {
+        if let Some(d) = &sh.drive {
+            let mut d = d.lock().unwrap();
+            d.set_keys(cur_keys.clone(), cur_version);
+            let _ = d.remove(crate::keychain::TREE_PATH);
+        }
+    };
+    if let Some(d) = &sh.drive {
+        let mut d = d.lock().unwrap();
+        let all = kc.keys(&new_master)?;
+        d.set_keys(all, new_version);
+        let r = (|| -> Result<(), DriveError> {
+            if d.stat(crate::keychain::TREE_DIR)?.is_none() {
+                d.create(crate::keychain::TREE_DIR, true)?;
+            }
+            let p = crate::keychain::TREE_PATH;
+            if d.stat(p)?.is_none() {
+                d.create(p, false)?;
+            }
+            d.set_size(p, 0)?;
+            d.write(p, 0, &kc.encode())?;
+            Ok(())
+        })();
+        drop(d);
+        if let Err(e) = r {
+            restore_keys(sh);
+            return Err(format!("trousseau : {e}"));
+        }
+    }
+    if let Err(e) = rt.block_on(sh.session.rotate_user(&new_pub, &salt)) {
+        restore_keys(sh);
+        return Err(format!("Nœud : {e}"));
+    }
+    // Le Nœud a transféré le compte : écriture locale de la nouvelle identité.
+    let now = (sh.clock)();
+    let seed = &sh.config.seed_file;
+    let _ = std::fs::copy(seed, seed.with_extension(format!("seed.revoquee-{now}")));
+    std::fs::write(seed, format!("{new_words}
+")).map_err(|e| e.to_string())?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    raw["node"]["salt"] = json!(hex::encode(salt));
+    raw["identity_index"] = json!(0);
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&raw).expect("sérialisable"))
+        .and_then(|_| std::fs::rename(&tmp, &path))
+        .map_err(|e| e.to_string())?;
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::write(dir.join("attach.salt"), hex::encode(salt));
+    }
+    kc.save(&sh.config.data_dir).map_err(|e| e.to_string())?;
+    sh.restart_identity
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    Ok(json!({ "ok": true,
+        "message": "Nouvelle identité en place : l'ancienne phrase est révoquée par votre Nœud. Vos fichiers restent lisibles ; rechiffrez-les avec la nouvelle clé depuis l'Explorateur (menu « Rechiffrer avec la nouvelle clé »).",
+        "24 mots": new_words,
+        "fermer": "J'ai noté ma nouvelle phrase" }))
+}
+
 /// Version passée de la racine (`protocols.historique-versions`).
 #[derive(Debug, Clone)]
 pub struct Version {
@@ -2602,7 +2728,14 @@ pub async fn start(
     state_dir(&config)?;
     let mnemonic = std::fs::read_to_string(&config.seed_file)?;
     let (priv_user, pub_user) = user_keys(&mnemonic, config.identity_index)?;
-    let master = master_key(&mnemonic, KEY_VERSION)?;
+    // Après une rotation : version courante et anciennes clés du trousseau.
+    let keychain = crate::keychain::Keychain::load(&config.data_dir);
+    let version = keychain.as_ref().map_or(KEY_VERSION, |k| k.version);
+    let master = master_key(&mnemonic, version)?;
+    let all_keys = match &keychain {
+        Some(k) => Some(k.keys(&master).map_err(DaemonError::Config)?),
+        None => None,
+    };
     let addr: Multiaddr = config
         .node
         .addr
@@ -2643,6 +2776,9 @@ pub async fn start(
                 // Historique gardé par défaut, aligné ensuite sur le Nœud
                 // (`protocols.historique-versions`).
                 d.set_retention(HISTORY_DEFAULT_S);
+                if let Some(k) = all_keys.clone() {
+                    d.set_keys(k, version);
+                }
                 d
             })
             .map_err(|e| DaemonError::Config(format!("lecteur : {e}")))?,
@@ -2682,6 +2818,7 @@ pub async fn start(
         mount_point: Mutex::new(config.mount_point.clone()),
         remount: Mutex::new(None),
         priv_user,
+        mnemonic: mnemonic.clone(),
         pub_node,
         salt: salt.clone(),
         session,
@@ -2727,6 +2864,7 @@ pub async fn start(
                     Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
                 }
                 "purge_versions" => purge_versions(&sh, &v),
+                "rotate_identity" => rotate_identity(&sh, &v),
                 "resume_after_mass_change" => {
                     sh.paused.store(false, std::sync::atomic::Ordering::Relaxed);
                     sync_now(&sh);
@@ -2775,6 +2913,7 @@ pub async fn start(
     }
     if shared.drive.is_some() {
         adopt_known_root(&shared).await;
+        ensure_keys(&shared);
         mount_drive(&shared);
         // Écriture différée : synchronisation quand un fichier modifié
         // atteint son échéance (`protocols.ecriture-differee`).

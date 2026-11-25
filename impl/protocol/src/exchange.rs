@@ -250,6 +250,12 @@ pub enum Body {
     BlockStatus {
         hashes: Vec<u8>,
     },
+    /// Compte transféré à une nouvelle identité, l'ancienne révoquée
+    /// (`securite.incidents-compromissions#rotation-user`).
+    RotateUser {
+        new_user_id: Vec<u8>,
+        new_salt: Vec<u8>,
+    },
 }
 
 /// Version passée de la racine (`protocols.historique-versions`).
@@ -680,6 +686,21 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             let o = fb::BlockStatus::create(&mut b, &fb::BlockStatusArgs { hashes: Some(v) });
             (fb::RequestBody::BlockStatus, o.as_union_value())
         }
+        Body::RotateUser {
+            new_user_id,
+            new_salt,
+        } => {
+            let u = b.create_vector(new_user_id);
+            let s = b.create_vector(new_salt);
+            let o = fb::RotateUser::create(
+                &mut b,
+                &fb::RotateUserArgs {
+                    new_user_id: Some(u),
+                    new_salt: Some(s),
+                },
+            );
+            (fb::RequestBody::RotateUser, o.as_union_value())
+        }
     };
     let root = fb::BlockRequest::create(
         &mut b,
@@ -906,6 +927,13 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
                 return Err(m);
             }
             Body::BlockStatus { hashes }
+        }
+        fb::RequestBody::RotateUser => {
+            let x = r.body_as_rotate_user().ok_or(m)?;
+            Body::RotateUser {
+                new_user_id: bytes(x.new_user_id()),
+                new_salt: bytes(x.new_salt()),
+            }
         }
         _ => return Err(m),
     };

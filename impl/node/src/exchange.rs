@@ -248,6 +248,11 @@ pub struct NodeService {
     /// Blocs reçus pas encore dispersés, par Utilisateur (recopiés par le
     /// moteur de dispersion à chaque cycle).
     pub undispersed: HashMap<Id, std::collections::HashSet<Id>>,
+    /// Identités révoquées après rotation : plus jamais rattachées
+    /// (`securite.incidents-compromissions#rotation-user`).
+    pub revoked_users: std::collections::HashSet<Id>,
+    /// Rotations à reporter dans l'état de dispersion : `(ancienne, nouvelle)`.
+    pub renamed_users: Vec<(Id, Id)>,
     /// Durée d'inactivité fixée par l'opérateur pour un Utilisateur (jours,
     /// 0 : éternel) ; absente : celle de la politique.
     pub inactivity_days: HashMap<Id, u64>,
@@ -354,6 +359,8 @@ impl NodeService {
             root_since: Default::default(),
             history_retention_s: HISTORY_DAYS * 86_400,
             undispersed: Default::default(),
+            revoked_users: Default::default(),
+            renamed_users: Vec::new(),
             inactivity_days: Default::default(),
             attach_policy: AttachPolicy::default(),
             partner_policy: PartnerPolicy::default(),
@@ -531,6 +538,22 @@ impl NodeService {
                 Ok(Response::Ack {
                     freed: self.release_user_blocks(&u, &list, now),
                 })
+            }
+            Body::RotateUser {
+                new_user_id,
+                new_salt,
+            } => {
+                let old = self.user(cred, from, local)?;
+                let new = id32(&new_user_id)?;
+                if new_salt.len() != 16
+                    || new == old
+                    || self.users.contains_key(&new)
+                    || self.revoked_users.contains(&new)
+                {
+                    return Err(Refusal::Unauthorized);
+                }
+                self.rotate_user(old, new, new_salt, now);
+                Ok(Response::Ack { freed: 0 })
             }
             Body::BlockStatus { hashes } => {
                 let u = self.user(cred, from, local)?;
@@ -775,6 +798,9 @@ impl NodeService {
                     return Err(Refusal::Unauthorized);
                 };
                 let pub_user = id32(user_id)?;
+                if self.revoked_users.contains(&pub_user) {
+                    return Err(Refusal::Unauthorized);
+                }
                 if self.users.contains_key(&pub_user) {
                     // Déjà rattaché : réponse idempotente si l'identifiant est bon.
                     if self.user(cred, from, local).is_ok() {
@@ -1205,6 +1231,47 @@ impl NodeService {
             Some((o, d)) if o == *owner => Ok(d),
             _ => Err(self.missing()),
         }
+    }
+
+    /// Transfère le compte de `old` à `new` et révoque `old`.
+    pub fn rotate_user(&mut self, old: Id, new: Id, new_salt: Vec<u8>, now: u64) {
+        let Some(mut acc) = self.users.remove(&old) else {
+            return;
+        };
+        acc.salt = new_salt;
+        self.users.insert(new, acc);
+        self.store.rename_owner(Space::UserBlock, &old, &new);
+        fn mv<V>(m: &mut HashMap<Id, V>, old: &Id, new: Id) {
+            if let Some(v) = m.remove(old) {
+                m.insert(new, v);
+            }
+        }
+        // Le descripteur scellé de l'ancienne identité ne s'ouvre plus : le
+        // Connecteur le scelle de nouveau à son premier contact.
+        self.root_seals.remove(&old);
+        mv(&mut self.root_history, &old, new);
+        mv(&mut self.root_since, &old, new);
+        mv(&mut self.inactivity_days, &old, new);
+        mv(&mut self.user_labels, &old, new);
+        mv(&mut self.last_user_ip, &old, new);
+        mv(&mut self.released, &old, new);
+        mv(&mut self.undispersed, &old, new);
+        self.last_active.remove(&old);
+        self.last_active.insert(new, now);
+        if self.auto_attached.remove(&old) {
+            self.auto_attached.insert(new);
+        }
+        if self.adopt_next_root.remove(&old) {
+            self.adopt_next_root.insert(new);
+        }
+        for (u, _) in self.dispersal_queue.iter_mut() {
+            if *u == old {
+                *u = new;
+            }
+        }
+        self.reclaim.retain(|(u, _)| *u != old);
+        self.revoked_users.insert(old);
+        self.renamed_users.push((old, new));
     }
 
     /// Versions au-delà de la durée de conservation oubliées.

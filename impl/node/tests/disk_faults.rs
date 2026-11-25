@@ -94,3 +94,21 @@ fn a_corrupted_block_raises_a_replace_the_disk_alert() {
     s.clear_faults(3);
     assert!(s.faults().is_empty());
 }
+
+/// Rotation d'identité : les conteneurs changent de propriétaire, y
+/// compris après réouverture.
+#[test]
+fn blocks_change_owner_on_identity_rotation() {
+    let t = temp("rename");
+    let b = vec![8u8; 65_536];
+    let h = hash_sha256(&b);
+    {
+        let mut s = open(&t.0);
+        s.write_block(&owner(), &h, &b).unwrap();
+        assert_eq!(s.rename_owner(&owner(), &[2; 32]).unwrap(), 1);
+    }
+    let s = open(&t.0);
+    let to = Owner::new(OwnerType::AttachedUser, vec![2; 32]).unwrap();
+    assert_eq!(s.block_hashes(&to).unwrap(), vec![h.to_vec()]);
+    assert!(s.block_hashes(&owner()).unwrap().is_empty());
+}

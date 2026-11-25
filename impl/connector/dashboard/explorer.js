@@ -22,6 +22,8 @@ let folderMode = false;
 let readOnly = false;
 let busy = 0;
 let contacts = [];
+// Identité changée : « Rechiffrer avec la nouvelle clé » proposé.
+let reencryptable = false;
 // Version passée parcourue (`protocols.historique-versions`) : hash de sa
 // racine et libellé ; null : version actuelle.
 let version = null;
@@ -87,6 +89,7 @@ async function load(path) {
     if (!version) {
       folderMode = !!r["mode dossier"];
       contacts = r["contacts"] || [];
+      reencryptable = !!r["rechiffrer"];
     }
     readOnly = !!version || !!r["lecture seule"] || cwd === SHARED || cwd.startsWith(SHARED + "/");
     $("banner").hidden = !version;
@@ -162,6 +165,7 @@ function rows(entries) {
     if (!e["lecture seule"]) {
       btn("Partager", () => share(path));
       btn("Renommer / déplacer", () => move(path));
+      if (reencryptable) btn("Rechiffrer avec la nouvelle clé", () => run("Rechiffrement de " + e["nom"], () => call("explorer_reencrypt", { chemin: path })));
       if (folderMode) {
         btn(e["gardé"] ? "Ne plus garder" : "Garder hors ligne", () => keep(path, !e["gardé"]));
         if (!e["gardé"]) btn("Libérer l'espace", () => freeSpace(path));

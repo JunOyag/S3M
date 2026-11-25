@@ -507,3 +507,37 @@ async fn two_nodes_exchange_fragments_over_libp2p() {
     .await;
     assert!(matches!(r, Err(ExchangeError::Refused(Refusal::TooLarge))));
 }
+
+/// Rotation d'identité (`securite.incidents-compromissions#rotation-user`) :
+/// compte, blocs et racine passent à la nouvelle identité ; l'ancienne est
+/// révoquée et ne peut plus se rattacher.
+#[test]
+fn rotation_moves_the_account_and_revokes_the_old_identity() {
+    let mut s = service_with_user(NODE, 1 << 20);
+    let call = |s: &mut NodeService, body: Body| {
+        s.handle(b"c", None, b"n", user_req(&NODE, body, b"c", b"n"), NOW)
+    };
+    let h = hash_sha256(&[1; 60]);
+    call(&mut s, Body::PutBlock { data: vec![1; 60] });
+    call(
+        &mut s,
+        Body::CommitRoot { base_root: vec![0; 32], new_root: vec![5; 32], root_seal: vec![1; 47] },
+    );
+    let new = [0x77; 32];
+    assert_eq!(
+        call(&mut s, Body::RotateUser { new_user_id: new.to_vec(), new_salt: vec![9; 16] }),
+        Response::Ack { freed: 0 }
+    );
+    let acc = &s.users[&new];
+    assert_eq!((acc.root, acc.salt.clone()), ([5; 32], vec![9; 16]));
+    assert!(!s.users.contains_key(&pk(&USER)));
+    assert!(s.revoked_users.contains(&pk(&USER)));
+    assert_eq!(s.store.get(s3m_node::chunk_store::Space::UserBlock, &h).unwrap().0, new);
+    assert!(s.root_seals.is_empty(), "descripteur de l'ancienne clé oublié");
+    assert_eq!(s.renamed_users, vec![(pk(&USER), new)]);
+    // L'ancienne identité n'a plus accès, même par un nouveau rattachement.
+    assert_eq!(
+        call(&mut s, Body::GetBlock { hash: h.to_vec() }),
+        Response::Failure(Refusal::Unauthorized)
+    );
+}

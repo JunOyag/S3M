@@ -367,6 +367,9 @@ pub struct Drive {
     /// Conservation de l'historique (s) ; 0 : blocs remplacés libérés
     /// aussitôt.
     retention_s: u64,
+    /// Version de la clé maîtresse des nouvelles écritures
+    /// (`crypto.master-key-chain`).
+    version: u16,
 }
 
 fn random<const N: usize>() -> [u8; N] {
@@ -414,7 +417,25 @@ impl Drive {
             incidents: Vec::new(),
             conflict: None,
             retention_s: 0,
+            version: KEY_VERSION,
         })
+    }
+
+    /// Clés maîtresses connues (anciennes comprises) et version courante,
+    /// après une rotation d'identité (`crypto.master-key-chain`).
+    pub fn set_keys(&mut self, keys: HashMap<u16, [u8; 32]>, current: u16) {
+        self.keys = keys;
+        self.version = current;
+    }
+
+    /// Clés maîtresses connues.
+    pub fn keys(&self) -> HashMap<u16, [u8; 32]> {
+        self.keys.clone()
+    }
+
+    /// Version de la clé maîtresse des nouvelles écritures.
+    pub fn key_version(&self) -> u16 {
+        self.version
     }
 
     /// Conservation de l'historique, alignée sur celle du Nœud.
@@ -729,8 +750,11 @@ impl Drive {
     /// partage (`protocols.partage`) ; `/` : la racine.
     pub fn shared_element(&mut self, path: &str) -> Result<Option<SharedElement>, DriveError> {
         let p = norm(path);
-        let key = *self.keys.get(&KEY_VERSION).ok_or(DriveError::NotFound)?;
         if p == "/" {
+            let key = *self
+                .keys
+                .get(&self.root.key_version)
+                .ok_or(DriveError::NotFound)?;
             if self.root.fs_root_hash == NO_ROOT {
                 return Ok(None);
             }
@@ -747,6 +771,7 @@ impl Drive {
         let Some(e) = self.remote_entry(&p)? else {
             return Ok(None);
         };
+        let key = *self.keys.get(&e.key_version).ok_or(DriveError::NotFound)?;
         Ok(Some(SharedElement {
             is_dir: e.mime_type == DIRECTORY_MIME,
             name: e.name.clone(),
@@ -1145,7 +1170,7 @@ impl Drive {
                 }) => {
                     let data = std::fs::read(self.workspace.join("files").join(cache))?;
                     let salt = (self.salt)();
-                    let master = self.keys[&KEY_VERSION];
+                    let master = self.keys[&self.version];
                     let chain = {
                         let mut sealing = Sealing {
                             master_key: &master,
@@ -1163,7 +1188,7 @@ impl Drive {
                             mime_type: FILE_MIME.into(),
                             first_block_hash: chain.first,
                             encryption_salt: salt,
-                            key_version: KEY_VERSION,
+                            key_version: self.version,
                             permissions: 0o644,
                             created_at,
                             modified_at,
@@ -1186,7 +1211,7 @@ impl Drive {
                             mime_type: DIRECTORY_MIME.into(),
                             first_block_hash: NO_ROOT,
                             encryption_salt: [0; 16],
-                            key_version: KEY_VERSION,
+                            key_version: self.version,
                             permissions: 0o755,
                             created_at,
                             modified_at: created_at,
@@ -1212,7 +1237,7 @@ impl Drive {
         }
         let list: Vec<Entry> = entries.into_values().collect();
         let salt = (self.salt)();
-        let master = self.keys[&KEY_VERSION];
+        let master = self.keys[&self.version];
         let chain = {
             let mut sealing = Sealing {
                 master_key: &master,
@@ -1442,7 +1467,7 @@ impl Drive {
         self.io.note_root(&Root {
             fs_root_hash: first,
             encryption_salt: salt,
-            key_version: KEY_VERSION,
+            key_version: self.version,
         });
         match self
             .io
@@ -1463,11 +1488,11 @@ impl Drive {
                 self.root = Root {
                     fs_root_hash: first,
                     encryption_salt: salt,
-                    key_version: KEY_VERSION,
+                    key_version: self.version,
                 };
                 self.journal.fs_root_hash = hex::encode(first);
                 self.journal.encryption_salt = hex::encode(salt);
-                self.journal.key_version = KEY_VERSION;
+                self.journal.key_version = self.version;
                 self.conflict = None;
                 self.clear_emergency();
                 self.persist()
@@ -1516,7 +1541,7 @@ impl Drive {
             root: Root {
                 fs_root_hash: first,
                 encryption_salt: salt,
-                key_version: KEY_VERSION,
+                key_version: self.version,
             },
             blocks,
         }))

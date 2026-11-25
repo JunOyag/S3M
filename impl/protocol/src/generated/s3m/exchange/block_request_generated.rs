@@ -535,6 +535,21 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_rotate_user(&self) -> Option<RotateUser<'a>> {
+    if self.body_type() == RequestBody::RotateUser {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { RotateUser::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -582,6 +597,7 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::ListRoots => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListRoots>>("RequestBody::ListRoots", pos),
           RequestBody::PurgeRoots => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PurgeRoots>>("RequestBody::PurgeRoots", pos),
           RequestBody::BlockStatus => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BlockStatus>>("RequestBody::BlockStatus", pos),
+          RequestBody::RotateUser => v.verify_union_variant::<flatbuffers::ForwardsUOffset<RotateUser>>("RequestBody::RotateUser", pos),
           _ => Ok(()),
         }
      })?
@@ -867,6 +883,13 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::BlockStatus => {
           if let Some(x) = self.body_as_block_status() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::RotateUser => {
+          if let Some(x) = self.body_as_rotate_user() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

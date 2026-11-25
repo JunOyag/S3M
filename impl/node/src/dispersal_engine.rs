@@ -837,6 +837,15 @@ pub async fn run_cycle(
             .filter(|(i, _)| !s.restoring.contains(*i))
             .map(|(i, a)| (*i, a.salt.clone()))
             .collect();
+        // Rotations d'identité : l'état suit le compte ; le catalogue est
+        // republié sous le nouvel attachement.
+        for (old, new) in std::mem::take(&mut s.renamed_users) {
+            if let Some(mut d) = state.users.remove(&hx(&old)) {
+                d.dirty = true;
+                d.pointer = None;
+                state.users.insert(hx(&new), d);
+            }
+        }
         let queue = std::mem::take(&mut s.dispersal_queue);
         // Toujours « pas encore dispersés » pendant le cycle
         // (`protocols.dispersion-transactionnelle#copie-locale`).

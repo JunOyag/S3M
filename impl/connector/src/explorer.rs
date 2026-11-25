@@ -99,6 +99,25 @@ fn restore_from(
     Ok(1)
 }
 
+/// Réécrit `p` (dossier compris) : ses blocs sont chiffrés de nouveau avec
+/// la clé maîtresse courante (`securite.incidents-compromissions#rotation-user`).
+fn reencrypt(d: &mut crate::drive::Drive, p: &str) -> Result<u64, String> {
+    let m = d.stat(p).map_err(|e| e.to_string())?.ok_or("introuvable")?;
+    if m.is_dir {
+        let mut n = 0;
+        for (name, _) in d.list(p).map_err(|e| e.to_string())? {
+            n += reencrypt(d, &format!("{}/{name}", p.trim_end_matches('/')))?;
+        }
+        return Ok(n);
+    }
+    let data = d.read(p, 0, usize::MAX).map_err(|e| e.to_string())?;
+    d.set_size(p, 0).map_err(|e| e.to_string())?;
+    if !data.is_empty() {
+        d.write(p, 0, &data).map_err(|e| e.to_string())?;
+    }
+    Ok(1)
+}
+
 /// Supprime un élément, dossier compris avec tout son contenu.
 fn remove_all(d: &mut crate::drive::Drive, p: &str) -> Result<(), String> {
     let m = d.stat(p).map_err(|e| e.to_string())?.ok_or("introuvable")?;
@@ -157,6 +176,18 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             Ok(json!({ "chemin": p, "actuelle": current.map(|m| json!({ "taille": m.size, "modifié": m.modified_at })),
                 "versions": rows, "conservation (jours)": h.retention_s / 86_400 }))
         }
+        "explorer_reencrypt" => {
+            let p = norm(&text(v, "chemin"));
+            writable(&p)?;
+            let mut d = drive.lock().unwrap();
+            if d.key_version() <= crate::drive::KEY_VERSION {
+                return Err("aucun changement d'identité : rien à rechiffrer".into());
+            }
+            let n = reencrypt(&mut d, &p)?;
+            drop(d);
+            changed(sh, &p, 0);
+            Ok(json!({ "ok": true, "message": format!("{p} : {n} fichier(s) rechiffré(s) avec la nouvelle clé (envoi en cours)") }))
+        }
         "explorer_restore" => {
             let p = norm(&text(v, "chemin"));
             writable(&p)?;
@@ -194,9 +225,16 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                 })
             };
             let pseudos = sh.contacts.lock().unwrap().pseudos();
+            // Trousseau des anciennes clés : jamais montré ni modifiable ici.
+            if p == "/" {
+                let hidden = crate::keychain::TREE_DIR.trim_start_matches('/');
+                entries.retain(|(n, _)| n != hidden);
+            }
+            let reencrypt = drive.lock().unwrap().key_version() > crate::drive::KEY_VERSION;
             Ok(json!({
                 "chemin": p,
                 "contacts": pseudos,
+                "rechiffrer": reencrypt,
                 "mode dossier": folder,
                 "lecture seule": writable(&p).is_err() && p != "/",
                 "entrées": entries.iter().map(|(n, m)| {

@@ -977,6 +977,9 @@ entries:
     status: done
     owner: claude-code
     tests:
+      - rotation::a_compromised_phrase_is_replaced_without_losing_files
+      - exchange::rotation_moves_the_account_and_revokes_the_old_identity
+      - disk_faults::blocks_change_owner_on_identity_rotation
       - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
       - incidents::node_rotation_publishes_a_pointer_signed_by_the_old_recovery_key
       - dht::migration_pointer_rules

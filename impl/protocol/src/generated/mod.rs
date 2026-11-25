@@ -167,6 +167,8 @@ pub mod s3m {
     pub use self::root_state_generated::*;
     mod root_version_generated;
     pub use self::root_version_generated::*;
+    mod rotate_user_generated;
+    pub use self::rotate_user_generated::*;
     mod share_credential_generated;
     pub use self::share_credential_generated::*;
     mod share_grant_generated;

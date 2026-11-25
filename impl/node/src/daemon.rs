@@ -374,6 +374,9 @@ pub struct SavedState {
     /// Instant de l'enregistrement (temps d'arrêt rendu aux Utilisateurs).
     #[serde(default)]
     pub saved_at: u64,
+    /// Identités révoquées après rotation.
+    #[serde(default)]
+    pub revoked_users: Vec<String>,
 }
 
 impl SavedState {
@@ -424,6 +427,7 @@ impl SavedState {
         partners.sort_by(|a, b| a.node_id.cmp(&b.node_id));
         Self {
             saved_at: system_clock()(),
+            revoked_users: sorted(s.revoked_users.iter().map(|i| hx(i))),
             users,
             partners,
             previous_node_ids: s.previous_node_ids.iter().map(|i| hx(i)).collect(),
@@ -566,6 +570,9 @@ impl SavedState {
         }
         for u in &self.auto_attached {
             s.auto_attached.insert(unhex32(u)?);
+        }
+        for u in &self.revoked_users {
+            s.revoked_users.insert(unhex32(u)?);
         }
         for u in &self.used_attach_identities {
             s.used_attach_identities.insert(unhex32(u)?);

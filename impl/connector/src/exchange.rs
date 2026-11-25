@@ -399,6 +399,21 @@ impl NodeSession {
         }
     }
 
+    /// Transfère le compte à une nouvelle identité et révoque celle-ci
+    /// (`securite.incidents-compromissions#rotation-user`).
+    pub async fn rotate_user(&self, new_user: &[u8; 32], new_salt: &[u8]) -> Result<(), ExchangeError> {
+        match self
+            .call(Body::RotateUser {
+                new_user_id: new_user.to_vec(),
+                new_salt: new_salt.to_vec(),
+            })
+            .await?
+        {
+            Response::Ack { .. } => Ok(()),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
     /// Oublie les versions remplacées avant `before` (0 : toutes).
     pub async fn purge_roots(&self, before: u64) -> Result<(), ExchangeError> {
         match self.call(Body::PurgeRoots { before }).await? {

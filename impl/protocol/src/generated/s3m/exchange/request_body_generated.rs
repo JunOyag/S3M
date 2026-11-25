@@ -12,10 +12,10 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_REQUEST_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_REQUEST_BODY: u8 = 25;
+pub const ENUM_MAX_REQUEST_BODY: u8 = 26;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 26] = [
+pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 27] = [
   RequestBody::NONE,
   RequestBody::GetBlock,
   RequestBody::PutBlock,
@@ -42,6 +42,7 @@ pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 26] = [
   RequestBody::ListRoots,
   RequestBody::PurgeRoots,
   RequestBody::BlockStatus,
+  RequestBody::RotateUser,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -75,9 +76,10 @@ impl RequestBody {
   pub const ListRoots: Self = Self(23);
   pub const PurgeRoots: Self = Self(24);
   pub const BlockStatus: Self = Self(25);
+  pub const RotateUser: Self = Self(26);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 25;
+  pub const ENUM_MAX: u8 = 26;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::GetBlock,
@@ -105,6 +107,7 @@ impl RequestBody {
     Self::ListRoots,
     Self::PurgeRoots,
     Self::BlockStatus,
+    Self::RotateUser,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -135,6 +138,7 @@ impl RequestBody {
       Self::ListRoots => Some("ListRoots"),
       Self::PurgeRoots => Some("PurgeRoots"),
       Self::BlockStatus => Some("BlockStatus"),
+      Self::RotateUser => Some("RotateUser"),
       _ => None,
     }
   }

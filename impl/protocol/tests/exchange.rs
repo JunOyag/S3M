@@ -29,6 +29,10 @@ fn every_request_and_response_roundtrips() {
         Body::ListRoots,
         Body::PurgeRoots { before: 1_800_000_000 },
         Body::BlockStatus { hashes: vec![4; 64] },
+        Body::RotateUser {
+            new_user_id: vec![5; 32],
+            new_salt: vec![6; 16],
+        },
         Body::RenewGrant {
             grant_pub: vec![6; 32],
         },

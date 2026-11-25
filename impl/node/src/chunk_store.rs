@@ -51,6 +51,8 @@ pub trait ChunkStore: Send {
     fn remove(&mut self, space: Space, owner: &Id, hash: &Id) -> bool;
     /// Supprime tous les blocs de `owner` dans `space`.
     fn remove_owner(&mut self, space: Space, owner: &Id);
+    /// Transfère les blocs de `from` à `to` dans `space`.
+    fn rename_owner(&mut self, space: Space, from: &Id, to: &Id);
     /// Propriétaires présents dans `space`.
     fn owners(&self, space: Space) -> Vec<Id>;
     /// Hashes des blocs de `owner` dans `space`.
@@ -106,6 +108,14 @@ impl ChunkStore for MemoryStore {
 
     fn remove_owner(&mut self, space: Space, owner: &Id) {
         self.0.retain(|_, (s, o, _)| !(*s == space && o == owner));
+    }
+
+    fn rename_owner(&mut self, space: Space, from: &Id, to: &Id) {
+        for (s, o, _) in self.0.values_mut() {
+            if *s == space && o == from {
+                *o = *to;
+            }
+        }
     }
 
     fn owners(&self, space: Space) -> Vec<Id> {
@@ -194,6 +204,10 @@ impl ChunkStore for PhysicalStore {
 
     fn remove_owner(&mut self, space: Space, owner_id: &Id) {
         let _ = PhysicalStore::remove_owner(self, &owner(space, owner_id));
+    }
+
+    fn rename_owner(&mut self, space: Space, from: &Id, to: &Id) {
+        let _ = PhysicalStore::rename_owner(self, &owner(space, from), to);
     }
 
     fn owners(&self, space: Space) -> Vec<Id> {

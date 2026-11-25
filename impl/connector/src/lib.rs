@@ -21,6 +21,7 @@ pub mod folder_sync;
 pub mod fs;
 pub mod identities;
 pub mod incidents;
+pub mod keychain;
 pub mod integrity;
 pub mod lan;
 pub mod local_http;

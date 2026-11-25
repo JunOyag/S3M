@@ -197,6 +197,11 @@ enum Mutation {
     RemoveOwner {
         owner: Owner,
     },
+    /// Blocs d'un propriétaire transférés à un autre (rotation d'identité).
+    RenameOwner {
+        from: Owner,
+        to: Vec<u8>,
+    },
     /// Bloc déplacé hors d'un volume en vidage (`protocols.gestion-volumes`).
     Relocate {
         from_container: u32,
@@ -608,6 +613,40 @@ impl PhysicalStore {
         }
         self.maybe_compact_mutation_log()?;
         Ok(true)
+    }
+
+    /// Transfère tous les conteneurs de `from` à l'identifiant `to`
+    /// (rotation d'identité, `securite.incidents-compromissions#rotation-user`).
+    pub fn rename_owner(&mut self, from: &Owner, to: &[u8]) -> Result<usize, StorageError> {
+        if from.owner_id.is_empty() || to.is_empty() {
+            return Err(StorageError::EmptyIdentity);
+        }
+        let ids: Vec<u32> = self
+            .containers_for(from)?
+            .iter()
+            .map(|c| c.container_id)
+            .collect();
+        let to_v = to.to_vec();
+        self.persist_mutation(
+            Mutation::RenameOwner {
+                from: from.clone(),
+                to: to_v.clone(),
+            },
+            |tx| {
+                tx.execute(
+                    "UPDATE containers SET owner_id = ?3 WHERE owner_type = ?1 AND owner_id = ?2",
+                    params![from.owner_type as u8, from.owner_id, to_v],
+                )?;
+                Ok(())
+            },
+        )?;
+        for id in &ids {
+            if let Some(c) = self.containers_cache.get_mut(id) {
+                c.owner_id = to.to_vec();
+            }
+        }
+        self.maybe_compact_mutation_log()?;
+        Ok(ids.len())
     }
 
     /// Remove every container belonging to one logical owner, regardless of

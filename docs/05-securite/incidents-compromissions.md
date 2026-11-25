@@ -19,6 +19,40 @@ verified_by: []
   et réémission de l'entrée DHT. Les blocs existants ne sont **pas**
   rechiffrés.
 
+## Rotation d'identité Utilisateur {: #rotation-user }
+
+Ajout du 2026-11-25, mise en œuvre du point ci-dessus pour une phrase de
+récupération compromise (page « Identité et sécurité » du Connecteur,
+confirmation) :
+
+1. Nouvelle phrase de 24 mots, nouvelle identité (index 0), nouveau sel
+   d'attachement ; nouvelle clé maîtresse de version suivante ; anciennes
+   clés chiffrées sous elle ([`crypto.master-key-chain`](../03-crypto/master-key-chain.md)).
+2. Le trousseau des anciennes clés est écrit sur l'appareil et dans
+   l'espace de l'Utilisateur (`/.s3m/cles-anciennes.json`, masqué dans
+   l'Explorateur), tant que l'ancienne identité lit encore l'arborescence.
+3. `RotateUser { new_user_id, new_salt }`, sous l'identifiant de
+   l'**ancienne** identité ([`protocols.echange-blocs`](../04-protocols/echange-blocs.md)) :
+   le Nœud transfère le compte (quota, racine, blocs, historique,
+   catalogue de dispersion republié sous le nouvel attachement) et
+   **révoque** l'ancienne identité, qui ne peut plus ni se connecter ni se
+   rattacher. Le descripteur de racine de l'ancienne clé est oublié ; le
+   Connecteur en scelle un nouveau à son premier contact.
+4. Le Connecteur affiche la nouvelle phrase à noter, garde l'ancienne
+   (`user.seed.revoquee-…`) et redémarre l'identité.
+
+Les fichiers restent lisibles (anciennes clés du trousseau) ; le menu
+« Rechiffrer avec la nouvelle clé » de l'Explorateur réécrit un fichier ou
+un dossier sous la nouvelle clé. Un appareil neuf, avec la seule nouvelle
+phrase, dérive la clé de la version de la racine
+([`crypto.k-self#k-root`](../03-crypto/k-self.md#k-root)) puis lit le
+trousseau dans l'espace.
+
+Limites assumées : la personne qui détient l'ancienne phrase a pu lire les
+fichiers avant la rotation, et peut la déclencher la première ; les
+autorisations de secours déjà émises pour l'ancienne identité restent
+valables jusqu'à leur expiration.
+
 ## Compromission Clé Node
 
 Contrairement au User, ce cas implique **tous les Utilisateurs rattachés** —
