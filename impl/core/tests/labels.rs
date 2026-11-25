@@ -11,7 +11,7 @@ use s3m_core::labels::{
     AAD_CONTEXT_MASTER_KEY_WRAP, ALL_AAD_CONTEXTS, ALL_KDF_LABELS, ATTACH, ATTACHMENT_RECOVERY,
     BLOCK, CHILD_WRAP, CONNECTOR_AUTH, DHT_LOOKUP, DHT_SIGNING, DISPERSAL_BLOCK, DISPERSAL_CONTENT,
     DISPERSAL_SIGNING, ELEMENT, EMERGENCY_CONTENT, EMERGENCY_SIGNING, KDF_PREFIX, MASTER_KEY_WRAP,
-    NODE_RECOVERY, NODE_SNAPSHOT, RETIRED_LABELS, SHARE_CONTENT, SHARE_INVITE, SHARE_SIGNING,
+    NODE_RECOVERY, NODE_SNAPSHOT, RETIRED_LABELS, ROOT_DESCRIPTOR, SHARE_CONTENT, SHARE_INVITE, SHARE_SIGNING,
 };
 
 #[test]
@@ -46,6 +46,7 @@ fn labels_match_the_spec_registry() {
         (EMERGENCY_CONTENT, "emergency-content"),
         (EMERGENCY_SIGNING, "emergency-signing"),
         (ATTACHMENT_RECOVERY, "attachment-recovery"),
+        (ROOT_DESCRIPTOR, "root-descriptor"),
         (NODE_RECOVERY, "node-recovery"),
         (DHT_LOOKUP, "dht-lookup"),
         (DHT_SIGNING, "dht-signing"),
@@ -62,6 +63,6 @@ fn labels_match_the_spec_registry() {
     for (got, want) in expected {
         assert_eq!(got, want);
     }
-    assert_eq!(ALL_KDF_LABELS.len(), 20);
+    assert_eq!(ALL_KDF_LABELS.len(), 21);
     assert_eq!(AAD_CONTEXT_MASTER_KEY_WRAP, "master-key-wrap");
 }

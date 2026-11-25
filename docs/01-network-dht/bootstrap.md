@@ -92,6 +92,11 @@ Aucun état local préexistant n'est requis — seule la seed BIP-39 suffit
    [`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md) : elle
    est implémentée avec lui (Phase 4), pas par cet id.
 
+Entrée User expirée (plus de 6 mois sans appareil connecté) : le Nœud,
+choisi par l'Utilisateur, rend la racine courante et son descripteur
+scellé, qui suffit à l'ouvrir
+([`crypto.k-self#k-root`](../03-crypto/k-self.md#k-root)).
+
 Cohérent avec la procédure de disaster recovery complète — voir
 [`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md).
 

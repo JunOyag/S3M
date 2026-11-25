@@ -280,6 +280,11 @@ async fn run(
 // --------------------------------------------------------- session Nœud
 
 /// Session authentifiée Connecteur → Nœud (`UserCredential`).
+/// Racine connue `(racine, sel, version)`.
+type KnownRoot = (BlockHash, [u8; 16], u16);
+/// `(racine, descripteur scellé)` renvoyé par le Nœud.
+type RootSeal = (Vec<u8>, Vec<u8>);
+
 #[derive(Clone)]
 pub struct NodeSession {
     client: BlockClient,
@@ -288,6 +293,12 @@ pub struct NodeSession {
     k_attach: [u8; 32],
     /// Dernier `(quota, occupé)` communiqué par le Nœud (`RootState`).
     space: std::sync::Arc<std::sync::Mutex<Option<(u64, u64)>>>,
+    priv_user: [u8; 32],
+    /// Racines connues de cet appareil `(racine, sel, version)`, pour
+    /// sceller leur descripteur (`crypto.k-self#k-root`).
+    roots: std::sync::Arc<std::sync::Mutex<Vec<KnownRoot>>>,
+    /// Dernier `(racine, descripteur)` renvoyé par le Nœud.
+    last_seal: std::sync::Arc<std::sync::Mutex<Option<RootSeal>>>,
 }
 
 impl NodeSession {
@@ -313,7 +324,48 @@ impl NodeSession {
             },
             k_attach: k,
             space: Default::default(),
+            priv_user: *priv_user,
+            roots: Default::default(),
+            last_seal: Default::default(),
         })
+    }
+
+    /// Racine connue de cet appareil : son descripteur scellé accompagnera
+    /// sa validation (`crypto.k-self#k-root`).
+    pub fn note_root(&self, root: &BlockHash, salt: &[u8; 16], key_version: u16) {
+        if *root == [0; 32] {
+            return;
+        }
+        let mut r = self.roots.lock().unwrap();
+        r.retain(|(h, _, _)| h != root);
+        r.push((*root, *salt, key_version));
+        let n = r.len();
+        if n > 16 {
+            r.drain(..n - 16);
+        }
+    }
+
+    fn seal_for(&self, root: &BlockHash) -> Vec<u8> {
+        let known = self.roots.lock().unwrap().iter().find(|(h, _, _)| h == root).copied();
+        let Some((_, salt, version)) = known else {
+            return Vec::new();
+        };
+        let mut nonce = [0u8; 12];
+        if getrandom::getrandom(&mut nonce).is_err() {
+            return Vec::new();
+        }
+        s3m_core::k_self::seal_root_descriptor(&self.priv_user, root, &salt, version, &nonce)
+            .unwrap_or_default()
+    }
+
+    /// `(sel, version)` de `root` d'après le descripteur gardé par le Nœud
+    /// (dernière réponse `RootState`) ; `None` s'il manque ou ne s'ouvre pas.
+    pub fn root_from_node(&self, root: &BlockHash) -> Option<([u8; 16], u16)> {
+        let last = self.last_seal.lock().unwrap().clone()?;
+        if last.0 != root.to_vec() {
+            return None;
+        }
+        s3m_core::k_self::open_root_descriptor(&self.priv_user, root, &last.1)
     }
 
     /// Client d'échange de la session (requêtes vers d'autres Nœuds).
@@ -379,6 +431,7 @@ impl NodeSession {
         let body = Body::CommitRoot {
             base_root: base.to_vec(),
             new_root: new.to_vec(),
+            root_seal: self.seal_for(new),
         };
         match self.call(body).await? {
             Response::RootState {
@@ -386,10 +439,12 @@ impl NodeSession {
                 current_root,
                 quota_bytes,
                 used_bytes,
+                current_root_seal,
             } => {
                 if quota_bytes > 0 {
                     *self.space.lock().unwrap() = Some((quota_bytes, used_bytes));
                 }
+                *self.last_seal.lock().unwrap() = Some((current_root.clone(), current_root_seal));
                 Ok((committed, current_root))
             }
             _ => Err(ExchangeError::Unexpected),

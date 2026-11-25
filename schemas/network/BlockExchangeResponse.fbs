@@ -33,6 +33,9 @@ table RootState {
   // Ajouts du 2026-11-21 (taille du lecteur, espace du Connecteur) ; 0 : non communiqué.
   quota_bytes: uint64;        // quota de l'Utilisateur
   used_bytes: uint64;         // octets occupés par ses blocs de données
+  // Ajout du 2026-11-25 : descripteur scellé de current_root, tel que confié
+  // par le Connecteur (crypto.k-self#k-root) ; vide : aucun.
+  current_root_seal: [ubyte];
 }
 // StoreFragment
 table FragmentReceipt {

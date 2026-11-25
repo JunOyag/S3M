@@ -139,6 +139,7 @@ L'unicité fait l'objet d'un test unitaire du noyau (`impl/core`,
 | `"emergency-content"` | `K_emergency_content` | `K_attach` | — | — | [`protocols.espace-secours`](../04-protocols/espace-secours.md) |
 | `"emergency-signing"` | graine de `sig_priv_emergency` | `K_attach` | — | — | [`protocols.espace-secours`](../04-protocols/espace-secours.md) |
 | `"attachment-recovery"` | `K_self` | `priv_user` | — | — | [`crypto.k-self`](k-self.md) |
+| `"root-descriptor"` | `K_root` | `priv_user` | — | — | [`crypto.k-self#k-root`](k-self.md#k-root) |
 | `"node-recovery"` | `K_node_self` | `priv_node` | — | — | [`crypto.k-node-self`](k-node-self.md) |
 | `"dht-lookup"` | `user_dht_key` | `priv_user` | — | `pub_user` | [`network.dht-directory`](../01-network-dht/dht-directory.md) |
 | `"dht-signing"` | graine de `sig_priv_user` | `priv_user` | — | `pub_user` | [`network.dht-directory`](../01-network-dht/dht-directory.md) |

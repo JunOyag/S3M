@@ -85,6 +85,9 @@ table PutBlock {
 table CommitRoot {
   base_root: [ubyte];
   new_root: [ubyte];
+  // Ajout du 2026-11-25 : descripteur scellé de new_root (crypto.k-self#k-root),
+  // gardé par le Nœud sans pouvoir le lire ; vide : aucun (ancien Connecteur).
+  root_seal: [ubyte];
 }
 // Connecteur → Nœud
 table ReportIncident {

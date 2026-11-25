@@ -84,6 +84,13 @@ quelle (comme pour tout Utilisateur dont il ne connaît encore aucune racine) et
 une installation existante qui aurait perdu la liste de ses Utilisateurs
 (sauvegarde écrasée) ; elle n'est alors jamais gelée.
 
+Le snapshot garde aussi, par Utilisateur, sa racine courante et son
+descripteur scellé (ajout du 2026-11-25,
+[`crypto.k-self#k-root`](../03-crypto/k-self.md#k-root)) : un Nœud
+restauré les sert à un appareil neuf de l'Utilisateur sans attendre que
+celui-ci réécrive ; un Connecteur qui a une racine plus récente l'impose
+toujours (adoption).
+
 Un Connecteur ne transmet pas au Nœud une racine dont celui-ci n'a pas le bloc (Nœud recréé sans sauvegarde ni fiche de dispersion retrouvée) : il signale ses fichiers introuvables chez le Nœud et, faute de restauration, conseille de créer une nouvelle identité.
 
 ## Procédure de restauration

@@ -250,3 +250,27 @@ async fn block_source_and_replay_sink_use_the_network() {
     assert_eq!(source.fetch_from_node(&h), Some(block));
     assert_eq!(source.fetch_from_node(&[0xAA; 32]), None);
 }
+
+/// Appareil neuf, sans annuaire : le descripteur scellé gardé par le Nœud
+/// rend le sel de la racine (`crypto.k-self#k-root`).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_device_recovers_the_root_salt_from_the_node() {
+    let mut ns = NodeService::new(NODE);
+    ns.users.insert(pk(&USER), account());
+    let (_node, node_addr) = server(NODE, ns).await;
+    let session = |c: BlockClient| {
+        NodeSession::new(c, node_addr.clone(), &USER, &pk(&USER), &pk(&NODE), &SALT).unwrap()
+    };
+    let old = session(BlockClient::start().unwrap());
+    let (root, salt) = ([0x51u8; 32], [0x6cu8; 16]);
+    old.note_root(&root, &salt, 1);
+    let (ok, _) = old.commit_root(&[0; 32], &root).await.unwrap();
+    assert!(ok);
+
+    let new = session(BlockClient::start().unwrap());
+    assert_eq!(new.root_from_node(&root), None, "rien lu encore");
+    let (_, current) = new.commit_root(&[0; 32], &[0; 32]).await.unwrap();
+    assert_eq!(current, root.to_vec());
+    assert_eq!(new.root_from_node(&root), Some((salt, 1)));
+    assert_eq!(new.root_from_node(&[9; 32]), None);
+}

@@ -30,6 +30,8 @@ pub const EMERGENCY_CONTENT: &str = "emergency-content";
 pub const EMERGENCY_SIGNING: &str = "emergency-signing";
 /// `K_self` — crypto.k-self.
 pub const ATTACHMENT_RECOVERY: &str = "attachment-recovery";
+/// `K_root` : descripteur scellé de la racine (`crypto.k-self#k-root`).
+pub const ROOT_DESCRIPTOR: &str = "root-descriptor";
 /// `K_node_self` — crypto.k-node-self.
 pub const NODE_RECOVERY: &str = "node-recovery";
 /// `user_dht_key` — network.dht-directory.
@@ -57,8 +59,8 @@ pub const NODE_SNAPSHOT: &str = "node-snapshot";
 /// Secret TOTP de l'administration à distance — deploiement.appairage-admin.
 pub const ADMIN_TOTP: &str = "admin-totp";
 
-/// Les 20 étiquettes KDF du registre — source du test d'unicité.
-pub const ALL_KDF_LABELS: [&str; 20] = [
+/// Les 21 étiquettes KDF du registre — source du test d'unicité.
+pub const ALL_KDF_LABELS: [&str; 21] = [
     ELEMENT,
     CHILD_WRAP,
     SHARE_CONTENT,
@@ -71,6 +73,7 @@ pub const ALL_KDF_LABELS: [&str; 20] = [
     EMERGENCY_CONTENT,
     EMERGENCY_SIGNING,
     ATTACHMENT_RECOVERY,
+    ROOT_DESCRIPTOR,
     NODE_RECOVERY,
     DHT_LOOKUP,
     DHT_SIGNING,

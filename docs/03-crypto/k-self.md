@@ -47,6 +47,31 @@ Ce flux est la même logique que celle détaillée pour le Nœud dans
 [`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md),
 côté User.
 
+## K_root — descripteur scellé de la racine {: #k-root }
+
+Ajout du 2026-11-25. L'entrée User expire après 6 mois sans appareil
+connecté ([`network.dht-directory`](../01-network-dht/dht-directory.md)) ;
+or le `encryption_salt` de la racine
+([`crypto.k-block`](k-block.md), tiré à chaque nouvelle racine) n'est pas
+déductible de la seed. Le Connecteur confie donc aussi à son Nœud, à chaque
+validation de racine, un **descripteur scellé** :
+
+```
+K_root = KDF(priv_user, "root-descriptor")
+root_seal = 0x01 ‖ nonce (12) ‖ AEAD(K_root, nonce, aad = fs_root_hash,
+                                     encryption_salt (16) ‖ key_version (2, BE))
+```
+
+47 octets, clé dédiée (un usage par clé, §3.8) dérivée de la seed seule.
+Le Nœud le garde avec la racine sans pouvoir l'ouvrir, et le renvoie avec
+elle ([`protocols.echange-blocs`](../04-protocols/echange-blocs.md#descripteur-de-racine)).
+L'AAD lie le descripteur à sa racine : détaché d'elle, il ne s'ouvre pas.
+Un Nœud malveillant ne peut que servir une ancienne racine complète avec son
+descripteur — risque déjà assumé pour la racine seule (§3.12). Tant que le
+Nœud garde les données, la seed suffit donc à les relire, quelle que soit
+la durée d'absence ; l'entrée User reste la source quand le Nœud est hors
+ligne.
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par

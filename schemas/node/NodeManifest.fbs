@@ -44,6 +44,10 @@ table AttachedUser {
   attached_at: uint64;
   key_algorithm: uint8;            // 0 = Ed25519/X25519 (défaut) ; 1 = ML-DSA/ML-KEM ; 2 = hybride (§8.4)
   kem_ciphertext: [ubyte];         // vide si key_algorithm=0 ; sinon ciphertext ML-KEM figé à l'attachement (§8.2)
+  // Ajouts du 2026-11-25 : racine courante et son descripteur scellé
+  // (crypto.k-self#k-root), servis après une restauration du Nœud ; vides : inconnus.
+  root: [ubyte];
+  root_seal: [ubyte];
 }
 
 /// Partenaire exclu suite à une fraude PoS avérée (§5.3.5). Champ additif (§3.5).

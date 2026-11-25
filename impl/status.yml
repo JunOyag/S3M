@@ -134,6 +134,7 @@ entries:
       - k_self_vectors::k_self_derivation_is_deterministic
       - k_self_vectors::k_self_differs_per_priv_user
       - k_self_vectors::k_self_matches_generated_vector
+      - k_self_vectors::root_descriptor_opens_only_for_its_user_and_root
     notes: >-
       Spec V3 : K_self = KDF(priv_user, "attachment-recovery") via
       symmetric_suite::kdf. Vecteur généré par cryptography.
@@ -1175,6 +1176,7 @@ entries:
     status: done
     owner: claude-code
     tests:
+      - exchange::a_new_device_recovers_the_root_salt_from_the_node
       - exchange::connector_proof_is_bound_to_both_peers_and_k_attach
       - exchange::rescue_session_proof_is_bound_to_the_connection
       - exchange::delegation_lets_only_the_delegate_node_read_within_the_grant_lifetime

@@ -55,3 +55,20 @@ fn k_self_matches_generated_vector() {
     let input: [u8; 32] = hex::decode(FX_PRIV_USER_HEX).unwrap().try_into().unwrap();
     assert_eq!(hex::encode(derive_k_self(&input).expect("KDF")), K_SELF_HEX);
 }
+
+/// Descripteur scellé : ouvert par son Utilisateur pour sa racine seule.
+#[test]
+fn root_descriptor_opens_only_for_its_user_and_root() {
+    use s3m_core::k_self::{open_root_descriptor, seal_root_descriptor};
+    let (u, other) = ([1u8; 32], [2u8; 32]);
+    let (root, salt) = ([3u8; 32], [4u8; 16]);
+    let seal = seal_root_descriptor(&u, &root, &salt, 1, &[5; 12]).unwrap();
+    assert_eq!(seal.len(), 47);
+    assert_eq!(open_root_descriptor(&u, &root, &seal), Some((salt, 1)));
+    assert_eq!(open_root_descriptor(&other, &root, &seal), None);
+    assert_eq!(open_root_descriptor(&u, &[9; 32], &seal), None);
+    assert_eq!(open_root_descriptor(&u, &root, &[]), None);
+    let mut bad = seal.clone();
+    bad[20] ^= 1;
+    assert_eq!(open_root_descriptor(&u, &root, &bad), None);
+}

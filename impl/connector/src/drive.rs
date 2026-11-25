@@ -36,6 +36,9 @@ pub trait BlockIo: Send + Sync {
     fn put(&self, hash: &BlockHash, frame: Vec<u8>) -> Result<(), String>;
     /// `Ok(None)` : validée ; `Ok(Some(courante))` : conflit.
     fn commit(&self, base: &BlockHash, new: &BlockHash) -> Result<Option<BlockHash>, String>;
+    /// Racine connue (sel et version) : son descripteur scellé accompagnera
+    /// sa validation (`crypto.k-self#k-root`).
+    fn note_root(&self, _root: &Root) {}
 }
 
 /// `cache` : répertoire où garder les blocs lus (blocs de répertoire,
@@ -389,6 +392,7 @@ impl Drive {
             encryption_salt: arr(&journal.encryption_salt),
             key_version: journal.key_version,
         };
+        io.note_root(&root);
         Ok(Self {
             shared: None,
             io,
@@ -425,6 +429,7 @@ impl Drive {
         if self.root.fs_root_hash != NO_ROOT || self.pending() > 0 || root.fs_root_hash == NO_ROOT {
             return Ok(false);
         }
+        self.io.note_root(&root);
         self.journal.fs_root_hash = hex::encode(root.fs_root_hash);
         self.journal.encryption_salt = hex::encode(root.encryption_salt);
         self.journal.key_version = root.key_version;
@@ -462,6 +467,7 @@ impl Drive {
         for p in changes.keys() {
             before.insert(p.clone(), self.lookup_in(&old, p)?);
         }
+        self.io.note_root(&root);
         self.root = root.clone();
         self.journal.fs_root_hash = hex::encode(root.fs_root_hash);
         self.journal.encryption_salt = hex::encode(root.encryption_salt);
@@ -1300,6 +1306,11 @@ impl Drive {
     }
 
     fn commit_new_root(&mut self, first: BlockHash, salt: [u8; 16]) -> Result<(), DriveError> {
+        self.io.note_root(&Root {
+            fs_root_hash: first,
+            encryption_salt: salt,
+            key_version: KEY_VERSION,
+        });
         match self
             .io
             .commit(&self.root.fs_root_hash, &first)

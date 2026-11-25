@@ -29,6 +29,7 @@ impl<'a> RootState<'a> {
   pub const VT_CURRENT_ROOT: flatbuffers::VOffsetT = 6;
   pub const VT_QUOTA_BYTES: flatbuffers::VOffsetT = 8;
   pub const VT_USED_BYTES: flatbuffers::VOffsetT = 10;
+  pub const VT_CURRENT_ROOT_SEAL: flatbuffers::VOffsetT = 12;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -42,6 +43,7 @@ impl<'a> RootState<'a> {
     let mut builder = RootStateBuilder::new(_fbb);
     builder.add_used_bytes(args.used_bytes);
     builder.add_quota_bytes(args.quota_bytes);
+    if let Some(x) = args.current_root_seal { builder.add_current_root_seal(x); }
     if let Some(x) = args.current_root { builder.add_current_root(x); }
     builder.add_committed(args.committed);
     builder.finish()
@@ -76,6 +78,13 @@ impl<'a> RootState<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u64>(RootState::VT_USED_BYTES, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn current_root_seal(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(RootState::VT_CURRENT_ROOT_SEAL, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for RootState<'_> {
@@ -89,6 +98,7 @@ impl flatbuffers::Verifiable for RootState<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("current_root", Self::VT_CURRENT_ROOT, false)?
      .visit_field::<u64>("quota_bytes", Self::VT_QUOTA_BYTES, false)?
      .visit_field::<u64>("used_bytes", Self::VT_USED_BYTES, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("current_root_seal", Self::VT_CURRENT_ROOT_SEAL, false)?
      .finish();
     Ok(())
   }
@@ -98,6 +108,7 @@ pub struct RootStateArgs<'a> {
     pub current_root: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub quota_bytes: u64,
     pub used_bytes: u64,
+    pub current_root_seal: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
 }
 impl<'a> Default for RootStateArgs<'a> {
   #[inline]
@@ -107,6 +118,7 @@ impl<'a> Default for RootStateArgs<'a> {
       current_root: None,
       quota_bytes: 0,
       used_bytes: 0,
+      current_root_seal: None,
     }
   }
 }
@@ -133,6 +145,10 @@ impl<'a: 'b, 'b> RootStateBuilder<'a, 'b> {
     self.fbb_.push_slot::<u64>(RootState::VT_USED_BYTES, used_bytes, 0);
   }
   #[inline]
+  pub fn add_current_root_seal(&mut self, current_root_seal: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RootState::VT_CURRENT_ROOT_SEAL, current_root_seal);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> RootStateBuilder<'a, 'b> {
     let start = _fbb.start_table();
     RootStateBuilder {
@@ -154,6 +170,7 @@ impl core::fmt::Debug for RootState<'_> {
       ds.field("current_root", &self.current_root());
       ds.field("quota_bytes", &self.quota_bytes());
       ds.field("used_bytes", &self.used_bytes());
+      ds.field("current_root_seal", &self.current_root_seal());
       ds.finish()
   }
 }

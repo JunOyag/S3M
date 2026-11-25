@@ -23,6 +23,7 @@ fn every_request_and_response_roundtrips() {
         Body::CommitRoot {
             base_root: vec![3; 32],
             new_root: vec![4; 32],
+            root_seal: vec![7; 47],
         },
         Body::ReportIncident { hash: vec![5; 32] },
         Body::RenewGrant {
@@ -105,6 +106,7 @@ fn every_request_and_response_roundtrips() {
             current_root: vec![3; 32],
             quota_bytes: 10 << 30,
             used_bytes: 12_345,
+            current_root_seal: vec![8; 47],
         },
         Response::FragmentReceipt {
             hash: vec![4; 32],

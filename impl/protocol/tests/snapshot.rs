@@ -14,6 +14,8 @@ fn desc(users: usize) -> SnapshotDesc {
                 salt: vec![i as u8; 16],
                 quota_bytes: 1 << 30,
                 attached_at: i as u64,
+                root: if i < 3 { vec![i as u8 + 1; 32] } else { Vec::new() },
+                root_seal: if i < 3 { vec![i as u8; 47] } else { Vec::new() },
             })
             .collect(),
         partners: vec![SnapPartner {

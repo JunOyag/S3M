@@ -258,12 +258,19 @@ pub async fn restore_snapshot(
             }
         }
         for u in &manifest.users {
+            // Racine sauvegardée et son descripteur : un appareil neuf
+            // retrouve ses fichiers ; le Connecteur qui en a une plus
+            // récente l'impose toujours (adoption).
+            let root: [u8; 32] = u.root.as_slice().try_into().unwrap_or([0; 32]);
             s.users.entry(u.user_id).or_insert_with(|| UserAccount {
                 salt: u.salt.clone(),
                 quota_bytes: u.quota_bytes,
                 used_bytes: 0,
-                root: [0; 32],
+                root,
             });
+            if !u.root_seal.is_empty() {
+                s.root_seals.insert(u.user_id, u.root_seal.clone());
+            }
             s.adopt_next_root.insert(u.user_id);
         }
     }

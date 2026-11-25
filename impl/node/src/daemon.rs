@@ -286,6 +286,9 @@ pub struct SavedUser {
     pub quota_bytes: u64,
     pub used_bytes: u64,
     pub root: String,
+    /// Descripteur scellé de la racine (`crypto.k-self#k-root`).
+    #[serde(default)]
+    pub root_seal: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -362,6 +365,7 @@ impl SavedState {
                 quota_bytes: u.quota_bytes,
                 used_bytes: u.used_bytes,
                 root: hx(&u.root),
+                root_seal: s.root_seals.get(id).map(|v| hx(v)).unwrap_or_default(),
             })
             .collect();
         users.sort_by(|a, b| a.user_id.cmp(&b.user_id));
@@ -441,6 +445,11 @@ impl SavedState {
                     root: unhex32(&u.root)?,
                 },
             );
+            if let Ok(v) = hex::decode(&u.root_seal) {
+                if !v.is_empty() {
+                    s.root_seals.insert(unhex32(&u.user_id)?, v);
+                }
+            }
         }
         for p in &self.partners {
             let id = unhex32(&p.node_id)?;

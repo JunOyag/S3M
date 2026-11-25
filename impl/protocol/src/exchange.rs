@@ -153,6 +153,9 @@ pub enum Body {
     CommitRoot {
         base_root: Vec<u8>,
         new_root: Vec<u8>,
+        /// Descripteur scellé de `new_root` (`crypto.k-self#k-root`) ; vide :
+        /// aucun.
+        root_seal: Vec<u8>,
     },
     ReportIncident {
         hash: Vec<u8>,
@@ -260,6 +263,8 @@ pub enum Response {
         /// Quota et occupation de l'Utilisateur (0 : non communiqué).
         quota_bytes: u64,
         used_bytes: u64,
+        /// Descripteur scellé de `current_root` ; vide : aucun.
+        current_root_seal: Vec<u8>,
     },
     FragmentReceipt {
         hash: Vec<u8>,
@@ -427,14 +432,17 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
         Body::CommitRoot {
             base_root,
             new_root,
+            root_seal,
         } => {
             let x = b.create_vector(base_root);
             let y = b.create_vector(new_root);
+            let z = (!root_seal.is_empty()).then(|| b.create_vector(root_seal));
             let o = fb::CommitRoot::create(
                 &mut b,
                 &fb::CommitRootArgs {
                     base_root: Some(x),
                     new_root: Some(y),
+                    root_seal: z,
                 },
             );
             (fb::RequestBody::CommitRoot, o.as_union_value())
@@ -734,6 +742,7 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
             Body::CommitRoot {
                 base_root: bytes(c.base_root()),
                 new_root: bytes(c.new_root()),
+                root_seal: bytes(c.root_seal()),
             }
         }
         fb::RequestBody::ReportIncident => Body::ReportIncident {
@@ -868,8 +877,10 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             current_root,
             quota_bytes,
             used_bytes,
+            current_root_seal,
         } => {
             let c = b.create_vector(current_root);
+            let z = (!current_root_seal.is_empty()).then(|| b.create_vector(current_root_seal));
             let o = fb::RootState::create(
                 &mut b,
                 &fb::RootStateArgs {
@@ -877,6 +888,7 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
                     current_root: Some(c),
                     quota_bytes: *quota_bytes,
                     used_bytes: *used_bytes,
+                    current_root_seal: z,
                 },
             );
             (fb::ResponseBody::RootState, o.as_union_value())
@@ -1040,6 +1052,7 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
                 current_root: bytes(s.current_root()),
                 quota_bytes: s.quota_bytes(),
                 used_bytes: s.used_bytes(),
+                current_root_seal: bytes(s.current_root_seal()),
             }
         }
         fb::ResponseBody::FragmentReceipt => {

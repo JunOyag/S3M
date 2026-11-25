@@ -732,7 +732,7 @@ pages:
     path: 03-crypto/k-self.md
     title: "K_self — Récupération depuis la Seed"
     section: "§3.8"
-    refs: [network.dht-directory, deploiement.disaster-recovery, crypto.identity-derivation]
+    refs: [network.dht-directory, deploiement.disaster-recovery, crypto.identity-derivation, crypto.k-block, protocols.echange-blocs]
     verified_by:
       - k_self_vectors::k_self_derivation_is_deterministic
       - k_self_vectors::k_self_differs_per_priv_user

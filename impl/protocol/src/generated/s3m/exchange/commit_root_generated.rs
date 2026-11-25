@@ -27,6 +27,7 @@ impl<'a> flatbuffers::Follow<'a> for CommitRoot<'a> {
 impl<'a> CommitRoot<'a> {
   pub const VT_BASE_ROOT: flatbuffers::VOffsetT = 4;
   pub const VT_NEW_ROOT: flatbuffers::VOffsetT = 6;
+  pub const VT_ROOT_SEAL: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -38,6 +39,7 @@ impl<'a> CommitRoot<'a> {
     args: &'args CommitRootArgs<'args>
   ) -> flatbuffers::WIPOffset<CommitRoot<'bldr>> {
     let mut builder = CommitRootBuilder::new(_fbb);
+    if let Some(x) = args.root_seal { builder.add_root_seal(x); }
     if let Some(x) = args.new_root { builder.add_new_root(x); }
     if let Some(x) = args.base_root { builder.add_base_root(x); }
     builder.finish()
@@ -58,6 +60,13 @@ impl<'a> CommitRoot<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(CommitRoot::VT_NEW_ROOT, None)}
   }
+  #[inline]
+  pub fn root_seal(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(CommitRoot::VT_ROOT_SEAL, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for CommitRoot<'_> {
@@ -69,6 +78,7 @@ impl flatbuffers::Verifiable for CommitRoot<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("base_root", Self::VT_BASE_ROOT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("new_root", Self::VT_NEW_ROOT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("root_seal", Self::VT_ROOT_SEAL, false)?
      .finish();
     Ok(())
   }
@@ -76,6 +86,7 @@ impl flatbuffers::Verifiable for CommitRoot<'_> {
 pub struct CommitRootArgs<'a> {
     pub base_root: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub new_root: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub root_seal: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
 }
 impl<'a> Default for CommitRootArgs<'a> {
   #[inline]
@@ -83,6 +94,7 @@ impl<'a> Default for CommitRootArgs<'a> {
     CommitRootArgs {
       base_root: None,
       new_root: None,
+      root_seal: None,
     }
   }
 }
@@ -99,6 +111,10 @@ impl<'a: 'b, 'b> CommitRootBuilder<'a, 'b> {
   #[inline]
   pub fn add_new_root(&mut self, new_root: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CommitRoot::VT_NEW_ROOT, new_root);
+  }
+  #[inline]
+  pub fn add_root_seal(&mut self, root_seal: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(CommitRoot::VT_ROOT_SEAL, root_seal);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> CommitRootBuilder<'a, 'b> {
@@ -120,6 +136,7 @@ impl core::fmt::Debug for CommitRoot<'_> {
     let mut ds = f.debug_struct("CommitRoot");
       ds.field("base_root", &self.base_root());
       ds.field("new_root", &self.new_root());
+      ds.field("root_seal", &self.root_seal());
       ds.finish()
   }
 }

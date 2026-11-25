@@ -28,3 +28,49 @@ use crate::symmetric_suite::kdf;
 pub fn derive_k_self(priv_user: &[u8; 32]) -> Result<[u8; 32], CoreError> {
     kdf(priv_user, labels::ATTACHMENT_RECOVERY, &[], &[])
 }
+
+/// `K_root = KDF(priv_user, "root-descriptor")` — sortie 32 o
+/// (`crypto.k-self#k-root`).
+pub fn derive_k_root(priv_user: &[u8; 32]) -> Result<[u8; 32], CoreError> {
+    kdf(priv_user, labels::ROOT_DESCRIPTOR, &[], &[])
+}
+
+/// Version du format du descripteur scellé.
+pub const ROOT_SEAL_VERSION: u8 = 1;
+
+/// Descripteur scellé d'une racine : `0x01 ‖ nonce (12) ‖ AEAD(K_root,
+/// nonce, aad = fs_root_hash, encryption_salt (16) ‖ key_version (2, BE))`,
+/// 47 octets. Lié à `fs_root_hash` : détaché de sa racine, il ne s'ouvre pas.
+pub fn seal_root_descriptor(
+    priv_user: &[u8; 32],
+    fs_root_hash: &[u8; 32],
+    encryption_salt: &[u8; 16],
+    key_version: u16,
+    nonce: &[u8; 12],
+) -> Result<Vec<u8>, CoreError> {
+    let k = derive_k_root(priv_user)?;
+    let mut clear = encryption_salt.to_vec();
+    clear.extend_from_slice(&key_version.to_be_bytes());
+    let sealed = crate::symmetric_suite::aead_seal(&k, nonce, fs_root_hash, &clear)?;
+    let mut out = vec![ROOT_SEAL_VERSION];
+    out.extend_from_slice(nonce);
+    out.extend_from_slice(&sealed);
+    Ok(out)
+}
+
+/// Ouvre le descripteur scellé de `fs_root_hash` : `(encryption_salt,
+/// key_version)` ; `None` s'il est vide, d'une autre racine ou altéré.
+pub fn open_root_descriptor(
+    priv_user: &[u8; 32],
+    fs_root_hash: &[u8; 32],
+    seal: &[u8],
+) -> Option<([u8; 16], u16)> {
+    if seal.len() != 1 + 12 + 18 + 16 || seal[0] != ROOT_SEAL_VERSION {
+        return None;
+    }
+    let k = derive_k_root(priv_user).ok()?;
+    let clear = crate::symmetric_suite::aead_open(&k, &seal[1..13], fs_root_hash, &seal[13..]).ok()?;
+    let salt: [u8; 16] = clear.get(..16)?.try_into().ok()?;
+    let version = u16::from_be_bytes(clear.get(16..18)?.try_into().ok()?);
+    Some((salt, version))
+}

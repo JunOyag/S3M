@@ -27,6 +27,10 @@ pub struct SnapUser {
     pub salt: Vec<u8>,
     pub quota_bytes: u64,
     pub attached_at: u64,
+    /// Racine courante et son descripteur scellé (`crypto.k-self#k-root`) ;
+    /// vides : inconnus.
+    pub root: Vec<u8>,
+    pub root_seal: Vec<u8>,
 }
 
 /// Compte partenaire.
@@ -112,12 +116,16 @@ pub fn encode_manifest(s: &SnapshotDesc) -> Vec<u8> {
         .map(|u| {
             let id = b.create_vector(&u.user_id);
             let salt = b.create_vector(&u.salt);
+            let root = (!u.root.is_empty()).then(|| b.create_vector(&u.root));
+            let seal = (!u.root_seal.is_empty()).then(|| b.create_vector(&u.root_seal));
             fbn::AttachedUser::create(
                 &mut b,
                 &fbn::AttachedUserArgs {
                     user_id: Some(id),
                     salt: Some(salt),
                     attached_at: u.attached_at,
+                    root,
+                    root_seal: seal,
                     ..Default::default()
                 },
             )
@@ -184,6 +192,8 @@ pub fn decode_manifest(buf: &[u8]) -> Result<SnapshotDesc, CatalogError> {
                             .map(|q| q.1)
                             .unwrap_or(0),
                         attached_at: u.attached_at(),
+                        root: u.root().map(|s| s.bytes().to_vec()).unwrap_or_default(),
+                        root_seal: u.root_seal().map(|s| s.bytes().to_vec()).unwrap_or_default(),
                     })
                 })
                 .collect::<Result<Vec<_>, CatalogError>>()

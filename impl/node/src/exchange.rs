@@ -217,6 +217,9 @@ pub struct NodeService {
     /// Après restauration, la racine courante de ces Utilisateurs est
     /// inconnue : leur prochaine validation est adoptée telle quelle.
     pub adopt_next_root: std::collections::HashSet<Id>,
+    /// Descripteur scellé de la racine courante de chaque Utilisateur, gardé
+    /// sans pouvoir le lire (`crypto.k-self#k-root`).
+    pub root_seals: HashMap<Id, Vec<u8>>,
     pub attach_policy: AttachPolicy,
     pub partner_policy: PartnerPolicy,
     /// Vérification des preuves VDF (rattachement et partenariat
@@ -313,6 +316,7 @@ impl NodeService {
             delegations: Vec::new(),
             dispersal_queue: Vec::new(),
             adopt_next_root: Default::default(),
+            root_seals: Default::default(),
             attach_policy: AttachPolicy::default(),
             partner_policy: PartnerPolicy::default(),
             vdf: None,
@@ -491,22 +495,35 @@ impl NodeService {
             Body::CommitRoot {
                 base_root,
                 new_root,
+                root_seal,
             } => {
                 let u = self.user(cred, from, local)?;
                 let (base, new) = (id32(&base_root)?, id32(&new_root)?);
-                let adopt = self.adopt_next_root.remove(&u);
+                // Une lecture neutre d'un appareil sans racine (`0 → 0`) ne
+                // consomme pas l'adoption.
+                let adopt = new != [0; 32] && self.adopt_next_root.remove(&u);
                 let acc = self.users.get_mut(&u).ok_or(Refusal::Unauthorized)?;
                 // Aucune racine connue (Utilisateur restauré ou repris, même
                 // après un redémarrage du Nœud) : la sienne est adoptée.
                 let committed = adopt || acc.root == base || acc.root == [0; 32];
                 if committed {
+                    let changed = acc.root != new;
                     acc.root = new;
+                    // Descripteur : remplacé s'il est fourni ; effacé si la
+                    // racine change sans lui (jamais de descripteur périmé).
+                    if !root_seal.is_empty() {
+                        self.root_seals.insert(u, root_seal);
+                    } else if changed {
+                        self.root_seals.remove(&u);
+                    }
                 }
+                let acc = &self.users[&u];
                 Ok(Response::RootState {
                     committed,
                     current_root: acc.root.to_vec(),
                     quota_bytes: acc.quota_bytes,
                     used_bytes: acc.used_bytes,
+                    current_root_seal: self.root_seals.get(&u).cloned().unwrap_or_default(),
                 })
             }
             Body::ReportIncident { hash } => {

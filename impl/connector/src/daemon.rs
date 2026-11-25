@@ -447,6 +447,11 @@ impl BlockIo for NodeIo {
         }
     }
 
+    fn note_root(&self, root: &Root) {
+        self.session
+            .note_root(&root.fs_root_hash, &root.encryption_salt, root.key_version);
+    }
+
     fn commit(&self, base: &BlockHash, new: &BlockHash) -> Result<Option<BlockHash>, String> {
         let (ok, current) = self
             .wait(self.session.commit_root(base, new))
@@ -1842,8 +1847,20 @@ pub fn tray_view(sh: &Shared) -> TrayView {
 /// suivante.
 fn resolve_conflict(sh: &Shared, drive: &mut crate::drive::Drive) -> Option<Vec<String>> {
     let current = drive.conflict?;
-    let root = root_from_dht(sh, current).or_else(|| root_from_set_aside(sh, current))?;
+    let root = root_from_node(sh, current)
+        .or_else(|| root_from_dht(sh, current))
+        .or_else(|| root_from_set_aside(sh, current))?;
     drive.rebase(root, (sh.clock)()).ok()
+}
+
+/// Racine `current` d'après le descripteur gardé par le Nœud.
+fn root_from_node(sh: &Shared, current: BlockHash) -> Option<Root> {
+    let (encryption_salt, key_version) = sh.session.root_from_node(&current)?;
+    Some(Root {
+        fs_root_hash: current,
+        encryption_salt,
+        key_version,
+    })
 }
 
 /// Racine `current` d'après l'entrée User publiée.
@@ -1965,9 +1982,11 @@ async fn adopt_known_root(sh: &Shared) {
     if cur == [0u8; 32] {
         return;
     }
-    if let Some(root) = root_from_set_aside(sh, cur) {
+    // Descripteur gardé par le Nœud d'abord : la phrase de récupération
+    // suffit (`crypto.k-self#k-root`).
+    if let Some(root) = root_from_node(sh, cur).or_else(|| root_from_set_aside(sh, cur)) {
         if d.lock().unwrap().adopt_root(root).unwrap_or(false) {
-            eprintln!("version des fichiers reprise de l'ancien espace local");
+            eprintln!("version des fichiers reprise");
         }
     }
 }

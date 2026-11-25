@@ -43,6 +43,8 @@ pub fn current_desc(
             salt: u.salt.clone(),
             quota_bytes: u.quota_bytes,
             attached_at: 0,
+            root: if u.root == [0; 32] { Vec::new() } else { u.root.to_vec() },
+            root_seal: s.root_seals.get(id).cloned().unwrap_or_default(),
         })
         .collect();
     users.sort_by_key(|u| u.user_id);

@@ -88,30 +88,26 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
         call(&mut s, Body::PutBlock { data: vec![2; 60] }),
         Response::Failure(Refusal::QuotaExceeded)
     );
-    let commit = |base: u8, new: u8| Body::CommitRoot {
+    let commit = |base: u8, new: u8, seal: Vec<u8>| Body::CommitRoot {
         base_root: vec![base; 32],
         new_root: vec![new; 32],
+        root_seal: seal,
+    };
+    let state = |committed: bool, root: u8, seal: Vec<u8>| Response::RootState {
+        committed,
+        current_root: vec![root; 32],
+        quota_bytes: 100,
+        used_bytes: 60,
+        current_root_seal: seal,
     };
     // Aucune racine connue (Utilisateur repris) : une base ancienne est
-    // acceptée telle quelle, une seule fois.
-    assert_eq!(
-        call(&mut s, commit(9, 5)),
-        Response::RootState {
-            committed: true,
-            current_root: vec![5; 32],
-            quota_bytes: 100,
-            used_bytes: 60,
-        }
-    );
-    assert_eq!(
-        call(&mut s, commit(0, 6)),
-        Response::RootState {
-            committed: false,
-            current_root: vec![5; 32],
-            quota_bytes: 100,
-            used_bytes: 60,
-        }
-    );
+    // acceptée telle quelle, une seule fois ; le descripteur est gardé.
+    assert_eq!(call(&mut s, commit(9, 5, vec![1; 47])), state(true, 5, vec![1; 47]));
+    assert_eq!(call(&mut s, commit(0, 6, vec![2; 47])), state(false, 5, vec![1; 47]));
+    // Lecture neutre sans descripteur : gardé ; racine changée sans
+    // descripteur (ancien Connecteur) : effacé.
+    assert_eq!(call(&mut s, commit(5, 5, vec![])), state(true, 5, vec![1; 47]));
+    assert_eq!(call(&mut s, commit(5, 7, vec![])), state(true, 7, vec![]));
     // Preuve reprise sur une autre connexion, ou absence d'identifiant.
     let stolen = user_req(&NODE, Body::GetBlock { hash: h.to_vec() }, b"c", b"n");
     assert_eq!(

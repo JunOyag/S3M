@@ -215,6 +215,22 @@ communiqué par un Nœud plus ancien) donnent la taille du lecteur monté et
 l'espace affiché par le Connecteur. Un `CommitRoot` dont
 `new_root = base_root` ne change rien : il sert à lire cet état.
 
+### Descripteur de racine {: #descripteur-de-racine }
+
+Ajout du 2026-11-25. `CommitRoot.root_seal` porte le descripteur scellé de
+`new_root` ([`crypto.k-self#k-root`](../03-crypto/k-self.md#k-root)), que le
+Nœud garde avec la racine et renvoie dans `RootState.current_root_seal`.
+Règles du Nœud, à une racine validée : descripteur fourni → il remplace le
+précédent ; absent et racine inchangée (lecture) → le précédent est gardé ;
+absent et racine changée (Connecteur plus ancien) → effacé, jamais de
+descripteur périmé. Une lecture `0 → 0` d'un appareil sans racine ne
+consomme pas l'adoption d'un Utilisateur restauré ou repris. Le Connecteur
+sans sel connu pour la racine courante (appareil neuf, autre appareil
+après un conflit) ouvre le descripteur reçu avant de recourir à l'entrée
+User. Le descripteur figure aussi dans le snapshot du Nœud
+(`AttachedUser.root` / `root_seal`,
+[`deploiement.disaster-recovery`](../07-deploiement/disaster-recovery.md)).
+
 Toute erreur est une `Failure` portant un `ErrorCode`. Un partenaire qui
 répond `NotFound` à un `FetchFragment` ou `Challenge` portant sur un fragment
 qu'il doit héberger est traité comme un échec PoS
