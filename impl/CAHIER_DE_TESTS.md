@@ -176,3 +176,58 @@ Classées par priorité, issues des lacunes ⚠ ci-dessus.
   CNC-01, IDE-02.
 - Une lacune ⚠ confirmée par un essai devient une entrée de
   `impl/SPEC_GAPS.md`, puis une fonctionnalité cadrée.
+
+## Campagne du 2026-11-25 : améliorations réalisées et résultats
+
+Les dix améliorations de la synthèse sont intégrées (spec, code, tests) :
+
+| Rang | Amélioration | Couverture désormais | Essais |
+|---|---|---|---|
+| 1 | Historique des versions, restauration, purge, garde-fou rançongiciel | ✅ `history::*` | CON-02, CON-03 |
+| 2 | Rotation d'identité, « Rechiffrer avec la nouvelle clé » | ✅ `rotation::*`, `exchange::rotation_*` | IDE-03 |
+| 3 | Copie locale des blocs jusqu'à leur dispersion | ✅ `unsent::*` | RED-03, VOL-05 (partiel) |
+| 4 | Altération massive → maintenance et relecture complète | ✅ `maintenance::a_burst_*` | VOL-03 |
+| 5 | Garde-fou d'horloge | ✅ `clock_guard::*` | NOD-07 |
+| 6 | Retour arrière : tout l'espace à une version ; ancienne version imposée refusée | ✅ `rollback::*` | NOD-13 |
+| 7 | Maintenance déclarée : 24 h, une fois par semaine | ✅ `exchange::a_partner_maintenance_*` | NOD-17 |
+| 8 | Reconstruction de la base du stockage | ✅ `disk_faults::a_lost_or_corrupted_*` | VOL-09 |
+| 9 | Alertes hors tableau de bord (fenêtre, webhook, courriel) | ✅ `alerts::*` | ADM-03 |
+| 10 | Fuzzing, partition de l'annuaire, mesures | ✅ voir ci-dessous | NOD-19, DHT-05, RED-06 |
+
+### Fuzzing (NOD-19)
+
+- `protocol/tests/fuzz.rs` : 20 000 messages aléatoires ou altérés, 20 000
+  enveloppes d'annuaire ; `node/tests/fuzz_requests.rs` : requêtes aux
+  champs aléatoires sous un identifiant valide.
+- **Défaut trouvé et corrigé** : un message ou une enveloppe d'annuaire de
+  moins de 8 octets faisait paniquer le décodeur FlatBuffers ; reçu d'un
+  pair dans l'annuaire, il pouvait faire tomber la boucle réseau du Nœud.
+
+### Partition de l'annuaire (DHT-05)
+
+- `node/tests/partition.rs`, pile réseau de production : deux groupes
+  isolés ne se voient pas ; un Nœud qui les relie rend l'entrée lisible
+  partout, sans attendre de republication. ✅
+- Éclipse (DHT-04) : non outillé ; l'intégrité reste garantie par la
+  vérification des signatures (DHT-02).
+
+### Mesures de référence (RED-06), `cargo run --release --example perf`
+
+Machine de développement (Windows), 32 Mio, blocs de 64 Kio :
+
+| Opération | Débit |
+|---|---|
+| Chiffrement des blocs (ChaCha20-Poly1305) | 959 Mio/s |
+| Hachage SHA-256 | 1 693 Mio/s |
+| Parité Reed-Solomon k=2, coef=2 | 862 Mio/s |
+| Parité Reed-Solomon k=4, coef=3 | 323 Mio/s |
+| **Écriture du stockage physique** | **6,6 Mio/s** |
+| Relecture du stockage physique | 388 Mio/s |
+
+### Nouvelles améliorations à cadrer
+
+| Priorité | Constat | Piste |
+|---|---|---|
+| P1 | L'écriture sur le stockage physique plafonne à 6,6 Mio/s : chaque bloc est synchronisé sur le disque un par un (données, en-tête, journal SQLite) ; un envoi de 1 Gio prend environ 2 min 30 côté Nœud | Écritures groupées : un `sync` et une transaction par lot de blocs reçus, réponse `Stored` après le lot |
+| P2 | Les scénarios Docker de `tests/integration/` sont des squelettes (pas de Dockerfile) | Images Nœud / Connecteur et scénarios NOD-01, VOL-01, CON-01 automatisés |
+| P2 | Bloc non dispersé perdu alors que sa copie locale a été abandonnée (au-delà de Q_max) | Signaler l'abandon de copie à l'Utilisateur, ou ralentir l'envoi plutôt qu'abandonner |

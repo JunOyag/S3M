@@ -743,7 +743,8 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
     if buf.len() > MAX_MESSAGE_BYTES {
         return Err(Refusal::TooLarge);
     }
-    if !fb::block_request_buffer_has_identifier(buf) {
+    // Moins de 8 octets : la crate `flatbuffers` paniquerait.
+    if buf.len() < 8 || !fb::block_request_buffer_has_identifier(buf) {
         return Err(Refusal::Malformed);
     }
     let r = fb::root_as_block_request(buf).map_err(|_| Refusal::Malformed)?;
@@ -1159,7 +1160,7 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
     if buf.len() > MAX_MESSAGE_BYTES {
         return Err(Refusal::TooLarge);
     }
-    if !fb::block_response_buffer_has_identifier(buf) {
+    if buf.len() < 8 || !fb::block_response_buffer_has_identifier(buf) {
         return Err(Refusal::Malformed);
     }
     let r = fb::root_as_block_response(buf).map_err(|_| Refusal::Malformed)?;

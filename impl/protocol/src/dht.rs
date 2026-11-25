@@ -316,7 +316,8 @@ pub fn verify_envelope(
         .ok_or(DhtError::Format("payload absent"))?
         .bytes();
     let signature = env.signature().ok_or(DhtError::BadSignature)?.bytes();
-    if !flatbuffers::buffer_has_identifier(payload, kind.file_identifier(), false) {
+    // Moins de 8 octets : la crate `flatbuffers` paniquerait.
+    if payload.len() < 8 || !flatbuffers::buffer_has_identifier(payload, kind.file_identifier(), false) {
         return Err(DhtError::WrongFileIdentifier);
     }
     let tag = env.key_algorithm();
@@ -404,7 +405,7 @@ pub fn inspect_envelope(envelope: &[u8]) -> Result<EnvelopeSummary, DhtError> {
         .ok_or(DhtError::Format("payload absent"))?
         .bytes();
     let has =
-        |k: EntryKind| flatbuffers::buffer_has_identifier(payload, k.file_identifier(), false);
+        |k: EntryKind| payload.len() >= 8 && flatbuffers::buffer_has_identifier(payload, k.file_identifier(), false);
     let bad = |what| move |_| DhtError::Format(what);
     let summary = if has(EntryKind::Node) {
         let e = dht::root_as_node_entry(payload).map_err(bad("NodeEntry"))?;

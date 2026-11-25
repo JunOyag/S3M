@@ -489,6 +489,8 @@ entries:
     status: done
     owner: claude-code
     tests:
+      - fuzz::random_directory_envelopes_never_panic
+      - partition::a_partitioned_directory_converges_once_reconnected
       - dht::signature_over_labelled_payload_matches_generated_vector
       - dht::blob_matches_generated_vector_and_is_bound_to_its_label
       - dht::lookup_keys_match_generated_vectors
@@ -1188,6 +1190,8 @@ entries:
     status: done
     owner: claude-code
     tests:
+      - fuzz::random_and_mutated_messages_never_panic
+      - fuzz_requests::random_requests_never_panic_the_node
       - exchange::a_new_device_recovers_the_root_salt_from_the_node
       - exchange::connector_proof_is_bound_to_both_peers_and_k_attach
       - exchange::rescue_session_proof_is_bound_to_the_connection
