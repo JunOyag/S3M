@@ -620,6 +620,12 @@ async function versionsOf(path, isDir) {
 $("versions").addEventListener("click", () => versionsOf("/", true));
 $("current").addEventListener("click", () => browse(null, "", cwd));
 $("restoredir").addEventListener("click", () => restore(cwd, version, versionLabel));
+$("restoreall").addEventListener("click", () => {
+  if (!window.confirm("Remettre TOUT votre espace dans l'état du " + versionLabel + " ? (après un rançongiciel par exemple) La version actuelle reste dans l'historique.")) return;
+  const v = version;
+  version = null;
+  run("Retour de tout l'espace au " + versionLabel, () => call("explorer_restore_all", { version: v }));
+});
 
 const zone = $("zone");
 zone.addEventListener("dragover", (ev) => {

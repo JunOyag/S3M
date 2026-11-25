@@ -720,6 +720,11 @@ fn main() {
                         if v.attach_error.is_some() && prev.as_ref().is_none_or(|p| p.attach_error != v.attach_error) {
                             say(id, &format!("Rattachement refusé : {}", v.attach_error.clone().unwrap_or_default()));
                         }
+                        if v.text == s3m_connector::daemon::ROLLBACK_TEXT
+                            && prev.as_ref().is_none_or(|p| p.text != v.text)
+                        {
+                            say(id, s3m_connector::daemon::ROLLBACK_TEXT);
+                        }
                         if v.text == s3m_connector::daemon::MASS_CHANGE_TEXT
                             && prev.as_ref().is_none_or(|p| p.text != v.text)
                         {

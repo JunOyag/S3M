@@ -1569,6 +1569,37 @@ impl Drive {
     /// Racine validée par un autre Connecteur (réconciliation d'un dépôt
     /// d'urgence) : adoptée si elle part de la racine courante et
     /// qu'aucune modification locale n'est en attente.
+    /// Rétablit tout l'espace dans la version `root` (retour arrière choisi
+    /// par l'Utilisateur, `protocols.historique-versions#retour-arriere`) :
+    /// validée chez le Nœud comme une nouvelle racine ; la version courante
+    /// entre dans l'historique.
+    pub fn restore_root(&mut self, root: Root) -> Result<(), DriveError> {
+        if self.pending() > 0 {
+            return Err(DriveError::Node(
+                "modifications en attente : synchronisez d'abord".into(),
+            ));
+        }
+        self.io.note_root(&root);
+        match self
+            .io
+            .commit(&self.root.fs_root_hash, &root.fs_root_hash)
+            .map_err(DriveError::Node)?
+        {
+            Some(current) if current != root.fs_root_hash => {
+                self.conflict = Some(current);
+                Err(DriveError::Conflict)
+            }
+            _ => {
+                self.journal.fs_root_hash = hex::encode(root.fs_root_hash);
+                self.journal.encryption_salt = hex::encode(root.encryption_salt);
+                self.journal.key_version = root.key_version;
+                self.root = root;
+                self.journal.revision += 1;
+                self.persist()
+            }
+        }
+    }
+
     pub fn advance_root(&mut self, base: &BlockHash, root: Root) -> Result<bool, DriveError> {
         if self.pending() > 0 || self.root.fs_root_hash != *base {
             return Ok(false);

@@ -53,6 +53,20 @@ L'historique est gardé dans l'état du Nœud, pas dans son snapshot.
   synchronisation suspendent l'envoi et préviennent l'Utilisateur
   (rançongiciel ?) ; sa reprise vaut accord pour cette synchronisation.
 
+## Retour arrière {: #retour-arriere }
+
+- **Choisi par l'Utilisateur** : en parcourant une version passée,
+  « Restaurer tout l'espace à cette version » la valide comme nouvelle
+  racine (`CommitRoot` depuis la racine courante, descripteur scellé) ; la
+  version remplacée entre dans l'historique. Réponse à un rançongiciel.
+- **Imposé par le Nœud** : la racine que sert le Nœud diffère de la
+  dernière validée par ce Connecteur, figure dans l'historique du Nœud,
+  alors que la dernière validée n'y figure pas (un autre appareil qui écrit
+  ou restaure l'y laisse). Le Connecteur refuse de l'adopter, garde ses
+  modifications et alerte l'Utilisateur (état et notification). Un Nœud
+  qui falsifierait aussi son historique n'est pas détecté : risque assumé
+  (§3.12).
+
 ## Références
 
 - `protocols.echange-blocs` — Protocole d'Échange de Blocs

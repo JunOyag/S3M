@@ -503,7 +503,13 @@ pub struct Health {
     /// Le Nœud n'a pas le bloc racine des fichiers (Nœud recréé sans
     /// restauration) : la racine ne lui est pas transmise.
     pub files_missing: bool,
+    /// Le Nœud sert une version plus ancienne que la dernière validée
+    /// (`protocols.historique-versions#retour-arriere`) : refusée.
+    pub rollback: bool,
 }
+
+/// Retour arrière imposé par le Nœud : alerte.
+pub const ROLLBACK_TEXT: &str = "Votre Nœud présente une version ANCIENNE de vos fichiers, sans trace de la plus récente que vous aviez validée : elle n'est pas adoptée. Contactez l'opérateur du Nœud ; vos modifications restent sur cet appareil.";
 
 /// Fichiers introuvables chez le Nœud : conseil à l'Utilisateur.
 pub const FILES_MISSING: &str = "Vos fichiers sont introuvables chez votre Nœud (Nœud recréé sans restauration ?). S'il ne les restaure pas, ils sont perdus : créez une nouvelle identité.";
@@ -1821,6 +1827,8 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         )
     } else if h.reachable.is_none() {
         (TrayState::Starting, "Démarrage…".to_string())
+    } else if h.rollback {
+        (TrayState::Error, ROLLBACK_TEXT.into())
     } else if sh.paused.load(Relaxed) && sh.mass_change.load(Relaxed) {
         (TrayState::Error, MASS_CHANGE_TEXT.into())
     } else if h.files_missing {
@@ -1888,8 +1896,24 @@ pub fn tray_view(sh: &Shared) -> TrayView {
 /// les modifications locales dessus. `None` si l'annuaire ne la donne pas
 /// (pas encore publiée, injoignable) : nouvel essai à la synchronisation
 /// suivante.
+/// Le Nœud sert-il une version ancienne ? `current` figure dans son
+/// historique alors que `ours` (dernière racine validée ici) n'y figure pas :
+/// un autre appareil qui écrit ou restaure laisse `ours` dans l'historique.
+pub fn rollback_suspected(sh: &Shared, ours: &BlockHash, current: &BlockHash) -> bool {
+    if ours == current || *ours == [0; 32] {
+        return false;
+    }
+    let Ok(h) = read_versions(sh) else { return false };
+    let known = |x: &BlockHash| h.versions.iter().any(|v| v.hash == *x);
+    known(current) && !known(ours)
+}
+
 fn resolve_conflict(sh: &Shared, drive: &mut crate::drive::Drive) -> Option<Vec<String>> {
     let current = drive.conflict?;
+    if rollback_suspected(sh, &drive.root_hash(), &current) {
+        sh.health.lock().unwrap().rollback = true;
+        return None;
+    }
     let root = root_from_node(sh, current)
         .or_else(|| root_from_dht(sh, current))
         .or_else(|| root_from_set_aside(sh, current))?;
@@ -2675,7 +2699,16 @@ pub async fn watch_once(sh: &Shared) {
             );
         sh.health.lock().unwrap().files_missing = missing;
         if !missing {
-            let _ = sh.session.commit_root(&root, &root).await;
+            let r = sh.session.commit_root(&root, &root).await;
+            let suspect = match &r {
+                Ok((false, cur)) => <BlockHash>::try_from(cur.as_slice())
+                    .ok()
+                    .is_some_and(|c| {
+                        tokio::task::block_in_place(|| rollback_suspected(sh, &root, &c))
+                    }),
+                _ => false,
+            };
+            sh.health.lock().unwrap().rollback = suspect;
         }
         let mut k = sh.keeper.lock().await;
         if k.refresh(&sh.session, now).await.is_ok() {

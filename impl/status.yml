@@ -1395,6 +1395,7 @@ entries:
     owner: claude-code
     tests:
       - history::a_past_version_is_browsed_restored_then_purged
+      - rollback::the_whole_space_goes_back_and_a_node_rollback_is_refused
       - exchange::attached_connector_reads_writes_and_commits_with_conflict_detection
       - exchange::every_request_and_response_roundtrips
     notes: >-

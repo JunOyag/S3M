@@ -188,6 +188,16 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             changed(sh, &p, 0);
             Ok(json!({ "ok": true, "message": format!("{p} : {n} fichier(s) rechiffré(s) avec la nouvelle clé (envoi en cours)") }))
         }
+        "explorer_restore_all" => {
+            let root = version_root(sh, &text(v, "version"))?;
+            drive
+                .lock()
+                .unwrap()
+                .restore_root(root)
+                .map_err(|e| e.to_string())?;
+            *sh.history.lock().unwrap() = None;
+            Ok(json!({ "ok": true, "message": "Tout votre espace est revenu à cette version ; la version précédente reste dans l'historique." }))
+        }
         "explorer_restore" => {
             let p = norm(&text(v, "chemin"));
             writable(&p)?;
