@@ -159,6 +159,47 @@ pub fn start_import(mount: &Path, stamp: u64) -> std::io::Result<Option<PathBuf>
     Ok(Some(dest))
 }
 
+/// Ouvre le stockage ; base absente ou illisible alors que des conteneurs
+/// existent : base mise de côté (`store.sqlite.illisible-<instant>`),
+/// conteneurs renommés pour être réimportés bloc par bloc (hash et
+/// appartenance vérifiés, `protocols.gestion-volumes#import`). Rend le
+/// stockage et, le cas échéant, le message à journaliser
+/// (`protocols.stockage-physique#reconstruction-index`).
+pub fn open_or_rebuild(
+    db: &Path,
+    volumes: Vec<crate::VolumeConfig>,
+    now: u64,
+) -> Result<(crate::PhysicalStore, Option<String>), crate::StorageError> {
+    let had_db = db.exists();
+    let reason = if had_db {
+        match crate::PhysicalStore::open(db, volumes.clone()) {
+            Ok(s) => return Ok((s, None)),
+            Err(e) => {
+                for ext in ["", "-wal", "-shm"] {
+                    let p = PathBuf::from(format!("{}{ext}", db.display()));
+                    if p.exists() {
+                        let _ = fs::rename(&p, format!("{}.illisible-{now}{ext}", db.display()));
+                    }
+                }
+                format!("base du stockage illisible ({e})")
+            }
+        }
+    } else {
+        "base du stockage absente".to_string()
+    };
+    let mut moved = 0;
+    for v in &volumes {
+        if v.mount_path.join("blocks").exists() && start_import(&v.mount_path, now)?.is_some() {
+            moved += 1;
+        }
+    }
+    let store = crate::PhysicalStore::open(db, volumes)?;
+    let msg = (had_db || moved > 0).then(|| {
+        format!("{reason} : mise de côté et index reconstruit en relisant les conteneurs de {moved} volume(s) (import en tâche de fond)")
+    });
+    Ok((store, msg))
+}
+
 /// Conteneur à importer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportFile {

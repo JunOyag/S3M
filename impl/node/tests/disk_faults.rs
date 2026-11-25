@@ -112,3 +112,42 @@ fn blocks_change_owner_on_identity_rotation() {
     assert_eq!(s.block_hashes(&to).unwrap(), vec![h.to_vec()]);
     assert!(s.block_hashes(&owner()).unwrap().is_empty());
 }
+
+/// Base du stockage perdue ou illisible : mise de côté, conteneurs
+/// réimportés (`protocols.stockage-physique#reconstruction-index`).
+#[test]
+fn a_lost_or_corrupted_database_is_rebuilt_from_the_containers() {
+    use s3m_node::volumes::{import_dirs, import_files, open_or_rebuild};
+    let t = temp("rebuild");
+    let vols = || {
+        vec![VolumeConfig {
+            volume_id: 3,
+            mount_path: t.0.join("disque").join("vol"),
+            max_capacity_bytes: 16 * 1024 * 1024,
+        }]
+    };
+    let b = vec![9u8; 65_536];
+    {
+        let mut s = open(&t.0);
+        s.write_block(&owner(), &hash_sha256(&b), &b).unwrap();
+    }
+    // Base supprimée.
+    std::fs::remove_file(t.0.join("node.sqlite")).unwrap();
+    let (s, msg) = open_or_rebuild(&t.0.join("node.sqlite"), vols(), 100).unwrap();
+    assert!(msg.unwrap().contains("absente"));
+    assert!(s.read_block(&hash_sha256(&b)).unwrap().is_none(), "index neuf");
+    let mount = t.0.join("disque").join("vol");
+    let dirs = import_dirs(&mount);
+    assert_eq!(dirs.len(), 1);
+    assert_eq!(import_files(&dirs[0]).len(), 1, "conteneur prêt à l'import");
+    drop(s);
+    // Base corrompue : mise de côté, nouvel index.
+    std::fs::write(t.0.join("node.sqlite"), b"pas une base").unwrap();
+    let (_s, msg) = open_or_rebuild(&t.0.join("node.sqlite"), vols(), 200).unwrap();
+    assert!(msg.unwrap().contains("illisible"));
+    assert!(t.0.join("node.sqlite.illisible-200").exists());
+    // Base saine : rien à faire.
+    drop(_s);
+    let (_s, msg) = open_or_rebuild(&t.0.join("node.sqlite"), vols(), 300).unwrap();
+    assert!(msg.is_none());
+}

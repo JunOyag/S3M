@@ -186,6 +186,17 @@ non-bloquante pourrait consolider de tels conteneurs à l'avenir ; laissée
 hors périmètre de cette version, à l'instar des scénarios de chaos
 engineering mentionnés en [`secours.reference-consolidee`](../06-procedures-secours/reference-consolidee.md).
 
+## Reconstruction de l'index {: #reconstruction-index }
+
+Ajout du 2026-11-25. Au démarrage, une base SQLite absente alors que des
+conteneurs existent, ou illisible, est mise de côté
+(`store.sqlite.illisible-<instant>`) ; les répertoires `blocks/` des volumes
+sont renommés pour être réimportés en tâche de fond, bloc par bloc, hash et
+appartenance vérifiés
+([`protocols.gestion-volumes#import`](gestion-volumes.md#import)). Un
+nouvel index est créé ; jamais un conteneur existant n'est écrasé par un
+nouveau de même numéro. Le journal du Nœud le signale.
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par

@@ -874,6 +874,7 @@ entries:
     status: done
     owner: codex
     tests:
+      - disk_faults::a_lost_or_corrupted_database_is_rebuilt_from_the_containers
       - tests::layout_limits_and_bitmap_mapping_are_exact
       - tests::allocator_checks_containers_by_sequence_before_slot_index
       - tests::writes_fixed_sparse_container_and_persists_location

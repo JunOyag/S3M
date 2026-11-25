@@ -34,7 +34,7 @@ use crate::recovery::{RestoreState, SnapshotOutcome, UserOrigin};
 use crate::snapshot_engine::run_snapshot;
 use crate::tombstones::PartnerLedger;
 use crate::upkeep::{run_upkeep, UpkeepConfig, UpkeepReport};
-use crate::{PhysicalStore, VolumeConfig};
+use crate::VolumeConfig;
 
 /// Erreurs de l'exécutable.
 #[derive(Debug, thiserror::Error)]
@@ -2448,8 +2448,12 @@ pub async fn start_with(
             max_capacity_bytes: v.max_capacity_bytes,
         })
         .collect();
-    let mut store = PhysicalStore::open(config.data_dir.join("store.sqlite"), volumes)
-        .map_err(|e| start(&e))?;
+    let (mut store, store_note) = crate::volumes::open_or_rebuild(
+        &config.data_dir.join("store.sqlite"),
+        volumes,
+        system_clock()(),
+    )
+    .map_err(|e| start(&e))?;
     for v in &config.volumes {
         if v.draining {
             let _ = store.set_draining(v.volume_id, true);
@@ -2884,6 +2888,9 @@ pub async fn start_with(
         }
     });
     note(&shared, "Nœud démarré");
+    if let Some(m) = store_note {
+        note(&shared, m);
+    }
     Ok(shared)
 }
 
