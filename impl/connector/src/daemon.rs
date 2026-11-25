@@ -744,7 +744,85 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "parametres", "titre": "Paramètres", "autres": true,
           "sections": ["configuration"], "actions": [] }
     ]);
+    simple_pages(sh, &mut v, new_phrase.is_some(), setup.is_some());
     v
+}
+
+/// Mode simple (`deploiement.packaging#modes`) : quatre écrans (et
+/// Messages s'il y en a), état en une phrase avec la conduite à tenir. Le
+/// mode expert garde tous les écrans.
+fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
+    let t = tray_view(sh);
+    let (etat, faire) = match t.state {
+        TrayState::Ok => ("🟢 Tout est à jour : vos fichiers sont protégés.".to_string(), "Rien à faire.".to_string()),
+        TrayState::Syncing => (format!("🔵 {}", t.text), "Rien à faire : l'envoi se poursuit tout seul.".into()),
+        TrayState::Starting => (format!("⚪ {}", t.text), "Patientez quelques instants.".into()),
+        TrayState::Offline => (
+            "🟠 Votre Nœud est hors ligne : vos modifications sont gardées sur cet ordinateur.".into(),
+            "Rien à faire : l'envoi reprendra tout seul. Si cela dure plusieurs jours, contactez l'opérateur de votre Nœud.".into(),
+        ),
+        TrayState::Paused => (
+            format!("⏸ {}", t.text),
+            "Reprenez la synchronisation depuis l'icône S3m (barre des tâches).".into(),
+        ),
+        TrayState::Error => (format!("🔴 {}", t.text), "Suivez l'indication ci-dessus ; le mode expert donne les détails techniques.".into()),
+    };
+    let space = match sh.session.space() {
+        Some((quota, used)) => json!(format!(
+            "{} utilisés sur {} ({:.0} %)",
+            human_bytes(used),
+            human_bytes(quota),
+            used as f64 * 100.0 / quota.max(1) as f64
+        )),
+        None => Value::Null,
+    };
+    v["en un coup d'œil"] = json!({
+        "état": etat,
+        "que faire": faire,
+        "mon espace": space,
+        "modifications en attente d'envoi": t.pending,
+        "messages non lus de mon Nœud": t.unread_messages,
+    });
+    let mut accueil = vec![];
+    if new_phrase {
+        accueil.push("nouvelle phrase de récupération");
+    }
+    if setup {
+        accueil.push("mise en route");
+    }
+    accueil.push("en un coup d'œil");
+    let mut pages = vec![
+        json!({ "id": "accueil", "titre": "Accueil", "sections": accueil, "actions": ["sync_now"] }),
+        json!({ "id": "explorateur", "titre": "Mes fichiers", "cadre": "explorer.html", "sections": [], "actions": [] }),
+        json!({ "id": "partages", "titre": "Partager",
+                "sections": ["partages donnés", "partages reçus", "contacts", "mon identifiant"],
+                "actions": ["create_share", "add_received", "add_contact", "copy_my_id"] }),
+        json!({ "id": "compte", "titre": "Mon compte",
+                "sections": ["utilisateur", "espace", "accès aux fichiers", "historique des versions"],
+                "actions": ["set_pseudo", "change_node", "rotate_identity"] }),
+    ];
+    if t.messages_received > 0 || v.pointer("/alerte du nœud/message").is_some_and(|m| !m.is_null()) {
+        pages.push(json!({ "id": "messages", "titre": "Messages",
+            "sections": ["alerte du nœud", "messages du nœud", "écrire à mon nœud"],
+            "actions": ["mark_all_read", "acknowledge_alert"] }));
+    }
+    v["pages simples"] = json!(pages);
+}
+
+/// Taille lisible (Kio, Mio, Gio, Tio).
+fn human_bytes(n: u64) -> String {
+    let units = ["o", "Kio", "Mio", "Gio", "Tio"];
+    let mut x = n as f64;
+    let mut i = 0;
+    while x >= 1024.0 && i < units.len() - 1 {
+        x /= 1024.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{n} o")
+    } else {
+        format!("{x:.1} {}", units[i])
+    }
 }
 
 /// Étapes d'une identité nouvelle avant de pouvoir l'utiliser pleinement ;

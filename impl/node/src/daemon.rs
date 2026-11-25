@@ -884,7 +884,86 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "onglets de sections": [{ "titre": "Général", "sections": ["migration"] },
                                   { "titre": "Avancé", "sections": ["journal"] }] }
     ]);
+    simple_pages(&mut v);
     v
+}
+
+/// Mode simple (`deploiement.packaging#modes`) : cinq écrans, voyants de
+/// santé, tableau des utilisateurs réduit, guide de remplacement d'un
+/// disque, réglages essentiels. Le mode expert garde tous les écrans.
+fn simple_pages(v: &mut Value) {
+    let voyant = |ok: Option<bool>, quoi: &str, etat: String, faire: &str| {
+        json!({ "": match ok { Some(true) => "🟢", Some(false) => "🔴", None => "🟠" },
+                "domaine": quoi, "état": etat, "que faire": faire })
+    };
+    let alerts = v["alertes matérielles"].as_array().map_or(0, |a| a.len());
+    let disks = if alerts > 0 {
+        voyant(Some(false), "Disques", format!("{alerts} alerte(s) : {}", v["alertes matérielles"][0]["alerte"].as_str().unwrap_or("")),
+            "Voir les alertes ci-dessus, puis l'écran Disques.")
+    } else if v.get("maintenance").is_some_and(|m| !m.is_null()) {
+        voyant(None, "Disques", "maintenance en cours : reconstruction depuis le réseau".into(), "Rien à faire : le Nœud répare seul.")
+    } else {
+        voyant(Some(true), "Disques", "en bon état".into(), "")
+    };
+    let reach = v.pointer("/traversée de NAT/joignabilité").and_then(|x| x.as_str()).unwrap_or("inconnue").to_string();
+    let net_ok = reach.contains("public") || reach.contains("direct");
+    let net = voyant(
+        if net_ok { Some(true) } else if reach == "inconnue" { None } else { Some(false) },
+        "Réseau",
+        format!("joignabilité : {reach}"),
+        if net_ok { "" } else { "Vérifiez la connexion Internet ; derrière une box, l'ouverture automatique du port (UPnP) aide les autres Nœuds à vous joindre." },
+    );
+    let partners = v["partenaires"].as_array().map_or(0, |a| a.len());
+    let wanted = v.pointer("/recherche de partenaires/partenaires visés").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+    let part = voyant(
+        Some(partners >= wanted.clamp(1, 4)),
+        "Partenaires",
+        format!("{partners} partenaire(s) gardent vos copies de secours (objectif : {wanted})"),
+        if partners == 0 { "Le Nœud cherche des partenaires tout seul ; laissez-le connecté." } else { "" },
+    );
+    let users: Vec<Value> = v["utilisateurs rattachés"].as_array().cloned().unwrap_or_default();
+    let soon = users.iter().filter(|u| u["jours avant suppression"].as_u64().is_some_and(|d| d <= 30)).count();
+    let usr = voyant(
+        Some(soon == 0),
+        "Utilisateurs",
+        format!("{} utilisateur(s){}", users.len(), if soon > 0 { format!(", dont {soon} supprimé(s) dans moins de 30 jours faute de connexion") } else { String::new() }),
+        if soon > 0 { "Écran Utilisateurs : prévenez-les, ou rendez-les éternels (Éditer)." } else { "" },
+    );
+    v["santé du nœud"] = json!([disks, net, part, usr]);
+    v["mes utilisateurs"] = json!(users
+        .iter()
+        .map(|u| json!({
+            "nom": u["nom"], "espace utilisé (octets)": u["utilisé (octets)"], "quota (octets)": u["quota (octets)"],
+            "dernière activité": u["dernière activité"], "jours avant suppression": u["jours avant suppression"],
+            "_gras": u["_gras"], "_actions": u["_actions"],
+        }))
+        .collect::<Vec<_>>());
+    v["remplacer un disque"] = json!({
+        "_contenu": {
+            "1": "Branchez le nouveau disque et créez-y un dossier vide (par exemple E:\\S3m).",
+            "2": "Ci-dessus, « Ajouter un volume » avec ce dossier, puis « Appliquer » : le Nœud y range désormais les nouveaux blocs.",
+            "3": "Sur l'ancien disque : « Retirer » s'il est encore lisible (ses blocs sont déplacés), ou « Déclarer perdu » s'il est hors d'usage (ses blocs sont reconstruits depuis le réseau), puis « Appliquer ».",
+            "4": "Attendez la fin (journal des volumes, mode expert) avant de débrancher l'ancien disque.",
+        },
+    });
+    v["réglages essentiels"] = json!({
+        "_contenu": {
+            "nom du nœud": v.pointer("/identité/nom"),
+            "accueil automatique des utilisateurs": v.pointer("/rattachement automatique/activé"),
+            "_note": "Tous les réglages (espace offert aux partenaires, réseau, alertes par courriel ou webhook…) : passez en mode expert, écran Configuration.",
+        },
+    });
+    v["pages simples"] = json!([
+        { "id": "accueil", "titre": "Accueil",
+          "sections": ["horloge", "alertes matérielles", "maintenance", "santé du nœud", "identité"], "actions": ["restart_node"] },
+        { "id": "utilisateurs", "titre": "Utilisateurs", "sections": ["mes utilisateurs"], "actions": ["attach_user"] },
+        { "id": "volumes", "titre": "Disques", "sections": ["alertes matérielles", "volumes", "liste des actions", "remplacer un disque"],
+          "actions": ["volume_apply", "volume_draft_clear"] },
+        { "id": "messages", "titre": "Messages", "sections": ["messages des utilisateurs", "messages envoyés"],
+          "actions": ["mark_all_user_messages_read", "send_message"] },
+        { "id": "reglages", "titre": "Réglages essentiels", "sections": ["réglages essentiels"],
+          "actions": ["set_node_name", "set_attach_policy", "test_alerts"] }
+    ]);
 }
 
 /// Indicateurs de la vue d'ensemble (`état` : ok, attention, probleme, neutre).

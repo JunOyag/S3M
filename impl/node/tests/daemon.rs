@@ -157,6 +157,21 @@ async fn node_starts_serves_a_guarded_dashboard_and_persists_its_state() {
         !st.contains("Changer le quota d'un utilisateur"),
         "formulaire en doublon retiré"
     );
+    // Mode simple : cinq écrans, voyants, chaque action citée existe.
+    let body: serde_json::Value = serde_json::from_str(st.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    let simple = body["pages simples"].as_array().unwrap();
+    assert_eq!(simple.len(), 5);
+    assert_eq!(body["santé du nœud"].as_array().unwrap().len(), 4);
+    let names: Vec<&str> = body["actions"].as_array().unwrap().iter().filter_map(|a| a["nom"].as_str()).collect();
+    for p in simple {
+        for a in p["actions"].as_array().unwrap() {
+            // Actions présentes seulement en situation (liste de volumes en
+            // cours, messages non lus).
+            let conditional = ["volume_apply", "volume_draft_clear", "mark_all_user_messages_read"];
+            let n = a.as_str().unwrap();
+            assert!(names.contains(&n) || conditional.contains(&n), "action {a} absente");
+        }
+    }
 
     // Le service écrit sur disque (blocs de 64 Kio exactement).
     {

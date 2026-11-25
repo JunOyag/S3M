@@ -112,6 +112,29 @@ noté au journal ; « Envoyer une alerte d'essai » vérifie les canaux.
 
 ## Dashboards : écrans et menu {: #ecrans }
 
+### Mode simple et mode expert {: #modes }
+
+Ajout du 2026-11-25. Chaque tableau de bord a deux jeux d'écrans : `pages`
+(mode expert, tous les écrans, réglages et détails techniques) et
+`pages simples` (mode simple, **par défaut**). L'interrupteur « Mode
+expert » de l'en-tête bascule de l'un à l'autre ; le choix est mémorisé
+dans le navigateur. En mode simple, seules les sections citées par chaque
+écran s'affichent ; les sections propres au mode simple ne s'affichent
+jamais en mode expert.
+
+- **Connecteur** : Accueil (« En un coup d'œil » : état en une phrase avec
+  voyant, que faire, espace, envois en attente ; nouvelle phrase et mise en
+  route s'il y a lieu), Mes fichiers (Explorateur, versions et retour
+  arrière), Partager (partages et contacts), Mon compte (identité, espace,
+  accès aux fichiers, historique, changement de Nœud ou d'identité),
+  Messages (seulement s'il y en a).
+- **Nœud** : Accueil (alertes, maintenance, horloge, quatre voyants
+  « Santé du Nœud » — disques, réseau, partenaires, utilisateurs — avec la
+  conduite à tenir), Utilisateurs (tableau réduit), Disques (volumes,
+  alertes, marche à suivre « Remplacer un disque »), Messages, Réglages
+  essentiels (nom, accueil automatique, alerte d'essai).
+
+
 Ajout du 2026-11-20. Chaque dashboard est découpé en écrans reliés par un
 menu (latéral, en haut sur petit écran). Le moteur décrit les écrans
 (`pages` : sections et actions de chacun) et les indicateurs de la vue

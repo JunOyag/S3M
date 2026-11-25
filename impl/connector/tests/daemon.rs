@@ -245,5 +245,16 @@ async fn a_new_identity_explains_its_setup_steps() {
     assert_eq!(st["résumé"][0]["libellé"], "Mise en route");
     assert_eq!(st["résumé"][0]["valeur"], "1 étape(s) sur 4");
     assert_eq!(st["pages"][0]["sections"][0], "mise en route");
+    // Mode simple : quatre écrans au moins, chaque action citée existe.
+    let simple = st["pages simples"].as_array().unwrap();
+    assert!(simple.len() >= 4);
+    assert_eq!(simple[0]["sections"][0], "mise en route");
+    assert!(st["en un coup d'œil"]["état"].as_str().is_some());
+    let names: Vec<&str> = st["actions"].as_array().unwrap().iter().filter_map(|a| a["nom"].as_str()).collect();
+    for p in simple {
+        for a in p["actions"].as_array().unwrap() {
+            assert!(names.contains(&a.as_str().unwrap()), "action {a} absente");
+        }
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

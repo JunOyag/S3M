@@ -230,4 +230,18 @@ Machine de développement (Windows), 32 Mio, blocs de 64 Kio :
 |---|---|---|
 | P1 | L'écriture sur le stockage physique plafonne à 6,6 Mio/s : chaque bloc est synchronisé sur le disque un par un (données, en-tête, journal SQLite) ; un envoi de 1 Gio prend environ 2 min 30 côté Nœud | Écritures groupées : un `sync` et une transaction par lot de blocs reçus, réponse `Stored` après le lot |
 | P2 | Les scénarios Docker de `tests/integration/` sont des squelettes (pas de Dockerfile) | Images Nœud / Connecteur et scénarios NOD-01, VOL-01, CON-01 automatisés |
-| P2 | Bloc non dispersé perdu alors que sa copie locale a été abandonnée (au-delà de Q_max) | Signaler l'abandon de copie à l'Utilisateur, ou ralentir l'envoi plutôt qu'abandonner |
+| P2 | Bloc non dispersé perdu alors que sa copie locale a été abandonnée (au-delà de Q_max) | Signaler l'abandon de copie à l'Utilisateur, ou ralentir l'envoi plutôt qu'abandonner |
+
+## 10. Parcours débutant (mode simple)
+
+À mener avec une personne qui découvre S3m, sans aide, en mode simple ;
+noter les hésitations, les messages incompris et le temps passé.
+
+| ID | Priorité | Scénario | Résultat attendu | Couverture |
+|---|---|---|---|---|
+| ERG-01 | P1 | Installer S3m, créer une identité, noter la phrase, voir « Tout est à jour » | Parcours compris sans aide en moins de 10 minutes ; l'attente de la preuve d'identité est expliquée | ❌ |
+| ERG-02 | P1 | Retrouver un fichier supprimé par erreur hier | « Mes fichiers » → « Revenir en arrière » → restauration, sans aide | ❌ |
+| ERG-03 | P1 | Rançongiciel simulé (fichiers chiffrés) : suspension, puis retour de tout l'espace à une date | La personne comprend l'alerte et ne reprend pas la synchronisation | ❌ |
+| ERG-04 | P1 | Phrase compromise : changer d'identité, noter la nouvelle phrase, tout rechiffrer | Phrase notée, éléments 🔓 compris et rechiffrés | ❌ |
+| ERG-05 | P2 | Opérateur : voyant rouge « Disques », remplacer le disque en suivant la marche à suivre | Aucune perte, aucune aide | ❌ |
+| ERG-06 | P2 | Passer en mode expert puis revenir au mode simple | Choix retenu, aucun écran perdu | ✅ `daemon` (écrans et actions du mode simple) |

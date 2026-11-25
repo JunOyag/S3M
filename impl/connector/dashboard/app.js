@@ -269,6 +269,16 @@ const LABELS = {
   "dernier snapshot": ["Dernière sauvegarde", ""],
   "publié dans l'entrée Node": ["Publiée dans l'annuaire", ""],
   "restauration": ["Restauration", ""],
+  "en un coup d'œil": ["En un coup d'œil", "L'état de vos fichiers en une phrase, et ce qu'il faut faire s'il y a lieu."],
+  "que faire": ["Que faire ?", "Ce que vous pouvez faire pour régler la situation."],
+  "mon espace": ["Mon espace", "Place occupée par vos fichiers et leurs versions passées chez votre Nœud."],
+  "modifications en attente d'envoi": ["Modifications en attente d'envoi", "Changements faits sur cet appareil, pas encore reçus par votre Nœud."],
+  "messages non lus de mon nœud": ["Messages non lus", "Messages de l'opérateur de votre Nœud (écran Messages)."],
+  "santé du nœud": ["Santé du Nœud", "Un voyant par domaine : vert, tout va bien ; orange, à surveiller ; rouge, une action est nécessaire."],
+  "domaine": ["Domaine", ""],
+  "mes utilisateurs": ["Utilisateurs", "Personnes qui gardent leurs fichiers sur ce Nœud. « Éditer » : quota, message, durée d'inactivité."],
+  "remplacer un disque": ["Remplacer un disque", "Marche à suivre pour changer un disque défaillant sans perdre de données."],
+  "réglages essentiels": ["Réglages essentiels", "Les réglages utiles au quotidien ; tous les autres sont en mode expert."],
   "alertes matérielles": ["Alertes matérielles", "Erreurs de disque constatées sur les volumes, avec la conduite à tenir."],
   "maintenance": ["Maintenance", "Reconstruction automatique après la perte de fichiers de stockage."],
   "mise en route": ["Mise en route", "Étapes avant de pouvoir utiliser pleinement une nouvelle identité."],
@@ -1167,7 +1177,45 @@ function openBrowser(start, pick, explorer = "fs_browse") {
 
 // Écrans : le moteur décrit `pages` (sections et actions de chacune) et
 // `résumé` (indicateurs de la vue d'ensemble). Sans `pages`, un seul écran.
-const RESERVED = new Set(["titre", "actions", "carte", "pages", "résumé", "à signaler"]);
+const RESERVED = new Set(["titre", "actions", "carte", "pages", "pages simples", "résumé", "à signaler"]);
+// Mode simple (par défaut) ou expert : `pages simples` / `pages` du moteur
+// (`deploiement.packaging#modes`), choix mémorisé dans ce navigateur.
+let expert = false;
+try {
+  expert = localStorage.getItem("s3m-mode") === "expert";
+} catch (e) {
+  /* stockage indisponible : mode simple */
+}
+function setExpert(on) {
+  expert = on;
+  try {
+    localStorage.setItem("s3m-mode", on ? "expert" : "simple");
+  } catch (e) {
+    /* sans effet */
+  }
+  if (lastStatus) show(lastStatus);
+}
+function modeSwitch(status) {
+  let box = document.getElementById("mode");
+  const has = Array.isArray(status["pages simples"]) && status["pages simples"].length > 0;
+  if (!has) {
+    if (box) box.remove();
+    return;
+  }
+  if (!box) {
+    box = el("label", undefined, "mode-switch");
+    box.id = "mode";
+    box.title = "Le mode expert affiche tous les écrans, réglages et détails techniques";
+    const c = el("input");
+    c.type = "checkbox";
+    c.id = "mode-check";
+    c.addEventListener("change", () => setExpert(c.checked));
+    box.append(c, document.createTextNode(" Mode expert"));
+    const header = document.querySelector("header");
+    header.insertBefore(box, document.getElementById("live"));
+  }
+  document.getElementById("mode-check").checked = expert;
+}
 // `à signaler` : message affiché une fois, au premier chargement.
 let signaled = false;
 let actionsKey = "";
@@ -1178,7 +1226,18 @@ let page = null;
 
 function pagesOf(status) {
   const all = Object.keys(status).filter((k) => !RESERVED.has(k));
+  const simple = status["pages simples"];
+  if (!expert && Array.isArray(simple) && simple.length) {
+    // Mode simple : seulement ce que chaque écran cite.
+    return simple.map((p) => ({ ...p, sections: [...(p.sections || [])], extra: [] }));
+  }
   const pages = status["pages"];
+  // Sections propres au mode simple : jamais reversées dans « autres ».
+  if (Array.isArray(simple) && Array.isArray(pages)) {
+    const cited = new Set(pages.flatMap((p) => [...(p.sections || []), ...(p["onglets de sections"] || []).flatMap((t) => t.sections || [])]));
+    const simpleOnly = new Set(simple.flatMap((p) => p.sections || []).filter((k) => !cited.has(k)));
+    for (let i = all.length - 1; i >= 0; i--) if (simpleOnly.has(all[i])) all.splice(i, 1);
+  }
   if (!Array.isArray(pages) || pages.length === 0) {
     return [{ id: "_", titre: "", sections: all, actions: null, carte: true }];
   }
@@ -1253,6 +1312,7 @@ function cards(list) {
 
 function show(status) {
   lastStatus = status;
+  modeSwitch(status);
   refreshPanel(status);
   if (!signaled) {
     signaled = true;
