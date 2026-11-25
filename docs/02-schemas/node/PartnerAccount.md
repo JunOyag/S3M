@@ -105,6 +105,14 @@ prouvé (reçu signé suivi d'une réponse fausse) relève de la liste noire
 ([`securite.blacklist-fraude`](../../05-securite/blacklist-fraude.md)). Les
 manquements restent des observations locales, jamais diffusées.
 
+Une réponse `Maintenance` (fragment perdu avec un volume,
+[`securite.integrite-autoreparation#maintenance`](../../05-securite/integrite-autoreparation.md#maintenance))
+n'est pas un manquement — le fragment est replacé — tant que la
+maintenance déclarée dure **au plus 24 h** et qu'elle est la **seule de la
+période de 7 jours** (un épisode se clôt après une heure sans réponse
+`Maintenance`) ; au-delà, elle compte comme un `NotFound` (ajout du
+2026-11-25).
+
 Une suppression libère des fragments d'un seul côté ; le quota Q reste
 inchangé.
 

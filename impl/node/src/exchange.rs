@@ -61,7 +61,18 @@ pub struct PartnerState {
     pub suspended_until: u64,
     /// Dernière négociation du quota.
     pub negotiated_at: u64,
+    /// Début et dernière réponse de la maintenance qu'il déclare
+    /// (`node.PartnerAccount#manquements`).
+    pub maint_since: u64,
+    pub maint_last: u64,
 }
+
+/// Durée maximale d'une maintenance déclarée par un partenaire (s).
+pub const MAINTENANCE_MAX_S: u64 = 86_400;
+/// Une maintenance au plus par cette période (s).
+pub const MAINTENANCE_PERIOD_S: u64 = 7 * 86_400;
+/// Sans réponse « en maintenance » depuis ce délai, l'épisode est clos (s).
+const MAINTENANCE_GAP_S: u64 = 3_600;
 
 /// Conservation par défaut de l'historique des versions (jours).
 pub const HISTORY_DAYS: u64 = 30;
@@ -1293,6 +1304,25 @@ impl NodeService {
                 self.root_history.remove(u);
             }
         }
+    }
+
+    /// Réponse « en maintenance » d'un partenaire : tolérée (sans
+    /// manquement) pour un épisode de 24 h au plus et un épisode par
+    /// période de 7 jours ; au-delà, elle vaut manquement.
+    pub fn maintenance_tolerated(&mut self, p: &Id, now: u64) -> bool {
+        let Some(st) = self.partners.get_mut(p) else {
+            return false;
+        };
+        let ongoing = st.maint_since != 0 && now <= st.maint_last.saturating_add(MAINTENANCE_GAP_S);
+        if !ongoing {
+            if st.maint_since != 0 && now < st.maint_since.saturating_add(MAINTENANCE_PERIOD_S) {
+                st.maint_last = now;
+                return false;
+            }
+            st.maint_since = now;
+        }
+        st.maint_last = now;
+        now <= st.maint_since.saturating_add(MAINTENANCE_MAX_S)
     }
 
     /// Fragment absent : perdu avec un volume pendant la maintenance.

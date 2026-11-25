@@ -405,7 +405,9 @@ async fn fillers(
         report.challenged += 1;
         match answer {
             Ok(Ok(Response::Failure(r @ (Refusal::NotFound | Refusal::Maintenance)))) => {
-                if r == Refusal::NotFound {
+                if r == Refusal::NotFound
+                    || !service.lock().unwrap().maintenance_tolerated(&pid, now)
+                {
                     *up.pos_fail.entry(partner.clone()).or_default() += 1;
                     service.lock().unwrap().record_failure(&pid, now);
                 }
@@ -532,7 +534,9 @@ pub async fn run_upkeep(
             // Introuvable : perte, pas fraude (`securite.blacklist-fraude`
             // § Fragment introuvable) — échec compté, fragment replacé.
             // En maintenance : perte déclarée, sans manquement.
-            if matches!(answer, Ok(Ok(Response::Failure(Refusal::Maintenance)))) {
+            let tolerated = matches!(answer, Ok(Ok(Response::Failure(Refusal::Maintenance))))
+                && service.lock().unwrap().maintenance_tolerated(&pid, now);
+            if tolerated {
                 lost.insert((user.clone(), *si, *index));
                 report.lost += 1;
                 up.log(
@@ -544,7 +548,11 @@ pub async fn run_upkeep(
                 );
                 continue;
             }
-            if matches!(answer, Ok(Ok(Response::Failure(Refusal::NotFound)))) {
+            // Introuvable, ou maintenance au-delà de ce qui est toléré.
+            if matches!(
+                answer,
+                Ok(Ok(Response::Failure(Refusal::NotFound | Refusal::Maintenance)))
+            ) {
                 *up.pos_fail.entry(partner.clone()).or_default() += 1;
                 service.lock().unwrap().record_failure(&pid, now);
                 lost.insert((user.clone(), *si, *index));

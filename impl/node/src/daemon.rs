@@ -332,6 +332,9 @@ pub struct SavedPartner {
     pub failures: u32,
     #[serde(default)]
     pub suspended_until: u64,
+    /// Début de la dernière maintenance qu'il a déclarée.
+    #[serde(default)]
+    pub maint_since: u64,
 }
 
 /// État du service hors blocs (les blocs sont dans le stockage physique).
@@ -425,6 +428,7 @@ impl SavedState {
                 proved_at: p.proved_at,
                 failures: p.failures,
                 suspended_until: p.suspended_until,
+                maint_since: p.maint_since,
             })
             .collect();
         partners.sort_by(|a, b| a.node_id.cmp(&b.node_id));
@@ -537,6 +541,8 @@ impl SavedState {
                     failures: p.failures,
                     suspended_until: p.suspended_until,
                     negotiated_at: 0,
+                    maint_since: p.maint_since,
+                    maint_last: p.maint_since,
                 },
             );
         }

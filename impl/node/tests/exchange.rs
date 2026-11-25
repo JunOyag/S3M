@@ -541,3 +541,24 @@ fn rotation_moves_the_account_and_revokes_the_old_identity() {
         Response::Failure(Refusal::Unauthorized)
     );
 }
+
+/// Maintenance déclarée par un partenaire : tolérée 24 h au plus, une fois
+/// par période de 7 jours (`node.PartnerAccount#manquements`).
+#[test]
+fn a_partner_maintenance_is_tolerated_once_a_week_for_a_day() {
+    let mut s = NodeService::new(NODE);
+    let p = [0x55; 32];
+    s.partners.insert(p, PartnerState::default());
+    let t0 = NOW;
+    // Réponses toutes les 30 min : tolérées pendant 24 h.
+    let mut t = t0;
+    while t <= t0 + MAINTENANCE_MAX_S {
+        assert!(s.maintenance_tolerated(&p, t), "à {}", t - t0);
+        t += 1_800;
+    }
+    assert!(!s.maintenance_tolerated(&p, t), "au-delà de 24 h");
+    // Nouvel épisode dans la même semaine : manquement.
+    assert!(!s.maintenance_tolerated(&p, t0 + 3 * 86_400));
+    // Une semaine plus tard : de nouveau toléré.
+    assert!(s.maintenance_tolerated(&p, t0 + MAINTENANCE_PERIOD_S + 1));
+}
