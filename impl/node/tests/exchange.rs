@@ -111,6 +111,25 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
     // descripteur (ancien Connecteur) : effacé.
     assert_eq!(call(&mut s, commit(5, 5, vec![])), state(true, 5, vec![1; 47]));
     assert_eq!(call(&mut s, commit(5, 7, vec![])), state(true, 7, vec![]));
+    // Historique (`protocols.historique-versions`) : la version remplacée,
+    // son descripteur et ses dates ; purge à la demande.
+    assert_eq!(
+        call(&mut s, Body::ListRoots),
+        Response::RootList {
+            versions: vec![s3m_protocol::exchange::RootVersion {
+                root: vec![5; 32],
+                root_seal: vec![1; 47],
+                valid_from: NOW,
+                replaced_at: NOW,
+            }],
+            retention_s: 30 * 86_400,
+        }
+    );
+    assert_eq!(call(&mut s, Body::PurgeRoots { before: 0 }), Response::Ack { freed: 0 });
+    assert_eq!(
+        call(&mut s, Body::ListRoots),
+        Response::RootList { versions: vec![], retention_s: 30 * 86_400 }
+    );
     // Preuve reprise sur une autre connexion, ou absence d'identifiant.
     let stolen = user_req(&NODE, Body::GetBlock { hash: h.to_vec() }, b"c", b"n");
     assert_eq!(

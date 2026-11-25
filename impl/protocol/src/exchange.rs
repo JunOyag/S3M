@@ -239,6 +239,21 @@ pub enum Body {
         after: Vec<u8>,
         limit: u32,
     },
+    /// Versions passées de la racine (`protocols.historique-versions`).
+    ListRoots,
+    /// Oublie les versions remplacées avant `before` (0 : toutes).
+    PurgeRoots {
+        before: u64,
+    },
+}
+
+/// Version passée de la racine (`protocols.historique-versions`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RootVersion {
+    pub root: Vec<u8>,
+    pub root_seal: Vec<u8>,
+    pub valid_from: u64,
+    pub replaced_at: u64,
 }
 
 /// Hashes par `ReleaseBlocks` ou par page de `ListBlocks`, au plus.
@@ -305,6 +320,11 @@ pub enum Response {
     BlockList {
         hashes: Vec<u8>,
         more: bool,
+    },
+    /// Réponse à `ListRoots` : la plus récente d'abord.
+    RootList {
+        versions: Vec<RootVersion>,
+        retention_s: u64,
     },
 }
 
@@ -636,6 +656,14 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             );
             (fb::RequestBody::ListBlocks, o.as_union_value())
         }
+        Body::ListRoots => {
+            let o = fb::ListRoots::create(&mut b, &fb::ListRootsArgs {});
+            (fb::RequestBody::ListRoots, o.as_union_value())
+        }
+        Body::PurgeRoots { before } => {
+            let o = fb::PurgeRoots::create(&mut b, &fb::PurgeRootsArgs { before: *before });
+            (fb::RequestBody::PurgeRoots, o.as_union_value())
+        }
     };
     let root = fb::BlockRequest::create(
         &mut b,
@@ -852,6 +880,10 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
                 limit: x.limit().min(MAX_RELEASE_BLOCKS as u32),
             }
         }
+        fb::RequestBody::ListRoots => Body::ListRoots,
+        fb::RequestBody::PurgeRoots => Body::PurgeRoots {
+            before: r.body_as_purge_roots().ok_or(m)?.before(),
+        },
         _ => return Err(m),
     };
     Ok(Request { credential, body })
@@ -1016,6 +1048,36 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             );
             (fb::ResponseBody::BlockList, o.as_union_value())
         }
+        Response::RootList {
+            versions,
+            retention_s,
+        } => {
+            let list: Vec<_> = versions
+                .iter()
+                .map(|v| {
+                    let root = b.create_vector(&v.root);
+                    let seal = (!v.root_seal.is_empty()).then(|| b.create_vector(&v.root_seal));
+                    fb::RootVersion::create(
+                        &mut b,
+                        &fb::RootVersionArgs {
+                            root: Some(root),
+                            root_seal: seal,
+                            valid_from: v.valid_from,
+                            replaced_at: v.replaced_at,
+                        },
+                    )
+                })
+                .collect();
+            let list = b.create_vector(&list);
+            let o = fb::RootList::create(
+                &mut b,
+                &fb::RootListArgs {
+                    versions: Some(list),
+                    retention_s: *retention_s,
+                },
+            );
+            (fb::ResponseBody::RootList, o.as_union_value())
+        }
     };
     let root = fb::BlockResponse::create(
         &mut b,
@@ -1125,6 +1187,25 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
             Response::BlockList {
                 hashes: bytes(x.hashes()),
                 more: x.more(),
+            }
+        }
+        fb::ResponseBody::RootList => {
+            let x = r.body_as_root_list().ok_or(m)?;
+            Response::RootList {
+                versions: x
+                    .versions()
+                    .map(|v| {
+                        v.iter()
+                            .map(|e| RootVersion {
+                                root: bytes(e.root()),
+                                root_seal: bytes(e.root_seal()),
+                                valid_from: e.valid_from(),
+                                replaced_at: e.replaced_at(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                retention_s: x.retention_s(),
             }
         }
         _ => return Err(m),

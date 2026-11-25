@@ -490,6 +490,36 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_list_roots(&self) -> Option<ListRoots<'a>> {
+    if self.body_type() == RequestBody::ListRoots {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ListRoots::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_purge_roots(&self) -> Option<PurgeRoots<'a>> {
+    if self.body_type() == RequestBody::PurgeRoots {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { PurgeRoots::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -534,6 +564,8 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::RevokeShare => v.verify_union_variant::<flatbuffers::ForwardsUOffset<RevokeShare>>("RequestBody::RevokeShare", pos),
           RequestBody::ReleaseBlocks => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ReleaseBlocks>>("RequestBody::ReleaseBlocks", pos),
           RequestBody::ListBlocks => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListBlocks>>("RequestBody::ListBlocks", pos),
+          RequestBody::ListRoots => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListRoots>>("RequestBody::ListRoots", pos),
+          RequestBody::PurgeRoots => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PurgeRoots>>("RequestBody::PurgeRoots", pos),
           _ => Ok(()),
         }
      })?
@@ -798,6 +830,20 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::ListBlocks => {
           if let Some(x) = self.body_as_list_blocks() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::ListRoots => {
+          if let Some(x) = self.body_as_list_roots() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::PurgeRoots => {
+          if let Some(x) = self.body_as_purge_roots() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

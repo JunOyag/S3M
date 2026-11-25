@@ -210,6 +210,11 @@ struct Journal {
     /// `CommitRoot` confirmé (`protocols.echange-blocs` § Libération).
     #[serde(default)]
     to_release: Vec<String>,
+    /// Blocs remplacés gardés pour l'historique : `(hash, remplacé le)`,
+    /// libérés après la durée de conservation
+    /// (`protocols.historique-versions`).
+    #[serde(default)]
+    held: Vec<(String, u64)>,
 }
 
 /// Arborescence construite pour un dépôt d'urgence : racine de base,
@@ -359,6 +364,9 @@ pub struct Drive {
     pub incidents: Vec<BlockHash>,
     /// Dernier conflit de synchronisation (racine courante chez le Nœud).
     pub conflict: Option<BlockHash>,
+    /// Conservation de l'historique (s) ; 0 : blocs remplacés libérés
+    /// aussitôt.
+    retention_s: u64,
 }
 
 fn random<const N: usize>() -> [u8; N] {
@@ -405,7 +413,117 @@ impl Drive {
             salt: Box::new(random::<16>),
             incidents: Vec::new(),
             conflict: None,
+            retention_s: 0,
         })
+    }
+
+    /// Conservation de l'historique, alignée sur celle du Nœud.
+    pub fn set_retention(&mut self, s: u64) {
+        self.retention_s = s;
+    }
+
+    /// Fichiers existants modifiés parmi les modifications en attente
+    /// (garde-fou contre un rançongiciel) ; compté seulement au-delà de
+    /// `min` modifications.
+    pub fn modified_existing(&mut self, min: usize) -> usize {
+        if self.journal.changes.len() < min {
+            return 0;
+        }
+        let files: Vec<String> = self
+            .journal
+            .changes
+            .iter()
+            .filter(|(_, c)| matches!(c, Change::File { .. }))
+            .map(|(k, _)| k.clone())
+            .collect();
+        let root = self.root.clone();
+        files
+            .iter()
+            .filter(|p| self.lookup_in(&root, p).ok().flatten().is_some())
+            .count()
+    }
+
+    /// Blocs gardés pour l'historique.
+    pub fn held_hashes(&self) -> Vec<BlockHash> {
+        self.journal.held.iter().map(|(h, _)| arr(h)).collect()
+    }
+
+    /// Blocs gardés à libérer : remplacés depuis plus que la conservation,
+    /// ou avant `before` (purge demandée) ; jamais ceux de `keep` (encore
+    /// atteints par la racine courante ou une version gardée), qui sont
+    /// simplement retirés de l'historique. Rend le nombre de blocs à libérer.
+    pub fn mature_held(
+        &mut self,
+        now: u64,
+        before: Option<u64>,
+        keep: &std::collections::HashSet<BlockHash>,
+    ) -> Result<usize, DriveError> {
+        let r = self.retention_s;
+        let due = |at: u64| at.saturating_add(r) <= now || before.is_some_and(|b| b == 0 || at < b);
+        let mut out = Vec::new();
+        self.journal.held.retain(|(h, at)| {
+            let hash: BlockHash = arr(h);
+            if keep.contains(&hash) {
+                return false;
+            }
+            if due(*at) {
+                out.push(h.clone());
+                return false;
+            }
+            true
+        });
+        let n = out.len();
+        if n > 0 {
+            self.journal.to_release.extend(out);
+            self.journal.to_release.sort();
+            self.journal.to_release.dedup();
+        }
+        self.persist()?;
+        Ok(n)
+    }
+
+    /// Liste `path` dans la version `root` (lecture seule).
+    pub fn list_at(&mut self, root: &Root, path: &str) -> Result<Vec<(String, Meta)>, DriveError> {
+        let p = norm(path);
+        if root.fs_root_hash == NO_ROOT {
+            return Ok(Vec::new());
+        }
+        let entries = self.with_volume(root.clone(), |v| v.list(&p))?;
+        Ok(entries.iter().map(|e| (e.name.clone(), Meta::of(e))).collect())
+    }
+
+    /// Attributs de `path` dans la version `root`.
+    pub fn stat_at(&mut self, root: &Root, path: &str) -> Result<Option<Meta>, DriveError> {
+        let p = norm(path);
+        if p == "/" {
+            return Ok(Some(Meta {
+                is_dir: true,
+                size: 0,
+                created_at: 0,
+                modified_at: 0,
+            }));
+        }
+        Ok(self.lookup_in(root, &p)?.as_ref().map(Meta::of))
+    }
+
+    /// Lit `len` octets de `path` dans la version `root`.
+    pub fn read_at(
+        &mut self,
+        root: &Root,
+        path: &str,
+        offset: u64,
+        len: usize,
+    ) -> Result<Vec<u8>, DriveError> {
+        let e = self
+            .lookup_in(root, &norm(path))?
+            .ok_or(DriveError::NotFound)?;
+        if e.mime_type == DIRECTORY_MIME {
+            return Err(DriveError::IsADirectory);
+        }
+        let data = self.remote_content(&e)?;
+        let start = (offset as usize).min(data.len());
+        let end = start.saturating_add(len).min(data.len());
+        Ok(data[start..end].to_vec())
     }
 
     /// Racine courante (`fs_root_hash`).
@@ -1120,11 +1238,19 @@ impl Drive {
         let release = self.release_set();
         let r = self.sync_inner(n);
         if r.is_ok() && !release.is_empty() {
-            self.journal
-                .to_release
-                .extend(release.iter().map(hex::encode));
-            self.journal.to_release.sort();
-            self.journal.to_release.dedup();
+            if self.retention_s > 0 {
+                // Gardés pour l'historique (`protocols.historique-versions`).
+                let now = (self.clock)();
+                self.journal
+                    .held
+                    .extend(release.iter().map(|h| (hex::encode(h), now)));
+            } else {
+                self.journal
+                    .to_release
+                    .extend(release.iter().map(hex::encode));
+                self.journal.to_release.sort();
+                self.journal.to_release.dedup();
+            }
             self.persist()?;
         }
         r
@@ -1145,6 +1271,13 @@ impl Drive {
     /// libéré).
     pub fn reachable(&mut self) -> Option<std::collections::HashSet<BlockHash>> {
         let root = self.root.clone();
+        self.reachable_of(&root)
+    }
+
+    /// Blocs atteints par la version `root` ; `None` si une partie en est
+    /// illisible.
+    pub fn reachable_of(&mut self, root: &Root) -> Option<std::collections::HashSet<BlockHash>> {
+        let root = root.clone();
         if root.fs_root_hash == NO_ROOT {
             return Some(Default::default());
         }

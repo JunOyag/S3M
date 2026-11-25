@@ -22,6 +22,11 @@ let folderMode = false;
 let readOnly = false;
 let busy = 0;
 let contacts = [];
+// Version passée parcourue (`protocols.historique-versions`) : hash de sa
+// racine et libellé ; null : version actuelle.
+let version = null;
+let versionLabel = "";
+const when = (t) => (t > 1.4e9 ? new Date(t * 1000).toLocaleString() : "date inconnue");
 
 const $ = (id) => document.getElementById(id);
 function el(tag, text, cls) {
@@ -77,11 +82,16 @@ function fromHex(s) {
 
 async function load(path) {
   try {
-    const r = await call("explorer_list", { chemin: path });
+    const r = await call("explorer_list", version ? { chemin: path, version } : { chemin: path });
     cwd = r["chemin"];
-    folderMode = !!r["mode dossier"];
-    contacts = r["contacts"] || [];
-    readOnly = !!r["lecture seule"] || cwd === SHARED || cwd.startsWith(SHARED + "/");
+    if (!version) {
+      folderMode = !!r["mode dossier"];
+      contacts = r["contacts"] || [];
+    }
+    readOnly = !!version || !!r["lecture seule"] || cwd === SHARED || cwd.startsWith(SHARED + "/");
+    $("banner").hidden = !version;
+    $("bannertext").textContent = version ? "Version du " + versionLabel + " — lecture seule" : "";
+    $("restoredir").hidden = !version || cwd === "/";
     try {
       sessionStorage.setItem("s3m-explorer", cwd);
     } catch (_) {}
@@ -144,6 +154,11 @@ function rows(entries) {
     const items = [];
     const btn = (label, fn, cls) => items.push({ label, fn, cls });
     if (!e["dossier"]) btn("Télécharger", () => download(path, e["taille"]));
+    if (version) {
+      btn("Restaurer cette version", () => restore(path, version, versionLabel));
+    } else if (cwd !== SHARED && !cwd.startsWith(SHARED + "/")) {
+      btn("Versions…", () => versionsOf(path, e["dossier"]));
+    }
     if (!e["lecture seule"]) {
       btn("Partager", () => share(path));
       btn("Renommer / déplacer", () => move(path));
@@ -412,7 +427,7 @@ async function download(path, total) {
   try {
     for (;;) {
       status("Téléchargement de " + base(path) + (total ? " : " + Math.round((100 * off) / total) + " %" : "…"));
-      const r = await call("explorer_read", { chemin: path, offset: off });
+      const r = await call("explorer_read", version ? { chemin: path, offset: off, version } : { chemin: path, offset: off });
       const b = fromHex(r["données"] || "");
       parts.push(b);
       off += b.length;
@@ -522,6 +537,86 @@ $("pickfolder").addEventListener("change", (ev) => {
   sendAll([...ev.target.files].map((f) => ({ file: f, rel: f.webkitRelativePath || f.name })), cwd);
   ev.target.value = "";
 });
+// ------------------------------------------------------------ versions
+
+function browse(v, label, path) {
+  version = v;
+  versionLabel = label;
+  load(path);
+}
+
+function restore(path, v, label) {
+  if (!window.confirm("Restaurer « " + path + " » tel qu'il était le " + label + " ? La version actuelle reste dans l'historique.")) return;
+  const keepVersion = version;
+  version = null;
+  run("Restauration de " + base(path), () => call("explorer_restore", { chemin: path, version: v })).then(() => {
+    version = keepVersion;
+    load(cwd);
+  });
+}
+
+// Fenêtre listant les versions d'un élément (ou de tout l'espace).
+async function versionsOf(path, isDir) {
+  let r;
+  try {
+    status("Lecture de l'historique…");
+    r = await call("explorer_versions", { chemin: path });
+    status("");
+  } catch (e) {
+    status(e.message, true);
+    return;
+  }
+  const d = $("dlg");
+  const f = $("dlgform");
+  f.replaceChildren(el("h3", path === "/" ? "Versions de mon espace" : "Versions de « " + base(path) + " »"));
+  f.appendChild(el("p", "Versions gardées " + (r["conservation (jours)"] || 0) + " jours, comptées dans votre quota (page Fichiers et synchronisation pour les purger).", "muted"));
+  const list = r["versions"] || [];
+  if (!list.length) f.appendChild(el("p", "Aucune version passée."));
+  else {
+    const t = el("table");
+    const head = el("tr");
+    for (const h of ["Version du", "Taille", ""]) head.appendChild(el("th", h));
+    t.appendChild(head);
+    for (const v of list) {
+      const tr = el("tr");
+      const label = when(v["du"]);
+      tr.appendChild(el("td", label));
+      tr.appendChild(el("td", v["dossier"] ? "dossier" : size(v["taille"] || 0), "num"));
+      const td = el("td", undefined, "acts");
+      const add = (txt, fn) => {
+        const b = el("button", txt, "small");
+        b.type = "button";
+        b.addEventListener("click", () => {
+          d.close();
+          fn();
+        });
+        td.appendChild(b);
+      };
+      if (isDir) add("Parcourir", () => browse(v["version"], label, path));
+      else add("Télécharger", () => {
+        const keepVersion = version;
+        version = v["version"];
+        download(path, v["taille"]).finally(() => (version = keepVersion));
+      });
+      if (path !== "/") add("Restaurer", () => restore(path, v["version"], label));
+      tr.appendChild(td);
+      t.appendChild(tr);
+    }
+    f.appendChild(t);
+  }
+  const row = el("div", undefined, "row-btns");
+  const close = el("button", "Fermer", "act");
+  close.value = "ok";
+  row.appendChild(close);
+  f.appendChild(row);
+  d.onclose = null;
+  d.showModal();
+}
+
+$("versions").addEventListener("click", () => versionsOf("/", true));
+$("current").addEventListener("click", () => browse(null, "", cwd));
+$("restoredir").addEventListener("click", () => restore(cwd, version, versionLabel));
+
 const zone = $("zone");
 zone.addEventListener("dragover", (ev) => {
   if (readOnly) return;

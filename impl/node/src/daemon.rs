@@ -109,6 +109,10 @@ pub struct Config {
     /// Enregistrer l'adresse IP des Utilisateurs (carte du dashboard).
     #[serde(default = "default_true")]
     pub record_user_ips: bool,
+    /// Conservation des versions passées des fichiers (jours ; 0 : aucune,
+    /// `protocols.historique-versions`).
+    #[serde(default = "default_history_days")]
+    pub history_days: u64,
     /// Ouverture automatique du port sur la box (UPnP).
     #[serde(default = "default_true")]
     pub upnp: bool,
@@ -139,6 +143,10 @@ pub struct Config {
     /// Fichier d'origine (modification depuis le dashboard) ; non sérialisé.
     #[serde(skip)]
     pub source: Option<PathBuf>,
+}
+
+fn default_history_days() -> u64 {
+    crate::exchange::HISTORY_DAYS
 }
 
 fn default_true() -> bool {
@@ -295,6 +303,11 @@ pub struct SavedUser {
     /// Durée d'inactivité propre (jours, 0 : éternel).
     #[serde(default)]
     pub inactivity_days: Option<u64>,
+    /// Versions passées `(racine, descripteur, validée le, remplacée le)`.
+    #[serde(default)]
+    pub history: Vec<(String, String, u64, u64)>,
+    #[serde(default)]
+    pub root_since: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -377,6 +390,16 @@ impl SavedState {
                 root_seal: s.root_seals.get(id).map(|v| hx(v)).unwrap_or_default(),
                 last_active: s.last_active.get(id).copied().unwrap_or(0),
                 inactivity_days: s.inactivity_days.get(id).copied(),
+                history: s
+                    .root_history
+                    .get(id)
+                    .map(|h| {
+                        h.iter()
+                            .map(|v| (hx(&v.root), hx(&v.root_seal), v.valid_from, v.replaced_at))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                root_since: s.root_since.get(id).copied().unwrap_or(0),
             })
             .collect();
         users.sort_by(|a, b| a.user_id.cmp(&b.user_id));
@@ -467,6 +490,22 @@ impl SavedState {
             }
             if let Some(d) = u.inactivity_days {
                 s.inactivity_days.insert(unhex32(&u.user_id)?, d);
+            }
+            if !u.history.is_empty() {
+                let h = u
+                    .history
+                    .iter()
+                    .map(|(r, seal, from, at)| s3m_protocol::exchange::RootVersion {
+                        root: hex::decode(r).unwrap_or_default(),
+                        root_seal: hex::decode(seal).unwrap_or_default(),
+                        valid_from: *from,
+                        replaced_at: *at,
+                    })
+                    .collect();
+                s.root_history.insert(unhex32(&u.user_id)?, h);
+            }
+            if u.root_since > 0 {
+                s.root_since.insert(unhex32(&u.user_id)?, u.root_since);
             }
         }
         for p in &self.partners {
@@ -1070,6 +1109,7 @@ fn set_config(sh: &Shared, v: &Value) -> Result<Value, String> {
         let mut s = sh.service.lock().unwrap();
         s.partner_policy = a.config.partner_policy;
         s.record_user_ips = a.config.record_user_ips;
+        s.history_retention_s = a.config.history_days * 86_400;
     }
     let message = if a.restart.is_empty() {
         "Configuration enregistrée et appliquée".to_string()
@@ -2391,6 +2431,7 @@ pub async fn start_with(
     service.attach_policy = config.attach;
     service.partner_policy = config.partner_policy;
     service.record_user_ips = config.record_user_ips;
+    service.history_retention_s = config.history_days * 86_400;
     let vdf = chiavdf_verifier();
     let check: VdfCheck = Arc::new(move |id, proof| vdf(id, proof).unwrap_or(false));
     service.vdf = Some(check);

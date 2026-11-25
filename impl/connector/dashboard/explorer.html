@@ -52,17 +52,26 @@
   dialog label { display: block; margin: 8px 0; }
   dialog input, dialog textarea { width: 100%; font: inherit; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
   dialog .row-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  #banner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; background: var(--drop); border-bottom: 1px solid var(--line); }
+  #banner strong { flex: 1 1 240px; }
+  dialog table { margin-top: 8px; }
   @media (max-width: 640px) { td.num.date, th.num.date { display: none; } }
 </style>
 </head>
 <body>
 <div class="bar">
   <nav class="crumbs" id="crumbs" aria-label="Emplacement"></nav>
+  <button class="act secondary" id="versions" type="button" title="Parcourir et restaurer les versions passées">Versions</button>
   <button class="act secondary" id="mkdir" type="button">Nouveau dossier</button>
   <button class="act secondary" id="upfolder" type="button">Envoyer un dossier</button>
   <button class="act" id="upfiles" type="button">Envoyer des fichiers</button>
   <input type="file" id="pickfiles" multiple hidden>
   <input type="file" id="pickfolder" webkitdirectory multiple hidden>
+</div>
+<div id="banner" hidden>
+  <strong id="bannertext"></strong>
+  <button class="act secondary" id="restoredir" type="button">Restaurer ce dossier</button>
+  <button class="act" id="current" type="button">Revenir à la version actuelle</button>
 </div>
 <div id="status" role="status" aria-live="polite"></div>
 <main>

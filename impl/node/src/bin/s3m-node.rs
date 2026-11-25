@@ -48,6 +48,7 @@ fn init(dir: &Path, identity: bool) -> Result<(), Box<dyn std::error::Error>> {
         partner_policy: Default::default(),
         attach: Default::default(),
         record_user_ips: true,
+        history_days: 30,
         upnp: true,
         relay_server: true,
         relay_limits: Default::default(),

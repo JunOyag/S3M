@@ -358,6 +358,33 @@ impl NodeSession {
             .unwrap_or_default()
     }
 
+    /// Ouvre le descripteur scellé `seal` de `root` (`crypto.k-self#k-root`).
+    pub fn open_seal(&self, root: &BlockHash, seal: &[u8]) -> Option<([u8; 16], u16)> {
+        s3m_core::k_self::open_root_descriptor(&self.priv_user, root, seal)
+    }
+
+    /// Versions passées de la racine et durée de conservation du Nœud
+    /// (`protocols.historique-versions`).
+    pub async fn list_roots(
+        &self,
+    ) -> Result<(Vec<s3m_protocol::exchange::RootVersion>, u64), ExchangeError> {
+        match self.call(Body::ListRoots).await? {
+            Response::RootList {
+                versions,
+                retention_s,
+            } => Ok((versions, retention_s)),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
+    /// Oublie les versions remplacées avant `before` (0 : toutes).
+    pub async fn purge_roots(&self, before: u64) -> Result<(), ExchangeError> {
+        match self.call(Body::PurgeRoots { before }).await? {
+            Response::Ack { .. } => Ok(()),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
     /// `(sel, version)` de `root` d'après le descripteur gardé par le Nœud
     /// (dernière réponse `RootState`) ; `None` s'il manque ou ne s'ouvre pas.
     pub fn root_from_node(&self, root: &BlockHash) -> Option<([u8; 16], u16)> {

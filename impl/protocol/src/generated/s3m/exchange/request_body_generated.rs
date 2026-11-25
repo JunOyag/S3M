@@ -12,10 +12,10 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_REQUEST_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_REQUEST_BODY: u8 = 22;
+pub const ENUM_MAX_REQUEST_BODY: u8 = 24;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 23] = [
+pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 25] = [
   RequestBody::NONE,
   RequestBody::GetBlock,
   RequestBody::PutBlock,
@@ -39,6 +39,8 @@ pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 23] = [
   RequestBody::RevokeShare,
   RequestBody::ReleaseBlocks,
   RequestBody::ListBlocks,
+  RequestBody::ListRoots,
+  RequestBody::PurgeRoots,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -69,9 +71,11 @@ impl RequestBody {
   pub const RevokeShare: Self = Self(20);
   pub const ReleaseBlocks: Self = Self(21);
   pub const ListBlocks: Self = Self(22);
+  pub const ListRoots: Self = Self(23);
+  pub const PurgeRoots: Self = Self(24);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 22;
+  pub const ENUM_MAX: u8 = 24;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::GetBlock,
@@ -96,6 +100,8 @@ impl RequestBody {
     Self::RevokeShare,
     Self::ReleaseBlocks,
     Self::ListBlocks,
+    Self::ListRoots,
+    Self::PurgeRoots,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -123,6 +129,8 @@ impl RequestBody {
       Self::RevokeShare => Some("RevokeShare"),
       Self::ReleaseBlocks => Some("ReleaseBlocks"),
       Self::ListBlocks => Some("ListBlocks"),
+      Self::ListRoots => Some("ListRoots"),
+      Self::PurgeRoots => Some("PurgeRoots"),
       _ => None,
     }
   }

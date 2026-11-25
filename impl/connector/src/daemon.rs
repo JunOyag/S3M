@@ -536,6 +536,12 @@ pub struct Shared {
     /// Synchronisation suspendue (menu de la barre des tâches) : les
     /// modifications restent journalisées localement.
     pub paused: std::sync::atomic::AtomicBool,
+    /// Modification massive suspendue (rançongiciel ?) ; la reprise par
+    /// l'Utilisateur vaut accord pour la synchronisation suivante.
+    pub mass_change: std::sync::atomic::AtomicBool,
+    /// Historique des versions (`protocols.historique-versions`) : dernière
+    /// lecture chez le Nœud.
+    pub history: Mutex<Option<HistoryView>>,
     /// Synchronisation en cours.
     pub syncing: std::sync::atomic::AtomicBool,
     pub user_entry: Mutex<UserEntryState>,
@@ -602,6 +608,9 @@ pub fn status(sh: &Shared) -> Value {
     }
     v["santé"] = health_status(sh);
     contacts_status(sh, &mut v);
+    if sh.drive.is_some() {
+        v["historique des versions"] = history_status(sh);
+    }
     if access_mode(&sh.config) == "dossier" {
         v["libération d'espace"] = free_status(sh);
         v["toujours sur cet appareil"] = keep_status(sh);
@@ -662,7 +671,7 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true,
           "sections": if setup.is_some() { json!(["mise en route"]) } else { json!([]) }, "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
-          "sections": ["accès aux fichiers", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture"],
+          "sections": ["accès aux fichiers", "historique des versions", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture"],
           "actions": ["sync_now", "free_space", "set_auto_free", "keep_offline"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
@@ -1780,6 +1789,8 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         )
     } else if h.reachable.is_none() {
         (TrayState::Starting, "Démarrage…".to_string())
+    } else if sh.paused.load(Relaxed) && sh.mass_change.load(Relaxed) {
+        (TrayState::Error, MASS_CHANGE_TEXT.into())
     } else if h.files_missing {
         (TrayState::Error, FILES_MISSING.into())
     } else if let Some(e) = &ds.mount_error {
@@ -1928,9 +1939,12 @@ fn release_old_versions(sh: &Shared) -> Result<Value, String> {
     if drive.pending() > 0 || drive.conflict.is_some() {
         return Err("synchronisez d'abord (modifications en attente ou conflit)".into());
     }
-    let keep = drive
-        .reachable()
-        .ok_or("version courante illisible en entier : rien n'est libéré")?;
+    // Versions gardées et blocs de l'historique : jamais libérés ici
+    // (`protocols.historique-versions`).
+    let h = read_versions(sh)?;
+    let mut keep = history_keep(&mut drive, &h)
+        .ok_or("version courante ou passée illisible en entier : rien n'est libéré")?;
+    keep.extend(drive.held_hashes());
     let mut listed = Vec::new();
     let mut after: Vec<u8> = Vec::new();
     loop {
@@ -1991,6 +2005,164 @@ async fn adopt_known_root(sh: &Shared) {
     }
 }
 
+/// Modifications de fichiers existants à partir desquelles la
+/// synchronisation est suspendue (rançongiciel ?).
+pub const MASS_CHANGE: usize = 100;
+/// Conservation supposée de l'historique avant la réponse du Nœud.
+pub const HISTORY_DEFAULT_S: u64 = 30 * 86_400;
+pub const MASS_CHANGE_TEXT: &str = "Beaucoup de fichiers modifiés d'un coup : synchronisation suspendue. S'il s'agit d'un rançongiciel, ne reprenez pas et restaurez une version antérieure (Explorateur, Versions) ; sinon, reprenez la synchronisation.";
+
+/// Version passée de la racine (`protocols.historique-versions`).
+#[derive(Debug, Clone)]
+pub struct Version {
+    /// Racine ouvrable ; `None` : descripteur absent ou illisible.
+    pub root: Option<Root>,
+    pub hash: BlockHash,
+    pub valid_from: u64,
+    pub replaced_at: u64,
+}
+
+/// Historique lu chez le Nœud.
+#[derive(Debug, Clone)]
+pub struct HistoryView {
+    pub at: u64,
+    pub versions: Vec<Version>,
+    pub retention_s: u64,
+}
+
+/// Versions passées, relues chez le Nœud (et mises en cache).
+pub fn read_versions(sh: &Shared) -> Result<HistoryView, String> {
+    let rt = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
+    let (list, retention_s) = rt
+        .block_on(sh.session.list_roots())
+        .map_err(|e| format!("Nœud : {e}"))?;
+    let versions = list
+        .into_iter()
+        .filter_map(|v| {
+            let hash: BlockHash = v.root.as_slice().try_into().ok()?;
+            let root = sh.session.open_seal(&hash, &v.root_seal).map(|(salt, ver)| Root {
+                fs_root_hash: hash,
+                encryption_salt: salt,
+                key_version: ver,
+            });
+            Some(Version {
+                root,
+                hash,
+                valid_from: v.valid_from,
+                replaced_at: v.replaced_at,
+            })
+        })
+        .collect();
+    let h = HistoryView {
+        at: (sh.clock)(),
+        versions,
+        retention_s,
+    };
+    *sh.history.lock().unwrap() = Some(h.clone());
+    Ok(h)
+}
+
+/// Blocs à ne jamais libérer : racine courante et versions gardées.
+fn history_keep(
+    drive: &mut crate::drive::Drive,
+    h: &HistoryView,
+) -> Option<std::collections::HashSet<BlockHash>> {
+    let mut keep = drive.reachable()?;
+    for r in h.versions.iter().filter_map(|v| v.root.as_ref()) {
+        keep.extend(drive.reachable_of(r)?);
+    }
+    Some(keep)
+}
+
+/// Une fois par heure : conservation alignée sur le Nœud, blocs gardés
+/// arrivés à échéance libérés.
+fn history_tick(sh: &Shared, drive: &mut crate::drive::Drive, force: bool) {
+    let now = (sh.clock)();
+    let fresh = sh
+        .history
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|h| now < h.at + 3_600);
+    if fresh && !force {
+        return;
+    }
+    let Ok(h) = read_versions(sh) else { return };
+    drive.set_retention(h.retention_s);
+    if drive.pending() > 0 || drive.conflict.is_some() {
+        return;
+    }
+    if let Some(keep) = history_keep(drive, &h) {
+        let _ = drive.mature_held(now, None, &keep);
+    }
+}
+
+/// Purge de l'historique : versions remplacées avant `before` (0 : toutes)
+/// oubliées chez le Nœud, leurs blocs libérés.
+pub fn purge_versions(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let before = v
+        .get("avant")
+        .and_then(|x| x.as_str().map(str::trim).and_then(|s| s.parse().ok()).or(x.as_u64()))
+        .unwrap_or(0u64);
+    let d = sh.drive.as_ref().ok_or("accès aux fichiers non configuré")?;
+    let rt = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
+    rt.block_on(sh.session.purge_roots(before))
+        .map_err(|e| format!("Nœud : {e}"))?;
+    let h = read_versions(sh)?;
+    let mut drive = d.lock().unwrap();
+    let keep = history_keep(&mut drive, &h).ok_or("version courante illisible : rien n'est libéré")?;
+    let n = drive
+        .mature_held((sh.clock)(), Some(before), &keep)
+        .map_err(|e| e.to_string())?;
+    send_releases(sh, &mut drive);
+    Ok(json!({ "ok": true, "message": format!(
+        "{} : {n} bloc(s) libéré(s) (environ {} Mo)",
+        if before == 0 { "Historique purgé".to_string() } else { "Versions antérieures purgées".to_string() },
+        n as u64 * 64 / 1024) }))
+}
+
+/// Section « historique des versions » (page Fichiers).
+fn history_status(sh: &Shared) -> Value {
+    let held = sh
+        .drive
+        .as_ref()
+        .map_or(0, |d| d.lock().unwrap().held_hashes().len());
+    let h = sh.history.lock().unwrap().clone();
+    let rows: Vec<Value> = h
+        .as_ref()
+        .map(|h| {
+            h.versions
+                .iter()
+                .map(|v| json!({
+                    "version du": format!("le {}", v.valid_from),
+                    "remplacée le": format!("le {}", v.replaced_at),
+                    "lisible": v.root.is_some(),
+                    "_actions": [{ "nom": "purge_versions", "libellé": "Purger celle-ci et les plus anciennes",
+                        "valeurs": { "avant": (v.replaced_at + 1).to_string() }, "style": "danger",
+                        "confirmer": "Purger définitivement cette version et toutes les plus anciennes ? Elles ne pourront plus être restaurées." }],
+                }))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut forms = vec![json!({ "nom": "purge_versions", "libellé": "Purger tout l'historique", "style": "danger",
+        "champs": [], "valeurs": { "avant": "0" },
+        "confirmer": "Purger définitivement toutes les versions passées ? Seule la version actuelle de vos fichiers restera." })];
+    if sh.mass_change.load(std::sync::atomic::Ordering::Relaxed) {
+        forms.insert(0, json!({ "nom": "resume_after_mass_change", "titre": "Synchronisation suspendue",
+            "texte": MASS_CHANGE_TEXT, "libellé": "Ce n'est pas un rançongiciel : reprendre", "champs": [] }));
+    }
+    json!({
+        "_contenu": {
+            "conservation (jours)": h.as_ref().map(|h| h.retention_s / 86_400),
+            "versions conservées": h.as_ref().map(|h| h.versions.len()),
+            "espace occupé par l'historique (octets)": held as u64 * 65_536,
+            "_note": "Les versions passées de vos fichiers sont comptées dans votre quota. Parcourez-les et restaurez-les depuis l'Explorateur (bouton « Versions », ou « Versions… » sur un fichier ou un dossier).",
+            "versions": rows,
+        },
+        "_formulaires": forms,
+    })
+}
+
 fn send_releases(sh: &Shared, drive: &mut crate::drive::Drive) {
     let Ok(rt) = tokio::runtime::Handle::try_current() else {
         return;
@@ -2014,10 +2186,22 @@ fn send_releases(sh: &Shared, drive: &mut crate::drive::Drive) {
 pub fn sync_drive(sh: &Shared) -> Option<Result<usize, DriveError>> {
     let d = sh.drive.as_ref()?;
     let mut drive = d.lock().unwrap();
-    sh.syncing.store(true, std::sync::atomic::Ordering::Relaxed);
+    use std::sync::atomic::Ordering::Relaxed;
+    // Garde-fou : modification massive de fichiers existants (rançongiciel ?).
+    if !sh.mass_change.load(Relaxed) && drive.modified_existing(MASS_CHANGE) >= MASS_CHANGE {
+        sh.mass_change.store(true, Relaxed);
+        sh.paused.store(true, Relaxed);
+        eprintln!("modification massive : synchronisation suspendue");
+        return Some(Ok(0));
+    }
+    sh.syncing.store(true, Relaxed);
+    history_tick(sh, &mut drive, false);
     // Libérations en attente d'abord : elles rendent du quota.
     send_releases(sh, &mut drive);
     let mut r = drive.sync();
+    if r.is_ok() {
+        sh.mass_change.store(false, Relaxed);
+    }
     // Conflit : un autre appareil a écrit. Sa racine (et son sel) est relue
     // dans l'entrée User ; les modifications locales sont rejouées dessus.
     if matches!(r, Err(DriveError::Conflict)) {
@@ -2394,6 +2578,12 @@ pub async fn start(
                 config.data_dir.join("workspace"),
                 clock.clone(),
             )
+            .map(|mut d| {
+                // Historique gardé par défaut, aligné ensuite sur le Nœud
+                // (`protocols.historique-versions`).
+                d.set_retention(HISTORY_DEFAULT_S);
+                d
+            })
             .map_err(|e| DaemonError::Config(format!("lecteur : {e}")))?,
         ))),
     };
@@ -2404,6 +2594,8 @@ pub async fn start(
         scheduler: Arc::new(Mutex::new(Scheduler::new(WriteBackConfig::default()))),
         drive_status: Mutex::new(DriveStatus::default()),
         paused: Default::default(),
+        mass_change: Default::default(),
+        history: Mutex::new(None),
         syncing: Default::default(),
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
@@ -2471,6 +2663,12 @@ pub async fn start(
                 "sync_now" => {
                     sync_now(&sh);
                     Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
+                }
+                "purge_versions" => purge_versions(&sh, &v),
+                "resume_after_mass_change" => {
+                    sh.paused.store(false, std::sync::atomic::Ordering::Relaxed);
+                    sync_now(&sh);
+                    Ok(json!({ "ok": true, "message": "Synchronisation reprise" }))
                 }
                 "admin_node" => admin_node(&sh.config.node.addr, &v),
                 "send_node_message"

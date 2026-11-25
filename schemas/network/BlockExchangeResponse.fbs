@@ -92,10 +92,23 @@ table BlockList {
   more: bool;                 // pages suivantes
 }
 
+// RootList (ajout du 2026-11-25, protocols.historique-versions) : versions
+// passées de la racine, la plus récente d'abord.
+table RootVersion {
+  root: [ubyte];
+  root_seal: [ubyte];        // descripteur scellé (crypto.k-self#k-root) ; vide : inconnu
+  valid_from: uint64;        // validée le (Unix ; 0 : inconnu)
+  replaced_at: uint64;       // remplacée le (Unix)
+}
+table RootList {
+  versions: [RootVersion];
+  retention_s: uint64;       // durée de conservation du Nœud ; 0 : aucun historique
+}
+
 union ResponseBody {
   Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
   Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached, OwnershipAnswer,
-  Messages, BlockList
+  Messages, BlockList, RootList
 }
 
 table BlockResponse {

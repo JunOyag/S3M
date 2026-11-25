@@ -1382,6 +1382,19 @@ entries:
       - channel::first_announce_key_is_pinned_and_a_later_one_is_ignored
       - channel::alert_from_the_directory_is_accepted_once_and_republished_unchanged
     notes: "Livré le 2026-11-21 : protocol (message.rs, ReadMessages/PostMessage), Nœud (channel.rs, page Messages, clé d'annonce en 24 mots non conservée, alerte publiée et republiée dans l'annuaire), Connecteur (channel.rs, épinglage, lecture à chaque sondage, alerte relue dans l'annuaire, carte d'alerte et page Messages du Nœud). Le suivi automatique du pointeur de migration n'est pas branché dans S3m : quand il le sera, il consultera ChannelState::distrusts. Non testé en conditions réelles."
+  protocols.historique-versions:
+    kind: narrative
+    status: done
+    owner: claude-code
+    tests:
+      - history::a_past_version_is_browsed_restored_then_purged
+      - exchange::attached_connector_reads_writes_and_commits_with_conflict_detection
+      - exchange::every_request_and_response_roundtrips
+    notes: >-
+      node : historique des racines (exchange.rs, ListRoots / PurgeRoots,
+      conservation history_days). connector : blocs remplacés gardés
+      (drive.rs held, mature_held), versions et restauration (explorer.rs,
+      explorer.js), purge et garde-fou de modification massive (daemon.rs).
   network.AlertEntry:
     kind: schema
     status: done

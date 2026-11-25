@@ -999,6 +999,14 @@ pages:
       - channel::first_announce_key_is_pinned_and_a_later_one_is_ignored
       - channel::alert_from_the_directory_is_accepted_once_and_republished_unchanged
 
+  - id: protocols.historique-versions
+    kind: narrative
+    path: 04-protocols/historique-versions.md
+    title: "Historique des Versions et Retour Arrière"
+    section: "§5.2"
+    refs: [protocols.echange-blocs, crypto.k-self, protocols.write-queue, protocols.acces-applicatif]
+    verified_by:
+      - history::a_past_version_is_browsed_restored_then_purged
   - id: protocols.ecriture-differee
     kind: narrative
     path: 04-protocols/ecriture-differee.md

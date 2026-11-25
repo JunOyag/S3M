@@ -34,6 +34,8 @@ async fn explorer_creates_uploads_reads_moves_and_deletes() {
             root: [0; 32],
         },
     );
+    // Sans historique : les blocs remplacés sont libérés aussitôt.
+    ns.history_retention_s = 0;
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000_000);
     let service = Arc::new(Mutex::new(ns));
     let node = BlockServer::start(

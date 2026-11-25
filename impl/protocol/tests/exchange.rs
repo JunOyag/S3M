@@ -26,6 +26,8 @@ fn every_request_and_response_roundtrips() {
             root_seal: vec![7; 47],
         },
         Body::ReportIncident { hash: vec![5; 32] },
+        Body::ListRoots,
+        Body::PurgeRoots { before: 1_800_000_000 },
         Body::RenewGrant {
             grant_pub: vec![6; 32],
         },
@@ -129,6 +131,21 @@ fn every_request_and_response_roundtrips() {
         Response::Attached {
             quota_bytes: 1 << 30,
             salt: vec![7; 16],
+        },
+        Response::RootList {
+            versions: vec![
+                RootVersion {
+                    root: vec![1; 32],
+                    root_seal: vec![2; 47],
+                    valid_from: 10,
+                    replaced_at: 20,
+                },
+                RootVersion {
+                    root: vec![3; 32],
+                    ..Default::default()
+                },
+            ],
+            retention_s: 2_592_000,
         },
     ] {
         assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);

@@ -113,6 +113,8 @@ pub mod s3m {
     pub use self::grant_issued_generated::*;
     mod list_blocks_generated;
     pub use self::list_blocks_generated::*;
+    mod list_roots_generated;
+    pub use self::list_roots_generated::*;
     mod message_kind_generated;
     pub use self::message_kind_generated::*;
     mod messages_generated;
@@ -133,6 +135,8 @@ pub mod s3m {
     pub use self::probe_reply_generated::*;
     mod propose_partnership_generated;
     pub use self::propose_partnership_generated::*;
+    mod purge_roots_generated;
+    pub use self::purge_roots_generated::*;
     mod put_block_generated;
     pub use self::put_block_generated::*;
     mod read_messages_generated;
@@ -153,8 +157,12 @@ pub mod s3m {
     pub use self::response_body_generated::*;
     mod revoke_share_generated;
     pub use self::revoke_share_generated::*;
+    mod root_list_generated;
+    pub use self::root_list_generated::*;
     mod root_state_generated;
     pub use self::root_state_generated::*;
+    mod root_version_generated;
+    pub use self::root_version_generated::*;
     mod share_credential_generated;
     pub use self::share_credential_generated::*;
     mod share_grant_generated;

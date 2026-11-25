@@ -47,6 +47,58 @@ fn changed(sh: &Arc<Shared>, path: &str, size: u64) {
     crate::daemon::sync_now(sh);
 }
 
+/// Version passée désignée par son hash (`protocols.historique-versions`).
+fn version_root(sh: &Arc<Shared>, id: &str) -> Result<crate::access::Root, String> {
+    let find = |h: &crate::daemon::HistoryView| {
+        h.versions
+            .iter()
+            .find(|v| hex::encode(v.hash) == id)
+            .map(|v| v.root.clone())
+    };
+    let cached = sh.history.lock().unwrap().as_ref().and_then(find);
+    let found = match cached {
+        Some(r) => Some(r),
+        None => find(&crate::daemon::read_versions(sh)?),
+    };
+    found
+        .ok_or("version introuvable (purgée ou expirée)")?
+        .ok_or_else(|| "version illisible : descripteur absent".to_string())
+}
+
+/// Copie `src` de la version `root` vers l'espace courant (dossier compris).
+fn restore_from(
+    d: &mut crate::drive::Drive,
+    root: &crate::access::Root,
+    src: &str,
+) -> Result<u64, String> {
+    let m = d
+        .stat_at(root, src)
+        .map_err(|e| e.to_string())?
+        .ok_or("introuvable dans cette version")?;
+    if m.is_dir {
+        if d.stat(src).map_err(|e| e.to_string())?.is_none() {
+            d.create(src, true).map_err(|e| e.to_string())?;
+        }
+        let mut n = 0;
+        for (name, _) in d.list_at(root, src).map_err(|e| e.to_string())? {
+            n += restore_from(d, root, &format!("{}/{name}", src.trim_end_matches('/')))?;
+        }
+        return Ok(n);
+    }
+    let data = d
+        .read_at(root, src, 0, usize::MAX)
+        .map_err(|e| e.to_string())?;
+    match d.stat(src).map_err(|e| e.to_string())? {
+        Some(c) if c.is_dir => return Err(format!("{src} est devenu un dossier")),
+        Some(_) => d.set_size(src, 0).map_err(|e| e.to_string())?,
+        None => d.create(src, false).map_err(|e| e.to_string())?,
+    }
+    if !data.is_empty() {
+        d.write(src, 0, &data).map_err(|e| e.to_string())?;
+    }
+    Ok(1)
+}
+
 /// Supprime un élément, dossier compris avec tout son contenu.
 fn remove_all(d: &mut crate::drive::Drive, p: &str) -> Result<(), String> {
     let m = d.stat(p).map_err(|e| e.to_string())?.ok_or("introuvable")?;
@@ -67,6 +119,52 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
         return Some(Err("accès aux fichiers non configuré".into()));
     };
     Some((|| match name {
+        "explorer_list" if !text(v, "version").is_empty() => {
+            let p = norm(&text(v, "chemin"));
+            let root = version_root(sh, &text(v, "version"))?;
+            let mut entries = drive
+                .lock()
+                .unwrap()
+                .list_at(&root, &p)
+                .map_err(|e| e.to_string())?;
+            entries.sort_by(|a, b| {
+                b.1.is_dir
+                    .cmp(&a.1.is_dir)
+                    .then(a.0.to_lowercase().cmp(&b.0.to_lowercase()))
+            });
+            Ok(json!({
+                "chemin": p,
+                "version": text(v, "version"),
+                "lecture seule": true,
+                "entrées": entries.iter().map(|(n, m)| json!({ "nom": n, "dossier": m.is_dir,
+                    "taille": m.size, "modifié": m.modified_at, "lecture seule": true })).collect::<Vec<_>>(),
+            }))
+        }
+        "explorer_versions" => {
+            let p = norm(&text(v, "chemin"));
+            let h = crate::daemon::read_versions(sh)?;
+            let mut d = drive.lock().unwrap();
+            let current = d.stat(&p).map_err(|e| e.to_string())?;
+            let mut rows = Vec::new();
+            for ver in &h.versions {
+                let Some(root) = &ver.root else { continue };
+                if let Ok(Some(m)) = d.stat_at(root, &p) {
+                    rows.push(json!({ "version": hex::encode(ver.hash), "du": ver.valid_from,
+                        "remplacée le": ver.replaced_at, "dossier": m.is_dir, "taille": m.size,
+                        "modifié": m.modified_at }));
+                }
+            }
+            Ok(json!({ "chemin": p, "actuelle": current.map(|m| json!({ "taille": m.size, "modifié": m.modified_at })),
+                "versions": rows, "conservation (jours)": h.retention_s / 86_400 }))
+        }
+        "explorer_restore" => {
+            let p = norm(&text(v, "chemin"));
+            writable(&p)?;
+            let root = version_root(sh, &text(v, "version"))?;
+            let n = restore_from(&mut drive.lock().unwrap(), &root, &p)?;
+            changed(sh, &p, 0);
+            Ok(json!({ "ok": true, "message": format!("{p} restauré ({n} fichier(s))") }))
+        }
         "explorer_list" => {
             let p = norm(&text(v, "chemin"));
             let mut d = drive.lock().unwrap();
@@ -148,11 +246,14 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
         "explorer_read" => {
             let p = norm(&text(v, "chemin"));
             let offset = v.get("offset").and_then(|x| x.as_u64()).unwrap_or(0);
-            let data = drive
-                .lock()
-                .unwrap()
-                .read(&p, offset, CHUNK)
-                .map_err(|e| e.to_string())?;
+            let version = text(v, "version");
+            let data = if version.is_empty() {
+                drive.lock().unwrap().read(&p, offset, CHUNK)
+            } else {
+                let root = version_root(sh, &version)?;
+                drive.lock().unwrap().read_at(&root, &p, offset, CHUNK)
+            }
+            .map_err(|e| e.to_string())?;
             Ok(json!({ "données": hex::encode(&data), "fin": data.len() < CHUNK }))
         }
         "explorer_move" => {

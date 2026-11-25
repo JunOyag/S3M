@@ -201,13 +201,22 @@ table ListBlocks {
   limit: uint32 = 2048;
 }
 
+// Ajouts du 2026-11-25 (protocols.historique-versions) : Connecteur → son
+// Nœud (UserCredential). ListRoots → RootList ; PurgeRoots → Ack.
+table ListRoots {
+}
+// Oublie les versions remplacées avant `before` (Unix) ; 0 : toutes.
+table PurgeRoots {
+  before: uint64;
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
   StoreFragment, Challenge, FetchFragment, Tombstone,
   Probe, ProposePartnership, Attach, OwnershipQuery,
   EmergencyPut, EmergencyGet, EmergencyRelease,
   ReadMessages, PostMessage, RevokeShare,
-  ReleaseBlocks, ListBlocks
+  ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots
 }
 
 // Requête : une par flux libp2p request-response.

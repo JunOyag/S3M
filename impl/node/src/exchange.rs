@@ -63,6 +63,9 @@ pub struct PartnerState {
     pub negotiated_at: u64,
 }
 
+/// Conservation par défaut de l'historique des versions (jours).
+pub const HISTORY_DAYS: u64 = 30;
+
 /// Taille d'un fragment (octets).
 pub const FRAGMENT_BYTES: u64 = 65_536;
 /// Manquements dans une période qui font passer un partenaire en retrait.
@@ -231,6 +234,13 @@ pub struct NodeService {
     pub root_seals: HashMap<Id, Vec<u8>>,
     /// Dernière requête d'un Connecteur de chaque Utilisateur.
     pub last_active: HashMap<Id, u64>,
+    /// Versions passées de la racine, la plus récente en dernier
+    /// (`protocols.historique-versions`).
+    pub root_history: HashMap<Id, Vec<s3m_protocol::exchange::RootVersion>>,
+    /// Instant de validation de la racine courante.
+    pub root_since: HashMap<Id, u64>,
+    /// Conservation de l'historique (s) ; 0 : aucun.
+    pub history_retention_s: u64,
     /// Durée d'inactivité fixée par l'opérateur pour un Utilisateur (jours,
     /// 0 : éternel) ; absente : celle de la politique.
     pub inactivity_days: HashMap<Id, u64>,
@@ -332,6 +342,9 @@ impl NodeService {
             adopt_next_root: Default::default(),
             root_seals: Default::default(),
             last_active: Default::default(),
+            root_history: Default::default(),
+            root_since: Default::default(),
+            history_retention_s: HISTORY_DAYS * 86_400,
             inactivity_days: Default::default(),
             attach_policy: AttachPolicy::default(),
             partner_policy: PartnerPolicy::default(),
@@ -510,6 +523,23 @@ impl NodeService {
                     freed: self.release_user_blocks(&u, &list, now),
                 })
             }
+            Body::ListRoots => {
+                let u = self.user(cred, from, local)?;
+                self.prune_history(&u, now);
+                let mut versions = self.root_history.get(&u).cloned().unwrap_or_default();
+                versions.reverse();
+                Ok(Response::RootList {
+                    versions,
+                    retention_s: self.history_retention_s,
+                })
+            }
+            Body::PurgeRoots { before } => {
+                let u = self.user(cred, from, local)?;
+                if let Some(h) = self.root_history.get_mut(&u) {
+                    h.retain(|v| before != 0 && v.replaced_at >= before);
+                }
+                Ok(Response::Ack { freed: 0 })
+            }
             Body::ListBlocks { after, limit } => {
                 let u = self.user(cred, from, local)?;
                 let (list, more) = self.list_user_blocks(&u, &after, limit as usize);
@@ -534,7 +564,25 @@ impl NodeService {
                 let committed = adopt || acc.root == base || acc.root == [0; 32];
                 if committed {
                     let changed = acc.root != new;
+                    let old = acc.root;
                     acc.root = new;
+                    // Version remplacée gardée (`protocols.historique-versions`).
+                    if changed && old != [0; 32] && self.history_retention_s > 0 {
+                        let from = self.root_since.get(&u).copied().unwrap_or(0);
+                        let seal = self.root_seals.get(&u).cloned().unwrap_or_default();
+                        self.root_history.entry(u).or_default().push(
+                            s3m_protocol::exchange::RootVersion {
+                                root: old.to_vec(),
+                                root_seal: seal,
+                                valid_from: from,
+                                replaced_at: now,
+                            },
+                        );
+                    }
+                    if changed {
+                        self.root_since.insert(u, now);
+                    }
+                    self.prune_history(&u, now);
                     // Descripteur : remplacé s'il est fourni ; effacé si la
                     // racine change sans lui (jamais de descripteur périmé).
                     if !root_seal.is_empty() {
@@ -1121,6 +1169,17 @@ impl NodeService {
         match self.store.get(Space::Fragment, &id32(hash)?) {
             Some((o, d)) if o == *owner => Ok(d),
             _ => Err(self.missing()),
+        }
+    }
+
+    /// Versions au-delà de la durée de conservation oubliées.
+    fn prune_history(&mut self, u: &Id, now: u64) {
+        let keep = self.history_retention_s;
+        if let Some(h) = self.root_history.get_mut(u) {
+            h.retain(|v| keep > 0 && v.replaced_at.saturating_add(keep) > now);
+            if h.is_empty() {
+                self.root_history.remove(u);
+            }
         }
     }
 

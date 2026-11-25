@@ -320,6 +320,14 @@ pub const FIELDS: &[Field] = &[
         "Par défaut /ip4/0.0.0.0/tcp/4003 ; donnez un port différent à chaque Nœud d'une même machine.",
     ),
     f(
+        "Utilisateurs",
+        "conservation des versions (jours)",
+        "history_days",
+        Kind::Number,
+        true,
+        "Versions passées des fichiers gardées pour les retours arrière (ransomware, suppression accidentelle), comptées dans le quota de chaque utilisateur ; 0 : aucune.",
+    ),
+    f(
         "Vie privée",
         "enregistrer l'adresse des utilisateurs",
         "record_user_ips",
