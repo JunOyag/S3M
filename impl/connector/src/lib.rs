@@ -16,6 +16,7 @@ pub mod drive;
 pub mod emergency;
 pub mod exchange;
 pub mod explorer;
+pub mod find_node;
 pub mod folder_sync;
 pub mod fs;
 pub mod identities;

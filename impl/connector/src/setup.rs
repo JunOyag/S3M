@@ -250,6 +250,8 @@ struct SetupState {
     access: AccessChoice,
     /// Nœud choisi dans la liste (adresse), mis en évidence.
     selected: Option<String>,
+    /// Recherche du Nœud de rattachement dans l'annuaire : état affiché.
+    lookup: Option<String>,
     done: Option<PathBuf>,
     notify: Option<oneshot::Sender<PathBuf>>,
 }
@@ -279,6 +281,86 @@ fn rescan(state: Arc<Mutex<SetupState>>) {
         let mut s = state.lock().unwrap();
         s.found = found;
         s.scanning = false;
+    });
+}
+
+/// Recherche du Nœud de rattachement (`network.bootstrap`) : entrée User de
+/// l'annuaire (`wanted = None`), sinon le Nœud saisi ; il est choisi s'il est
+/// trouvé, et le sel de l'attachement repris de l'entrée User.
+fn lookup(
+    state: Arc<Mutex<SetupState>>,
+    prepared: Arc<Mutex<Prepared>>,
+    dir: PathBuf,
+    wanted: Option<crate::find_node::NodeRef>,
+) {
+    use crate::find_node::*;
+    state.lock().unwrap().lookup = Some("recherche dans l'annuaire…".into());
+    tokio::spawn(async move {
+        // La recherche locale fournit les premiers points d'entrée.
+        for _ in 0..20 {
+            if !state.lock().unwrap().scanning {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+        let (lan, lan_ids): (Vec<String>, Vec<[u8; 32]>) = {
+            let s = state.lock().unwrap();
+            (
+                s.found.iter().map(|n| n.addr.clone()).collect(),
+                s.found.iter().map(|n| n.node_id).collect(),
+            )
+        };
+        let mnemonic = prepared.lock().unwrap().mnemonic.clone();
+        let r: Result<Home, String> = async {
+            let c = client(entry_points(&dir, &lan)).await?;
+            match &wanted {
+                None => {
+                    let (priv_user, pub_user) =
+                        user_keys(&mnemonic, 0).map_err(|e| e.to_string())?;
+                    home_from_user_entry(&c, &priv_user, &pub_user).await
+                }
+                Some(r) => {
+                    let id = match r {
+                        NodeRef::Id(id) => *id,
+                        NodeRef::Fingerprint(fp) => {
+                            let mut ids = lan_ids.clone();
+                            ids.extend(known_ids(&c).await);
+                            match_fingerprint(fp, &ids).ok_or(
+                                "aucun Nœud connu n'a cette empreinte : saisissez son identifiant complet (page Identité de son tableau de bord)",
+                            )?
+                        }
+                    };
+                    Ok(Home {
+                        node_id: id,
+                        addr: node_addr(&c, &id).await?,
+                        salt: None,
+                        label: s3m_protocol::pseudo::fingerprint(&id[..]),
+                    })
+                }
+            }
+        }
+        .await;
+        let mut s = state.lock().unwrap();
+        match r {
+            Ok(h) => {
+                if let Some(salt) = h.salt.filter(|x| x.len() == 16) {
+                    let salt = hex::encode(salt);
+                    if std::fs::write(dir.join("attach.salt"), &salt).is_ok() {
+                        prepared.lock().unwrap().salt = salt;
+                    }
+                }
+                s.selected = Some(h.addr.to_string());
+                s.lookup = Some(format!(
+                    "✔ Votre Nœud {} a été trouvé ({}) et choisi : complétez puis « Démarrer sous cette identité ».",
+                    h.label, h.addr
+                ));
+            }
+            Err(e) => {
+                s.lookup = Some(format!(
+                    "{e}. Saisissez l'identité de votre Nœud ci-dessous, ou choisissez-le dans la liste."
+                ));
+            }
+        }
     });
 }
 
@@ -350,6 +432,13 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                           "aide": { "phrase de récupération": "Vos 24 mots, séparés par des espaces" } },
                     ],
                 },
+                "retrouver mon nœud": {
+                    "_contenu": s.lookup.clone().unwrap_or_else(|| "Après « Reprendre cette identité », votre Nœud est cherché dans l'annuaire. Vous pouvez aussi saisir son identité.".into()),
+                    "_formulaires": [
+                        { "nom": "find_node", "libellé": "Rechercher ce Nœud", "champs": ["identité du nœud"],
+                          "aide": { "identité du nœud": "Identifiant de votre Nœud (64 caractères, page Identité de son tableau de bord, ou son PeerId 12D3Koo…), ou son empreinte" } },
+                    ],
+                },
                 "nœuds trouvés sur le réseau local": {
                     "_contenu": if s.scanning { json!("recherche en cours…") } else if found.is_empty() { json!("aucun (le Nœud est-il allumé, sur le même réseau, annonce locale active ?)") } else { json!(found) },
                     "_formulaires": [
@@ -378,9 +467,19 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                         .and_then(|x| x.as_str())
                         .unwrap_or_default();
                     *p.lock().unwrap() = restore(&dir, input)?;
+                    lookup(state.clone(), p.clone(), dir.clone(), None);
                     return Ok(
-                        json!({ "ok": true, "message": "Identité reprise : choisissez maintenant votre Nœud" }),
+                        json!({ "ok": true, "message": "Identité reprise : recherche de votre Nœud dans l'annuaire…" }),
                     );
+                }
+                "find_node" => {
+                    let input = v
+                        .get("identité du nœud")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default();
+                    let r = crate::find_node::parse_node_ref(input)?;
+                    lookup(state.clone(), p.clone(), dir.clone(), Some(r));
+                    return Ok(json!({ "ok": true, "message": "Recherche du Nœud…" }));
                 }
                 "configure_node" => {
                     let which = v

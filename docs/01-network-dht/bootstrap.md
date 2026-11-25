@@ -92,6 +92,18 @@ Aucun état local préexistant n'est requis — seule la seed BIP-39 suffit
    [`protocols.acces-applicatif`](../04-protocols/acces-applicatif.md) : elle
    est implémentée avec lui (Phase 4), pas par cet id.
 
+Dans l'assistant de premier lancement (ajout du 2026-11-25), une identité
+reprise déclenche aussitôt cette résolution : points d'entrée = Nœuds du
+réseau local et Nœuds vus par les autres identités du poste
+(`dht_peers.json`) ; le Nœud du rattachement le plus récent est choisi et le
+sel de cet attachement repris ([`crypto.k-attach`](../03-crypto/k-attach.md)).
+Sans entrée User, l'Utilisateur saisit l'identité de son Nœud
+(identifiant de 64 caractères hexadécimaux ou PeerId), dont l'entrée Node
+est cherchée de proche en proche dans l'annuaire ; une empreinte
+([`deploiement.pseudos`](../07-deploiement/pseudos.md)) n'étant pas une
+clé de l'annuaire, elle n'est reconnue que parmi les Nœuds déjà connus
+(réseau local, table de routage).
+
 Entrée User expirée (plus de 6 mois sans appareil connecté) : le Nœud,
 choisi par l'Utilisateur, rend la racine courante et son descripteur
 scellé, qui suffit à l'ouvrir
