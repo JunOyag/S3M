@@ -222,3 +222,45 @@ async fn a_partner_in_maintenance_is_not_penalised() {
     let now_holder = &state.users[&user].stripes[0].parity[0].2;
     assert_ne!(*now_holder, hex::encode(holder));
 }
+
+/// Série de blocs altérés (rançongiciel, disque défaillant) : maintenance,
+/// relecture complète sans attendre le scrubbing quotidien, reconstruction.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_burst_of_corrupted_blocks_triggers_a_full_repair() {
+    let net = network(NodeService::new(NODE)).await;
+    let originals: Vec<Vec<u8>> = (5..9).map(block).collect();
+    {
+        let mut s = net.service.lock().unwrap();
+        for b in &originals {
+            let h = hash_sha256(b);
+            s.store.put(Space::UserBlock, &pk(&USER), &h, b).unwrap();
+            s.dispersal_queue.push((pk(&USER), h));
+        }
+    }
+    let mut state = DispersalState::default();
+    let r = run_cycle(&net.service, &mut state, &net.fabric, &CFG, 1_000).await;
+    assert_eq!(r.stripes_dispersed, 2, "{r:?}");
+    run_upkeep(&net.service, &mut state, &net.fabric, &CFG, &UCFG, 1_000).await;
+    assert!(state.upkeep.maintenance.is_none());
+
+    // Trois blocs chiffrés sur le disque, signalés par les Connecteurs.
+    {
+        let mut s = net.service.lock().unwrap();
+        for b in &originals[..3] {
+            s.store
+                .replace(Space::UserBlock, &pk(&USER), &hash_sha256(b), &[0xAB; 65_536])
+                .unwrap();
+            s.corruption_events.push(1_900);
+        }
+    }
+    let r = run_upkeep(&net.service, &mut state, &net.fabric, &CFG, &UCFG, 2_000).await;
+    assert_eq!(r.local_repaired, 3, "{r:?}");
+    let m = state.upkeep.last_maintenance.clone().expect("maintenance terminée");
+    assert_eq!((m.reason.as_str(), m.repaired, m.irrecoverable), (REASON_MASS, 3, 0));
+    let s = net.service.lock().unwrap();
+    for b in &originals {
+        assert_eq!(&s.store.get(Space::UserBlock, &hash_sha256(b)).unwrap().1, b);
+    }
+    // Début et fin annoncés aux Utilisateurs.
+    assert_eq!(s.channel.outbox.sent.len(), 2);
+}

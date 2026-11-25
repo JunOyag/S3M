@@ -117,6 +117,45 @@ pub struct Maintenance {
     pub passes: u32,
     #[serde(default)]
     pub ended_at: Option<u64>,
+    /// Cause : fichiers disparus (vide) ou altération massive.
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// Altérations dans [`MASS_WINDOW_S`] qui déclenchent la maintenance.
+pub const MASS_CORRUPTIONS: usize = 3;
+pub const MASS_WINDOW_S: u64 = 600;
+pub const REASON_MASS: &str = "altération massive";
+
+/// Série d'altérations récentes : maintenance et relecture complète
+/// (`securite.integrite-autoreparation#alteration-massive`).
+fn detect_mass_corruption(service: &Mutex<NodeService>, up: &mut UpkeepState, now: u64) {
+    let mut s = service.lock().unwrap();
+    s.corruption_events
+        .retain(|t| t.saturating_add(MASS_WINDOW_S) > now);
+    if s.corruption_events.len() < MASS_CORRUPTIONS || up.maintenance.is_some() {
+        return;
+    }
+    let n = s.corruption_events.len();
+    s.corruption_events.clear();
+    s.maintenance = true;
+    let priv_node = s.priv_node();
+    let _ = s.channel.post_info(
+        &priv_node,
+        "Maintenance : des données altérées ont été détectées sur le stockage de votre Nœud. Il vérifie et reconstruit vos fichiers depuis le réseau ; ils restent lisibles pendant ce temps.",
+        now,
+    );
+    drop(s);
+    up.maintenance = Some(Maintenance {
+        since: now,
+        reason: REASON_MASS.into(),
+        ..Default::default()
+    });
+    up.last_scrub = 0;
+    up.log(
+        now,
+        format!("{n} blocs altérés en moins de {} min : maintenance, relecture complète et reconstruction", MASS_WINDOW_S / 60),
+    );
 }
 
 /// Passages de reconstruction au plus avant de sortir de maintenance.
@@ -434,6 +473,7 @@ pub async fn run_upkeep(
     let mut report = UpkeepReport::default();
     let mut up = std::mem::take(&mut state.upkeep);
     detect_loss(service, &mut up, now);
+    detect_mass_corruption(service, &mut up, now);
     service.lock().unwrap().maintenance = up.maintenance.is_some();
 
     // 1. Challenges, à tour de rôle sur tous les fragments de données.
@@ -737,6 +777,7 @@ pub async fn run_upkeep(
                         let got = s.store.get(Space::UserBlock, &id(h));
                         // Contenu relu différent : altération du disque.
                         if got.as_ref().is_some_and(|(o, b)| *o == uid && hx(&hash_sha256(b)) != *h) {
+                            s.corruption_events.push(now);
                             if let Some(p) = s.store.physical() {
                                 p.note_corrupted(&id(h));
                             }
@@ -852,7 +893,11 @@ fn end_pass(
         return;
     }
     let mut m = up.maintenance.take().unwrap();
-    m.irrecoverable = m.lost_user_blocks.saturating_sub(m.repaired);
+    m.irrecoverable = if m.reason == REASON_MASS {
+        failed
+    } else {
+        m.lost_user_blocks.saturating_sub(m.repaired)
+    };
     m.ended_at = Some(now);
     let text = if m.irrecoverable == 0 {
         format!("maintenance terminée : {} bloc(s) reconstruit(s)", m.repaired)
@@ -865,7 +910,7 @@ fn end_pass(
     {
         let mut s = service.lock().unwrap();
         s.maintenance = false;
-        if m.lost_user_blocks > 0 {
+        if m.lost_user_blocks > 0 || (m.reason == REASON_MASS && m.repaired > 0) {
             let priv_node = s.priv_node();
             let msg = if m.irrecoverable == 0 {
                 "Maintenance terminée : tous vos fichiers ont été reconstruits.".to_string()

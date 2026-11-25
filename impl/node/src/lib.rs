@@ -304,7 +304,8 @@ impl VolumeFault {
         let replace = format!("Remplacez le disque défectueux : ajoutez un volume sur un disque sain (page Volumes), puis retirez le volume {v} (ses blocs sont déplacés) ou, s'il n'est plus lisible, déclarez-le perdu (ses blocs sont reconstruits depuis le réseau).");
         match self.kind {
             FaultKind::Unreachable => format!("Le disque ou le dossier qui contient {p} est introuvable. Rebranchez le disque ; s'il a changé de lettre ou d'emplacement, modifiez le point de montage du volume {v} (page Volumes) ; s'il est perdu, déclarez le volume {v} perdu. Rien n'est effacé en attendant."),
-            FaultKind::Read | FaultKind::Write | FaultKind::Corrupted => format!("Le disque qui porte {p} est probablement défectueux (vérifiez son état SMART et son câble). {replace}"),
+            FaultKind::Read | FaultKind::Write => format!("Le disque qui porte {p} est probablement défectueux (vérifiez son état SMART et son câble). {replace}"),
+            FaultKind::Corrupted => format!("Des blocs du volume {v} ont été modifiés sur le disque : disque défectueux (vérifiez son état SMART et son câble) ou logiciel malveillant (rançongiciel) sur la machine du Nœud — analysez-la. Les blocs sont reconstruits depuis le réseau. Si le disque est en cause : {replace}"),
             FaultKind::Permission => format!("Le Nœud n'a pas le droit d'écrire dans {p} : rendez ce dossier accessible en lecture et écriture au compte qui exécute le Nœud, ou modifiez le point de montage du volume {v}."),
             FaultKind::Full => format!("Le disque qui porte {p} est plein, alors que la capacité configurée du volume {v} ne l'est pas : libérez de la place sur ce disque ou réduisez la capacité du volume {v} (page Volumes)."),
         }

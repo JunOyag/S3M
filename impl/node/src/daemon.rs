@@ -1548,6 +1548,7 @@ fn maintenance_status(m: Option<&crate::upkeep::Maintenance>) -> Value {
             None => format!("en cours : reconstruction depuis le réseau (passage {} sur {} au plus)", m.passes + 1, crate::upkeep::MAINTENANCE_PASSES),
             Some(_) => "terminée".to_string(),
         },
+        "cause": if m.reason.is_empty() { "fichiers de stockage disparus du disque" } else { m.reason.as_str() },
         "depuis": m.since,
         "terminée le": m.ended_at,
         "blocs d'Utilisateurs perdus": m.lost_user_blocks,

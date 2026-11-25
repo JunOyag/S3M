@@ -1001,6 +1001,7 @@ entries:
       - upkeep::fraud_absence_and_local_corruption_are_repaired_automatically
       - maintenance::a_deleted_volume_is_rebuilt_from_the_network
       - maintenance::a_partner_in_maintenance_is_not_penalised
+      - maintenance::a_burst_of_corrupted_blocks_triggers_a_full_repair
       - disk_faults::an_unplugged_disk_is_reported_without_forgetting_its_blocks
       - disk_faults::a_deleted_volume_folder_does_not_prevent_startup
       - disk_faults::a_corrupted_block_raises_a_replace_the_disk_alert

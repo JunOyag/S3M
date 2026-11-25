@@ -101,6 +101,18 @@ volume contient des données : disque débranché, lettre changée) n'est pas
 une perte : rien n'est oublié, aucune allocation n'y est faite, et le Nœud
 démarre quand même ; il est signalé comme défaillance (§ suivant).
 
+## Altération massive {: #alteration-massive }
+
+Ajout du 2026-11-25. Au moins **3 blocs altérés en 10 minutes** — relus
+différents de leur hash par le scrubbing, ou signalés par les Connecteurs
+(`ReportIncident`) — font passer le Nœud en maintenance (cause
+« altération massive » : rançongiciel sur sa machine ou disque
+défaillant) : Utilisateurs prévenus, relecture complète à chaque cycle sans
+attendre la période du scrubbing, reconstruction depuis la parité, mêmes
+réponses aux partenaires et même fin que ci-dessus ; les blocs restés
+faux au dernier passage sont annoncés irrécupérables. L'alerte « Blocs
+altérés » (§ suivant) cite les deux causes.
+
 ## Défaillances matérielles {: #defaillance }
 
 Ajout du 2026-11-24. Toute erreur rencontrée sur un volume est signalée à

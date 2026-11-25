@@ -222,6 +222,10 @@ pub struct NodeService {
     /// Pointeurs de migration valides lus dans la DHT : ancien → nouveau.
     pub successors: HashMap<Id, Id>,
     pub incidents: Vec<Id>,
+    /// Instants des altérations constatées (scrubbing, rapports des
+    /// Connecteurs) : une série déclenche la maintenance
+    /// (`securite.integrite-autoreparation#alteration-massive`).
+    pub corruption_events: Vec<u64>,
     /// Délégations reçues (lecture chez les partenaires de l'ancien Nœud).
     pub delegations: Vec<Delegation>,
     /// Blocs reçus à disperser : `(pub_user, hash)` (moteur de dispersion).
@@ -340,6 +344,7 @@ impl NodeService {
             partners: HashMap::new(),
             successors: HashMap::new(),
             incidents: Vec::new(),
+            corruption_events: Vec::new(),
             delegations: Vec::new(),
             dispersal_queue: Vec::new(),
             adopt_next_root: Default::default(),
@@ -627,7 +632,12 @@ impl NodeService {
             }
             Body::ReportIncident { hash } => {
                 self.user(cred, from, local)?;
-                self.incidents.push(id32(&hash)?);
+                let h = id32(&hash)?;
+                self.incidents.push(h);
+                self.corruption_events.push(now);
+                if let Some(p) = self.store.physical() {
+                    p.note_corrupted(&h);
+                }
                 Ok(Response::Ack { freed: 0 })
             }
             Body::RenewGrant { grant_pub } => {
