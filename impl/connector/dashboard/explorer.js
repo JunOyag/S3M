@@ -93,6 +93,11 @@ async function load(path) {
     }
     readOnly = !!version || !!r["lecture seule"] || cwd === SHARED || cwd.startsWith(SHARED + "/");
     $("banner").hidden = !version;
+    const old = version ? 0 : r["éléments à l'ancienne clé"] || 0;
+    $("oldkey").hidden = !old;
+    $("oldkeytext").textContent = old
+      ? old + " élément(s) de ce dossier sont encore protégés par votre ancienne clé, compromise (marqués 🔓). Rechiffrez-les pour qu'elle ne permette plus de les lire."
+      : "";
     $("bannertext").textContent = version ? "Version du " + versionLabel + " — lecture seule" : "";
     $("restoredir").hidden = !version || cwd === "/";
     try {
@@ -146,6 +151,11 @@ function rows(entries) {
     name.appendChild(el("span", e["dossier"] ? "📁" : "📄", "ico"));
     name.appendChild(document.createTextNode(e["nom"]));
     if (e["gardé"]) name.appendChild(el("span", "sur cet appareil", "tag"));
+    if (e["ancienne clé"]) {
+      const t = el("span", "🔓 ancienne clé", "tag old");
+      t.title = "Encore protégé par votre ancienne clé, compromise : rechiffrez-le (menu ⋯)";
+      name.appendChild(t);
+    }
     name.title = e["dossier"] ? "Ouvrir" : "Télécharger";
     name.addEventListener("click", () => (e["dossier"] ? load(path) : download(path, e["taille"])));
     tr.appendChild(name);
@@ -165,7 +175,7 @@ function rows(entries) {
     if (!e["lecture seule"]) {
       btn("Partager", () => share(path));
       btn("Renommer / déplacer", () => move(path));
-      if (reencryptable) btn("Rechiffrer avec la nouvelle clé", () => run("Rechiffrement de " + e["nom"], () => call("explorer_reencrypt", { chemin: path })));
+      if (e["ancienne clé"]) btn("Rechiffrer avec la nouvelle clé", () => run("Rechiffrement de " + e["nom"], () => call("explorer_reencrypt", { chemin: path })));
       if (folderMode) {
         btn(e["gardé"] ? "Ne plus garder" : "Garder hors ligne", () => keep(path, !e["gardé"]));
         if (!e["gardé"]) btn("Libérer l'espace", () => freeSpace(path));
@@ -618,6 +628,8 @@ async function versionsOf(path, isDir) {
 }
 
 $("versions").addEventListener("click", () => versionsOf("/", true));
+$("reencryptall").addEventListener("click", () =>
+  run("Rechiffrement de ce dossier", () => call("explorer_reencrypt", { chemin: cwd })));
 $("current").addEventListener("click", () => browse(null, "", cwd));
 $("restoredir").addEventListener("click", () => restore(cwd, version, versionLabel));
 $("restoreall").addEventListener("click", () => {

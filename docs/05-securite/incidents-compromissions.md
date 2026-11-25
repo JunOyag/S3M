@@ -41,9 +41,15 @@ confirmation) :
 4. Le Connecteur affiche la nouvelle phrase à noter, garde l'ancienne
    (`user.seed.revoquee-…`) et redémarre l'identité.
 
-Les fichiers restent lisibles (anciennes clés du trousseau) ; le menu
-« Rechiffrer avec la nouvelle clé » de l'Explorateur réécrit un fichier ou
-un dossier sous la nouvelle clé. Un appareil neuf, avec la seule nouvelle
+Les fichiers restent lisibles (anciennes clés du trousseau). L'Explorateur
+marque « 🔓 ancienne clé » chaque élément encore chiffré avec une clé
+antérieure (un dossier : lui-même ou son contenu), signale leur nombre dans
+le dossier courant (« Tout rechiffrer ici ») et ne propose « Rechiffrer
+avec la nouvelle clé » que pour eux ; un élément déjà rechiffré est laissé
+tel quel. La nouvelle phrase reste affichée sur la vue d'ensemble jusqu'à
+« Je l'ai notée » ; la preuve d'identité, propre à chaque identité, est
+recalculée (1 à 2 minutes), pendant lesquelles le tableau de bord explique
+le redémarrage. Un appareil neuf, avec la seule nouvelle
 phrase, dérive la clé de la version de la racine
 ([`crypto.k-self#k-root`](../03-crypto/k-self.md#k-root)) puis lit le
 trousseau dans l'espace.

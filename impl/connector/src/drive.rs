@@ -438,6 +438,39 @@ impl Drive {
         self.version
     }
 
+    /// `path` (dossier : lui ou son contenu) est-il encore chiffré avec une
+    /// clé antérieure à la courante (rotation d'identité) ? Au plus
+    /// `budget` éléments examinés.
+    pub fn uses_old_key(&mut self, path: &str, budget: &mut usize) -> bool {
+        if self.version <= KEY_VERSION || *budget == 0 {
+            return false;
+        }
+        *budget -= 1;
+        let p = norm(path);
+        let own = match self.journal.changes.get(&p) {
+            Some(Change::File { .. }) => return false,
+            Some(Change::Dir { .. }) => self.version,
+            Some(Change::Moved(e)) => Entry::from(e).key_version,
+            Some(Change::Deleted) => return false,
+            None if p == "/" => self.root.key_version,
+            None => match self.remote_entry(&p) {
+                Ok(Some(e)) if e.mime_type != DIRECTORY_MIME => return e.key_version < self.version,
+                Ok(Some(e)) => e.key_version,
+                _ => return false,
+            },
+        };
+        if own < self.version {
+            return true;
+        }
+        let Ok(children) = self.list(&p) else {
+            return false;
+        };
+        children.iter().any(|(n, _)| {
+            let c = format!("{}/{n}", p.trim_end_matches('/'));
+            c != SHARED_DIR && self.uses_old_key(&c, budget)
+        })
+    }
+
     /// Conservation de l'historique, alignée sur celle du Nœud.
     pub fn set_retention(&mut self, s: u64) {
         self.retention_s = s;

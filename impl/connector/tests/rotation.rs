@@ -120,15 +120,36 @@ async fn a_compromised_phrase_is_replaced_without_losing_files() {
             .unwrap();
         assert_eq!(listed["rechiffrer"], true);
         let names: Vec<&str> = listed["entrées"].as_array().unwrap().iter().map(|e| e["nom"].as_str().unwrap()).collect();
+        let old = |l: &serde_json::Value, n: &str| {
+            l["entrées"].as_array().unwrap().iter().find(|e| e["nom"] == n).unwrap()["ancienne clé"] == true
+        };
+        assert!(old(&listed, "a.txt") && old(&listed, "b.txt"), "marqués : ancienne clé");
+        assert_eq!(listed["éléments à l'ancienne clé"], 2);
         assert!(names.contains(&"a.txt") && !names.contains(&".s3m"), "trousseau masqué : {names:?}");
         s3m_connector::explorer::action(&s, "explorer_reencrypt", &json!({ "chemin": "/a.txt" }))
             .unwrap()
             .unwrap();
         sync_drive(&s).unwrap().unwrap();
         assert_eq!(read(&s, "/a.txt"), "contenu A");
+        let listed = s3m_connector::explorer::action(&s, "explorer_list", &json!({ "chemin": "/" }))
+            .unwrap()
+            .unwrap();
+        assert!(!old(&listed, "a.txt") && old(&listed, "b.txt"), "a.txt rechiffré, b.txt non");
+        let again = s3m_connector::explorer::action(&s, "explorer_reencrypt", &json!({ "chemin": "/a.txt" }))
+            .unwrap()
+            .unwrap();
+        assert!(again["message"].as_str().unwrap().contains("rien à rechiffrer"));
+        // Nouvelle phrase réaffichée jusqu'à confirmation.
+        let st = status(&s);
+        assert_eq!(st["nouvelle phrase de récupération"]["_contenu"]["24 mots"].as_str().unwrap().split_whitespace().count(), 24);
     })
     .await;
     stop(sh).await;
+    assert!(dir.join("data").join(NEW_PHRASE_FILE).exists());
+    assert!(!dir.join("data").join("vdf_proof.id").exists()
+        || std::fs::read_to_string(dir.join("data").join("vdf_proof.id")).unwrap().trim()
+            == hex::encode(s3m_protocol::entries::user_identity(&user_keys(&words, 0).unwrap().0, &new_user).unwrap()),
+        "preuve d'identité de la nouvelle identité");
 
     // Appareil neuf avec la seule nouvelle phrase : clés retrouvées, le
     // fichier jamais rechiffré (ancienne clé) reste lisible.

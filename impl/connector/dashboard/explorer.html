@@ -45,6 +45,9 @@
   .menu button.danger { color: var(--bad); }
   .muted { color: var(--muted); }
   .tag { font-size: 11px; color: var(--accent); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 6px; }
+  .tag.old { color: var(--bad); border-color: var(--bad); }
+  #oldkey { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); color: var(--bad); }
+  #oldkey span { flex: 1 1 240px; }
   #status { min-height: 1.5em; padding: 6px 16px; color: var(--muted); font-size: 13px; }
   #status.err { color: var(--bad); }
   dialog { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; max-width: min(560px, 92vw); }
@@ -73,6 +76,10 @@
   <button class="act secondary" id="restoredir" type="button">Restaurer ce dossier</button>
   <button class="act secondary" id="restoreall" type="button">Restaurer tout l'espace à cette version</button>
   <button class="act" id="current" type="button">Revenir à la version actuelle</button>
+</div>
+<div id="oldkey" hidden>
+  <span id="oldkeytext"></span>
+  <button class="act" id="reencryptall" type="button">Tout rechiffrer ici</button>
 </div>
 <div id="status" role="status" aria-live="polite"></div>
 <main>

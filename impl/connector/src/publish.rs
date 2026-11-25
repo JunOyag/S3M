@@ -39,10 +39,17 @@ pub async fn ensure_user_proof(
     priv_user: &[u8; 32],
     pub_user: &[u8; 32],
 ) -> Result<VdfProof, String> {
-    if let Some(p) = std::fs::read(cache).ok().and_then(|b| decode_proof(&b)) {
-        return Ok(p);
-    }
     let identity = user_identity(priv_user, pub_user).map_err(|e| e.to_string())?;
+    // Preuve en cache valable pour cette identité seulement (une rotation
+    // d'identité en exige une nouvelle).
+    let tag = cache.with_extension("id");
+    let same = std::fs::read_to_string(&tag).map_or(true, |t| t.trim() == hex::encode(identity));
+    if same {
+        if let Some(p) = std::fs::read(cache).ok().and_then(|b| decode_proof(&b)) {
+            let _ = std::fs::write(&tag, hex::encode(identity));
+            return Ok(p);
+        }
+    }
     let proof = tokio::task::spawn_blocking(move || generate_identity_proof(&identity))
         .await
         .map_err(|e| e.to_string())?
@@ -50,6 +57,7 @@ pub async fn ensure_user_proof(
     let tmp = cache.with_extension("tmp");
     std::fs::write(&tmp, encode_proof(&proof)).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, cache).map_err(|e| e.to_string())?;
+    let _ = std::fs::write(&tag, hex::encode(identity));
     Ok(proof)
 }
 

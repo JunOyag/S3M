@@ -668,6 +668,19 @@ pub fn status(sh: &Shared) -> Value {
         }
     }
     v["journal"] = journal_rows(sh);
+    // Nouvelle phrase après un changement d'identité, jusqu'à confirmation.
+    let new_phrase = std::fs::read_to_string(sh.config.data_dir.join(NEW_PHRASE_FILE)).ok();
+    if let Some(w) = &new_phrase {
+        v["nouvelle phrase de récupération"] = json!({
+            "_contenu": {
+                "24 mots": w.trim(),
+                "important": "Votre identité a changé : cette nouvelle phrase remplace l'ancienne, qui ne donne plus accès à vos fichiers. Notez-la sur papier et gardez-la hors de cet ordinateur.",
+            },
+            "_formulaires": [{ "nom": "phrase_noted", "libellé": "Je l'ai notée en lieu sûr", "champs": [],
+                "confirmer": "Avez-vous bien noté les 24 mots ? Ils ne seront plus affichés." }],
+        });
+        v["à signaler"] = json!("Notez votre nouvelle phrase de récupération : page Vue d'ensemble");
+    }
     let setup = onboarding(sh);
     v["résumé"] = connector_summary(&v);
     if let Some(m) = &setup {
@@ -702,7 +715,12 @@ pub fn status(sh: &Shared) -> Value {
     }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true,
-          "sections": if setup.is_some() { json!(["mise en route"]) } else { json!([]) }, "actions": ["sync_now"] },
+          "sections": match (new_phrase.is_some(), setup.is_some()) {
+              (true, true) => json!(["nouvelle phrase de récupération", "mise en route"]),
+              (true, false) => json!(["nouvelle phrase de récupération"]),
+              (false, true) => json!(["mise en route"]),
+              (false, false) => json!([]),
+          }, "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
           "sections": ["accès aux fichiers", "historique des versions", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture", "blocs pas encore dispersés"],
           "actions": ["sync_now", "free_space", "set_auto_free", "keep_offline"] },
@@ -2125,7 +2143,7 @@ pub fn ensure_keys(sh: &Shared) {
 /// Phrase de récupération compromise : nouvelle identité, compte transféré
 /// par le Nœud, ancienne révoquée ; anciennes clés gardées dans le
 /// trousseau (`securite.incidents-compromissions#rotation-user`).
-pub fn rotate_identity(sh: &Shared, v: &Value) -> Result<Value, String> {
+pub fn rotate_identity(sh: &Arc<Shared>, v: &Value) -> Result<Value, String> {
     let ok = v
         .get("je confirme")
         .is_some_and(|x| x.as_bool() == Some(true) || x.as_str() == Some("true"));
@@ -2204,13 +2222,30 @@ pub fn rotate_identity(sh: &Shared, v: &Value) -> Result<Value, String> {
         let _ = std::fs::write(dir.join("attach.salt"), hex::encode(salt));
     }
     kc.save(&sh.config.data_dir).map_err(|e| e.to_string())?;
-    sh.restart_identity
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+    // Nouvelle identité : nouvelle preuve d'identité ; phrase réaffichée
+    // après le redémarrage tant qu'elle n'est pas confirmée notée.
+    let _ = std::fs::remove_file(sh.config.data_dir.join("vdf_proof.bin"));
+    let _ = std::fs::write(sh.config.data_dir.join(NEW_PHRASE_FILE), &new_words);
+    // Redémarrage différé : la réponse (et la phrase) parvient d'abord à
+    // la page.
+    let later = sh.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(4));
+        later
+            .restart_identity
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    });
     Ok(json!({ "ok": true,
-        "message": "Nouvelle identité en place : l'ancienne phrase est révoquée par votre Nœud. Vos fichiers restent lisibles ; rechiffrez-les avec la nouvelle clé depuis l'Explorateur (menu « Rechiffrer avec la nouvelle clé »).",
+        "message": "Nouvelle identité en place : l'ancienne phrase est révoquée par votre Nœud. Notez la nouvelle phrase. L'identité redémarre ensuite (1 à 2 minutes : calcul de sa preuve d'identité) ; vos fichiers restent lisibles, et ceux encore protégés par l'ancienne clé sont marqués dans l'Explorateur.",
         "24 mots": new_words,
         "fermer": "J'ai noté ma nouvelle phrase" }))
 }
+
+/// Texte affiché pendant le redémarrage d'une identité.
+pub const RESTARTING_TEXT: &str = "Cette identité redémarre (nouvelle identité, nouveau Nœud ou nouvel accès aux fichiers). Cela prend quelques secondes, ou 1 à 2 minutes si une nouvelle preuve d'identité est calculée. Vos fichiers ne sont pas perdus : la page se met à jour seule.";
+
+/// Nouvelle phrase après une rotation, gardée jusqu'à confirmation.
+pub const NEW_PHRASE_FILE: &str = "nouvelle-phrase.txt";
 
 /// Version passée de la racine (`protocols.historique-versions`).
 #[derive(Debug, Clone)]
@@ -2869,13 +2904,14 @@ pub async fn start(
         let weak = Arc::downgrade(&shared);
         Arc::new(move || match weak.upgrade() {
             Some(sh) => status(&sh),
-            None => json!({ "titre": "Identité arrêtée" }),
+            None => json!({ "titre": "Redémarrage de l'identité…", "redémarrage": true,
+                "état": RESTARTING_TEXT }),
         })
     };
     let act_fn: ActionFn = {
         let weak = Arc::downgrade(&shared);
         Arc::new(move |name, v| {
-            let sh = weak.upgrade().ok_or("identité arrêtée")?;
+            let sh = weak.upgrade().ok_or(RESTARTING_TEXT)?;
             if let Some(r) = crate::explorer::action(&sh, name, &v) {
                 return r;
             }
@@ -2898,6 +2934,10 @@ pub async fn start(
                 }
                 "purge_versions" => purge_versions(&sh, &v),
                 "rotate_identity" => rotate_identity(&sh, &v),
+                "phrase_noted" => {
+                    let _ = std::fs::remove_file(sh.config.data_dir.join(NEW_PHRASE_FILE));
+                    Ok(json!({ "ok": true, "message": "Merci : la phrase n'est plus affichée" }))
+                }
                 "resume_after_mass_change" => {
                     sh.paused.store(false, std::sync::atomic::Ordering::Relaxed);
                     sync_now(&sh);
