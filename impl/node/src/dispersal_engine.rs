@@ -837,7 +837,13 @@ pub async fn run_cycle(
             .filter(|(i, _)| !s.restoring.contains(*i))
             .map(|(i, a)| (*i, a.salt.clone()))
             .collect();
-        (users, std::mem::take(&mut s.dispersal_queue), s.priv_node())
+        let queue = std::mem::take(&mut s.dispersal_queue);
+        // Toujours « pas encore dispersés » pendant le cycle
+        // (`protocols.dispersion-transactionnelle#copie-locale`).
+        for (u, h) in &queue {
+            s.undispersed.entry(*u).or_default().insert(*h);
+        }
+        (users, queue, s.priv_node())
     };
     for (user, hash) in queue {
         let known = state.known(&user);
@@ -882,6 +888,14 @@ pub async fn run_cycle(
         state.users.insert(hx(&user), u);
     }
     report.purged = purge(service, fabric, cfg, state, now).await;
+    // Blocs restés en attente, pour `BlockStatus`.
+    let undispersed = state
+        .users
+        .iter()
+        .filter(|(_, d)| !d.pending.is_empty())
+        .map(|(u, d)| (id(u), d.pending.iter().map(|h| id(h)).collect()))
+        .collect();
+    service.lock().unwrap().undispersed = undispersed;
     report
 }
 

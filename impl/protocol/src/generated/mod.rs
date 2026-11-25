@@ -79,6 +79,10 @@ pub mod s3m {
     pub use self::block_request_generated::*;
     mod block_response_generated;
     pub use self::block_response_generated::*;
+    mod block_status_answer_generated;
+    pub use self::block_status_answer_generated::*;
+    mod block_status_generated;
+    pub use self::block_status_generated::*;
     mod challenge_generated;
     pub use self::challenge_generated::*;
     mod challenge_response_generated;

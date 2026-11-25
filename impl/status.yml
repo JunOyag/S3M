@@ -708,6 +708,7 @@ entries:
     owner: claude-code
     tests:
       - dispersion::parent_waits_for_k_plus_2_confirmations_on_every_child
+      - unsent::a_block_lost_before_dispersal_is_sent_again
       - dispersion::bottom_up_then_commit_only_after_root_confirmed
       - dispersion::journal_replay_is_idempotent
       - dispersion::orphans_are_purged_after_grace_period_only

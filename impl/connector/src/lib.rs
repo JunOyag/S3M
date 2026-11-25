@@ -31,6 +31,7 @@ pub mod rescue;
 pub mod setup;
 pub mod share_ops;
 pub mod shares;
+pub mod unsent;
 #[cfg(all(windows, feature = "mount"))]
 pub mod winfsp_backend;
 pub mod write_back;

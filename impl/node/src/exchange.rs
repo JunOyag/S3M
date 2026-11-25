@@ -241,6 +241,9 @@ pub struct NodeService {
     pub root_since: HashMap<Id, u64>,
     /// Conservation de l'historique (s) ; 0 : aucun.
     pub history_retention_s: u64,
+    /// Blocs reçus pas encore dispersés, par Utilisateur (recopiés par le
+    /// moteur de dispersion à chaque cycle).
+    pub undispersed: HashMap<Id, std::collections::HashSet<Id>>,
     /// Durée d'inactivité fixée par l'opérateur pour un Utilisateur (jours,
     /// 0 : éternel) ; absente : celle de la politique.
     pub inactivity_days: HashMap<Id, u64>,
@@ -345,6 +348,7 @@ impl NodeService {
             root_history: Default::default(),
             root_since: Default::default(),
             history_retention_s: HISTORY_DAYS * 86_400,
+            undispersed: Default::default(),
             inactivity_days: Default::default(),
             attach_policy: AttachPolicy::default(),
             partner_policy: PartnerPolicy::default(),
@@ -521,6 +525,27 @@ impl NodeService {
                     .collect();
                 Ok(Response::Ack {
                     freed: self.release_user_blocks(&u, &list, now),
+                })
+            }
+            Body::BlockStatus { hashes } => {
+                let u = self.user(cred, from, local)?;
+                let mut present = Vec::new();
+                let mut pending = Vec::new();
+                for c in hashes.chunks(32) {
+                    let h: Id = c.try_into().map_err(|_| Refusal::Malformed)?;
+                    let here = self
+                        .store
+                        .get(Space::UserBlock, &h)
+                        .is_some_and(|(o, _)| o == u);
+                    present.push(here);
+                    pending.push(
+                        here && (self.dispersal_queue.contains(&(u, h))
+                            || self.undispersed.get(&u).is_some_and(|s| s.contains(&h))),
+                    );
+                }
+                Ok(Response::BlockStatusAnswer {
+                    present: pack_bits(&present),
+                    pending: pack_bits(&pending),
                 })
             }
             Body::ListRoots => {

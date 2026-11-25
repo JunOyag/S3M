@@ -377,6 +377,28 @@ impl NodeSession {
         }
     }
 
+    /// `(détenu, pas encore dispersé)` pour chaque hash
+    /// (`protocols.dispersion-transactionnelle#copie-locale`).
+    pub async fn block_status(
+        &self,
+        hashes: &[BlockHash],
+    ) -> Result<Vec<(bool, bool)>, ExchangeError> {
+        match self
+            .call(Body::BlockStatus {
+                hashes: hashes.concat(),
+            })
+            .await?
+        {
+            Response::BlockStatusAnswer { present, pending } => {
+                let bit = |v: &[u8], i: usize| v.get(i / 8).is_some_and(|b| b & (1 << (i % 8)) != 0);
+                Ok((0..hashes.len())
+                    .map(|i| (bit(&present, i), bit(&pending, i)))
+                    .collect())
+            }
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
     /// Oublie les versions remplacées avant `before` (0 : toutes).
     pub async fn purge_roots(&self, before: u64) -> Result<(), ExchangeError> {
         match self.call(Body::PurgeRoots { before }).await? {

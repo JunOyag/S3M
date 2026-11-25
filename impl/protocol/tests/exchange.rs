@@ -28,6 +28,7 @@ fn every_request_and_response_roundtrips() {
         Body::ReportIncident { hash: vec![5; 32] },
         Body::ListRoots,
         Body::PurgeRoots { before: 1_800_000_000 },
+        Body::BlockStatus { hashes: vec![4; 64] },
         Body::RenewGrant {
             grant_pub: vec![6; 32],
         },
@@ -146,6 +147,10 @@ fn every_request_and_response_roundtrips() {
                 },
             ],
             retention_s: 2_592_000,
+        },
+        Response::BlockStatusAnswer {
+            present: vec![3],
+            pending: vec![1],
         },
     ] {
         assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);

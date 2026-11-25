@@ -105,10 +105,17 @@ table RootList {
   retention_s: uint64;       // durée de conservation du Nœud ; 0 : aucun historique
 }
 
+// BlockStatus (ajout du 2026-11-25) : un bit par hash demandé, bit i%8 de
+// l'octet i/8.
+table BlockStatusAnswer {
+  present: [ubyte];          // bloc détenu par le Nœud pour cet Utilisateur
+  pending: [ubyte];          // détenu mais pas encore dispersé
+}
+
 union ResponseBody {
   Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
   Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached, OwnershipAnswer,
-  Messages, BlockList, RootList
+  Messages, BlockList, RootList, BlockStatusAnswer
 }
 
 table BlockResponse {

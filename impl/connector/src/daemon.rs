@@ -414,6 +414,8 @@ pub struct NodeIo {
     pub runtime: tokio::runtime::Handle,
     /// Nœud injoignable : reconstruction depuis la parité des partenaires.
     pub rescue: Option<Arc<crate::rescue::Rescue>>,
+    /// Copies des blocs envoyés, gardées jusqu'à leur dispersion.
+    pub unsent: Option<Arc<crate::unsent::Unsent>>,
 }
 
 impl NodeIo {
@@ -440,8 +442,14 @@ impl BlockIo for NodeIo {
     }
 
     fn put(&self, hash: &BlockHash, frame: Vec<u8>) -> Result<(), String> {
+        let copy = self.unsent.as_ref().map(|_| frame.clone());
         match self.wait(self.session.put_block(frame)) {
-            Ok(h) if h == hash.to_vec() => Ok(()),
+            Ok(h) if h == hash.to_vec() => {
+                if let (Some(u), Some(f)) = (&self.unsent, copy) {
+                    u.keep(hash, &f);
+                }
+                Ok(())
+            }
             Ok(_) => Err("hash refusé par le Nœud".into()),
             Err(e) => Err(e.to_string()),
         }
@@ -542,6 +550,8 @@ pub struct Shared {
     /// Historique des versions (`protocols.historique-versions`) : dernière
     /// lecture chez le Nœud.
     pub history: Mutex<Option<HistoryView>>,
+    /// Copies des blocs pas encore dispersés par le Nœud.
+    pub unsent: Option<Arc<crate::unsent::Unsent>>,
     /// Synchronisation en cours.
     pub syncing: std::sync::atomic::AtomicBool,
     pub user_entry: Mutex<UserEntryState>,
@@ -573,6 +583,20 @@ pub struct Shared {
     pub tasks: Mutex<Vec<tokio::task::AbortHandle>>,
     /// Arrêts du lecteur, du dossier synchronisé et du tableau de bord.
     pub stoppers: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
+}
+
+/// Copies locales des blocs pas encore dispersés.
+fn unsent_status(sh: &Shared) -> Value {
+    let Some(u) = &sh.unsent else { return Value::Null };
+    let (n, bytes) = u.usage();
+    let r = std::sync::atomic::Ordering::Relaxed;
+    json!({
+        "blocs pas encore protégés par le réseau": n,
+        "taille de leur copie locale (octets)": bytes,
+        "blocs renvoyés au Nœud qui les avait perdus": u.resent.load(r),
+        "copies abandonnées faute de place": u.dropped.load(r),
+        "_note": "Chaque bloc envoyé reste copié sur cet appareil jusqu'à ce que votre Nœud l'ait dispersé chez ses partenaires (dans la limite de Q_max).",
+    })
 }
 
 fn queue_status(c: &Config) -> Value {
@@ -671,7 +695,7 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true,
           "sections": if setup.is_some() { json!(["mise en route"]) } else { json!([]) }, "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
-          "sections": ["accès aux fichiers", "historique des versions", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture"],
+          "sections": ["accès aux fichiers", "historique des versions", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture", "blocs pas encore dispersés"],
           "actions": ["sync_now", "free_space", "set_auto_free", "keep_offline"] },
         { "id": "noeud", "titre": "Mon Nœud",
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
@@ -1170,6 +1194,7 @@ fn status_base(sh: &Shared) -> Value {
         },
         "autorisation de secours": { "expire le": *sh.grant_expiry.lock().unwrap() },
         "file d'écriture": queue_status(&sh.config),
+        "blocs pas encore dispersés": unsent_status(sh),
         "incidents d'intégrité": h.incidents,
         "lecteur": drive_status(sh),
         "espace": space_status(sh),
@@ -2012,6 +2037,31 @@ pub const MASS_CHANGE: usize = 100;
 pub const HISTORY_DEFAULT_S: u64 = 30 * 86_400;
 pub const MASS_CHANGE_TEXT: &str = "Beaucoup de fichiers modifiés d'un coup : synchronisation suspendue. S'il s'agit d'un rançongiciel, ne reprenez pas et restaurez une version antérieure (Explorateur, Versions) ; sinon, reprenez la synchronisation.";
 
+/// Copies locales : supprimées une fois le bloc dispersé, renvoyées au
+/// Nœud qui ne le détient plus
+/// (`protocols.dispersion-transactionnelle#copie-locale`).
+pub async fn unsent_tick(sh: &Shared) {
+    let Some(u) = sh.unsent.clone() else { return };
+    let list = u.list(s3m_protocol::exchange::MAX_RELEASE_BLOCKS);
+    if list.is_empty() {
+        return;
+    }
+    let Ok(states) = sh.session.block_status(&list).await else {
+        return;
+    };
+    for (h, (present, pending)) in list.iter().zip(states) {
+        if present && !pending {
+            u.remove(h);
+        } else if !present {
+            if let Some(frame) = u.read(h) {
+                if sh.session.put_block(frame).await.is_ok_and(|x| x == h.to_vec()) {
+                    u.resent.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        }
+    }
+}
+
 /// Version passée de la racine (`protocols.historique-versions`).
 #[derive(Debug, Clone)]
 pub struct Version {
@@ -2174,6 +2224,11 @@ fn send_releases(sh: &Shared, drive: &mut crate::drive::Drive) {
         }
         match rt.block_on(sh.session.release_blocks(&batch)) {
             Ok(_) => {
+                if let Some(u) = &sh.unsent {
+                    for h in &batch {
+                        u.remove(h);
+                    }
+                }
                 if drive.confirm_release(&batch).is_err() {
                     return;
                 }
@@ -2479,6 +2534,7 @@ pub async fn watch_once(sh: &Shared) {
     }
     channel_tick(sh, now, ok).await;
     if ok {
+        unsent_tick(sh).await;
         // Lecture du quota et de l'occupation : validation sans changement
         // de racine (`base = new`).
         let root = sh
@@ -2565,6 +2621,10 @@ pub async fn start(
         .and_then(|g| open_grant(g, clock()).ok())
         .map(|g| g.expires_at);
     let rescue = Arc::new(crate::rescue::Rescue::default());
+    let unsent = Arc::new(crate::unsent::Unsent::new(
+        config.data_dir.join("unsent"),
+        config.q_max_bytes,
+    ));
     let drive = match config.mount_point.is_some() || config.access.as_deref() == Some("dossier") {
         false => None,
         true => Some(Arc::new(Mutex::new(
@@ -2573,6 +2633,7 @@ pub async fn start(
                     session: session.clone(),
                     runtime: tokio::runtime::Handle::current(),
                     rescue: Some(rescue.clone()),
+                    unsent: Some(unsent.clone()),
                 }),
                 master,
                 config.data_dir.join("workspace"),
@@ -2596,6 +2657,7 @@ pub async fn start(
         paused: Default::default(),
         mass_change: Default::default(),
         history: Mutex::new(None),
+        unsent: Some(unsent),
         syncing: Default::default(),
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),

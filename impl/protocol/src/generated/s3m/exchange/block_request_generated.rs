@@ -520,6 +520,21 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_block_status(&self) -> Option<BlockStatus<'a>> {
+    if self.body_type() == RequestBody::BlockStatus {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { BlockStatus::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -566,6 +581,7 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::ListBlocks => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListBlocks>>("RequestBody::ListBlocks", pos),
           RequestBody::ListRoots => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListRoots>>("RequestBody::ListRoots", pos),
           RequestBody::PurgeRoots => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PurgeRoots>>("RequestBody::PurgeRoots", pos),
+          RequestBody::BlockStatus => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BlockStatus>>("RequestBody::BlockStatus", pos),
           _ => Ok(()),
         }
      })?
@@ -844,6 +860,13 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::PurgeRoots => {
           if let Some(x) = self.body_as_purge_roots() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::BlockStatus => {
+          if let Some(x) = self.body_as_block_status() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

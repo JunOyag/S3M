@@ -75,6 +75,27 @@ Précisions d'implémentation (2026-11-20, `impl/SPEC_GAPS.md`) :
   `SHA-256(K_attach)` puis republié selon
   [`network.dht-directory`](../01-network-dht/dht-directory.md#expiration-et-republication).
 
+## Copie locale jusqu'à la dispersion {: #copie-locale }
+
+Ajout du 2026-11-25. Entre sa réception et sa dispersion, un bloc n'existe
+que chez le Nœud. Le Connecteur garde donc une copie de chaque bloc envoyé
+(`PutBlock`), dans la limite de `Q_max`
+([`protocols.write-queue`](write-queue.md), 4 Gio par défaut ; au-delà, les
+plus anciennes copies sont abandonnées), quel que soit l'accès aux fichiers.
+À chaque surveillance, il interroge son Nœud par `BlockStatus` (un bit
+« détenu » et un bit « pas encore dispersé » par hash,
+[`protocols.echange-blocs`](echange-blocs.md)) :
+
+- détenu et dispersé : copie supprimée ;
+- détenu, pas encore dispersé : copie gardée ;
+- absent (volume perdu avant la dispersion,
+  [`securite.integrite-autoreparation#maintenance`](../05-securite/integrite-autoreparation.md#maintenance)) :
+  bloc renvoyé (`PutBlock`).
+
+Un bloc libéré par l'Utilisateur (`ReleaseBlocks`) perd aussitôt sa copie.
+Le Nœud tient « pas encore dispersé » pour tout bloc en file ou en attente
+de stripe, y compris pendant un cycle de dispersion.
+
 ## Cas d'usage de ce protocole
 
 Ce protocole "standard" est le mécanisme sous-jacent de plusieurs scénarios

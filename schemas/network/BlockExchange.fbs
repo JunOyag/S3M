@@ -210,13 +210,20 @@ table PurgeRoots {
   before: uint64;
 }
 
+// Ajout du 2026-11-25 (protocols.dispersion-transactionnelle#copie-locale) :
+// Connecteur → son Nœud (UserCredential) : état de blocs de l'Utilisateur.
+// Réponse : BlockStatusAnswer.
+table BlockStatus {
+  hashes: [ubyte];            // SHA-256 concaténés (32 o chacun, 2048 au plus)
+}
+
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
   StoreFragment, Challenge, FetchFragment, Tombstone,
   Probe, ProposePartnership, Attach, OwnershipQuery,
   EmergencyPut, EmergencyGet, EmergencyRelease,
   ReadMessages, PostMessage, RevokeShare,
-  ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots
+  ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots, BlockStatus
 }
 
 // Requête : une par flux libp2p request-response.

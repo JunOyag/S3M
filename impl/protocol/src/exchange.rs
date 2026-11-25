@@ -245,6 +245,11 @@ pub enum Body {
     PurgeRoots {
         before: u64,
     },
+    /// État de blocs de l'Utilisateur
+    /// (`protocols.dispersion-transactionnelle#copie-locale`).
+    BlockStatus {
+        hashes: Vec<u8>,
+    },
 }
 
 /// Version passée de la racine (`protocols.historique-versions`).
@@ -325,6 +330,12 @@ pub enum Response {
     RootList {
         versions: Vec<RootVersion>,
         retention_s: u64,
+    },
+    /// Réponse à `BlockStatus` : un bit par hash (détenu, pas encore
+    /// dispersé).
+    BlockStatusAnswer {
+        present: Vec<u8>,
+        pending: Vec<u8>,
     },
 }
 
@@ -664,6 +675,11 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             let o = fb::PurgeRoots::create(&mut b, &fb::PurgeRootsArgs { before: *before });
             (fb::RequestBody::PurgeRoots, o.as_union_value())
         }
+        Body::BlockStatus { hashes } => {
+            let v = b.create_vector(hashes);
+            let o = fb::BlockStatus::create(&mut b, &fb::BlockStatusArgs { hashes: Some(v) });
+            (fb::RequestBody::BlockStatus, o.as_union_value())
+        }
     };
     let root = fb::BlockRequest::create(
         &mut b,
@@ -884,6 +900,13 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
         fb::RequestBody::PurgeRoots => Body::PurgeRoots {
             before: r.body_as_purge_roots().ok_or(m)?.before(),
         },
+        fb::RequestBody::BlockStatus => {
+            let hashes = bytes(r.body_as_block_status().ok_or(m)?.hashes());
+            if !hashes.len().is_multiple_of(32) || hashes.len() > 32 * MAX_RELEASE_BLOCKS {
+                return Err(m);
+            }
+            Body::BlockStatus { hashes }
+        }
         _ => return Err(m),
     };
     Ok(Request { credential, body })
@@ -1078,6 +1101,18 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             );
             (fb::ResponseBody::RootList, o.as_union_value())
         }
+        Response::BlockStatusAnswer { present, pending } => {
+            let p = b.create_vector(present);
+            let q = b.create_vector(pending);
+            let o = fb::BlockStatusAnswer::create(
+                &mut b,
+                &fb::BlockStatusAnswerArgs {
+                    present: Some(p),
+                    pending: Some(q),
+                },
+            );
+            (fb::ResponseBody::BlockStatusAnswer, o.as_union_value())
+        }
     };
     let root = fb::BlockResponse::create(
         &mut b,
@@ -1206,6 +1241,13 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
                     })
                     .unwrap_or_default(),
                 retention_s: x.retention_s(),
+            }
+        }
+        fb::ResponseBody::BlockStatusAnswer => {
+            let x = r.body_as_block_status_answer().ok_or(m)?;
+            Response::BlockStatusAnswer {
+                present: bytes(x.present()),
+                pending: bytes(x.pending()),
             }
         }
         _ => return Err(m),

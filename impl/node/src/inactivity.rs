@@ -88,6 +88,7 @@ pub fn purge_expired(
         s.store.remove_owner(Space::UserBlock, u);
         s.root_seals.remove(u);
         s.root_history.remove(u);
+        s.undispersed.remove(u);
         s.root_since.remove(u);
         s.last_active.remove(u);
         s.inactivity_days.remove(u);
