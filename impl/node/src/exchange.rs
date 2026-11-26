@@ -311,6 +311,8 @@ pub struct NodeService {
     /// Utilisateurs dont la copie locale est en cours de restauration :
     /// hors des cycles de dispersion (`deploiement.disaster-recovery`).
     pub restoring: std::collections::HashSet<Id>,
+    /// Avancement de la reconstruction de chaque Utilisateur (affichage).
+    pub rebuild: HashMap<Id, crate::recovery::Rebuild>,
     /// Demandes de rattachement à vérifier pour une reprise : `(utilisateur,
     /// sel)` dont la preuve est valide (`deploiement.disaster-recovery`
     /// § Reprise à la reconnexion).
@@ -409,6 +411,7 @@ impl NodeService {
             need_room: Default::default(),
             maintenance: false,
             restoring: Default::default(),
+            rebuild: Default::default(),
             reclaim: Default::default(),
             released: HashMap::new(),
             share_rate: HashMap::new(),

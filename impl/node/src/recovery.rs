@@ -528,6 +528,27 @@ impl RestoreState {
     }
 }
 
+/// Avancement d'une reconstruction (temps réel, non persisté).
+#[derive(Debug, Clone, Default)]
+pub struct Rebuild {
+    /// Stripes de données à reconstruire (connu après lecture de l'index).
+    pub total: usize,
+    pub done: usize,
+    pub blocks: usize,
+    pub bytes: u64,
+    /// Début (secondes Unix, horloge murale) et index encore en lecture.
+    pub started: u64,
+    pub reading_index: bool,
+    pub index_read: usize,
+}
+
+fn wall() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 async fn recover_user(
     service: &Mutex<NodeService>,
     f: &Fetcher<'_>,
@@ -556,10 +577,38 @@ async fn recover_user(
     let mut index = vec![record(&pointer.root_stripe, &pointer.partners, &root)];
     let mut level = vec![manifest.root];
     let mut blocks = 0;
+    service.lock().unwrap().rebuild.insert(
+        user,
+        Rebuild { started: wall(), reading_index: true, ..Default::default() },
+    );
+    // 1. Index d'abord (peu de stripes) : le total est alors connu.
+    let mut leaves = Vec::new();
     while let Some(node) = level.pop() {
         for s in node.entries {
-            let data = f.data(&s, &table).await?;
             if node.is_leaf {
+                leaves.push(s);
+                continue;
+            }
+            let data = f.data(&s, &table).await?;
+            let salt = s.encryption_salt.ok_or("stripe d'index sans sel")?;
+            let clear = open_index_node(&kdc, &salt, &CURRENT_HEADER, &data[0])
+                .map_err(|e| e.to_string())?;
+            index.push(record(&s, &table, &data));
+            level.push(decode_index_node(&clear).map_err(|e| e.to_string())?);
+            if let Some(r) = service.lock().unwrap().rebuild.get_mut(&user) {
+                r.index_read += 1;
+            }
+        }
+    }
+    if let Some(r) = service.lock().unwrap().rebuild.get_mut(&user) {
+        r.total = leaves.len();
+        r.reading_index = false;
+    }
+    // 2. Données, stripe par stripe.
+    {
+        for s in leaves {
+            let data = f.data(&s, &table).await?;
+            {
                 for (i, b) in data.iter().enumerate() {
                     if s.blocks
                         .iter()
@@ -577,15 +626,16 @@ async fn recover_user(
                     if let Some(acc) = sv.users.get_mut(&user).filter(|_| fresh) {
                         acc.used_bytes += b.len() as u64;
                     }
+                    if let Some(r) = sv.rebuild.get_mut(&user) {
+                        r.blocks += 1;
+                        r.bytes += b.len() as u64;
+                    }
                     blocks += 1;
                 }
                 d.stripes.push(record(&s, &table, &data));
-            } else {
-                let salt = s.encryption_salt.ok_or("stripe d'index sans sel")?;
-                let clear = open_index_node(&kdc, &salt, &CURRENT_HEADER, &data[0])
-                    .map_err(|e| e.to_string())?;
-                index.push(record(&s, &table, &data));
-                level.push(decode_index_node(&clear).map_err(|e| e.to_string())?);
+                if let Some(r) = service.lock().unwrap().rebuild.get_mut(&user) {
+                    r.done += 1;
+                }
             }
         }
     }

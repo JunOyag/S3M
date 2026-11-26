@@ -252,6 +252,18 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
         .await
         .unwrap();
     assert_eq!(r, (2, 3));
+    // Avancement suivi : total connu après l'index, tout reconstruit.
+    {
+        let p = third.lock().unwrap().rebuild[&pk(&USER)].clone();
+        assert_eq!((p.total, p.done, p.blocks, p.reading_index), (2, 2, 3, false));
+        let v = s3m_node::daemon::rebuild_progress(&p, p.started + 10);
+        assert_eq!(v["_barre"], 100.0);
+        assert!(v["texte"].as_str().unwrap().contains("2/2 stripes"), "{v}");
+        let half = s3m_node::recovery::Rebuild { total: 4, done: 1, bytes: 1 << 20, started: 0, ..Default::default() };
+        let v = s3m_node::daemon::rebuild_progress(&half, 60);
+        assert_eq!(v["_barre"], 25.0);
+        assert!(v["texte"].as_str().unwrap().contains("reste environ 3 min"), "{v}");
+    }
     // Un second essai ne compte rien deux fois ; l'attente est gardée.
     restore_user(&third, &mut st3, &net, pk(&USER), &[7; 16], 3_100)
         .await

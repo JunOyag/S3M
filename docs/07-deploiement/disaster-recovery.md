@@ -70,6 +70,23 @@ tenu pour neuf et démarre normalement. Un Utilisateur dont la copie locale
 est en cours de reconstruction est tenu hors des cycles de dispersion ; les
 blocs qu'il envoie entre-temps restent en attente, puis sont dispersés.
 
+### Avancement et information des utilisateurs {: #avancement }
+
+Ajout du 2026-11-26. La copie locale d'un Utilisateur lit d'abord tout
+l'index de dispersion (peu de stripes), ce qui donne le nombre de stripes
+de données à reconstruire ; le dashboard du Nœud (Accueil, section
+« restauration ») affiche alors par Utilisateur une barre de progression et
+ses statistiques, rafraîchies avec le tableau de bord : stripes faites sur
+le total, blocs, volume reconstruit, débit, temps écoulé et estimation du
+temps restant. La maintenance après la perte d'un volume en cours de
+fonctionnement affiche de même blocs reconstruits sur blocs perdus.
+Chaque Utilisateur est prévenu par un message adressé au début et à la fin
+de sa restauration (la maintenance prévient déjà tous les utilisateurs) ;
+pendant ce temps, les deux sections proposent « Tenir vos utilisateurs au
+courant » (message à tous, [`protocols.canal-noeud`](../04-protocols/canal-noeud.md)),
+lu par les connecteurs à leur prochain contact. Une restauration terminée
+depuis plus de 7 jours n'est plus affichée.
+
 ### Reprise à la reconnexion {: #reprise }
 
 Un Utilisateur inconnu du Nœud

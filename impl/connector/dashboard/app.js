@@ -781,7 +781,21 @@ function wordGrid(text) {
 
 // QR code : SVG fourni par le moteur, affiché comme image (jamais inséré).
 // Objet imbriqué : sous-tableau.
+// Barre de progression : `{ "_barre": pourcentage, "texte": détail }`.
+function progressNode(v) {
+  const box = el("div", undefined, "progress-box");
+  const p = el("progress");
+  p.max = 100;
+  p.value = Math.max(0, Math.min(100, Number(v["_barre"]) || 0));
+  p.style.width = "100%";
+  p.style.height = "1.1em";
+  box.appendChild(p);
+  box.appendChild(el("div", (Math.round(p.value * 10) / 10) + " %" + (v["texte"] ? " — " + v["texte"] : ""), "muted"));
+  return box;
+}
+
 function valueNode(v, k) {
+  if (v !== null && typeof v === "object" && !Array.isArray(v) && "_barre" in v) return progressNode(v);
   if (/24 mots|phrase d'annonce/.test(k || "") && typeof v === "string" && v.trim().split(/\s+/).length === 24) return wordGrid(v);
   if (v !== null && typeof v === "object" && !(Array.isArray(v) && v.every((x) => x === null || typeof x !== "object"))) {
     return render(v);

@@ -988,7 +988,7 @@ fn simple_pages(v: &mut Value) {
     });
     v["pages simples"] = json!([
         { "id": "accueil", "titre": "Accueil",
-          "sections": ["horloge", "alertes matérielles", "maintenance", "santé du nœud", "identité"], "actions": ["restart_node"] },
+          "sections": ["horloge", "alertes matérielles", "maintenance", "restauration", "santé du nœud", "identité"], "actions": ["restart_node"] },
         { "id": "utilisateurs", "titre": "Utilisateurs", "sections": ["mes utilisateurs"], "actions": ["attach_user"] },
         { "id": "volumes", "titre": "Disques", "sections": ["alertes matérielles", "volumes", "liste des actions", "remplacer un disque"],
           "actions": ["volume_apply", "volume_draft_clear"] },
@@ -1528,7 +1528,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         "annuaire (entrée Node)": node_entry_status(sh),
         "traversée de NAT": nat_status(sh),
         "snapshot du nœud": snapshot_status(sh),
-        "restauration": restore_status(sh),
+        "restauration": restore_status(sh, &s.rebuild),
         "migration": {
             "anciens node_id couverts": s.previous_node_ids.iter().map(|i| hx(i)).collect::<Vec<_>>(),
             "délégations reçues": s.delegations.len(),
@@ -1819,6 +1819,17 @@ fn maintenance_status(m: Option<&crate::upkeep::Maintenance>) -> Value {
         "blocs irrécupérables": if m.ended_at.is_some() { json!(m.irrecoverable) } else { Value::Null },
         "fragments de partenaires perdus (replacés par eux)": m.lost_fragments,
         "dépôts d'urgence perdus": m.lost_emergency,
+        "progression": if m.ended_at.is_some() {
+            json!({ "_barre": 100, "texte": "terminée" })
+        } else if m.lost_user_blocks > 0 {
+            json!({ "_barre": 100.0 * m.repaired as f64 / m.lost_user_blocks as f64,
+                    "texte": format!("{} / {} bloc(s) reconstruit(s)", m.repaired, m.lost_user_blocks) })
+        } else {
+            json!({ "_barre": 0, "texte": "recensement des blocs perdus" })
+        },
+        "_formulaires": if m.ended_at.is_none() { json!([json!({ "nom": "send_message", "titre": "Tenir vos utilisateurs au courant", "libellé": "Envoyer à tous",
+        "champs": ["message"], "types": { "message": "texte" }, "différer": 5,
+        "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (Messages de leur S3m), même pendant la reconstruction" } })]) } else { json!([]) },
         "_note": "Fichiers de stockage disparus du disque : le Nœud les reconstruit depuis la parité gardée par ses partenaires. Pendant ce temps il refuse les dépôts de partenaires et leur signale ses fragments perdus, sans manquement.",
     })
 }
@@ -2506,7 +2517,20 @@ async fn restore_tick(sh: &Shared, fabric: &NetFabric, d: &mut DispersalState, n
     // Étape 6 : copie locale de chaque Utilisateur.
     if !st.frozen() {
         for (u, salt) in st.pending_users() {
+            // Premier essai : l'Utilisateur est prévenu (début et fin).
+            let first = st.users.get(&hex::encode(u)).is_some_and(|e| e.tries == 0);
+            if first {
+                let mut s = sh.service.lock().unwrap();
+                let pn = s.priv_node();
+                let _ = s.channel.post_info_to(&pn, &u, "Restauration : le stockage de votre Nœud a été perdu ; il reconstruit vos fichiers depuis ses partenaires. Ils restent lisibles pendant ce temps (depuis les partenaires) ; vous serez prévenu à la fin.", now);
+            }
             let res = restore_user(&sh.service, d, &net, u, &salt, now).await;
+            if res.is_ok() {
+                let mut s = sh.service.lock().unwrap();
+                let pn = s.priv_node();
+                let _ = s.channel.post_info_to(&pn, &u, "Restauration terminée : vos fichiers sont de nouveau sur votre Nœud.", now);
+                s.rebuild.remove(&u);
+            }
             let e = st.users.get_mut(&hex::encode(u)).expect("listé");
             e.tries += 1;
             match res {
@@ -2541,10 +2565,35 @@ async fn restore_tick(sh: &Shared, fabric: &NetFabric, d: &mut DispersalState, n
 }
 
 /// Étapes de la restauration, faites et restantes.
-fn restore_status(sh: &Shared) -> Value {
+/// Barre et statistiques d'une reconstruction en cours.
+pub fn rebuild_progress(r: &crate::recovery::Rebuild, now: u64) -> Value {
+    if r.reading_index {
+        return json!({ "_barre": 0, "texte": format!("lecture de l'index de dispersion : {} stripe(s) d'index lus", r.index_read) });
+    }
+    let pct = if r.total == 0 { 100.0 } else { 100.0 * r.done as f64 / r.total as f64 };
+    let elapsed = now.saturating_sub(r.started).max(1);
+    let rate = r.bytes as f64 / elapsed as f64;
+    let left = if r.done == 0 || r.total <= r.done {
+        None
+    } else {
+        Some((elapsed as f64 * (r.total - r.done) as f64 / r.done as f64) as u64)
+    };
+    let human = |s: u64| if s >= 3_600 { format!("{} h {:02} min", s / 3_600, (s % 3_600) / 60) } else if s >= 60 { format!("{} min {:02} s", s / 60, s % 60) } else { format!("{s} s") };
+    json!({ "_barre": pct, "texte": format!(
+        "{}/{} stripes, {} blocs, {:.1} Mio à {:.1} Mio/s, écoulé {}{}",
+        r.done, r.total, r.blocks, r.bytes as f64 / 1_048_576.0, rate / 1_048_576.0, human(elapsed),
+        left.map(|l| format!(", reste environ {}", human(l))).unwrap_or_default()) })
+}
+
+/// `rebuild` : avancement lu sous le verrou du service déjà pris.
+fn restore_status(sh: &Shared, rebuild: &HashMap<[u8; 32], crate::recovery::Rebuild>) -> Value {
     let Some(r) = sh.restore.lock().unwrap().clone() else {
         return Value::Null;
     };
+    // Restauration ancienne : plus affichée (journal).
+    if r.completed_at.is_some_and(|t| t + 7 * 86_400 < system_clock()()) {
+        return Value::Null;
+    }
     let entry = sh.node_entry.lock().unwrap();
     let step = |n: u32, label: &str, state: &str, detail: Value| json!({ "étape": n, "description": label, "état": state, "détail": detail });
     let mut steps = Vec::new();
@@ -2618,8 +2667,17 @@ fn restore_status(sh: &Shared) -> Value {
             },
         ));
     }
+    let wall = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let users: Vec<Value> = r.users.iter().map(|(id, u)| json!({
         "utilisateur": format!("{}…", &id[..16]),
+        "progression": match (u.done_at, hex::decode(id).ok().and_then(|b| <[u8; 32]>::try_from(b).ok()).and_then(|k| rebuild.get(&k).cloned())) {
+            (Some(_), _) => json!({ "_barre": 100, "texte": "terminé" }),
+            (None, Some(p)) => rebuild_progress(&p, wall),
+            (None, None) => json!("en attente"),
+        },
         "origine": match u.origin { UserOrigin::Snapshot => "sauvegarde", UserOrigin::Reconnect => "reconnexion" },
         "état": if u.done_at.is_some() { "fait" } else if u.error.is_some() { "erreur (nouvel essai à chaque cycle)" } else { "à faire" },
         "stripes reconstruits": u.stripes,
@@ -2663,6 +2721,9 @@ fn restore_status(sh: &Shared) -> Value {
         "utilisateurs restaurés": format!("{done} / {}", r.users.len()),
         "étapes": steps,
         "utilisateurs": users,
+        "_formulaires": if r.completed_at.is_none() { json!([json!({ "nom": "send_message", "titre": "Tenir vos utilisateurs au courant", "libellé": "Envoyer à tous",
+        "champs": ["message"], "types": { "message": "texte" }, "différer": 5,
+        "aide": { "message": "Lu par tous les utilisateurs rattachés à leur prochain contact (Messages de leur S3m), même pendant la reconstruction" } })]) } else { json!([]) },
     })
 }
 
