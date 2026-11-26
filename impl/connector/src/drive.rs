@@ -1029,6 +1029,58 @@ impl Drive {
         }
     }
 
+    /// Fichiers sous `path` (lui-même s'il est un fichier).
+    pub fn files_under(&mut self, path: &str) -> Vec<String> {
+        let p = norm(path);
+        match self.stat(&p) {
+            Ok(Some(m)) if !m.is_dir => return vec![p],
+            Ok(Some(_)) => {}
+            _ => return Vec::new(),
+        }
+        let mut out = Vec::new();
+        let mut todo = vec![p];
+        while let Some(d) = todo.pop() {
+            for (n, m) in self.list(&d).unwrap_or_default() {
+                let full = format!("{}/{n}", d.trim_end_matches('/'));
+                if full.starts_with(SHARED_DIR) {
+                    continue;
+                }
+                if m.is_dir {
+                    todo.push(full);
+                } else {
+                    out.push(full);
+                }
+            }
+        }
+        out
+    }
+
+    /// Copie locale d'un fichier distant (sans effet s'il y est déjà).
+    pub fn fetch_local(&mut self, path: &str) -> Result<(), DriveError> {
+        if self.is_local(path) {
+            return Ok(());
+        }
+        let e = self.file_entry(&norm(path))?;
+        self.remote_content(&e).map(|_| ())
+    }
+
+    /// Retire la copie locale d'un fichier déjà envoyé (il reste visible et
+    /// revient à l'ouverture) ; rend les octets libérés.
+    pub fn free_local(&mut self, path: &str) -> u64 {
+        let p = norm(path);
+        if self.journal.changes.contains_key(&p) {
+            return 0;
+        }
+        let Ok(e) = self.file_entry(&p) else { return 0 };
+        let c = self.cache_path(&e);
+        let n = std::fs::metadata(&c).map(|m| m.len()).unwrap_or(0);
+        if n > 0 && std::fs::remove_file(&c).is_ok() {
+            n
+        } else {
+            0
+        }
+    }
+
     /// Le contenu de `path` est-il sur cet appareil (lisible sans le Nœud) ?
     pub fn is_local(&mut self, path: &str) -> bool {
         let p = norm(path);

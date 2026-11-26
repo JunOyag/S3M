@@ -164,7 +164,7 @@ function rows(entries) {
     if (e["gardé"]) name.appendChild(el("span", "sur cet appareil", "tag"));
     if (e["indisponible"]) {
       const t = el("span", "indisponible hors ligne", "tag");
-      t.title = "Votre Nœud est injoignable et ce fichier n'est pas sur cet appareil : il sera lisible à son retour.";
+      t.title = "Votre Nœud et ses partenaires sont injoignables, et ce fichier n'est pas sur cet appareil : il sera lisible à leur retour.";
       name.appendChild(t);
       tr.style.opacity = "0.55";
     }
@@ -174,7 +174,7 @@ function rows(entries) {
       name.appendChild(t);
     }
     name.title = e["dossier"] ? "Ouvrir" : "Télécharger";
-    const get = () => (e["indisponible"] ? status("Fichier indisponible hors ligne : votre Nœud est injoignable et ce fichier n'est pas sur cet appareil.", true) : download(path, e["taille"]));
+    const get = () => (e["indisponible"] ? status("Fichier indisponible hors ligne : votre Nœud et ses partenaires sont injoignables, et ce fichier n'est pas sur cet appareil.", true) : download(path, e["taille"]));
     name.addEventListener("click", () => (e["dossier"] ? load(path) : get()));
     tr.appendChild(name);
     tr.appendChild(el("td", e["dossier"] ? "" : size(e["taille"] || 0), "num"));
@@ -194,10 +194,8 @@ function rows(entries) {
       btn("Partager", () => share(path));
       btn("Renommer / déplacer", () => move(path));
       if (e["ancienne clé"]) btn("Rechiffrer avec la nouvelle clé", () => run("Rechiffrement de " + e["nom"], () => call("explorer_reencrypt", { chemin: path })));
-      if (folderMode) {
-        btn(e["gardé"] ? "Ne plus garder" : "Garder hors ligne", () => keep(path, !e["gardé"]));
-        if (!e["gardé"]) btn("Libérer l'espace", () => freeSpace(path));
-      }
+      btn(e["gardé"] ? "Ne plus garder hors connexion" : "Rendre disponible hors connexion", () => keep(path, !e["gardé"]));
+      if (!e["gardé"]) btn("Libérer l'espace", () => freeSpace(path));
       btn("Supprimer", () => remove(path, e["dossier"]), "danger");
       // Glisser l'élément sur un dossier : déplacement.
       tr.draggable = true;

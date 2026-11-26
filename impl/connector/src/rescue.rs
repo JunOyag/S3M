@@ -50,6 +50,8 @@ pub struct Rescue {
     /// Blocs servis par reconstruction.
     pub served: AtomicU64,
     pub last_error: Mutex<Option<String>>,
+    /// Dernier échec de reconstruction (pause, voir `daemon::RESCUE_HOLD`).
+    pub down: Mutex<Option<std::time::Instant>>,
 }
 
 fn now() -> u64 {
@@ -78,6 +80,14 @@ fn desc_addr(p: &PartnerDesc) -> Option<Multiaddr> {
 }
 
 impl Rescue {
+    /// Échec récent : lecture de secours suspendue.
+    pub fn is_down(&self) -> bool {
+        self.down
+            .lock()
+            .unwrap()
+            .is_some_and(|t| t.elapsed() < crate::daemon::RESCUE_HOLD)
+    }
+
     pub fn attach(&self, sh: Weak<Shared>) {
         let _ = self.shared.set(sh);
     }

@@ -165,13 +165,23 @@ async fn explorer_creates_uploads_reads_moves_and_deletes() {
     assert_eq!(e["indisponible"], true, "{l}");
     let t = std::time::Instant::now();
     let err = act("explorer_read", json!({ "chemin": "/loin.txt", "offset": 0 })).unwrap_err();
-    assert!(err.contains("injoignable") && t.elapsed() < std::time::Duration::from_secs(1), "{err}");
+    assert!(err.contains("injoignables") && t.elapsed() < std::time::Duration::from_secs(1), "{err}");
+    // Partenaires en ligne : lecture de secours tentée (pas de refus d'office).
+    sh.health.lock().unwrap().partners_online = Some((3, 4));
+    let l = act("explorer_list", json!({ "chemin": "/" })).unwrap();
+    assert_eq!(l["entrées"].as_array().unwrap().iter().find(|e| e["nom"] == "loin.txt").unwrap()["indisponible"], false);
+    sh.health.lock().unwrap().partners_online = None;
     sh.health.lock().unwrap().reachable = Some(true);
     assert_eq!(act("explorer_read", json!({ "chemin": "/loin.txt", "offset": 0 })).unwrap()["données"], "0909");
     // Lu une fois : désormais sur cet appareil.
     sh.health.lock().unwrap().reachable = Some(false);
     let l = act("explorer_list", json!({ "chemin": "/" })).unwrap();
     assert_eq!(l["entrées"].as_array().unwrap().iter().find(|e| e["nom"] == "loin.txt").unwrap()["indisponible"], false);
+    // Mode lecteur : « Libérer l'espace » retire la copie locale.
+    let r = s3m_connector::daemon::drive_free(&sh, &json!({ "élément": "/loin.txt" })).unwrap()["message"].as_str().unwrap().to_string();
+    assert!(r.contains("1 fichier(s) libéré(s)"), "{r}");
+    let l = act("explorer_list", json!({ "chemin": "/" })).unwrap();
+    assert_eq!(l["entrées"].as_array().unwrap().iter().find(|e| e["nom"] == "loin.txt").unwrap()["indisponible"], true);
     sh.health.lock().unwrap().reachable = Some(true);
     act("explorer_delete", json!({ "chemin": "/loin.txt" })).unwrap();
     let used = |s: &Arc<Mutex<NodeService>>| s.lock().unwrap().users[&pub_user].used_bytes;

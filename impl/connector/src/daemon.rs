@@ -553,10 +553,6 @@ pub struct NodeIo {
     pub rescue: Option<Arc<crate::rescue::Rescue>>,
     /// Copies des blocs envoyés, gardées jusqu'à leur dispersion.
     pub unsent: Option<Arc<crate::unsent::Unsent>>,
-    /// Dernier échec de la lecture de secours : pendant [`RESCUE_HOLD`],
-    /// les lectures échouent aussitôt (Explorateur Windows et navigateur
-    /// ne restent pas bloqués bloc après bloc).
-    pub rescue_down: Mutex<Option<std::time::Instant>>,
 }
 
 /// Durée maximale de reconstruction d'un bloc depuis les partenaires.
@@ -581,11 +577,12 @@ impl BlockIo for NodeIo {
             // Lecture de secours seulement si le Nœud ne répond pas.
             Err(ExchangeError::Network(_)) => {
                 let r = self.rescue.as_ref()?;
-                if self.rescue_down.lock().unwrap().is_some_and(|t| t.elapsed() < RESCUE_HOLD) {
+                // Échec récent : pas d'attente bloc après bloc.
+                if r.is_down() {
                     return None;
                 }
                 let got = self.wait(async { tokio::time::timeout(RESCUE_TIMEOUT, r.get(hash)).await.ok().flatten() });
-                *self.rescue_down.lock().unwrap() = got.is_none().then(std::time::Instant::now);
+                *r.down.lock().unwrap() = got.is_none().then(std::time::Instant::now);
                 got
             }
             Err(_) => None,
@@ -3573,6 +3570,23 @@ pub async fn watch_once(sh: &Shared) {
     channel_tick(sh, now, ok).await;
     if ok {
         unsent_tick(sh).await;
+        // Mode lecteur : éléments gardés hors connexion, nouveautés copiées.
+        if access_mode(&sh.config) != "dossier" {
+            if let Some(d) = sh.drive.clone() {
+                let keep = sh.keep_offline.lock().unwrap().clone();
+                if !keep.is_empty() {
+                    let _ = tokio::task::spawn_blocking(move || {
+                        for k in keep {
+                            let files = d.lock().unwrap().files_under(&k);
+                            for f in files {
+                                let _ = d.lock().unwrap().fetch_local(&f);
+                            }
+                        }
+                    })
+                    .await;
+                }
+            }
+        }
         if let Ok(st) = sh.session.list_pending().await {
             purge_tick(sh, &st.1);
             if st.0 {
@@ -3712,7 +3726,6 @@ pub async fn start(
         true => Some(Arc::new(Mutex::new(
             Drive::open(
                 Arc::new(NodeIo {
-                    rescue_down: Mutex::new(None),
                     session: session.clone(),
                     runtime: tokio::runtime::Handle::current(),
                     rescue: Some(rescue.clone()),
@@ -4254,7 +4267,7 @@ fn keep_status(sh: &Shared) -> Value {
 #[cfg(all(windows, feature = "folder"))]
 fn keep_action(sh: &Shared, v: &Value, keep: bool) -> Result<Value, String> {
     if access_mode(&sh.config) != "dossier" {
-        return Err("seulement en accès « Dossier synchronisé »".into());
+        return drive_keep(sh, v, keep);
     }
     let raw = v
         .get("élément")
@@ -4297,8 +4310,78 @@ fn keep_action(sh: &Shared, v: &Value, keep: bool) -> Result<Value, String> {
 }
 
 #[cfg(not(all(windows, feature = "folder")))]
-fn keep_action(_: &Shared, _: &Value, _: bool) -> Result<Value, String> {
-    Err("dossier synchronisé indisponible sur cette plateforme".into())
+fn keep_action(sh: &Shared, v: &Value, keep: bool) -> Result<Value, String> {
+    drive_keep(sh, v, keep)
+}
+
+fn item_path(v: &Value) -> Result<String, String> {
+    let raw = v.get("dossier").or_else(|| v.get("élément")).and_then(|x| x.as_str()).unwrap_or("").trim();
+    let path = format!("/{}", raw.trim_matches('/'));
+    if path.starts_with(crate::drive::SHARED_DIR) {
+        return Err("les partages reçus ne peuvent pas être gardés hors connexion".into());
+    }
+    Ok(path)
+}
+
+/// Mode lecteur : « Rendre disponible hors connexion » (copie locale de
+/// tout le contenu, jamais libérée) ou retrait de cette marque.
+fn drive_keep(sh: &Shared, v: &Value, keep: bool) -> Result<Value, String> {
+    let path = item_path(v)?;
+    if path == "/" {
+        return Err("choisissez un fichier ou un dossier".into());
+    }
+    let d = sh.drive.clone().ok_or("accès aux fichiers non configuré")?;
+    let list = {
+        let mut k = sh.keep_offline.lock().unwrap();
+        k.retain(|x| !x.eq_ignore_ascii_case(&path));
+        if keep {
+            k.push(path.clone());
+        }
+        k.clone()
+    };
+    write_config_key(sh, "keep_offline", json!(list))?;
+    if keep {
+        // Copie en arrière-plan, fichier par fichier (verrou rendu entre deux).
+        let p = path.clone();
+        std::thread::spawn(move || {
+            let files = d.lock().unwrap().files_under(&p);
+            for f in files {
+                let _ = d.lock().unwrap().fetch_local(&f);
+            }
+        });
+    }
+    Ok(json!({ "ok": true, "message": if keep {
+        format!("{path} est disponible hors connexion : copie sur cet appareil en cours, jamais libérée")
+    } else {
+        format!("{path} n'est plus gardé hors connexion : son espace peut être libéré")
+    } }))
+}
+
+/// Mode lecteur : libère les copies locales sous l'élément (hors éléments
+/// gardés et modifications pas encore envoyées).
+pub fn drive_free(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let path = item_path(v)?;
+    let d = sh.drive.clone().ok_or("accès aux fichiers non configuré")?;
+    let keep = sh.keep_offline.lock().unwrap().clone();
+    let kept = |f: &str| {
+        keep.iter().any(|k| {
+            let k = k.trim_end_matches('/').to_lowercase();
+            let f = f.to_lowercase();
+            f == k || f.starts_with(&format!("{k}/"))
+        })
+    };
+    let files = d.lock().unwrap().files_under(&path);
+    let (mut n, mut bytes) = (0u64, 0u64);
+    for f in files.iter().filter(|f| !kept(f)) {
+        let b = d.lock().unwrap().free_local(f);
+        if b > 0 {
+            n += 1;
+            bytes += b;
+        }
+    }
+    Ok(json!({ "ok": true, "message": format!(
+        "{n} fichier(s) libéré(s), {:.1} Mo : ils restent visibles et reviennent à l'ouverture",
+        bytes as f64 / 1_048_576.0) }))
 }
 
 /// Écrit une clé de `connector.json`.
@@ -4326,7 +4409,7 @@ fn write_config_key(sh: &Shared, key: &str, value: Value) -> Result<(), String> 
 #[cfg(all(windows, feature = "folder"))]
 fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
     if access_mode(&sh.config) != "dossier" {
-        return Err("seulement en accès « Dossier synchronisé »".into());
+        return drive_free(sh, v);
     }
     let root = folder_path(&sh.config);
     // `dossier` (page Accès aux fichiers) ou `élément` (Explorateur) :
@@ -4359,8 +4442,8 @@ fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
 }
 
 #[cfg(not(all(windows, feature = "folder")))]
-fn free_space_action(_: &Shared, _: &Value) -> Result<Value, String> {
-    Err("dossier synchronisé indisponible sur cette plateforme".into())
+fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
+    drive_free(sh, v)
 }
 
 /// Règle la libération automatique (jours, 0 : jamais), à chaud.
@@ -4415,7 +4498,7 @@ fn mount_folder(sh: &Arc<Shared>) -> bool {
         keep: sh.keep_offline.clone(),
         offline: {
             let sh = sh.clone();
-            Some(Arc::new(move || crate::explorer::node_offline(&sh)))
+            Some(Arc::new(move || crate::explorer::remote_unreadable(&sh)))
         },
     };
     let r = crate::cloud_folder::start_with(&root, drive, on_write, options).map(|stop| {
@@ -4473,7 +4556,7 @@ fn mount_drive(sh: &Arc<Shared>) {
                 space: Arc::new(move || session.space()),
                 offline: {
                     let sh = sh2.clone();
-                    Arc::new(move || crate::explorer::node_offline(&sh))
+                    Arc::new(move || crate::explorer::remote_unreadable(&sh))
                 },
             };
             let r = crate::winfsp_backend::mount(fs, letter);

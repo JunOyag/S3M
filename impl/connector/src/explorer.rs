@@ -56,12 +56,20 @@ pub struct Favorite {
     pub dossier: bool,
 }
 
-/// Fichier absent de l'appareil, Nœud injoignable.
-pub const OFFLINE_TEXT: &str = "Votre Nœud est injoignable et ce fichier n'est pas sur cet appareil : il sera lisible à son retour. Pour la prochaine fois, gardez vos fichiers importants « sur cet appareil ».";
+/// Fichier absent de l'appareil, Nœud et partenaires injoignables.
+pub const OFFLINE_TEXT: &str = "Votre Nœud et ses partenaires sont injoignables, et ce fichier n'est pas sur cet appareil : il sera lisible à leur retour. Pour la prochaine fois, rendez vos fichiers importants disponibles hors connexion.";
 
-/// Le Nœud est-il injoignable (dernière sonde, ou échec récent) ?
-pub fn node_offline(sh: &Shared) -> bool {
-    sh.session.is_down() || sh.health.lock().unwrap().reachable == Some(false)
+/// Contenu distant illisible : Nœud injoignable et lecture de secours
+/// impossible (aucun partenaire en ligne, ou échec récent). Avec des
+/// partenaires en ligne, les fichiers sont reconstruits depuis la parité.
+pub fn remote_unreadable(sh: &Shared) -> bool {
+    let h = sh.health.lock().unwrap().clone();
+    let node_down = sh.session.is_down() || h.reachable == Some(false);
+    if !node_down {
+        return false;
+    }
+    let partners = h.partners_online.is_some_and(|(online, _)| online > 0);
+    !partners || sh.rescue.is_down()
 }
 
 /// Élément récemment envoyé ou téléchargé.
@@ -380,7 +388,7 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             }
             let favs: Vec<String> = favorites(sh).into_iter().map(|f| f.chemin).collect();
             // Nœud injoignable : fichiers absents de cet appareil signalés.
-            let offline = node_offline(sh);
+            let offline = remote_unreadable(sh);
             let local: Vec<bool> = {
                 let mut d = drive.lock().unwrap();
                 entries
@@ -414,7 +422,7 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                     let full = format!("{}/{n}", p.trim_end_matches('/'));
                     json!({ "nom": n, "dossier": m.is_dir, "taille": m.size,
                             "indisponible": !l,
-                            "modifié": m.modified_at, "gardé": folder && kept(&full),
+                            "modifié": m.modified_at, "gardé": kept(&full),
                             "ancienne clé": o,
                             "favori": favs.contains(&full),
                             "lecture seule": writable(&full).is_err() })
@@ -464,7 +472,7 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             let version = text(v, "version");
             // Nœud injoignable et contenu absent : refus immédiat (pas
             // d'attente bloc après bloc).
-            if offset == 0 && version.is_empty() && node_offline(sh) && !drive.lock().unwrap().is_local(&p) {
+            if offset == 0 && version.is_empty() && remote_unreadable(sh) && !drive.lock().unwrap().is_local(&p) {
                 return Err(OFFLINE_TEXT.into());
             }
             let data = if version.is_empty() {
