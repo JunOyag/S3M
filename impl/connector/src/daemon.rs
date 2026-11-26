@@ -3203,7 +3203,7 @@ pub async fn watch_once(sh: &Shared) {
     migration_tick(sh, now).await;
     // Sonde : un hash nul n'existe jamais ; `NotFound` prouve que le Nœud
     // répond et accepte notre identifiant.
-    let mut probe = sh.session.get_block(&[0; 32]).await;
+    let mut probe = sh.session.probe().await;
     // Identifiant refusé : pas encore rattaché — demande automatique (au
     // plus une tentative toutes les 10 minutes).
     let refused = matches!(probe, Err(ExchangeError::Refused(Refusal::Unauthorized)));
@@ -3229,7 +3229,7 @@ pub async fn watch_once(sh: &Shared) {
                 Err(e) => a.last_error = Some(e),
             }
         }
-        probe = sh.session.get_block(&[0; 32]).await;
+        probe = sh.session.probe().await;
     }
     // Nœud injoignable à l'adresse courante : adresses publiées dans son
     // entrée DHT (directe, QUIC, relais — `network.traversee-nat`).
@@ -3242,7 +3242,7 @@ pub async fn watch_once(sh: &Shared) {
                         continue;
                     }
                     sh.session.set_node_addr(a);
-                    probe = sh.session.get_block(&[0; 32]).await;
+                    probe = sh.session.probe().await;
                     if !matches!(probe, Err(ExchangeError::Network(_))) {
                         break;
                     }
@@ -3290,7 +3290,7 @@ pub async fn watch_once(sh: &Shared) {
                     continue;
                 }
                 sh.session.set_node_addr(a.clone());
-                probe = sh.session.get_block(&[0; 32]).await;
+                probe = sh.session.probe().await;
                 if !matches!(probe, Err(ExchangeError::Network(_))) {
                     if let Err(e) = save_learned_node_addr(&sh.config.data_dir, &a) {
                         eprintln!("adresse du Nœud : {e}");

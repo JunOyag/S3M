@@ -299,7 +299,14 @@ pub struct NodeSession {
     roots: std::sync::Arc<std::sync::Mutex<Vec<KnownRoot>>>,
     /// Dernier `(racine, descripteur)` renvoyé par le Nœud.
     last_seal: std::sync::Arc<std::sync::Mutex<Option<RootSeal>>>,
+    /// Dernier échec réseau : pendant [`DOWN_HOLD`], les requêtes échouent
+    /// aussitôt au lieu d'attendre l'abandon de la connexion (Nœud arrêté) ;
+    /// la sonde ([`NodeSession::probe`]) continue de tester le Nœud.
+    down: std::sync::Arc<std::sync::Mutex<Option<std::time::Instant>>>,
 }
+
+/// Durée pendant laquelle un Nœud injoignable n'est plus appelé.
+pub const DOWN_HOLD: Duration = Duration::from_secs(60);
 
 impl NodeSession {
     /// `node_addr` suffixée de `/p2p/<PeerId>` ; `pub_node` et `salt` de
@@ -327,7 +334,13 @@ impl NodeSession {
             priv_user: *priv_user,
             roots: Default::default(),
             last_seal: Default::default(),
+            down: Default::default(),
         })
+    }
+
+    /// Le Nœud a-t-il échoué récemment (requêtes court-circuitées) ?
+    pub fn is_down(&self) -> bool {
+        self.down.lock().unwrap().is_some_and(|t| t.elapsed() < DOWN_HOLD)
     }
 
     /// Racine connue de cet appareil : son descripteur scellé accompagnera
@@ -493,12 +506,34 @@ impl NodeSession {
     }
 
     async fn call(&self, body: Body) -> Result<Response, ExchangeError> {
+        if self.is_down() {
+            return Err(ExchangeError::Network("Nœud injoignable (nouvel essai sous peu)".into()));
+        }
+        self.call_now(body).await
+    }
+
+    /// Requête sans court-circuit ; mémorise l'état du Nœud.
+    async fn call_now(&self, body: Body) -> Result<Response, ExchangeError> {
         let req = Request {
             credential: Some(self.credential.clone()),
             body,
         };
         let addr = self.node_addr.lock().unwrap().clone();
-        self.client.request(addr, req).await
+        let r = self.client.request(addr, req).await;
+        *self.down.lock().unwrap() = match &r {
+            Err(ExchangeError::Network(_)) => Some(std::time::Instant::now()),
+            _ => None,
+        };
+        r
+    }
+
+    /// Sonde du Nœud (hash nul : `NotFound` prouve qu'il répond), jamais
+    /// court-circuitée.
+    pub async fn probe(&self) -> Result<Vec<u8>, ExchangeError> {
+        match self.call_now(Body::GetBlock { hash: vec![0; 32] }).await? {
+            Response::BlockData(d) => Ok(d),
+            _ => Err(ExchangeError::Unexpected),
+        }
     }
 
     /// Adresse courante du Nœud.
