@@ -94,7 +94,7 @@ partenaires : c'est la preuve que la promesse est tenue. Un **refus de
 remplissage** faute de place n'est jamais un manquement : le partenaire
 peut garder du remplissage que ce Nœud ne connaît plus (restauration) ;
 il est alors compté plein. Après une restauration, le remplissage déjà
-déposé (état de dispersion conservé) est recompté dans .
+déposé (état de dispersion conservé) est recompté dans `hosted_for_partner`.
 Les partenaires mis en retrait à tort se réhabilitent depuis le dashboard
 (« Réhabiliter les partenaires en retrait » : manquements effacés,
 fragments gardés).
