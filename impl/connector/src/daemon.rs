@@ -1309,6 +1309,9 @@ fn channel_status(sh: &Shared, v: &mut Value) {
             texte = announce_text.clone();
             forms.extend(announce_forms.as_array().cloned().unwrap_or_default());
         }
+        if m.text.starts_with("Sécurité : ") {
+            forms.extend(cancel_forms(sh, &m.text));
+        }
         forms.push(reply_form);
         let reply = json!({
             "titre": format!("Message de votre Nœud ({kind})"),
@@ -2636,6 +2639,9 @@ pub fn rotate_identity(sh: &Arc<Shared>, v: &Value) -> Result<Value, String> {
         }
         Ok(Some((id, due))) => {
             // Sans 2FA : programmé ; appliqué ici quand le Nœud l'exécute.
+            if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                refresh_security(sh, &rt);
+            }
             restore_keys(sh);
             let p = PendingRotation { words: new_words.clone(), salt: hex::encode(salt), id, due };
             std::fs::write(sh.config.data_dir.join(PENDING_ROTATION_FILE), serde_json::to_vec(&p).expect("sérialisable"))
@@ -2712,6 +2718,34 @@ fn migration_status(sh: &Shared, v: &mut Value) {
 
 /// Le 2FA a été actif sur un Nœud de cette identité (aucun secret).
 pub const TWOFA_FLAG_FILE: &str = "2fa-actif";
+
+/// Relit les opérations différées chez le Nœud (bouton « Annuler » visible
+/// aussitôt).
+fn refresh_security(sh: &Shared, rt: &tokio::runtime::Handle) {
+    if let Ok(st) = rt.block_on(sh.session.list_pending()) {
+        *sh.security.lock().unwrap() = Some(st);
+    }
+}
+
+/// Échéance d'une purge de l'historique programmée chez le Nœud.
+fn scheduled_purge(sh: &Shared) -> Option<u64> {
+    let sec = sh.security.lock().unwrap().clone()?;
+    sec.1.iter().find(|o| o.kind.contains("purge")).map(|o| o.due_at)
+}
+
+/// Boutons « Annuler » des opérations différées dont le libellé figure
+/// dans `text` (tous si `text` est vide).
+fn cancel_forms(sh: &Shared, text: &str) -> Vec<Value> {
+    let sec = sh.security.lock().unwrap().clone();
+    sec.map(|s| s.1)
+        .unwrap_or_default()
+        .iter()
+        .filter(|o| text.is_empty() || text.contains(o.kind.as_str()))
+        .map(|o| json!({ "nom": "cancel_pending", "libellé": format!("Annuler : {} (prévue le {})", o.kind, local_date(o.due_at)),
+            "style": "danger", "champs": [], "fixes": { "id": o.id.to_string() },
+            "confirmer": "Annuler cette opération ? Si ce n'est pas vous qui l'avez demandée, activez aussi le 2FA et changez d'identité." }))
+        .collect()
+}
 
 /// Section « sécurité renforcée (2FA) » et opérations différées.
 fn security_status(sh: &Shared, v: &mut Value) {
@@ -3088,6 +3122,15 @@ pub fn purge_versions(sh: &Shared, v: &Value) -> Result<Value, String> {
     sh.drive.as_ref().ok_or("accès aux fichiers non configuré")?;
     let rt = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
     let code = v.get("code 2FA").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    // Purge déjà programmée : pas de seconde sans code.
+    if code.is_empty() {
+        if let Some(due) = scheduled_purge(sh) {
+            return Err(format!(
+                "Une purge est déjà programmée le {} : annulez-la, ou saisissez un code 2FA pour purger tout de suite",
+                local_date(due)
+            ));
+        }
+    }
     match rt.block_on(sh.session.purge_roots(before, &code)) {
         Err(crate::exchange::ExchangeError::Refused(s3m_protocol::exchange::Refusal::Unauthorized)) => {
             return Err(if code.is_empty() { "le 2FA est actif : saisissez un code de votre application".into() } else { "code 2FA refusé".into() })
@@ -3095,9 +3138,14 @@ pub fn purge_versions(sh: &Shared, v: &Value) -> Result<Value, String> {
         Err(e) => return Err(format!("Nœud : {e}")),
         Ok(Some((id, due))) => {
             let _ = std::fs::write(sh.config.data_dir.join(PENDING_PURGE_FILE), json!({ "id": id, "avant": before }).to_string());
+            refresh_security(sh, &rt);
             return Ok(json!({ "ok": true, "message": format!("Purge programmée le {} (dans 72 h) : sans 2FA, tous vos appareils sont prévenus et peuvent l'annuler (Mon compte)", local_date(due)) }))
         }
-        Ok(None) => {}
+        Ok(None) => {
+            // Purge faite : la purge programmée a été retirée par le Nœud.
+            let _ = std::fs::remove_file(sh.config.data_dir.join(PENDING_PURGE_FILE));
+            refresh_security(sh, &rt);
+        }
     }
     let n = release_purged(sh, before)?;
     Ok(json!({ "ok": true, "message": format!(
@@ -3158,15 +3206,24 @@ fn history_status(sh: &Shared) -> Value {
                 .collect()
         })
         .unwrap_or_default();
-    let mut forms = vec![json!({ "nom": "purge_versions", "libellé": "Purger tout l'historique", "style": "danger",
+    let purge_pending: Vec<Value> = cancel_forms(sh, "")
+        .into_iter()
+        .filter(|f| f["libellé"].as_str().is_some_and(|l| l.contains("purge")))
+        .collect();
+    let purge_due = scheduled_purge(sh);
+    let mut forms = vec![json!({ "nom": "purge_versions", "libellé": if purge_due.is_some() { "Purger tout l'historique maintenant (code 2FA)" } else { "Purger tout l'historique" }, "style": "danger",
         "champs": ["code 2FA"], "fixes": { "avant": "0" }, "aide": { "code 2FA": "Si le 2FA est activé ; sans 2FA, la purge prend effet dans 72 h" },
         "confirmer": "Purger définitivement toutes les versions passées ? Seule la version actuelle de vos fichiers restera." })];
+    for f in purge_pending.into_iter().rev() {
+        forms.insert(0, f);
+    }
     if sh.mass_change.load(std::sync::atomic::Ordering::Relaxed) {
         forms.insert(0, json!({ "nom": "resume_after_mass_change", "titre": "Synchronisation suspendue",
             "texte": MASS_CHANGE_TEXT, "libellé": "Ce n'est pas un rançongiciel : reprendre", "champs": [] }));
     }
     json!({
         "_contenu": {
+            "purge programmée": purge_due.map(|d| format!("le {} (annulable)", local_date(d))),
             "conservation (jours)": h.as_ref().map(|h| h.retention_s / 86_400),
             "versions conservées": h.as_ref().map(|h| h.versions.len()),
             "espace occupé par l'historique (octets)": held as u64 * 65_536,

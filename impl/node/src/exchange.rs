@@ -714,10 +714,21 @@ impl NodeService {
                     Some(true) => {}
                     Some(false) => return Err(Refusal::Unauthorized),
                     None => {
-                        return Ok(self.defer(u, crate::user2fa::PendingKind::Purge { before }, crate::user2fa::DEFER_S, now))
+                        // Une purge déjà programmée : pas de seconde.
+                        let queued = self.pending_ops.get(&u).and_then(|v| {
+                            v.iter().find(|p| matches!(p.kind, crate::user2fa::PendingKind::Purge { .. })).cloned()
+                        });
+                        return Ok(match queued {
+                            Some(p) => Response::Deferred { id: p.id, due_at: p.due_at },
+                            None => self.defer(u, crate::user2fa::PendingKind::Purge { before }, crate::user2fa::DEFER_S, now),
+                        });
                     }
                 }
+                // Code 2FA valide : purge immédiate, purges programmées retirées.
                 self.purge_history(&u, before);
+                if let Some(v) = self.pending_ops.get_mut(&u) {
+                    v.retain(|p| !matches!(p.kind, crate::user2fa::PendingKind::Purge { .. }));
+                }
                 Ok(Response::Ack { freed: 0 })
             }
             Body::ListBlocks { after, limit } => {
@@ -1369,13 +1380,9 @@ impl NodeService {
         let list = self.pending_ops.entry(u).or_default();
         let id = now.saturating_mul(100) + list.len() as u64 % 100;
         let due = now + delay;
-        let label = kind.label();
+        let text = kind.notice(delay / 3_600);
         list.push(crate::user2fa::Pending { id, kind, created_at: now, due_at: due });
         let priv_node = self.priv_node();
-        let text = format!(
-            "Sécurité : un(e) {label} a été demandé(e) pour votre compte ; il (elle) prendra effet dans {} h. Si ce n'est pas vous, annulez-le depuis « Mon compte » et activez le 2FA.",
-            delay / 3_600
-        );
         let _ = self.channel.post_info_to(&priv_node, &u, &text, now);
         Response::Deferred { id, due_at: due }
     }

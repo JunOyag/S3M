@@ -44,6 +44,18 @@ pub struct Pending {
 }
 
 impl PendingKind {
+    /// Message de sécurité envoyé aux appareils (accordé à l'opération).
+    pub fn notice(&self, hours: u64) -> String {
+        let (op, e, la) = match self {
+            PendingKind::Rotate { .. } => ("un changement d'identité a été demandé", "il", "annulez-le"),
+            PendingKind::Purge { .. } => ("une purge de l'historique a été demandée", "elle", "annulez-la"),
+            PendingKind::Remove2fa => ("un retrait du 2FA a été demandé", "il", "annulez-le"),
+        };
+        format!(
+            "Sécurité : {op} pour votre compte ; {e} prendra effet dans {hours} h. Si ce n'est pas vous, {la} depuis « Mon compte » et activez le 2FA."
+        )
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             PendingKind::Rotate { .. } => "changement d'identité",

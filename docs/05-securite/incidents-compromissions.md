@@ -78,6 +78,10 @@ Opérations protégées : `RotateUser`, `PurgeRoots` et le retrait du 2FA
   connexion de l'identité peut l'annuler (`ListPending`,
   `CancelPending`). Le Connecteur conserve la nouvelle phrase d'une
   rotation différée et l'applique quand le Nœud l'a exécutée.
+- **Une seule purge programmée** : sans 2FA, une nouvelle demande rend
+  la purge déjà programmée (sa date est affichée, avec « Annuler » dans
+  l'historique et dans la fenêtre du message de sécurité) ; avec un code
+  valide, la purge est immédiate et la purge programmée retirée.
 - **Retrait du 2FA sans code** (téléphone et codes perdus) : différé de
   **7 jours**, annulable.
 

@@ -583,6 +583,7 @@ fn twofa_guards_identity_rotation_and_deferred_operations_can_be_cancelled() {
     let Response::Deferred { id, due_at } = r else { panic!("{r:?}") };
     assert_eq!(due_at, NOW + DEFER_S);
     assert_eq!(s.channel.outbox.sent.len(), 1, "appareils prévenus");
+    assert!(s3m_node::user2fa::PendingKind::Purge { before: 0 }.notice(72).starts_with("Sécurité : une purge de l'historique a été demandée pour votre compte ; elle prendra effet dans 72 h. Si ce n'est pas vous, annulez-la"));
     let Response::PendingList { twofa, ops } = call(&mut s, Body::ListPending) else { panic!() };
     assert!(!twofa && ops.len() == 1 && ops[0].kind == "changement d'identité");
     call(&mut s, Body::CancelPending { id });
@@ -621,4 +622,23 @@ fn a_new_device_is_announced_to_the_user() {
     // Identifiant refusé : rien d'enregistré.
     s.handle(b"intrus", None, b"n", user_req(&NODE, Body::ListPending, b"autre", b"n"), NOW);
     assert_eq!(s.devices[&pk(&USER)].len(), 2);
+}
+
+/// Purge programmée : pas de seconde sans 2FA ; avec un code, purge
+/// immédiate et purge programmée retirée.
+#[test]
+fn a_scheduled_purge_is_unique_and_a_2fa_code_purges_at_once() {
+    use s3m_node::admin::hotp;
+    let mut s = service_with_user(NODE, 1 << 20);
+    let call = |s: &mut NodeService, body: Body| s.handle(b"c", None, b"n", user_req(&NODE, body, b"c", b"n"), NOW);
+    let Response::Deferred { id, .. } = call(&mut s, Body::PurgeRoots { before: 0, code: String::new() }) else { panic!() };
+    let Response::Deferred { id: again, .. } = call(&mut s, Body::PurgeRoots { before: 0, code: String::new() }) else { panic!() };
+    assert_eq!(id, again, "même purge programmée");
+    assert_eq!(s.pending_ops[&pk(&USER)].len(), 1);
+    // 2FA activé (la purge programmée reste), puis code : purge immédiate.
+    let secret = [7u8; 20];
+    let code = |t: u64| format!("{:06}", hotp(&secret, t / 30, 6));
+    call(&mut s, Body::Set2fa { secret: secret.to_vec(), code: code(NOW - 30), recovery: Vec::new(), current: String::new() });
+    assert_eq!(call(&mut s, Body::PurgeRoots { before: 0, code: code(NOW) }), Response::Ack { freed: 0 });
+    assert!(s.pending_ops.get(&pk(&USER)).is_none_or(|v| v.is_empty()), "purge programmée retirée");
 }

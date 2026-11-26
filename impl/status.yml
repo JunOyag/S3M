@@ -990,6 +990,7 @@ entries:
       - rotation::a_compromised_phrase_is_replaced_without_losing_files
       - rotation::without_2fa_the_rotation_is_deferred_then_applied
       - exchange::a_new_device_is_announced_to_the_user
+      - exchange::a_scheduled_purge_is_unique_and_a_2fa_code_purges_at_once
       - rotation::a_restarted_connector_is_the_same_device_for_its_node
       - rotation::devices_are_named_merged_and_shown_in_node_messages
       - entries::device_lists_merge_by_latest_change

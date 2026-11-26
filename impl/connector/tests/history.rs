@@ -149,6 +149,12 @@ async fn a_past_version_is_browsed_restored_then_purged() {
         // Sans 2FA : programmée (72 h), puis exécutée par le Nœud.
         let msg = purge_versions(&sh, &json!({ "avant": "0" })).unwrap();
         assert!(msg["message"].as_str().unwrap().contains("programmée"), "{msg}");
+        // Annulable aussitôt depuis l'historique.
+        let st = status(&sh);
+        assert_eq!(st["historique des versions"]["_formulaires"][0]["nom"], "cancel_pending", "{}", st["historique des versions"]);
+        assert!(st["historique des versions"]["_contenu"]["purge programmée"].is_string());
+        let again = purge_versions(&sh, &json!({ "avant": "0" })).unwrap_err();
+        assert!(again.contains("déjà programmée"), "{again}");
         assert_eq!(svc.lock().unwrap().run_due_ops(1_000_000 + s3m_node::user2fa::DEFER_S), 1);
         let ops = rt.block_on(sh.session.list_pending()).unwrap().1;
         purge_tick(&sh, &ops);
