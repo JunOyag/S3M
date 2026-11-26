@@ -365,8 +365,15 @@ async fn fillers(
                         up.fillers.entry(key.clone()).or_default().push((index, hx(&h)));
                     }
                     Err(e) => {
+                        // Remplissage refusé faute de place : le partenaire
+                        // garde déjà notre part (ex. remplissage antérieur à
+                        // une restauration) — compté plein, sans manquement.
                         if e.contains("QuotaExceeded") {
-                            crate::dispersal_engine::refused(service, p, now);
+                            let mut s = service.lock().unwrap();
+                            let limit = s.partners.get(p).map(|st| pol.limit(st));
+                            if let (Some(limit), Some(st)) = (limit, s.partners.get_mut(p)) {
+                                st.ledger.hosted_for_partner = st.ledger.hosted_for_partner.max(limit);
+                            }
                         }
                         break;
                     }
@@ -633,6 +640,7 @@ pub async fn run_upkeep(
         let uid = id(user);
         let mut d = state.users.remove(user).unwrap();
         let mut changed = false;
+        let mut incomplete = 0usize;
         for si in 0..d.stripes.len() {
             let available = |p: &String| {
                 !up.blacklist.contains_key(p)
@@ -734,15 +742,20 @@ pub async fn run_upkeep(
                 catch_up = false;
             }
             if n < indices.len() && (!catching_up || analysis_due) {
-                up.log(
-                    now,
-                    format!(
-                        "réparation incomplète, stripe {}… : partenaires insuffisants",
-                        &rec.id[..12]
-                    ),
-                );
+                incomplete += 1;
             }
             d.stripes[si] = rec;
+        }
+        // Une ligne par cycle et par Utilisateur, pas une par stripe.
+        if incomplete > 0 {
+            up.log(
+                now,
+                format!(
+                    "réparation incomplète : {incomplete} stripe(s) de {}… sans assez de partenaires disponibles ({} partenaire(s) utilisable(s))",
+                    &user[..12.min(user.len())],
+                    partners.len()
+                ),
+            );
         }
         // Stripes d'index : réémission de l'arbre si l'un d'eux faiblit.
         if analysis_due || !frauds.is_empty() {

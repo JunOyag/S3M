@@ -786,6 +786,8 @@ pub struct Shared {
     /// Nœuds à retirer de la liste noire (dashboard), appliqués au prochain
     /// tour si l'état de dispersion est occupé.
     pub unblacklist: Mutex<Vec<String>>,
+    /// Réhabilitation des partenaires en retrait demandée (dashboard).
+    pub rehabilitate: std::sync::atomic::AtomicBool,
     /// Redémarrage demandé depuis le dashboard (traité par l'exécutable).
     pub restart: tokio::sync::Notify,
     /// Journal du processus : `(instant Unix, événement)`, borné.
@@ -894,7 +896,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
           "actions": ["attach_user", "set_attach_policy"] },
         { "id": "partenaires", "titre": "Partenaires", "carte": true,
-          "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner"] },
+          "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner", "rehabilitate_partners"] },
         { "id": "carte", "titre": "Carte du monde", "cadre": "map.html", "sections": [], "actions": [] },
         { "id": "volumes", "titre": "Volumes",
           "sections": ["volumes", "liste des actions", "imports de volumes", "journal des volumes"],
@@ -1572,6 +1574,10 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "libellés": { "user_id": "identifiant de l'utilisateur", "salt": "sel d'attachement" },
               "types": { "quota (Gio)": "number" },
               "aide": { "user_id": "Affiché par l'assistant de S3m de l'utilisateur", "salt": "Affiché à côté de l'identifiant (32 caractères)" } },
+            { "nom": "rehabilitate_partners", "titre": "Partenaires mis en retrait à tort",
+              "libellé": "Réhabiliter les partenaires en retrait", "champs": [],
+              "texte": "Efface les manquements des partenaires en retrait : ils redeviennent partenaires et gardent les fragments qu'ils hébergent (utile après une restauration du Nœud, qui a pu leur compter des manquements à tort).",
+              "confirmer": "Réhabiliter tous les partenaires en retrait ?" },
             { "nom": "add_partner", "titre": "Ajouter un partenaire manuellement", "libellé": "Ajouter",
               "champs": ["node_id", "addr"],
               "libellés": { "node_id": "identifiant du Nœud", "addr": "adresse" },
@@ -2122,6 +2128,10 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
         note(sh, format!("alertes du volume {vid} déclarées résolues"));
         return Ok(json!({ "ok": true, "message": format!("Alertes du volume {vid} effacées ; elles réapparaîtront si l'erreur se reproduit") }));
     }
+    if name == "rehabilitate_partners" {
+        sh.rehabilitate.store(true, std::sync::atomic::Ordering::SeqCst);
+        return Ok(json!({ "ok": true, "message": "Réhabilitation au prochain cycle (30 s au plus)" }));
+    }
     if name == "unblacklist" {
         let n = field(&v, "nœud")?.to_lowercase();
         let id: [u8; 32] = hex::decode(&n)
@@ -2513,7 +2523,11 @@ async fn restore_tick(sh: &Shared, fabric: &NetFabric, d: &mut DispersalState, n
         let was = st.completed_at.is_some();
         st.check_complete(now);
         if !was && st.completed_at.is_some() {
-            note(sh, "restauration complète");
+            let (users, stripes, blocks) = st.users.values().fold((0, 0, 0), |(u, s, b), e| (u + 1, s + e.stripes, b + e.blocks));
+            note(
+                sh,
+                format!("restauration complète : stockage vide ou perdu, contenu reconstruit depuis le réseau — {users} utilisateur(s), {blocks} bloc(s), {stripes} stripe(s)"),
+            );
         }
     }
     if r != before {
@@ -2860,6 +2874,7 @@ pub async fn start_with(
         admin: Mutex::new(None),
         volumes_ui: Mutex::new(VolumesUi::default()),
         unblacklist: Mutex::new(Vec::new()),
+        rehabilitate: Default::default(),
         restart: tokio::sync::Notify::new(),
         journal: Mutex::new(Vec::new()),
         emergency_ui: Mutex::new(EmergencyUi::default()),
@@ -3043,6 +3058,10 @@ pub async fn start_with(
                     let pending = std::mem::take(&mut *sh.unblacklist.lock().unwrap());
                     for n in &pending {
                         d.unblacklist(n);
+                    }
+                    if sh.rehabilitate.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                        let n = crate::partnering::rehabilitate(&mut d, &sh.service);
+                        note(&sh, format!("{n} partenaire(s) en retrait réhabilité(s)"));
                     }
                     // Partenariats automatiques, puis exclusions de placement.
                     sh.service.lock().unwrap().blacklisted = d

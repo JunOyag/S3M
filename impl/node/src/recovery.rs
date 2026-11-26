@@ -297,6 +297,20 @@ pub async fn restore_snapshot(
     state.snapshot.pointer = Some(hx(&encode_pointer(&pointer)));
     let rec = record(&pointer.stripe, &pointer.partners, &frames);
     count_hosted(service, std::slice::from_ref(&rec));
+    // Remplissage déjà déposé (état de dispersion conservé) : compté aussi,
+    // sinon le Nœud croit de la place chez des partenaires pleins.
+    {
+        let mut s = service.lock().unwrap();
+        for (p, v) in &state.upkeep.fillers {
+            if let Some(st) = hex::decode(p)
+                .ok()
+                .and_then(|b| <[u8; 32]>::try_from(b).ok())
+                .and_then(|id| s.partners.get_mut(&id))
+            {
+                st.ledger.hosted_for_partner += v.len() as u64;
+            }
+        }
+    }
     state.snapshot.stripe = Some(rec);
     state.snapshot.last_at = now;
     Ok(Some((

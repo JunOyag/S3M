@@ -635,3 +635,25 @@ pub async fn run_partnering(
     state.partnering = st;
     report
 }
+
+/// Réhabilite les partenaires en retrait (manquements effacés) : ils
+/// gardent leurs fragments et redeviennent partenaires. Rend leur nombre.
+pub fn rehabilitate(state: &mut DispersalState, service: &std::sync::Mutex<NodeService>) -> usize {
+    let mut n = 0;
+    for (name, p) in state.partnering.peers.iter_mut() {
+        if p.status != "retrait" {
+            continue;
+        }
+        p.status = "partenaire".into();
+        p.below_since = None;
+        state.upkeep.retiring.remove(name);
+        if let Some(id) = hex::decode(name).ok().and_then(|b| <[u8; 32]>::try_from(b).ok()) {
+            if let Some(st) = service.lock().unwrap().partners.get_mut(&id) {
+                st.failures = 0;
+                st.suspended_until = 0;
+            }
+        }
+        n += 1;
+    }
+    n
+}

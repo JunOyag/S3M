@@ -413,4 +413,30 @@ async fn filler_fills_the_quota_is_checked_and_released_on_demand() {
     }
     assert!(service.lock().unwrap().partners[&p1].failures >= 1);
     assert!(service.lock().unwrap().suspended(t).contains(&p1));
+    // Après une restauration, le Nœud ignore le remplissage que p0 garde
+    // déjà : le refus faute de place n'est pas un manquement.
+    run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, t).await;
+    assert_eq!(held(&p0), 4);
+    service.lock().unwrap().partners.get_mut(&p0).unwrap().ledger.hosted_for_partner = 0;
+    state.upkeep.fillers.remove(&hex::encode(p0));
+    run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, t + 30).await;
+    assert_eq!(service.lock().unwrap().partners[&p0].failures, 0, "pas de manquement");
+    assert_eq!(held(&p0), 4, "compté plein");
+}
+
+/// Partenaires mis en retrait à tort : réhabilités, manquements effacés.
+#[test]
+fn retired_partners_can_be_rehabilitated() {
+    let p = pk(&[0x55; 32]);
+    let mut service = NodeService::new(NODE);
+    service.partners.insert(p, PartnerState { failures: 9, suspended_until: 99, ..Default::default() });
+    let service = Mutex::new(service);
+    let mut state = DispersalState::default();
+    let name = hex::encode(p);
+    state.partnering.peers.insert(name.clone(), s3m_node::partnering::Peer { status: "retrait".into(), ..Default::default() });
+    state.upkeep.retiring.insert(name.clone());
+    assert_eq!(s3m_node::partnering::rehabilitate(&mut state, &service), 1);
+    assert_eq!(state.partnering.peers[&name].status, "partenaire");
+    assert!(!state.upkeep.retiring.contains(&name));
+    assert_eq!(service.lock().unwrap().partners[&p].failures, 0);
 }

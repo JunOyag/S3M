@@ -90,7 +90,14 @@ stocker. Ils sont contrôlés comme les autres fragments
 un vrai fragment ne trouve plus de place (`QuotaExceeded` à Q atteint),
 libérés par avis de suppression ([`protocols.tombstones`](../../04-protocols/tombstones.md))
 au cycle suivant, 16 à la fois. Remplir coûte de l'espace disque réel aux
-partenaires : c'est la preuve que la promesse est tenue.
+partenaires : c'est la preuve que la promesse est tenue. Un **refus de
+remplissage** faute de place n'est jamais un manquement : le partenaire
+peut garder du remplissage que ce Nœud ne connaît plus (restauration) ;
+il est alors compté plein. Après une restauration, le remplissage déjà
+déposé (état de dispersion conservé) est recompté dans .
+Les partenaires mis en retrait à tort se réhabilitent depuis le dashboard
+(« Réhabiliter les partenaires en retrait » : manquements effacés,
+fragments gardés).
 
 ### Manquements {: #manquements }
 
