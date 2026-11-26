@@ -30,7 +30,7 @@ fn samples() -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
         req(Body::ReleaseBlocks { hashes: vec![6; 64] }),
         req(Body::ListRoots),
         req(Body::BlockStatus { hashes: vec![7; 96] }),
-        req(Body::RotateUser { new_user_id: vec![8; 32], new_salt: vec![9; 16] }),
+        req(Body::RotateUser { new_user_id: vec![8; 32], new_salt: vec![9; 16], code: String::new() }),
     ];
     let responses = vec![
         encode_response(&Response::RootState {

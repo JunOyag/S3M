@@ -244,6 +244,8 @@ pub enum Body {
     /// Oublie les versions remplacées avant `before` (0 : toutes).
     PurgeRoots {
         before: u64,
+        /// Code 2FA ou de secours ; vide : purge différée sans 2FA.
+        code: String,
     },
     /// État de blocs de l'Utilisateur
     /// (`protocols.dispersion-transactionnelle#copie-locale`).
@@ -255,7 +257,35 @@ pub enum Body {
     RotateUser {
         new_user_id: Vec<u8>,
         new_salt: Vec<u8>,
+        /// Code 2FA ou de secours ; vide : rotation différée sans 2FA.
+        code: String,
     },
+    /// Active ou remplace le 2FA (`securite.incidents-compromissions#2fa`).
+    Set2fa {
+        secret: Vec<u8>,
+        code: String,
+        recovery: Vec<u8>,
+        current: String,
+    },
+    /// Retire le 2FA (différé sans code).
+    Remove2fa {
+        code: String,
+    },
+    /// Opérations différées en cours.
+    ListPending,
+    /// Annule une opération différée.
+    CancelPending {
+        id: u64,
+    },
+}
+
+/// Opération différée (`securite.incidents-compromissions#2fa`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PendingOp {
+    pub id: u64,
+    pub kind: String,
+    pub created_at: u64,
+    pub due_at: u64,
 }
 
 /// Version passée de la racine (`protocols.historique-versions`).
@@ -342,6 +372,16 @@ pub enum Response {
     BlockStatusAnswer {
         present: Vec<u8>,
         pending: Vec<u8>,
+    },
+    /// Opération différée, exécutée à `due_at` sauf annulation.
+    Deferred {
+        id: u64,
+        due_at: u64,
+    },
+    /// Réponse à `ListPending`.
+    PendingList {
+        twofa: bool,
+        ops: Vec<PendingOp>,
     },
 }
 
@@ -677,9 +717,31 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             let o = fb::ListRoots::create(&mut b, &fb::ListRootsArgs {});
             (fb::RequestBody::ListRoots, o.as_union_value())
         }
-        Body::PurgeRoots { before } => {
-            let o = fb::PurgeRoots::create(&mut b, &fb::PurgeRootsArgs { before: *before });
+        Body::PurgeRoots { before, code } => {
+            let c = (!code.is_empty()).then(|| b.create_string(code));
+            let o = fb::PurgeRoots::create(&mut b, &fb::PurgeRootsArgs { before: *before, code: c });
             (fb::RequestBody::PurgeRoots, o.as_union_value())
+        }
+        Body::Set2fa { secret, code, recovery, current } => {
+            let s = b.create_vector(secret);
+            let c = b.create_string(code);
+            let r = b.create_vector(recovery);
+            let cur = (!current.is_empty()).then(|| b.create_string(current));
+            let o = fb::Set2fa::create(&mut b, &fb::Set2faArgs { secret: Some(s), code: Some(c), recovery: Some(r), current: cur });
+            (fb::RequestBody::Set2fa, o.as_union_value())
+        }
+        Body::Remove2fa { code } => {
+            let c = (!code.is_empty()).then(|| b.create_string(code));
+            let o = fb::Remove2fa::create(&mut b, &fb::Remove2faArgs { code: c });
+            (fb::RequestBody::Remove2fa, o.as_union_value())
+        }
+        Body::ListPending => {
+            let o = fb::ListPending::create(&mut b, &fb::ListPendingArgs {});
+            (fb::RequestBody::ListPending, o.as_union_value())
+        }
+        Body::CancelPending { id } => {
+            let o = fb::CancelPending::create(&mut b, &fb::CancelPendingArgs { id: *id });
+            (fb::RequestBody::CancelPending, o.as_union_value())
         }
         Body::BlockStatus { hashes } => {
             let v = b.create_vector(hashes);
@@ -689,14 +751,17 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
         Body::RotateUser {
             new_user_id,
             new_salt,
+            code,
         } => {
             let u = b.create_vector(new_user_id);
             let s = b.create_vector(new_salt);
+            let c = (!code.is_empty()).then(|| b.create_string(code));
             let o = fb::RotateUser::create(
                 &mut b,
                 &fb::RotateUserArgs {
                     new_user_id: Some(u),
                     new_salt: Some(s),
+                    code: c,
                 },
             );
             (fb::RequestBody::RotateUser, o.as_union_value())
@@ -919,8 +984,25 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
             }
         }
         fb::RequestBody::ListRoots => Body::ListRoots,
-        fb::RequestBody::PurgeRoots => Body::PurgeRoots {
-            before: r.body_as_purge_roots().ok_or(m)?.before(),
+        fb::RequestBody::PurgeRoots => {
+            let x = r.body_as_purge_roots().ok_or(m)?;
+            Body::PurgeRoots { before: x.before(), code: x.code().unwrap_or("").to_string() }
+        }
+        fb::RequestBody::Set2fa => {
+            let x = r.body_as_set_2fa().ok_or(m)?;
+            Body::Set2fa {
+                secret: bytes(x.secret()),
+                code: x.code().unwrap_or("").to_string(),
+                recovery: bytes(x.recovery()),
+                current: x.current().unwrap_or("").to_string(),
+            }
+        }
+        fb::RequestBody::Remove2fa => Body::Remove2fa {
+            code: r.body_as_remove_2fa().ok_or(m)?.code().unwrap_or("").to_string(),
+        },
+        fb::RequestBody::ListPending => Body::ListPending,
+        fb::RequestBody::CancelPending => Body::CancelPending {
+            id: r.body_as_cancel_pending().ok_or(m)?.id(),
         },
         fb::RequestBody::BlockStatus => {
             let hashes = bytes(r.body_as_block_status().ok_or(m)?.hashes());
@@ -934,6 +1016,7 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
             Body::RotateUser {
                 new_user_id: bytes(x.new_user_id()),
                 new_salt: bytes(x.new_salt()),
+                code: x.code().unwrap_or("").to_string(),
             }
         }
         _ => return Err(m),
@@ -1142,6 +1225,22 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             );
             (fb::ResponseBody::BlockStatusAnswer, o.as_union_value())
         }
+        Response::Deferred { id, due_at } => {
+            let o = fb::Deferred::create(&mut b, &fb::DeferredArgs { id: *id, due_at: *due_at });
+            (fb::ResponseBody::Deferred, o.as_union_value())
+        }
+        Response::PendingList { twofa, ops } => {
+            let list: Vec<_> = ops
+                .iter()
+                .map(|o| {
+                    let k = b.create_string(&o.kind);
+                    fb::PendingOp::create(&mut b, &fb::PendingOpArgs { id: o.id, kind: Some(k), created_at: o.created_at, due_at: o.due_at })
+                })
+                .collect();
+            let list = b.create_vector(&list);
+            let o = fb::PendingList::create(&mut b, &fb::PendingListArgs { twofa: *twofa, ops: Some(list) });
+            (fb::ResponseBody::PendingList, o.as_union_value())
+        }
     };
     let root = fb::BlockResponse::create(
         &mut b,
@@ -1277,6 +1376,29 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
             Response::BlockStatusAnswer {
                 present: bytes(x.present()),
                 pending: bytes(x.pending()),
+            }
+        }
+        fb::ResponseBody::Deferred => {
+            let x = r.body_as_deferred().ok_or(m)?;
+            Response::Deferred { id: x.id(), due_at: x.due_at() }
+        }
+        fb::ResponseBody::PendingList => {
+            let x = r.body_as_pending_list().ok_or(m)?;
+            Response::PendingList {
+                twofa: x.twofa(),
+                ops: x
+                    .ops()
+                    .map(|v| {
+                        v.iter()
+                            .map(|o| PendingOp {
+                                id: o.id(),
+                                kind: o.kind().unwrap_or("").to_string(),
+                                created_at: o.created_at(),
+                                due_at: o.due_at(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             }
         }
         _ => return Err(m),

@@ -208,6 +208,9 @@ table ListRoots {
 // Oublie les versions remplacées avant `before` (Unix) ; 0 : toutes.
 table PurgeRoots {
   before: uint64;
+  // Ajout du 2026-11-26 : code 2FA ou de secours (securite.incidents-compromissions#2fa) ;
+  // vide sans 2FA : purge différée de 72 h.
+  code: string;
 }
 
 // Ajout du 2026-11-25 (protocols.dispersion-transactionnelle#copie-locale) :
@@ -224,6 +227,33 @@ table BlockStatus {
 table RotateUser {
   new_user_id: [ubyte];       // pub_user de la nouvelle identité
   new_salt: [ubyte];          // sel du nouvel attachement (16 o)
+  // Ajout du 2026-11-26 : code 2FA ou de secours ; vide sans 2FA :
+  // rotation différée de 72 h (securite.incidents-compromissions#2fa).
+  code: string;
+}
+
+// Ajouts du 2026-11-26 (securite.incidents-compromissions#2fa) : Connecteur →
+// son Nœud (UserCredential).
+// Active ou remplace le 2FA : secret TOTP (20 o), premier code, empreintes
+// SHA-256 des codes de secours (n × 32 o) ; `current` : code du 2FA actuel
+// s'il y en a un. Réponse : Ack.
+table Set2fa {
+  secret: [ubyte];
+  code: string;
+  recovery: [ubyte];
+  current: string;
+}
+// Retire le 2FA : immédiat avec un code, différé de 7 jours sans. Réponse :
+// Ack ou Deferred.
+table Remove2fa {
+  code: string;
+}
+// Opérations différées en cours et présence du 2FA. Réponse : PendingList.
+table ListPending {
+}
+// Annule une opération différée. Réponse : Ack.
+table CancelPending {
+  id: uint64;
 }
 
 union RequestBody {
@@ -232,7 +262,8 @@ union RequestBody {
   Probe, ProposePartnership, Attach, OwnershipQuery,
   EmergencyPut, EmergencyGet, EmergencyRelease,
   ReadMessages, PostMessage, RevokeShare,
-  ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots, BlockStatus, RotateUser
+  ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots, BlockStatus, RotateUser,
+  Set2fa, Remove2fa, ListPending, CancelPending
 }
 
 // Requête : une par flux libp2p request-response.

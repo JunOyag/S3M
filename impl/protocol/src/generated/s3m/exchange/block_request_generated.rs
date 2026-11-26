@@ -550,6 +550,66 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_set_2fa(&self) -> Option<Set2fa<'a>> {
+    if self.body_type() == RequestBody::Set2fa {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Set2fa::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_remove_2fa(&self) -> Option<Remove2fa<'a>> {
+    if self.body_type() == RequestBody::Remove2fa {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Remove2fa::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_list_pending(&self) -> Option<ListPending<'a>> {
+    if self.body_type() == RequestBody::ListPending {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ListPending::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_cancel_pending(&self) -> Option<CancelPending<'a>> {
+    if self.body_type() == RequestBody::CancelPending {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { CancelPending::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -598,6 +658,10 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::PurgeRoots => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PurgeRoots>>("RequestBody::PurgeRoots", pos),
           RequestBody::BlockStatus => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BlockStatus>>("RequestBody::BlockStatus", pos),
           RequestBody::RotateUser => v.verify_union_variant::<flatbuffers::ForwardsUOffset<RotateUser>>("RequestBody::RotateUser", pos),
+          RequestBody::Set2fa => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Set2fa>>("RequestBody::Set2fa", pos),
+          RequestBody::Remove2fa => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Remove2fa>>("RequestBody::Remove2fa", pos),
+          RequestBody::ListPending => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListPending>>("RequestBody::ListPending", pos),
+          RequestBody::CancelPending => v.verify_union_variant::<flatbuffers::ForwardsUOffset<CancelPending>>("RequestBody::CancelPending", pos),
           _ => Ok(()),
         }
      })?
@@ -890,6 +954,34 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::RotateUser => {
           if let Some(x) = self.body_as_rotate_user() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::Set2fa => {
+          if let Some(x) = self.body_as_set_2fa() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::Remove2fa => {
+          if let Some(x) = self.body_as_remove_2fa() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::ListPending => {
+          if let Some(x) = self.body_as_list_pending() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::CancelPending => {
+          if let Some(x) = self.body_as_cancel_pending() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

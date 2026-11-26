@@ -12,10 +12,10 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_REQUEST_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_REQUEST_BODY: u8 = 26;
+pub const ENUM_MAX_REQUEST_BODY: u8 = 30;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 27] = [
+pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 31] = [
   RequestBody::NONE,
   RequestBody::GetBlock,
   RequestBody::PutBlock,
@@ -43,6 +43,10 @@ pub const ENUM_VALUES_REQUEST_BODY: [RequestBody; 27] = [
   RequestBody::PurgeRoots,
   RequestBody::BlockStatus,
   RequestBody::RotateUser,
+  RequestBody::Set2fa,
+  RequestBody::Remove2fa,
+  RequestBody::ListPending,
+  RequestBody::CancelPending,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -77,9 +81,13 @@ impl RequestBody {
   pub const PurgeRoots: Self = Self(24);
   pub const BlockStatus: Self = Self(25);
   pub const RotateUser: Self = Self(26);
+  pub const Set2fa: Self = Self(27);
+  pub const Remove2fa: Self = Self(28);
+  pub const ListPending: Self = Self(29);
+  pub const CancelPending: Self = Self(30);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 26;
+  pub const ENUM_MAX: u8 = 30;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::GetBlock,
@@ -108,6 +116,10 @@ impl RequestBody {
     Self::PurgeRoots,
     Self::BlockStatus,
     Self::RotateUser,
+    Self::Set2fa,
+    Self::Remove2fa,
+    Self::ListPending,
+    Self::CancelPending,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -139,6 +151,10 @@ impl RequestBody {
       Self::PurgeRoots => Some("PurgeRoots"),
       Self::BlockStatus => Some("BlockStatus"),
       Self::RotateUser => Some("RotateUser"),
+      Self::Set2fa => Some("Set2fa"),
+      Self::Remove2fa => Some("Remove2fa"),
+      Self::ListPending => Some("ListPending"),
+      Self::CancelPending => Some("CancelPending"),
       _ => None,
     }
   }

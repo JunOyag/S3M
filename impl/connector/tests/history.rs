@@ -75,6 +75,8 @@ async fn a_past_version_is_browsed_restored_then_purged() {
         let service = service.clone();
         move || service.lock().unwrap().users[&pub_user].used_bytes
     };
+    let svc = service.clone();
+    let rt = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
         let sh = sh2;
         let act = |name: &str, v: Value| -> Result<Value, String> {
@@ -144,9 +146,12 @@ async fn a_past_version_is_browsed_restored_then_purged() {
         assert_eq!(st["pages simples"][0]["sections"].as_array().unwrap().iter().filter(|x| *x == "favoris").count(), 1);
 
         // Purge : plus aucune version, blocs gardés libérés chez le Nœud.
-        let msg = purge_versions(&sh, &json!({ "avant": "0" }))
-            .unwrap();
-        assert!(msg["message"].as_str().unwrap().contains("Historique purgé"), "{msg}");
+        // Sans 2FA : programmée (72 h), puis exécutée par le Nœud.
+        let msg = purge_versions(&sh, &json!({ "avant": "0" })).unwrap();
+        assert!(msg["message"].as_str().unwrap().contains("programmée"), "{msg}");
+        assert_eq!(svc.lock().unwrap().run_due_ops(1_000_000 + s3m_node::user2fa::DEFER_S), 1);
+        let ops = rt.block_on(sh.session.list_pending()).unwrap().1;
+        purge_tick(&sh, &ops);
         let r = act("explorer_versions", json!({ "chemin": "/a.txt" })).unwrap();
         assert!(r["versions"].as_array().unwrap().is_empty());
         assert_eq!(read(None), "version 1");

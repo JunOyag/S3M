@@ -401,12 +401,31 @@ impl NodeSession {
 
     /// Transfère le compte à une nouvelle identité et révoque celle-ci
     /// (`securite.incidents-compromissions#rotation-user`).
-    pub async fn rotate_user(&self, new_user: &[u8; 32], new_salt: &[u8]) -> Result<(), ExchangeError> {
+    /// `Ok(None)` : fait ; `Ok(Some((id, échéance)))` : différé sans 2FA.
+    pub async fn rotate_user(
+        &self,
+        new_user: &[u8; 32],
+        new_salt: &[u8],
+        code: &str,
+    ) -> Result<Option<(u64, u64)>, ExchangeError> {
         match self
             .call(Body::RotateUser {
                 new_user_id: new_user.to_vec(),
                 new_salt: new_salt.to_vec(),
+                code: code.to_string(),
             })
+            .await?
+        {
+            Response::Ack { .. } => Ok(None),
+            Response::Deferred { id, due_at } => Ok(Some((id, due_at))),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
+    /// Active ou remplace le 2FA (`securite.incidents-compromissions#2fa`).
+    pub async fn set_2fa(&self, secret: &[u8], code: &str, recovery: Vec<u8>, current: &str) -> Result<(), ExchangeError> {
+        match self
+            .call(Body::Set2fa { secret: secret.to_vec(), code: code.into(), recovery, current: current.into() })
             .await?
         {
             Response::Ack { .. } => Ok(()),
@@ -414,10 +433,36 @@ impl NodeSession {
         }
     }
 
-    /// Oublie les versions remplacées avant `before` (0 : toutes).
-    pub async fn purge_roots(&self, before: u64) -> Result<(), ExchangeError> {
-        match self.call(Body::PurgeRoots { before }).await? {
+    /// Retire le 2FA : `Ok(None)` fait ; différé sans code.
+    pub async fn remove_2fa(&self, code: &str) -> Result<Option<(u64, u64)>, ExchangeError> {
+        match self.call(Body::Remove2fa { code: code.into() }).await? {
+            Response::Ack { .. } => Ok(None),
+            Response::Deferred { id, due_at } => Ok(Some((id, due_at))),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
+    /// `(2FA actif, opérations différées)`.
+    pub async fn list_pending(&self) -> Result<(bool, Vec<s3m_protocol::exchange::PendingOp>), ExchangeError> {
+        match self.call(Body::ListPending).await? {
+            Response::PendingList { twofa, ops } => Ok((twofa, ops)),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
+    pub async fn cancel_pending(&self, id: u64) -> Result<(), ExchangeError> {
+        match self.call(Body::CancelPending { id }).await? {
             Response::Ack { .. } => Ok(()),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
+    /// Oublie les versions remplacées avant `before` (0 : toutes).
+    /// `Ok(None)` : fait ; `Ok(Some((id, échéance)))` : différé sans 2FA.
+    pub async fn purge_roots(&self, before: u64, code: &str) -> Result<Option<(u64, u64)>, ExchangeError> {
+        match self.call(Body::PurgeRoots { before, code: code.into() }).await? {
+            Response::Ack { .. } => Ok(None),
+            Response::Deferred { id, due_at } => Ok(Some((id, due_at))),
             _ => Err(ExchangeError::Unexpected),
         }
     }

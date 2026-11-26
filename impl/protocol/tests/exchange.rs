@@ -27,11 +27,16 @@ fn every_request_and_response_roundtrips() {
         },
         Body::ReportIncident { hash: vec![5; 32] },
         Body::ListRoots,
-        Body::PurgeRoots { before: 1_800_000_000 },
+        Body::PurgeRoots { before: 1_800_000_000, code: "123456".into() },
+        Body::Set2fa { secret: vec![1; 20], code: "654321".into(), recovery: vec![2; 64], current: String::new() },
+        Body::Remove2fa { code: String::new() },
+        Body::ListPending,
+        Body::CancelPending { id: 7 },
         Body::BlockStatus { hashes: vec![4; 64] },
         Body::RotateUser {
             new_user_id: vec![5; 32],
             new_salt: vec![6; 16],
+            code: String::new(),
         },
         Body::RenewGrant {
             grant_pub: vec![6; 32],
@@ -155,6 +160,11 @@ fn every_request_and_response_roundtrips() {
         Response::BlockStatusAnswer {
             present: vec![3],
             pending: vec![1],
+        },
+        Response::Deferred { id: 4, due_at: 1_800_000_000 },
+        Response::PendingList {
+            twofa: true,
+            ops: vec![PendingOp { id: 4, kind: "changement d'identité".into(), created_at: 1, due_at: 2 }],
         },
     ] {
         assert_eq!(decode_response(&encode_response(&r)).unwrap(), r);

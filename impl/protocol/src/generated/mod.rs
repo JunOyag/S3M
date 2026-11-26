@@ -83,6 +83,8 @@ pub mod s3m {
     pub use self::block_status_answer_generated::*;
     mod block_status_generated;
     pub use self::block_status_generated::*;
+    mod cancel_pending_generated;
+    pub use self::cancel_pending_generated::*;
     mod challenge_generated;
     pub use self::challenge_generated::*;
     mod challenge_response_generated;
@@ -91,6 +93,8 @@ pub mod s3m {
     pub use self::commit_root_generated::*;
     mod credential_generated;
     pub use self::credential_generated::*;
+    mod deferred_generated;
+    pub use self::deferred_generated::*;
     mod delegate_generated;
     pub use self::delegate_generated::*;
     mod delegated_credential_generated;
@@ -117,6 +121,8 @@ pub mod s3m {
     pub use self::grant_issued_generated::*;
     mod list_blocks_generated;
     pub use self::list_blocks_generated::*;
+    mod list_pending_generated;
+    pub use self::list_pending_generated::*;
     mod list_roots_generated;
     pub use self::list_roots_generated::*;
     mod message_kind_generated;
@@ -131,6 +137,10 @@ pub mod s3m {
     pub use self::ownership_query_generated::*;
     mod partnership_answer_generated;
     pub use self::partnership_answer_generated::*;
+    mod pending_list_generated;
+    pub use self::pending_list_generated::*;
+    mod pending_op_generated;
+    pub use self::pending_op_generated::*;
     mod post_message_generated;
     pub use self::post_message_generated::*;
     mod probe_generated;
@@ -147,6 +157,8 @@ pub mod s3m {
     pub use self::read_messages_generated::*;
     mod release_blocks_generated;
     pub use self::release_blocks_generated::*;
+    mod remove_2fa_generated;
+    pub use self::remove_2fa_generated::*;
     mod renew_grant_generated;
     pub use self::renew_grant_generated::*;
     mod report_incident_generated;
@@ -169,6 +181,8 @@ pub mod s3m {
     pub use self::root_version_generated::*;
     mod rotate_user_generated;
     pub use self::rotate_user_generated::*;
+    mod set_2fa_generated;
+    pub use self::set_2fa_generated::*;
     mod share_credential_generated;
     pub use self::share_credential_generated::*;
     mod share_grant_generated;

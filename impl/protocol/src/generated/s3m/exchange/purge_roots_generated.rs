@@ -26,6 +26,7 @@ impl<'a> flatbuffers::Follow<'a> for PurgeRoots<'a> {
 
 impl<'a> PurgeRoots<'a> {
   pub const VT_BEFORE: flatbuffers::VOffsetT = 4;
+  pub const VT_CODE: flatbuffers::VOffsetT = 6;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -34,10 +35,11 @@ impl<'a> PurgeRoots<'a> {
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args PurgeRootsArgs
+    args: &'args PurgeRootsArgs<'args>
   ) -> flatbuffers::WIPOffset<PurgeRoots<'bldr>> {
     let mut builder = PurgeRootsBuilder::new(_fbb);
     builder.add_before(args.before);
+    if let Some(x) = args.code { builder.add_code(x); }
     builder.finish()
   }
 
@@ -49,6 +51,13 @@ impl<'a> PurgeRoots<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u64>(PurgeRoots::VT_BEFORE, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn code(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(PurgeRoots::VT_CODE, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for PurgeRoots<'_> {
@@ -59,18 +68,21 @@ impl flatbuffers::Verifiable for PurgeRoots<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<u64>("before", Self::VT_BEFORE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("code", Self::VT_CODE, false)?
      .finish();
     Ok(())
   }
 }
-pub struct PurgeRootsArgs {
+pub struct PurgeRootsArgs<'a> {
     pub before: u64,
+    pub code: Option<flatbuffers::WIPOffset<&'a str>>,
 }
-impl<'a> Default for PurgeRootsArgs {
+impl<'a> Default for PurgeRootsArgs<'a> {
   #[inline]
   fn default() -> Self {
     PurgeRootsArgs {
       before: 0,
+      code: None,
     }
   }
 }
@@ -83,6 +95,10 @@ impl<'a: 'b, 'b> PurgeRootsBuilder<'a, 'b> {
   #[inline]
   pub fn add_before(&mut self, before: u64) {
     self.fbb_.push_slot::<u64>(PurgeRoots::VT_BEFORE, before, 0);
+  }
+  #[inline]
+  pub fn add_code(&mut self, code: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(PurgeRoots::VT_CODE, code);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> PurgeRootsBuilder<'a, 'b> {
@@ -103,6 +119,7 @@ impl core::fmt::Debug for PurgeRoots<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("PurgeRoots");
       ds.field("before", &self.before());
+      ds.field("code", &self.code());
       ds.finish()
   }
 }

@@ -51,8 +51,8 @@ fn body(r: &mut Rng) -> Body {
         3 => Body::ReleaseBlocks { hashes: { let n = len(r); r.bytes(n) } },
         4 => Body::ListBlocks { after: { let n = len(r); r.bytes(n) }, limit: r.next() as u32 },
         5 => Body::BlockStatus { hashes: { let n = len(r); r.bytes(n) } },
-        6 => Body::RotateUser { new_user_id: { let n = len(r); r.bytes(n) }, new_salt: { let n = len(r); r.bytes(n) } },
-        7 => Body::PurgeRoots { before: r.next() },
+        6 => Body::RotateUser { new_user_id: { let n = len(r); r.bytes(n) }, new_salt: { let n = len(r); r.bytes(n) }, code: String::new() },
+        7 => Body::PurgeRoots { before: r.next(), code: String::new() },
         8 => Body::ReportIncident { hash: { let n = len(r); r.bytes(n) } },
         _ => Body::ListRoots,
     }

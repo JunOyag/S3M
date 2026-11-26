@@ -98,7 +98,14 @@ async fn a_compromised_phrase_is_replaced_without_losing_files() {
         put(&s, "/d/x.txt", "contenu X");
         put(&s, "/d/y.txt", "contenu Y");
         sync_drive(&s).unwrap().unwrap();
-        let r = rotate_identity(&s, &json!({ "je confirme": true })).unwrap();
+        // 2FA activé : la rotation est immédiate avec un code.
+        security_action(&s, "prepare_2fa", &json!({})).unwrap();
+        let secret = s.twofa_setup.lock().unwrap().clone().unwrap().0;
+        let code = |step: u64| format!("{:06}", s3m_node::admin::hotp(&secret, step, 6));
+        security_action(&s, "confirm_2fa", &json!({ "code": code(1_000_000 / 30) })).unwrap();
+        assert_eq!(s.security.lock().unwrap().as_ref().map(|x| x.0), Some(true));
+        assert!(rotate_identity(&s, &json!({ "je confirme": true })).is_err(), "sans code : refusé");
+        let r = rotate_identity(&s, &json!({ "je confirme": true, "code 2FA": code(1_000_000 / 30 + 1) })).unwrap();
         r["24 mots"].as_str().unwrap().to_string()
     })
     .await;
@@ -176,6 +183,41 @@ async fn a_compromised_phrase_is_replaced_without_losing_files() {
         assert_eq!(read(&s, "/a.txt"), "contenu A");
     })
     .await;
+    stop(sh).await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Sans 2FA : changement programmé (72 h), exécuté par le Nœud à
+/// l'échéance puis appliqué par le Connecteur.
+#[tokio::test(flavor = "multi_thread")]
+async fn without_2fa_the_rotation_is_deferred_then_applied() {
+    let dir = std::env::temp_dir().join(format!("p2p-rotation-d-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("user.seed"), MNEMONIC).unwrap();
+    let (_, old_user) = user_keys(MNEMONIC, 0).unwrap();
+    let salt = [7u8; 16];
+    let mut ns = NodeService::new(NODE);
+    ns.users.insert(old_user, UserAccount { salt: salt.to_vec(), quota_bytes: 1 << 30, used_bytes: 0, root: [0; 32] });
+    let service = Arc::new(Mutex::new(ns));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000_000);
+    let node = BlockServer::start(NODE, "/ip4/127.0.0.1/tcp/0".parse().unwrap(), service.clone(), clock).await.unwrap();
+    let addr = node.listen_addr().await.unwrap().to_string();
+    let path = write_config(&dir, &addr, &hex::encode(salt));
+    let sh = open(&path).await;
+    let s = sh.clone();
+    let r = blocking(move || rotate_identity(&s, &json!({ "je confirme": true })).unwrap()).await;
+    assert!(r["message"].as_str().unwrap().contains("programmé"), "{r}");
+    assert!(dir.join("data").join(PENDING_ROTATION_FILE).exists());
+    assert!(service.lock().unwrap().users.contains_key(&old_user), "rien avant l'échéance");
+    // Échéance : le Nœud exécute, le Connecteur applique.
+    assert_eq!(service.lock().unwrap().run_due_ops(1_000_000 + s3m_node::user2fa::DEFER_S), 1);
+    rotation_tick(&sh).await;
+    assert!(!dir.join("data").join(PENDING_ROTATION_FILE).exists());
+    assert!(sh.restart_identity.load(std::sync::atomic::Ordering::SeqCst));
+    let words = std::fs::read_to_string(dir.join("user.seed")).unwrap();
+    let (_, new_user) = user_keys(&words, 0).unwrap();
+    assert!(service.lock().unwrap().users.contains_key(&new_user));
     stop(sh).await;
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -558,6 +558,11 @@ pub struct Shared {
     pub history: Mutex<Option<HistoryView>>,
     /// Copies des blocs pas encore dispersés par le Nœud.
     pub unsent: Option<Arc<crate::unsent::Unsent>>,
+    /// 2FA (`securite.incidents-compromissions#2fa`) : activation en cours
+    /// `(secret, codes de secours)` ; état lu chez le Nœud `(actif,
+    /// opérations différées)`.
+    pub twofa_setup: Mutex<Option<(Vec<u8>, Vec<String>)>>,
+    pub security: Mutex<Option<(bool, Vec<s3m_protocol::exchange::PendingOp>)>>,
     /// Synchronisation en cours.
     pub syncing: std::sync::atomic::AtomicBool,
     pub user_entry: Mutex<UserEntryState>,
@@ -681,6 +686,7 @@ pub fn status(sh: &Shared) -> Value {
             "aide": { "conservation (jours)": "Les lignes plus anciennes sont retirées chaque jour (90 jours par défaut)" } }],
     });
     home_lists(sh, &mut v);
+    security_status(sh, &mut v);
     // Nouvelle phrase après un changement d'identité, jusqu'à confirmation.
     let new_phrase = std::fs::read_to_string(sh.config.data_dir.join(NEW_PHRASE_FILE)).ok();
     if let Some(w) = &new_phrase {
@@ -750,7 +756,7 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
-          "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"] },
+          "sections": ["opérations de sécurité en attente", "utilisateur", "sécurité renforcée (2FA)", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"] },
         { "id": "diagnostic", "titre": "Diagnostic", "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "État de santé", "sections": ["santé"] },
                                   { "titre": "Avancé", "sections": ["journal"] }] },
@@ -827,6 +833,9 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
         accueil.push("mise en route");
     }
     // Décisions à prendre : en tête de l'accueil.
+    if v.get("opérations de sécurité en attente").is_some() {
+        accueil.insert(0, "opérations de sécurité en attente");
+    }
     if v.get("nouvelle clé d'alerte à vérifier").is_some() {
         accueil.insert(0, "nouvelle clé d'alerte à vérifier");
     }
@@ -843,7 +852,7 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
                 "sections": ["partages donnés", "partages reçus", "contacts", "mon identifiant"],
                 "actions": [] }),
         json!({ "id": "compte", "titre": "Mon compte",
-                "sections": ["utilisateur", "espace", "accès aux fichiers", "historique des versions"],
+                "sections": ["opérations de sécurité en attente", "utilisateur", "sécurité renforcée (2FA)", "espace", "accès aux fichiers", "historique des versions"],
                 "actions": ["change_node", "rotate_identity"] }),
     ];
     if t.messages_received > 0 || v.pointer("/alerte du nœud/message").is_some_and(|m| !m.is_null()) {
@@ -1412,7 +1421,8 @@ fn status_base(sh: &Shared) -> Value {
               "aide": { "code 2FA": "Code à 6 chiffres de votre application d'authentification",
                         "adresse d'administration": "Facultatif : par défaut, IP du Nœud et port 4003" } },
             { "nom": "rotate_identity", "titre": "Ma phrase de récupération a été compromise",
-              "libellé": "Changer d'identité", "style": "danger", "champs": ["je confirme"], "types": { "je confirme": "bool" },
+              "libellé": "Changer d'identité", "style": "danger", "champs": ["je confirme", "code 2FA"], "types": { "je confirme": "bool" },
+              "aide": { "code 2FA": "Si le 2FA est activé : code de votre application (ou de secours). Sans 2FA : le changement prend effet dans 72 h, annulable." },
               "texte": "Une nouvelle phrase de récupération est créée et votre Nœud transfère votre compte (fichiers, quota, historique) à la nouvelle identité ; l'ancienne phrase ne donne plus accès à votre Nœud. Vos fichiers restent lisibles ; rechiffrez-les ensuite avec la nouvelle clé depuis l'Explorateur. Agissez vite : la personne qui détient l'ancienne phrase pourrait le faire avant vous.",
               "confirmer": "Changer d'identité maintenant ? Vous devrez noter la nouvelle phrase de 24 mots qui va s'afficher : l'ancienne ne servira plus." },
             { "nom": "change_node", "titre": "Changer de Nœud",
@@ -2401,7 +2411,7 @@ pub fn rotate_identity(sh: &Arc<Shared>, v: &Value) -> Result<Value, String> {
     let new_version = cur_version + 1;
     let new_master = master_key(&new_words, new_version).map_err(|e| e.to_string())?;
     let kc = crate::keychain::Keychain::wrap(&cur_keys, &new_master, new_version)?;
-    let path = sh.config.source.clone().ok_or("fichier de configuration inconnu")?;
+    sh.config.source.as_ref().ok_or("fichier de configuration inconnu")?;
     let rt = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
     // Copie du trousseau dans l'espace, écrite tant que l'ancienne identité
     // lit encore l'arborescence (synchronisée sous la nouvelle).
@@ -2434,11 +2444,208 @@ pub fn rotate_identity(sh: &Arc<Shared>, v: &Value) -> Result<Value, String> {
             return Err(format!("trousseau : {e}"));
         }
     }
-    if let Err(e) = rt.block_on(sh.session.rotate_user(&new_pub, &salt)) {
-        restore_keys(sh);
-        return Err(format!("Nœud : {e}"));
+    let code = v.get("code 2FA").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    match rt.block_on(sh.session.rotate_user(&new_pub, &salt, &code)) {
+        Err(e) => {
+            restore_keys(sh);
+            return Err(match e {
+                crate::exchange::ExchangeError::Refused(s3m_protocol::exchange::Refusal::Unauthorized) if !code.is_empty() => "code 2FA refusé".into(),
+                crate::exchange::ExchangeError::Refused(s3m_protocol::exchange::Refusal::Unauthorized) => "le 2FA est actif : saisissez un code de votre application (ou un code de secours)".into(),
+                e => format!("Nœud : {e}"),
+            });
+        }
+        Ok(Some((id, due))) => {
+            // Sans 2FA : programmé ; appliqué ici quand le Nœud l'exécute.
+            restore_keys(sh);
+            let p = PendingRotation { words: new_words.clone(), salt: hex::encode(salt), id, due };
+            std::fs::write(sh.config.data_dir.join(PENDING_ROTATION_FILE), serde_json::to_vec(&p).expect("sérialisable"))
+                .map_err(|e| e.to_string())?;
+            return Ok(json!({ "ok": true,
+                "message": format!("Changement d'identité programmé le {} (dans 72 h) : sans 2FA, votre Nœud attend ce délai, pendant lequel tous vos appareils sont prévenus et peuvent l'annuler (Mon compte). Notez dès maintenant la nouvelle phrase ci-dessous ; elle ne servira qu'après le changement.", local_date(due)),
+                "24 mots": new_words, "fermer": "J'ai noté ma nouvelle phrase" }));
+        }
+        Ok(None) => {}
     }
-    // Le Nœud a transféré le compte : écriture locale de la nouvelle identité.
+    apply_rotation(sh, &new_words, &salt, Some(&kc))?;
+    // Redémarrage différé : la réponse (et la phrase) parvient d'abord à
+    // la page.
+    let later = sh.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(4));
+        later
+            .restart_identity
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    Ok(json!({ "ok": true,
+        "message": "Nouvelle identité en place : l'ancienne phrase est révoquée par votre Nœud. Notez la nouvelle phrase. L'identité redémarre ensuite (1 à 2 minutes : calcul de sa preuve d'identité) ; vos fichiers restent lisibles, et ceux encore protégés par l'ancienne clé sont marqués dans l'Explorateur.",
+        "24 mots": new_words,
+        "fermer": "J'ai noté ma nouvelle phrase" }))
+}
+
+/// Section « sécurité renforcée (2FA) » et opérations différées.
+fn security_status(sh: &Shared, v: &mut Value) {
+    let setup = sh.twofa_setup.lock().unwrap().clone();
+    let sec = sh.security.lock().unwrap().clone();
+    let enabled = sec.as_ref().is_some_and(|s| s.0);
+    v["sécurité renforcée (2FA)"] = match setup {
+        Some((secret, codes)) => {
+            let b32 = s3m_core::identity_derivation::base32_encode(&secret);
+            let fp = s3m_protocol::pseudo::fingerprint(&sh.pub_user);
+            let uri = format!("otpauth://totp/S3m:{fp}?secret={b32}&issuer=S3m&algorithm=SHA1&digits=6&period=30");
+            json!({
+                "_contenu": {
+                    "1. scanner": "Scannez ce QR code avec une application d'authentification (Aegis, 2FAS, Google Authenticator…).",
+                    "QR code": qr_svg(&uri),
+                    "clé à saisir à la main": b32,
+                    "2. noter les codes de secours": codes,
+                    "_note": "Chaque code de secours ne sert qu'une fois, si vous perdez votre téléphone. Notez-les sur papier, hors de cet ordinateur.",
+                },
+                "_formulaires": [
+                    { "nom": "confirm_2fa", "titre": "3. Confirmer", "libellé": "Activer le 2FA", "champs": ["code"],
+                      "aide": { "code": "Code à 6 chiffres affiché par l'application" } },
+                    { "nom": "cancel_2fa_setup", "libellé": "Annuler", "style": "secondary", "champs": [] }
+                ],
+            })
+        }
+        None => json!({
+            "_contenu": {
+                "état": if enabled { "🔒 activé" } else if sec.is_some() { "non activé" } else { "inconnu (Nœud injoignable)" },
+                "_note": if enabled {
+                    "Changer d'identité, purger l'historique ou retirer le 2FA exige un code de votre application : une personne qui aurait volé votre phrase de récupération ne peut pas vous couper l'accès."
+                } else {
+                    "Recommandé : sans 2FA, une personne qui volerait votre phrase de récupération pourrait demander à changer d'identité à votre place (vous seriez prévenu 72 h avant et pourriez annuler)."
+                },
+            },
+            "_formulaires": if enabled { json!([
+                { "nom": "remove_2fa", "libellé": "Retirer le 2FA", "style": "secondary", "champs": ["code 2FA"],
+                  "aide": { "code 2FA": "Code de l'application ou de secours ; vide (téléphone perdu) : retrait différé de 7 jours, annulable" },
+                  "confirmer": "Retirer le 2FA ? Votre compte sera moins protégé." }
+            ]) } else { json!([
+                { "nom": "prepare_2fa", "libellé": "Activer le 2FA", "champs": [] }
+            ]) },
+        }),
+    };
+    if let Some((_, ops)) = sec.filter(|s| !s.1.is_empty()) {
+        v["opérations de sécurité en attente"] = json!({
+            "_contenu": ops.iter().map(|o| json!({
+                "opération": o.kind, "demandée le": format!("le {}", o.created_at), "effective le": format!("le {}", o.due_at),
+                "_actions": [{ "nom": "cancel_pending", "libellé": "Annuler", "valeurs": { "id": o.id.to_string() },
+                    "confirmer": "Annuler cette opération ? Si ce n'est pas vous qui l'avez demandée, activez aussi le 2FA et changez d'identité." }],
+            })).collect::<Vec<_>>(),
+            "_note": "Si vous n'avez pas demandé une de ces opérations, quelqu'un utilise votre phrase de récupération : annulez-la, activez le 2FA, puis changez d'identité.",
+        });
+    }
+}
+
+/// Actions du 2FA.
+pub fn security_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
+    let rt = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
+    let text = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    let refresh = |sh: &Shared| {
+        if let Ok(st) = rt.block_on(sh.session.list_pending()) {
+            *sh.security.lock().unwrap() = Some(st);
+        }
+    };
+    match name {
+        "prepare_2fa" => {
+            let mut secret = vec![0u8; 20];
+            getrandom::getrandom(&mut secret).map_err(|e| e.to_string())?;
+            let alphabet = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            let mut codes = Vec::new();
+            for _ in 0..10 {
+                let mut b = [0u8; 8];
+                getrandom::getrandom(&mut b).map_err(|e| e.to_string())?;
+                let c: String = b.iter().map(|x| alphabet[(*x as usize) % alphabet.len()] as char).collect();
+                codes.push(format!("{}-{}", &c[..4], &c[4..]));
+            }
+            *sh.twofa_setup.lock().unwrap() = Some((secret, codes));
+            Ok(json!({ "ok": true, "message": "Scannez le QR code, notez les codes de secours, puis confirmez avec un code" }))
+        }
+        "cancel_2fa_setup" => {
+            *sh.twofa_setup.lock().unwrap() = None;
+            Ok(json!({ "ok": true, "message": "Activation annulée" }))
+        }
+        "confirm_2fa" => {
+            let (secret, codes) = sh.twofa_setup.lock().unwrap().clone().ok_or("aucune activation en cours")?;
+            let recovery: Vec<u8> = codes
+                .iter()
+                .flat_map(|c| {
+                    let norm: String = c.chars().filter(|x| x.is_ascii_alphanumeric()).flat_map(char::to_uppercase).collect();
+                    s3m_core::symmetric_suite::hash_sha256(norm.as_bytes())
+                })
+                .collect();
+            rt.block_on(sh.session.set_2fa(&secret, &text("code"), recovery, ""))
+                .map_err(|_| "code refusé : vérifiez l'heure du téléphone et saisissez le code affiché maintenant")?;
+            *sh.twofa_setup.lock().unwrap() = None;
+            refresh(sh);
+            Ok(json!({ "ok": true, "message": "2FA activé : les opérations sensibles demanderont désormais un code" }))
+        }
+        "remove_2fa" => {
+            let r = rt.block_on(sh.session.remove_2fa(&text("code 2FA"))).map_err(|_| "code 2FA refusé")?;
+            refresh(sh);
+            Ok(json!({ "ok": true, "message": match r {
+                None => "2FA retiré".to_string(),
+                Some((_, due)) => format!("Retrait du 2FA programmé le {} (dans 7 jours), annulable", local_date(due)),
+            } }))
+        }
+        _ => {
+            let id: u64 = text("id").parse().map_err(|_| "opération inconnue")?;
+            rt.block_on(sh.session.cancel_pending(id)).map_err(|e| format!("Nœud : {e}"))?;
+            refresh(sh);
+            Ok(json!({ "ok": true, "message": "Opération annulée" }))
+        }
+    }
+}
+
+/// Rotation programmée sans 2FA, en attente de son exécution par le Nœud.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PendingRotation {
+    pub words: String,
+    pub salt: String,
+    pub id: u64,
+    pub due: u64,
+}
+pub const PENDING_ROTATION_FILE: &str = "rotation-en-attente.json";
+
+/// Date lisible (UTC) d'un instant Unix : « 29/11/2026 à 14:05 UTC ».
+pub fn local_date(t: u64) -> String {
+    let days = (t / 86_400) as i64;
+    let secs = t % 86_400;
+    // Jours depuis 1970 → date civile (algorithme de H. Hinnant).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{d:02}/{m:02}/{y} à {:02}:{:02} UTC", secs / 3_600, secs % 3_600 / 60)
+}
+
+/// Écriture locale de la nouvelle identité (le Nœud a transféré le compte) ;
+/// `kc` : trousseau déjà écrit dans l'espace, sinon calculé ici et écrit
+/// dans l'espace au redémarrage (`ensure_tree_keychain`).
+fn apply_rotation(sh: &Shared, new_words: &str, salt: &[u8; 16], kc: Option<&crate::keychain::Keychain>) -> Result<(), String> {
+    let path = sh.config.source.clone().ok_or("fichier de configuration inconnu")?;
+    let kc = match kc {
+        Some(k) => k.clone(),
+        None => {
+            let (cur_keys, cur_version) = match &sh.drive {
+                Some(d) => {
+                    let d = d.lock().unwrap();
+                    (d.keys(), d.key_version())
+                }
+                None => {
+                    let m = master_key(&sh.mnemonic, KEY_VERSION).map_err(|e| e.to_string())?;
+                    ([(KEY_VERSION, m)].into(), KEY_VERSION)
+                }
+            };
+            let new_master = master_key(new_words, cur_version + 1).map_err(|e| e.to_string())?;
+            crate::keychain::Keychain::wrap(&cur_keys, &new_master, cur_version + 1)?
+        }
+    };
     let now = (sh.clock)();
     let seed = &sh.config.seed_file;
     let _ = std::fs::copy(seed, seed.with_extension(format!("seed.revoquee-{now}")));
@@ -2460,20 +2667,61 @@ pub fn rotate_identity(sh: &Arc<Shared>, v: &Value) -> Result<Value, String> {
     // après le redémarrage tant qu'elle n'est pas confirmée notée.
     let _ = std::fs::remove_file(sh.config.data_dir.join("vdf_proof.bin"));
     let _ = std::fs::remove_file(sh.config.data_dir.join("vdf_proof.id"));
-    let _ = std::fs::write(sh.config.data_dir.join(NEW_PHRASE_FILE), &new_words);
-    // Redémarrage différé : la réponse (et la phrase) parvient d'abord à
-    // la page.
-    let later = sh.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(4));
-        later
-            .restart_identity
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-    });
-    Ok(json!({ "ok": true,
-        "message": "Nouvelle identité en place : l'ancienne phrase est révoquée par votre Nœud. Notez la nouvelle phrase. L'identité redémarre ensuite (1 à 2 minutes : calcul de sa preuve d'identité) ; vos fichiers restent lisibles, et ceux encore protégés par l'ancienne clé sont marqués dans l'Explorateur.",
-        "24 mots": new_words,
-        "fermer": "J'ai noté ma nouvelle phrase" }))
+    let _ = std::fs::write(sh.config.data_dir.join(NEW_PHRASE_FILE), new_words);
+    let _ = std::fs::remove_file(sh.config.data_dir.join(PENDING_ROTATION_FILE));
+    Ok(())
+}
+
+/// Rotation programmée : annulée (plus en attente chez le Nœud) ou
+/// exécutée (l'ancienne identité est révoquée) — appliquée ici.
+pub async fn rotation_tick(sh: &Shared) {
+    let p = sh.config.data_dir.join(PENDING_ROTATION_FILE);
+    let Some(pending) = std::fs::read(&p).ok().and_then(|b| serde_json::from_slice::<PendingRotation>(&b).ok()) else {
+        return;
+    };
+    match sh.session.list_pending().await {
+        Ok((_, ops)) => {
+            if !ops.iter().any(|o| o.id == pending.id) {
+                let _ = std::fs::remove_file(&p);
+                eprintln!("changement d'identité programmé annulé");
+            }
+        }
+        Err(crate::exchange::ExchangeError::Refused(s3m_protocol::exchange::Refusal::Unauthorized)) => {
+            // Ancienne identité révoquée : le Nœud a exécuté le changement.
+            let Some(salt) = hex::decode(&pending.salt).ok().and_then(|b| <[u8; 16]>::try_from(b).ok()) else { return };
+            let r = tokio::task::block_in_place(|| apply_rotation(sh, &pending.words, &salt, None));
+            match r {
+                Ok(()) => {
+                    eprintln!("changement d'identité exécuté par le Nœud : nouvelle identité appliquée");
+                    sh.restart_identity.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                Err(e) => eprintln!("changement d'identité : {e}"),
+            }
+        }
+        Err(_) => {}
+    }
+}
+
+/// Trousseau absent de l'espace alors que l'appareil le détient : réécrit
+/// (rotation différée, ou fichier supprimé).
+pub fn ensure_tree_keychain(sh: &Shared) {
+    let Some(d) = &sh.drive else { return };
+    let Some(kc) = crate::keychain::Keychain::load(&sh.config.data_dir) else { return };
+    let mut d = d.lock().unwrap();
+    if d.key_version() < kc.version {
+        return;
+    }
+    let p = crate::keychain::TREE_PATH;
+    match d.stat(p) {
+        Ok(None) => {}
+        _ => return,
+    }
+    if d.stat(crate::keychain::TREE_DIR).ok().flatten().is_none() && d.create(crate::keychain::TREE_DIR, true).is_err() {
+        return;
+    }
+    if d.create(p, false).is_ok() && d.write(p, 0, &kc.encode()).is_ok() {
+        eprintln!("trousseau réécrit dans l'espace");
+    }
 }
 
 /// Texte affiché pendant le redémarrage d'une identité.
@@ -2574,10 +2822,46 @@ pub fn purge_versions(sh: &Shared, v: &Value) -> Result<Value, String> {
         .get("avant")
         .and_then(|x| x.as_str().map(str::trim).and_then(|s| s.parse().ok()).or(x.as_u64()))
         .unwrap_or(0u64);
-    let d = sh.drive.as_ref().ok_or("accès aux fichiers non configuré")?;
+    sh.drive.as_ref().ok_or("accès aux fichiers non configuré")?;
     let rt = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
-    rt.block_on(sh.session.purge_roots(before))
-        .map_err(|e| format!("Nœud : {e}"))?;
+    let code = v.get("code 2FA").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    match rt.block_on(sh.session.purge_roots(before, &code)) {
+        Err(crate::exchange::ExchangeError::Refused(s3m_protocol::exchange::Refusal::Unauthorized)) => {
+            return Err(if code.is_empty() { "le 2FA est actif : saisissez un code de votre application".into() } else { "code 2FA refusé".into() })
+        }
+        Err(e) => return Err(format!("Nœud : {e}")),
+        Ok(Some((id, due))) => {
+            let _ = std::fs::write(sh.config.data_dir.join(PENDING_PURGE_FILE), json!({ "id": id, "avant": before }).to_string());
+            return Ok(json!({ "ok": true, "message": format!("Purge programmée le {} (dans 72 h) : sans 2FA, tous vos appareils sont prévenus et peuvent l'annuler (Mon compte)", local_date(due)) }))
+        }
+        Ok(None) => {}
+    }
+    let n = release_purged(sh, before)?;
+    Ok(json!({ "ok": true, "message": format!(
+        "{} : {n} bloc(s) libéré(s) (environ {} Mo)",
+        if before == 0 { "Historique purgé".to_string() } else { "Versions antérieures purgées".to_string() },
+        n as u64 * 64 / 1024) }))
+}
+
+/// Purge différée en attente d'exécution par le Nœud.
+pub const PENDING_PURGE_FILE: &str = "purge-en-attente.json";
+
+/// Purge différée sortie de la liste du Nœud (exécutée ou annulée) :
+/// libère les blocs gardés que plus aucune version ne référence.
+pub fn purge_tick(sh: &Shared, ops: &[s3m_protocol::exchange::PendingOp]) {
+    let p = sh.config.data_dir.join(PENDING_PURGE_FILE);
+    let Some(v) = std::fs::read(&p).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()) else { return };
+    let id = v["id"].as_u64().unwrap_or(0);
+    if ops.iter().any(|o| o.id == id) {
+        return;
+    }
+    let _ = std::fs::remove_file(&p);
+    let _ = tokio::task::block_in_place(|| release_purged(sh, v["avant"].as_u64().unwrap_or(0)));
+}
+
+/// Libère les blocs gardés hors des versions encore conservées.
+fn release_purged(sh: &Shared, before: u64) -> Result<usize, String> {
+    let d = sh.drive.as_ref().ok_or("accès aux fichiers non configuré")?;
     let h = read_versions(sh)?;
     let mut drive = d.lock().unwrap();
     let keep = history_keep(&mut drive, &h).ok_or("version courante illisible : rien n'est libéré")?;
@@ -2585,10 +2869,7 @@ pub fn purge_versions(sh: &Shared, v: &Value) -> Result<Value, String> {
         .mature_held((sh.clock)(), Some(before), &keep)
         .map_err(|e| e.to_string())?;
     send_releases(sh, &mut drive);
-    Ok(json!({ "ok": true, "message": format!(
-        "{} : {n} bloc(s) libéré(s) (environ {} Mo)",
-        if before == 0 { "Historique purgé".to_string() } else { "Versions antérieures purgées".to_string() },
-        n as u64 * 64 / 1024) }))
+    Ok(n)
 }
 
 /// Section « historique des versions » (page Fichiers).
@@ -2608,14 +2889,14 @@ fn history_status(sh: &Shared) -> Value {
                     "remplacée le": format!("le {}", v.replaced_at),
                     "lisible": v.root.is_some(),
                     "_actions": [{ "nom": "purge_versions", "libellé": "Purger celle-ci et les plus anciennes",
-                        "valeurs": { "avant": (v.replaced_at + 1).to_string() }, "style": "danger",
+                        "valeurs": { "avant": (v.replaced_at + 1).to_string() }, "champs": ["code 2FA"], "style": "danger",
                         "confirmer": "Purger définitivement cette version et toutes les plus anciennes ? Elles ne pourront plus être restaurées." }],
                 }))
                 .collect()
         })
         .unwrap_or_default();
     let mut forms = vec![json!({ "nom": "purge_versions", "libellé": "Purger tout l'historique", "style": "danger",
-        "champs": [], "valeurs": { "avant": "0" },
+        "champs": ["code 2FA"], "fixes": { "avant": "0" }, "aide": { "code 2FA": "Si le 2FA est activé ; sans 2FA, la purge prend effet dans 72 h" },
         "confirmer": "Purger définitivement toutes les versions passées ? Seule la version actuelle de vos fichiers restera." })];
     if sh.mass_change.load(std::sync::atomic::Ordering::Relaxed) {
         forms.insert(0, json!({ "nom": "resume_after_mass_change", "titre": "Synchronisation suspendue",
@@ -2810,6 +3091,8 @@ pub fn save_learned_node_addr(data_dir: &Path, addr: &Multiaddr) -> std::io::Res
 /// l'autorisation de secours.
 pub async fn watch_once(sh: &Shared) {
     let now = (sh.clock)();
+    // Rotation programmée : annulée ou exécutée par le Nœud.
+    rotation_tick(sh).await;
     // Sonde : un hash nul n'existe jamais ; `NotFound` prouve que le Nœud
     // répond et accepte notre identifiant.
     let mut probe = sh.session.get_block(&[0; 32]).await;
@@ -2955,6 +3238,10 @@ pub async fn watch_once(sh: &Shared) {
     channel_tick(sh, now, ok).await;
     if ok {
         unsent_tick(sh).await;
+        if let Ok(st) = sh.session.list_pending().await {
+            purge_tick(sh, &st.1);
+            *sh.security.lock().unwrap() = Some(st);
+        }
         // Lecture du quota et de l'occupation : validation sans changement
         // de racine (`base = new`).
         let root = sh
@@ -3097,6 +3384,8 @@ pub async fn start(
         mass_change: Default::default(),
         history: Mutex::new(None),
         unsent: Some(unsent),
+        twofa_setup: Mutex::new(None),
+        security: Mutex::new(None),
         syncing: Default::default(),
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
@@ -3170,6 +3459,9 @@ pub async fn start(
                 "purge_versions" => purge_versions(&sh, &v),
                 "set_log_retention" => set_log_retention(&sh, &v),
                 "rotate_identity" => rotate_identity(&sh, &v),
+                "prepare_2fa" | "cancel_2fa_setup" | "confirm_2fa" | "remove_2fa" | "cancel_pending" => {
+                    security_action(&sh, name, &v)
+                }
                 "phrase_noted" => {
                     let _ = std::fs::remove_file(sh.config.data_dir.join(NEW_PHRASE_FILE));
                     Ok(json!({ "ok": true, "message": "Merci : la phrase n'est plus affichée" }))
@@ -3223,6 +3515,7 @@ pub async fn start(
     if shared.drive.is_some() {
         adopt_known_root(&shared).await;
         ensure_keys(&shared);
+        ensure_tree_keychain(&shared);
         mount_drive(&shared);
         // Écriture différée : synchronisation quand un fichier modifié
         // atteint son échéance (`protocols.ecriture-differee`).

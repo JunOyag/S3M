@@ -59,6 +59,31 @@ fichiers avant la rotation, et peut la déclencher la première ; les
 autorisations de secours déjà émises pour l'ancienne identité restent
 valables jusqu'à leur expiration.
 
+## 2FA de l'Utilisateur et opérations différées {: #2fa }
+
+Ajout du 2026-11-26 : une phrase volée ne doit pas suffire à couper
+l'accès à la victime. Le Nœud de rattachement conserve, par Utilisateur,
+un secret TOTP (RFC 6238, 6 chiffres, pas de 30 s, ±1 pas, pas déjà
+accepté refusé) et les empreintes SHA-256 de 10 codes de secours à usage
+unique (`Set2fa`, premier code exigé ; remplacement : code courant
+exigé).
+
+Opérations protégées : `RotateUser`, `PurgeRoots` et le retrait du 2FA
+(`Remove2fa`).
+
+- **2FA actif** : un code valide (TOTP ou de secours, consommé) est exigé ;
+  sinon refus.
+- **Sans 2FA** : l'opération est **différée de 72 h** (`Deferred`), un
+  message adressé prévient tous les appareils de l'identité, et toute
+  connexion de l'identité peut l'annuler (`ListPending`,
+  `CancelPending`). Le Connecteur conserve la nouvelle phrase d'une
+  rotation différée et l'applique quand le Nœud l'a exécutée.
+- **Retrait du 2FA sans code** (téléphone et codes perdus) : différé de
+  **7 jours**, annulable.
+
+Les opérations différées suivent le compte (persistance du Nœud) et
+disparaissent avec lui (inactivité, rotation).
+
 ## Compromission Clé Node
 
 Contrairement au User, ce cas implique **tous les Utilisateurs rattachés** —

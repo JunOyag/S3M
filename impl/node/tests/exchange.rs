@@ -125,7 +125,9 @@ fn attached_connector_reads_writes_and_commits_with_conflict_detection() {
             retention_s: 30 * 86_400,
         }
     );
-    assert_eq!(call(&mut s, Body::PurgeRoots { before: 0 }), Response::Ack { freed: 0 });
+    // Sans 2FA : purge différée de 72 h (`securite.incidents-compromissions#2fa`).
+    assert!(matches!(call(&mut s, Body::PurgeRoots { before: 0, code: String::new() }), Response::Deferred { .. }));
+    s.run_due_ops(NOW + s3m_node::user2fa::DEFER_S);
     assert_eq!(
         call(&mut s, Body::ListRoots),
         Response::RootList { versions: vec![], retention_s: 30 * 86_400 }
@@ -524,10 +526,12 @@ fn rotation_moves_the_account_and_revokes_the_old_identity() {
         Body::CommitRoot { base_root: vec![0; 32], new_root: vec![5; 32], root_seal: vec![1; 47] },
     );
     let new = [0x77; 32];
-    assert_eq!(
-        call(&mut s, Body::RotateUser { new_user_id: new.to_vec(), new_salt: vec![9; 16] }),
-        Response::Ack { freed: 0 }
-    );
+    assert!(matches!(
+        call(&mut s, Body::RotateUser { new_user_id: new.to_vec(), new_salt: vec![9; 16], code: String::new() }),
+        Response::Deferred { .. }
+    ));
+    assert!(s.users.contains_key(&pk(&USER)), "rien avant l'échéance");
+    assert_eq!(s.run_due_ops(NOW + s3m_node::user2fa::DEFER_S), 1);
     let acc = &s.users[&new];
     assert_eq!((acc.root, acc.salt.clone()), ([5; 32], vec![9; 16]));
     assert!(!s.users.contains_key(&pk(&USER)));
@@ -561,4 +565,40 @@ fn a_partner_maintenance_is_tolerated_once_a_week_for_a_day() {
     assert!(!s.maintenance_tolerated(&p, t0 + 3 * 86_400));
     // Une semaine plus tard : de nouveau toléré.
     assert!(s.maintenance_tolerated(&p, t0 + MAINTENANCE_PERIOD_S + 1));
+}
+
+/// 2FA (`securite.incidents-compromissions#2fa`) : sans code, changer
+/// d'identité est refusé ; un code TOTP ou de secours (à usage unique)
+/// l'autorise ; sans 2FA, l'opération est différée et annulable.
+#[test]
+fn twofa_guards_identity_rotation_and_deferred_operations_can_be_cancelled() {
+    use s3m_node::admin::hotp;
+    use s3m_node::user2fa::{recovery_hash, DEFER_S};
+    let mut s = service_with_user(NODE, 1 << 20);
+    let call = |s: &mut NodeService, body: Body| {
+        s.handle(b"c", None, b"n", user_req(&NODE, body, b"c", b"n"), NOW)
+    };
+    // Sans 2FA : différé, prévenu, annulable.
+    let r = call(&mut s, Body::RotateUser { new_user_id: vec![0x61; 32], new_salt: vec![1; 16], code: String::new() });
+    let Response::Deferred { id, due_at } = r else { panic!("{r:?}") };
+    assert_eq!(due_at, NOW + DEFER_S);
+    assert_eq!(s.channel.outbox.sent.len(), 1, "appareils prévenus");
+    let Response::PendingList { twofa, ops } = call(&mut s, Body::ListPending) else { panic!() };
+    assert!(!twofa && ops.len() == 1 && ops[0].kind == "changement d'identité");
+    call(&mut s, Body::CancelPending { id });
+    assert_eq!(s.run_due_ops(NOW + DEFER_S), 0, "annulé");
+    // Activation : le premier code doit être bon.
+    let secret = [7u8; 20];
+    let code = |t: u64| format!("{:06}", hotp(&secret, t / 30, 6));
+    let set = |c: String| Body::Set2fa { secret: secret.to_vec(), code: c, recovery: recovery_hash("ABCD-EFGH").to_vec(), current: String::new() };
+    assert_eq!(call(&mut s, set("000000".into())), Response::Failure(Refusal::Unauthorized));
+    assert_eq!(call(&mut s, set(code(NOW))), Response::Ack { freed: 0 });
+    // Avec 2FA : sans code, refus (le pirate ne peut ni différer ni changer).
+    let rot = |c: &str| Body::RotateUser { new_user_id: vec![0x62; 32], new_salt: vec![2; 16], code: c.into() };
+    assert_eq!(call(&mut s, rot("")), Response::Failure(Refusal::Unauthorized));
+    assert_eq!(call(&mut s, Body::PurgeRoots { before: 0, code: String::new() }), Response::Failure(Refusal::Unauthorized));
+    // Code de secours : accepté une seule fois.
+    assert_eq!(call(&mut s, rot("abcd efgh")), Response::Ack { freed: 0 });
+    assert!(s.users.contains_key(&[0x62; 32]) && s.twofa.contains_key(&[0x62; 32]), "le 2FA suit le compte");
+    assert!(s.twofa[&[0x62; 32]].recovery.is_empty());
 }

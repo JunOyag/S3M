@@ -307,6 +307,36 @@ impl<'a> BlockResponse<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_deferred(&self) -> Option<Deferred<'a>> {
+    if self.body_type() == ResponseBody::Deferred {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Deferred::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_pending_list(&self) -> Option<PendingList<'a>> {
+    if self.body_type() == ResponseBody::PendingList {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { PendingList::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockResponse<'_> {
@@ -335,6 +365,8 @@ impl flatbuffers::Verifiable for BlockResponse<'_> {
           ResponseBody::BlockList => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BlockList>>("ResponseBody::BlockList", pos),
           ResponseBody::RootList => v.verify_union_variant::<flatbuffers::ForwardsUOffset<RootList>>("ResponseBody::RootList", pos),
           ResponseBody::BlockStatusAnswer => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BlockStatusAnswer>>("ResponseBody::BlockStatusAnswer", pos),
+          ResponseBody::Deferred => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Deferred>>("ResponseBody::Deferred", pos),
+          ResponseBody::PendingList => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PendingList>>("ResponseBody::PendingList", pos),
           _ => Ok(()),
         }
      })?
@@ -503,6 +535,20 @@ impl core::fmt::Debug for BlockResponse<'_> {
         },
         ResponseBody::BlockStatusAnswer => {
           if let Some(x) = self.body_as_block_status_answer() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResponseBody::Deferred => {
+          if let Some(x) = self.body_as_deferred() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResponseBody::PendingList => {
+          if let Some(x) = self.body_as_pending_list() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

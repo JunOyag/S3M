@@ -264,6 +264,10 @@ pub struct NodeService {
     pub revoked_users: std::collections::HashSet<Id>,
     /// Rotations à reporter dans l'état de dispersion : `(ancienne, nouvelle)`.
     pub renamed_users: Vec<(Id, Id)>,
+    /// 2FA des Utilisateurs et opérations différées
+    /// (`securite.incidents-compromissions#2fa`).
+    pub twofa: HashMap<Id, crate::user2fa::TwoFa>,
+    pub pending_ops: HashMap<Id, Vec<crate::user2fa::Pending>>,
     /// Saut d'horloge : suppressions liées au temps gelées
     /// (`deploiement.packaging#horloge`).
     pub clock_freeze: Option<crate::clock_guard::Freeze>,
@@ -375,6 +379,8 @@ impl NodeService {
             undispersed: Default::default(),
             revoked_users: Default::default(),
             renamed_users: Vec::new(),
+            twofa: Default::default(),
+            pending_ops: Default::default(),
             clock_freeze: None,
             inactivity_days: Default::default(),
             attach_policy: AttachPolicy::default(),
@@ -557,6 +563,7 @@ impl NodeService {
             Body::RotateUser {
                 new_user_id,
                 new_salt,
+                code,
             } => {
                 let old = self.user(cred, from, local)?;
                 let new = id32(&new_user_id)?;
@@ -567,7 +574,77 @@ impl NodeService {
                 {
                     return Err(Refusal::Unauthorized);
                 }
-                self.rotate_user(old, new, new_salt, now);
+                // 2FA : code exigé ; sans 2FA : différé et annulable.
+                match self.twofa.get_mut(&old).map(|t| t.verify(&code, now)) {
+                    Some(true) => {
+                        self.rotate_user(old, new, new_salt, now);
+                        Ok(Response::Ack { freed: 0 })
+                    }
+                    Some(false) => Err(Refusal::Unauthorized),
+                    None => Ok(self.defer(
+                        old,
+                        crate::user2fa::PendingKind::Rotate { new_user: hex::encode(new), salt: hex::encode(&new_salt) },
+                        crate::user2fa::DEFER_S,
+                        now,
+                    )),
+                }
+            }
+            Body::Set2fa { secret, code, recovery, current } => {
+                let u = self.user(cred, from, local)?;
+                if secret.len() < 16 || recovery.len() % 32 != 0 || recovery.len() > 32 * crate::user2fa::MAX_RECOVERY {
+                    return Err(Refusal::Malformed);
+                }
+                if let Some(t) = self.twofa.get_mut(&u) {
+                    if !t.verify(&current, now) {
+                        return Err(Refusal::Unauthorized);
+                    }
+                }
+                // Le premier code prouve que l'application est configurée.
+                let step = crate::user2fa::totp_step(&secret, &code, 0, now).ok_or(Refusal::Unauthorized)?;
+                self.twofa.insert(u, crate::user2fa::TwoFa {
+                    secret: hex::encode(&secret),
+                    recovery: recovery.chunks(32).map(hex::encode).collect(),
+                    last_step: step,
+                });
+                Ok(Response::Ack { freed: 0 })
+            }
+            Body::Remove2fa { code } => {
+                let u = self.user(cred, from, local)?;
+                let Some(t) = self.twofa.get_mut(&u) else {
+                    return Ok(Response::Ack { freed: 0 });
+                };
+                if code.is_empty() {
+                    return Ok(self.defer(u, crate::user2fa::PendingKind::Remove2fa, crate::user2fa::REMOVE_DEFER_S, now));
+                }
+                if !t.verify(&code, now) {
+                    return Err(Refusal::Unauthorized);
+                }
+                self.twofa.remove(&u);
+                Ok(Response::Ack { freed: 0 })
+            }
+            Body::ListPending => {
+                let u = self.user(cred, from, local)?;
+                let ops = self
+                    .pending_ops
+                    .get(&u)
+                    .map(|v| {
+                        v.iter()
+                            .map(|p| s3m_protocol::exchange::PendingOp {
+                                id: p.id,
+                                kind: p.kind.label().into(),
+                                created_at: p.created_at,
+                                due_at: p.due_at,
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Ok(Response::PendingList { twofa: self.twofa.contains_key(&u), ops })
+            }
+            Body::CancelPending { id } => {
+                let u = self.user(cred, from, local)?;
+                if let Some(v) = self.pending_ops.get_mut(&u) {
+                    v.retain(|p| p.id != id);
+                }
                 Ok(Response::Ack { freed: 0 })
             }
             Body::BlockStatus { hashes } => {
@@ -601,11 +678,16 @@ impl NodeService {
                     retention_s: self.history_retention_s,
                 })
             }
-            Body::PurgeRoots { before } => {
+            Body::PurgeRoots { before, code } => {
                 let u = self.user(cred, from, local)?;
-                if let Some(h) = self.root_history.get_mut(&u) {
-                    h.retain(|v| before != 0 && v.replaced_at >= before);
+                match self.twofa.get_mut(&u).map(|t| t.verify(&code, now)) {
+                    Some(true) => {}
+                    Some(false) => return Err(Refusal::Unauthorized),
+                    None => {
+                        return Ok(self.defer(u, crate::user2fa::PendingKind::Purge { before }, crate::user2fa::DEFER_S, now))
+                    }
                 }
+                self.purge_history(&u, before);
                 Ok(Response::Ack { freed: 0 })
             }
             Body::ListBlocks { after, limit } => {
@@ -1251,6 +1333,59 @@ impl NodeService {
         }
     }
 
+    /// Opération sensible différée ; tous les appareils de l'Utilisateur
+    /// sont prévenus (message adressé) et peuvent l'annuler.
+    fn defer(&mut self, u: Id, kind: crate::user2fa::PendingKind, delay: u64, now: u64) -> Response {
+        let list = self.pending_ops.entry(u).or_default();
+        let id = now.saturating_mul(100) + list.len() as u64 % 100;
+        let due = now + delay;
+        let label = kind.label();
+        list.push(crate::user2fa::Pending { id, kind, created_at: now, due_at: due });
+        let priv_node = self.priv_node();
+        let text = format!(
+            "Sécurité : un(e) {label} a été demandé(e) pour votre compte ; il (elle) prendra effet dans {} h. Si ce n'est pas vous, annulez-le depuis « Mon compte » et activez le 2FA.",
+            delay / 3_600
+        );
+        let _ = self.channel.post_info_to(&priv_node, &u, &text, now);
+        Response::Deferred { id, due_at: due }
+    }
+
+    /// Versions passées oubliées avant `before` (0 : toutes).
+    pub fn purge_history(&mut self, u: &Id, before: u64) {
+        if let Some(h) = self.root_history.get_mut(u) {
+            h.retain(|v| before != 0 && v.replaced_at >= before);
+        }
+    }
+
+    /// Exécute les opérations différées arrivées à échéance.
+    pub fn run_due_ops(&mut self, now: u64) -> usize {
+        let due: Vec<(Id, crate::user2fa::Pending)> = self
+            .pending_ops
+            .iter()
+            .flat_map(|(u, v)| v.iter().filter(|p| p.due_at <= now).map(move |p| (*u, p.clone())))
+            .collect();
+        for (u, p) in &due {
+            if let Some(v) = self.pending_ops.get_mut(u) {
+                v.retain(|x| x.id != p.id);
+            }
+            match &p.kind {
+                crate::user2fa::PendingKind::Rotate { new_user, salt } => {
+                    let (Ok(new), Ok(salt)) = (hex::decode(new_user), hex::decode(salt)) else { continue };
+                    let Ok(new) = <Id>::try_from(new) else { continue };
+                    if self.users.contains_key(u) && !self.users.contains_key(&new) {
+                        self.rotate_user(*u, new, salt, now);
+                    }
+                }
+                crate::user2fa::PendingKind::Purge { before } => self.purge_history(u, *before),
+                crate::user2fa::PendingKind::Remove2fa => {
+                    self.twofa.remove(u);
+                }
+            }
+        }
+        self.pending_ops.retain(|_, v| !v.is_empty());
+        due.len()
+    }
+
     /// Transfère le compte de `old` à `new` et révoque `old`.
     pub fn rotate_user(&mut self, old: Id, new: Id, new_salt: Vec<u8>, now: u64) {
         let Some(mut acc) = self.users.remove(&old) else {
@@ -1274,6 +1409,8 @@ impl NodeService {
         mv(&mut self.last_user_ip, &old, new);
         mv(&mut self.released, &old, new);
         mv(&mut self.undispersed, &old, new);
+        mv(&mut self.twofa, &old, new);
+        self.pending_ops.remove(&old);
         self.last_active.remove(&old);
         self.last_active.insert(new, now);
         if self.auto_attached.remove(&old) {

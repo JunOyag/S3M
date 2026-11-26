@@ -27,6 +27,7 @@ impl<'a> flatbuffers::Follow<'a> for RotateUser<'a> {
 impl<'a> RotateUser<'a> {
   pub const VT_NEW_USER_ID: flatbuffers::VOffsetT = 4;
   pub const VT_NEW_SALT: flatbuffers::VOffsetT = 6;
+  pub const VT_CODE: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -38,6 +39,7 @@ impl<'a> RotateUser<'a> {
     args: &'args RotateUserArgs<'args>
   ) -> flatbuffers::WIPOffset<RotateUser<'bldr>> {
     let mut builder = RotateUserBuilder::new(_fbb);
+    if let Some(x) = args.code { builder.add_code(x); }
     if let Some(x) = args.new_salt { builder.add_new_salt(x); }
     if let Some(x) = args.new_user_id { builder.add_new_user_id(x); }
     builder.finish()
@@ -58,6 +60,13 @@ impl<'a> RotateUser<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(RotateUser::VT_NEW_SALT, None)}
   }
+  #[inline]
+  pub fn code(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(RotateUser::VT_CODE, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for RotateUser<'_> {
@@ -69,6 +78,7 @@ impl flatbuffers::Verifiable for RotateUser<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("new_user_id", Self::VT_NEW_USER_ID, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("new_salt", Self::VT_NEW_SALT, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("code", Self::VT_CODE, false)?
      .finish();
     Ok(())
   }
@@ -76,6 +86,7 @@ impl flatbuffers::Verifiable for RotateUser<'_> {
 pub struct RotateUserArgs<'a> {
     pub new_user_id: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub new_salt: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub code: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for RotateUserArgs<'a> {
   #[inline]
@@ -83,6 +94,7 @@ impl<'a> Default for RotateUserArgs<'a> {
     RotateUserArgs {
       new_user_id: None,
       new_salt: None,
+      code: None,
     }
   }
 }
@@ -99,6 +111,10 @@ impl<'a: 'b, 'b> RotateUserBuilder<'a, 'b> {
   #[inline]
   pub fn add_new_salt(&mut self, new_salt: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RotateUser::VT_NEW_SALT, new_salt);
+  }
+  #[inline]
+  pub fn add_code(&mut self, code: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RotateUser::VT_CODE, code);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> RotateUserBuilder<'a, 'b> {
@@ -120,6 +136,7 @@ impl core::fmt::Debug for RotateUser<'_> {
     let mut ds = f.debug_struct("RotateUser");
       ds.field("new_user_id", &self.new_user_id());
       ds.field("new_salt", &self.new_salt());
+      ds.field("code", &self.code());
       ds.finish()
   }
 }

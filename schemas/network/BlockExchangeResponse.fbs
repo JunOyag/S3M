@@ -112,10 +112,27 @@ table BlockStatusAnswer {
   pending: [ubyte];          // détenu mais pas encore dispersé
 }
 
+// Ajouts du 2026-11-26 (securite.incidents-compromissions#2fa).
+// Opération différée : exécutée par le Nœud à `due_at` sauf annulation.
+table Deferred {
+  id: uint64;
+  due_at: uint64;
+}
+table PendingOp {
+  id: uint64;
+  kind: string;              // « changement d'identité », « purge de l'historique », « retrait du 2FA »
+  created_at: uint64;
+  due_at: uint64;
+}
+table PendingList {
+  twofa: bool;
+  ops: [PendingOp];
+}
+
 union ResponseBody {
   Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
   Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached, OwnershipAnswer,
-  Messages, BlockList, RootList, BlockStatusAnswer
+  Messages, BlockList, RootList, BlockStatusAnswer, Deferred, PendingList
 }
 
 table BlockResponse {

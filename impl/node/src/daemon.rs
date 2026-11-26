@@ -318,6 +318,11 @@ pub struct SavedUser {
     pub history: Vec<(String, String, u64, u64)>,
     #[serde(default)]
     pub root_since: u64,
+    /// 2FA et opérations différées (`securite.incidents-compromissions#2fa`).
+    #[serde(default)]
+    pub twofa: Option<crate::user2fa::TwoFa>,
+    #[serde(default)]
+    pub pending: Vec<crate::user2fa::Pending>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -419,6 +424,8 @@ impl SavedState {
                     })
                     .unwrap_or_default(),
                 root_since: s.root_since.get(id).copied().unwrap_or(0),
+                twofa: s.twofa.get(id).cloned(),
+                pending: s.pending_ops.get(id).cloned().unwrap_or_default(),
             })
             .collect();
         users.sort_by(|a, b| a.user_id.cmp(&b.user_id));
@@ -528,6 +535,12 @@ impl SavedState {
             }
             if u.root_since > 0 {
                 s.root_since.insert(unhex32(&u.user_id)?, u.root_since);
+            }
+            if let Some(t) = &u.twofa {
+                s.twofa.insert(unhex32(&u.user_id)?, t.clone());
+            }
+            if !u.pending.is_empty() {
+                s.pending_ops.insert(unhex32(&u.user_id)?, u.pending.clone());
             }
         }
         for p in &self.partners {
@@ -2994,6 +3007,11 @@ pub async fn start_with(
                     )
                     .await;
                     *sh.last_upkeep.lock().unwrap() = Some((now, up));
+                    // Opérations différées arrivées à échéance (rotation, purge, retrait du 2FA).
+                    let n = sh.service.lock().unwrap().run_due_ops(now);
+                    if n > 0 {
+                        crate::daemon::note(&sh, format!("{n} opération(s) différée(s) exécutée(s)"));
+                    }
                     for u in crate::inactivity::purge_expired(&sh.service, &mut d, now) {
                         crate::daemon::note(
                             &sh,
