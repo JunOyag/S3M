@@ -45,6 +45,7 @@ fn config(dir: &std::path::Path) -> Config {
         record_user_ips: true,
         history_days: 30,
         alerts: Default::default(),
+        journal_days: 90,
         upnp: false,
         relay_server: true,
         relay_limits: Default::default(),

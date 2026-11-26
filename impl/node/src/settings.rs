@@ -400,6 +400,14 @@ pub const FIELDS: &[Field] = &[
         "Adresses séparées par des virgules.",
     ),
     f(
+        "Journal",
+        "conservation du journal",
+        "journal_days",
+        Kind::Days,
+        false,
+        "Les événements plus anciens sont retirés chaque jour (90 jours par défaut).",
+    ),
+    f(
         "Vie privée",
         "enregistrer l'adresse des utilisateurs",
         "record_user_ips",

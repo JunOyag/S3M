@@ -766,7 +766,7 @@ function render(value, key) {
     const head = t.createTHead().insertRow();
     const body = t.createTBody();
     // Tri et page conservés d'un rafraîchissement à l'autre (par section).
-    const fresh = () => ({ sortCol: null, asc: true, page: 0, size: 10, filter: "" });
+    const fresh = () => ({ sortCol: null, asc: true, page: 0, size: 10, filter: "", from: "", to: "" });
     const st = key ? (tableState[key] = tableState[key] || fresh()) : fresh();
     const foot = el("div", undefined, "table-foot");
     // Barre d'outils : filtre et nombre de lignes par page.
@@ -779,6 +779,22 @@ function render(value, key) {
       q.dataset.filterKey = key || "";
       q.addEventListener("input", () => { st.filter = q.value; st.page = 0; fill(); });
       tools.appendChild(q);
+    }
+    // Colonne `date` (journaux) : filtre par période, début et fin.
+    if (cols.includes("date") && value.length > 5) {
+      const range = (label, prop) => {
+        const l = el("label", undefined, "date-filter");
+        l.appendChild(el("span", label));
+        const i = el("input", undefined, "table-filter");
+        i.type = "datetime-local";
+        i.value = st[prop] || "";
+        i.dataset.filterKey = (key || "") + ":" + prop;
+        i.addEventListener("change", () => { st[prop] = i.value; st.page = 0; fill(); });
+        l.appendChild(i);
+        tools.appendChild(l);
+      };
+      range("Du", "from");
+      range("au", "to");
     }
     if (value.length > PAGE_SIZES[0]) {
       const sizeBox = el("label", undefined, "page-size");
@@ -807,6 +823,9 @@ function render(value, key) {
       tools.appendChild(sizeBox);
     }
     const matches = (o) => {
+      const t = typeof o["date"] === "number" ? o["date"] * 1000 : null;
+      if (st.from && (t === null || t < new Date(st.from).getTime())) return false;
+      if (st.to && (t === null || t > new Date(st.to).getTime() + 59999)) return false;
       const f = st.filter.trim().toLowerCase();
       return !f || cols.some((c) => fmt(c, o[c]).toLowerCase().includes(f));
     };
@@ -1421,7 +1440,10 @@ function show(status) {
   setTimeout(() => {
     if (filterKey === undefined) return;
     const q = [...document.querySelectorAll("input.table-filter")].find((x) => x.dataset.filterKey === filterKey);
-    if (q) { q.focus(); q.setSelectionRange(caret, caret); }
+    if (q) {
+      q.focus();
+      try { q.setSelectionRange(caret, caret); } catch (e) { /* champ de date */ }
+    }
   }, 0);
   document.getElementById("title").textContent = status["titre"] || "S3m";
   document.title = status["titre"] || "S3m";

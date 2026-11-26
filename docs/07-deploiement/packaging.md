@@ -123,6 +123,25 @@ Mio. Les cases à cocher sont des interrupteurs ; le logo a un fond blanc
 (thème foncé). Une saisie en cours garde le focus malgré le rafraîchissement
 périodique ; les formulaires de même nom sont réunis dans un seul onglet.
 
+### Journal {: #journal }
+
+Ajout du 2026-11-26. L'onglet Journal (Diagnostic) filtre les événements
+par période (« Du … au … », date et heure) en plus du filtre texte. Le
+journal est gardé sur disque — `journal.log` du Nœud, `logs/s3m.log` de
+S3m — et purgé chaque jour au-delà de sa conservation (90 jours par
+défaut) : réglage « conservation du journal » de la configuration du Nœud,
+formulaire de l'onglet Journal du Connecteur (`logs/conservation-jours`,
+commun à toutes les identités du poste).
+
+### Clé d'alerte du Nœud {: #cle-alerte }
+
+Une demande de remplacement de la clé d'alerte
+([`protocols.canal-noeud`](../04-protocols/canal-noeud.md)) s'affiche en
+tête de l'accueil, même en mode simple, avec une explication pour un
+public non averti ; la décision (accepter, refuser, chacune confirmée) se
+prend dans la fenêtre du message. « J'ai lu l'alerte » est dans la fenêtre
+de l'alerte, et sur l'accueil tant qu'elle n'est pas acquittée.
+
 ### Favoris, éléments récents et versions {: #favoris }
 
 - **Favoris** : étoile de chaque ligne de l'Explorateur (un clic) ; liste

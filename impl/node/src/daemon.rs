@@ -113,6 +113,9 @@ pub struct Config {
     /// `protocols.historique-versions`).
     #[serde(default = "default_history_days")]
     pub history_days: u64,
+    /// Conservation du journal (jours ; `deploiement.packaging#journal`).
+    #[serde(default = "default_journal_days")]
+    pub journal_days: u64,
     /// Alertes critiques hors tableau de bord (`deploiement.packaging#alertes`).
     #[serde(default)]
     pub alerts: crate::alerts::AlertConfig,
@@ -146,6 +149,10 @@ pub struct Config {
     /// Fichier d'origine (modification depuis le dashboard) ; non sérialisé.
     #[serde(skip)]
     pub source: Option<PathBuf>,
+}
+
+fn default_journal_days() -> u64 {
+    90
 }
 
 fn default_history_days() -> u64 {
@@ -785,7 +792,10 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         a.extend(forms);
     }
     v["géolocalisation"] = geoip_status(sh);
-    v["journal"] = journal_rows(sh);
+    v["journal"] = json!({
+        "_contenu": journal_rows(sh),
+        "_note": format!("Journal conservé {} jours (Configuration › Journal).", sh.config.journal_days),
+    });
     v["republication DHT"] = republication_status(sh);
     volumes_status(sh, &mut v);
     v["administration à distance"] = admin_status(sh);
@@ -2929,6 +2939,10 @@ pub async fn start_with(
                     sh.service.lock().unwrap().clock_freeze = Some(f);
                 }
                 last = (now, std::time::Instant::now());
+                // Journal : purge quotidienne.
+                if tick.is_multiple_of(2_880) {
+                    load_journal(&sh, now);
+                }
                 alert_tick(&sh, now).await;
                 let mut d = sh.dispersal.lock().await;
                 restore_tick(&sh, &fabric, &mut d, now).await;
@@ -3045,6 +3059,7 @@ pub async fn start_with(
             }
         }
     });
+    load_journal(&shared, system_clock()());
     note(&shared, "Nœud démarré");
     if let Some(m) = store_note {
         note(&shared, m);
@@ -3053,7 +3068,32 @@ pub async fn start_with(
 }
 
 /// Lignes gardées par le journal du processus.
-const JOURNAL_MAX: usize = 500;
+const JOURNAL_MAX: usize = 2_000;
+const JOURNAL_FILE: &str = "journal.log";
+
+/// Journal gardé sur disque (`<instant> <texte>`) : relu au démarrage dans
+/// la limite de la conservation, purgé chaque jour.
+fn load_journal(sh: &Shared, now: u64) {
+    let path = sh.config.data_dir.join(JOURNAL_FILE);
+    let limit = now.saturating_sub(sh.config.journal_days.saturating_mul(86_400));
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let kept: Vec<(u64, String)> = text
+        .lines()
+        .filter_map(|l| {
+            let (t, m) = l.split_once(' ')?;
+            let t: u64 = t.parse().ok()?;
+            (t >= limit).then(|| (t, m.to_string()))
+        })
+        .collect();
+    let body: String = kept.iter().map(|(t, m)| format!("{t} {m}\n")).collect();
+    let tmp = path.with_extension("log.tmp");
+    if std::fs::write(&tmp, body).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+    let mut j = sh.journal.lock().unwrap();
+    let start = kept.len().saturating_sub(JOURNAL_MAX);
+    *j = kept[start..].to_vec();
+}
 
 /// Inscrit un événement au journal du processus (onglet Diagnostic › Avancé).
 pub fn note(sh: &Shared, msg: impl Into<String>) {
@@ -3061,8 +3101,19 @@ pub fn note(sh: &Shared, msg: impl Into<String>) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    let msg = msg.into();
+    {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(sh.config.data_dir.join(JOURNAL_FILE))
+        {
+            let _ = writeln!(f, "{now} {}", msg.replace('\n', " "));
+        }
+    }
     let mut j = sh.journal.lock().unwrap();
-    j.push((now, msg.into()));
+    j.push((now, msg));
     let n = j.len();
     if n > JOURNAL_MAX {
         j.drain(..n - JOURNAL_MAX);

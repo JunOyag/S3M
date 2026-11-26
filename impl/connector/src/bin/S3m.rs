@@ -428,6 +428,24 @@ fn main() {
         .open(dir.join("logs").join("s3m.log"))
         .ok();
     std::panic::set_hook(Box::new(|p| log(&format!("panique : {p}"))));
+    // Journal : lignes au-delà de la conservation retirées au démarrage,
+    // puis chaque jour.
+    let logs = dir.join("logs");
+    let purge = move || {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let mut f = LOG.lock().unwrap();
+        let _ = daemon::purge_log(&logs.join("s3m.log"), daemon::log_days(&logs), now);
+        // Fichier remplacé : réouvert en ajout.
+        *f = std::fs::OpenOptions::new().create(true).append(true).open(logs.join("s3m.log")).ok();
+    };
+    purge();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(86_400));
+        purge();
+    });
     // Redémarrage demandé (changement de Nœud, retrait d'identité) :
     // l'ancienne instance libère le verrou en quittant.
     let changing = std::env::var_os(CHANGE_NODE_ENV).map(|v| {

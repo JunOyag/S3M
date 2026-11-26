@@ -245,6 +245,16 @@ async fn a_new_identity_explains_its_setup_steps() {
     assert_eq!(st["résumé"][0]["libellé"], "Mise en route");
     assert_eq!(st["résumé"][0]["valeur"], "1 étape(s) sur 4");
     assert_eq!(st["pages"][0]["sections"][0], "mise en route");
+    // Nouvelle clé d'alerte proposée : panneau en tête de l'accueil simple,
+    // décision dans sa fenêtre (`protocols.canal-noeud`).
+    shared.channel.lock().unwrap().pending_announce = Some(([9; 32], 3));
+    let st2 = status(&shared);
+    assert_eq!(st2["pages simples"][0]["sections"][0], "nouvelle clé d'alerte à vérifier");
+    let panel = &st2["nouvelle clé d'alerte à vérifier"]["_formulaires"][0]["panneau"];
+    let names: Vec<&str> = panel["formulaires"].as_array().unwrap().iter().map(|f| f["nom"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["accept_announce_replacement", "refuse_announce_replacement"]);
+    assert!(panel["texte"].as_array().unwrap().len() >= 3, "explication pour un public non averti");
+    shared.channel.lock().unwrap().pending_announce = None;
     // Mode simple : quatre écrans au moins, chaque action citée existe.
     let simple = st["pages simples"].as_array().unwrap();
     assert!(simple.len() >= 4);

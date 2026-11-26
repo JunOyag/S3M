@@ -671,7 +671,15 @@ pub fn status(sh: &Shared) -> Value {
                 "aide": { "élément": "Fichier ou dossier de votre espace (« Parcourir… »)" } }));
         }
     }
-    v["journal"] = journal_rows(sh);
+    let days = logs_dir(sh).map_or(LOG_DAYS, |l| log_days(&l));
+    v["journal"] = json!({
+        "_contenu": journal_rows(sh),
+        "_formulaires": [{ "nom": "set_log_retention", "titre": "Conservation du journal", "libellé": "Enregistrer",
+            "champs": ["conservation (jours)"], "types": { "conservation (jours)": "durée" },
+            "unités": { "conservation (jours)": "j" }, "libellés": { "conservation (jours)": "conservation" },
+            "valeurs": { "conservation (jours)": days },
+            "aide": { "conservation (jours)": "Les lignes plus anciennes sont retirées chaque jour (90 jours par défaut)" } }],
+    });
     home_lists(sh, &mut v);
     // Nouvelle phrase après un changement d'identité, jusqu'à confirmation.
     let new_phrase = std::fs::read_to_string(sh.config.data_dir.join(NEW_PHRASE_FILE)).ok();
@@ -738,7 +746,7 @@ pub fn status(sh: &Shared) -> Value {
           "sections": ["partages donnés", "partages reçus"], "actions": [] },
         { "id": "messages", "titre": "Messages du Nœud",
           "sections": ["remplacement de la clé d'alerte", "alerte du nœud", "messages du nœud", "écrire à mon nœud", "messages envoyés au nœud"],
-          "actions": ["mark_all_read", "accept_announce_replacement", "refuse_announce_replacement", "acknowledge_alert"] },
+          "actions": ["mark_all_read"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
@@ -818,6 +826,13 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
     if setup {
         accueil.push("mise en route");
     }
+    // Décisions à prendre : en tête de l'accueil.
+    if v.get("nouvelle clé d'alerte à vérifier").is_some() {
+        accueil.insert(0, "nouvelle clé d'alerte à vérifier");
+    }
+    if v.pointer("/alerte du nœud/_formulaires").is_some() {
+        accueil.insert(0, "alerte du nœud");
+    }
     accueil.push("en un coup d'œil");
     accueil.push("favoris");
     accueil.push("récents");
@@ -834,7 +849,7 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
     if t.messages_received > 0 || v.pointer("/alerte du nœud/message").is_some_and(|m| !m.is_null()) {
         pages.push(json!({ "id": "messages", "titre": "Messages",
             "sections": ["alerte du nœud", "messages du nœud", "écrire à mon nœud"],
-            "actions": ["mark_all_read", "acknowledge_alert"] }));
+            "actions": ["mark_all_read"] }));
     }
     v["pages simples"] = json!(pages);
 }
@@ -1068,6 +1083,31 @@ fn channel_status(sh: &Shared, v: &mut Value) {
         },
         "_formulaires": [send_form(None, "Envoyer")],
     });
+    // Décisions, présentées dans la fenêtre du message concerné et sur
+    // l'accueil (`protocols.canal-noeud`).
+    let ack_form = json!({ "nom": "acknowledge_alert", "libellé": "J'ai lu l'alerte", "champs": [] });
+    let announce_forms = json!([
+        { "nom": "accept_announce_replacement", "libellé": "Accepter la nouvelle clé", "champs": [],
+          "confirmer": "Accepter la nouvelle clé d'alerte de votre Nœud ?\n\nFaites-le seulement si son opérateur vous a confirmé ce changement par un autre moyen (de vive voix, par téléphone…)." },
+        { "nom": "refuse_announce_replacement", "libellé": "Refuser", "style": "secondary", "champs": [],
+          "confirmer": "Refuser la nouvelle clé ? L'ancienne reste retenue ; votre Nœud devra refaire sa demande si elle était légitime." }
+    ]);
+    let announce_text = json!([
+        "Votre Nœud (le serveur qui garde vos fichiers) possède une « clé d'alerte » : elle lui permet de vous prévenir de façon sûre s'il est un jour piraté. Son opérateur indique l'avoir perdue et vous en propose une nouvelle.",
+        "✔ Acceptez si l'opérateur vous a confirmé ce changement par un autre moyen : de vive voix, par téléphone, ou par un message dont vous êtes sûr qu'il vient de lui.",
+        "✖ Sinon, refusez : un pirate qui aurait pris le contrôle du Nœud pourrait faire cette même demande pour empêcher les vraies alertes de vous parvenir.",
+        "Dans les deux cas, vos fichiers restent accessibles. Après un refus, votre Nœud devra refaire sa demande."
+    ]);
+    let announce_panel = c.pending_announce.map(|(k, _)| json!({
+        "titre": "Nouvelle clé d'alerte de votre Nœud",
+        "texte": announce_text,
+        "contenu": {
+            "empreinte de la nouvelle clé": s3m_protocol::pseudo::fingerprint(&k),
+            "empreinte de la clé actuelle": c.announce.map(|a| s3m_protocol::pseudo::fingerprint(&a)),
+            "_note": "Vous pouvez comparer l'empreinte de la nouvelle clé avec celle que l'opérateur vous communique.",
+        },
+        "formulaires": announce_forms,
+    }));
     v["alerte du nœud"] = match &c.alert {
         None => json!({ "état": "aucune alerte" }),
         Some(a) => json!({
@@ -1087,12 +1127,25 @@ fn channel_status(sh: &Shared, v: &mut Value) {
         let alert = m.kind == s3m_protocol::message::Kind::Alert;
         let mut reply_form = send_form(Some("Répondre"), "Envoyer la réponse");
         reply_form["libellés"] = json!({ "message": "réponse" });
+        let mut forms = vec![];
+        let mut texte = json!([]);
+        // Alerte : « J'ai lu l'alerte » dans sa fenêtre ; remplacement de
+        // clé en attente : la décision dans sa fenêtre.
+        if alert && c.alert.is_some() && !c.alert_acknowledged {
+            forms.push(ack_form.clone());
+        }
+        if m.announce_replacement.is_some() && c.pending_announce.is_some_and(|(_, s)| s == m.seq) {
+            texte = announce_text.clone();
+            forms.extend(announce_forms.as_array().cloned().unwrap_or_default());
+        }
+        forms.push(reply_form);
         let reply = json!({
             "titre": format!("Message de votre Nœud ({kind})"),
+            "texte": texte,
             "contenu": { "reçu le": m.timestamp, "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" } },
             "message": m.text,
             "ouverture": { "nom": "mark_message_read", "valeurs": { "sorte": if alert { "alerte" } else { "info" }, "n°": m.seq } },
-            "formulaires": [reply_form],
+            "formulaires": forms,
         });
         json!({
             "sorte": kind,
@@ -1106,11 +1159,25 @@ fn channel_status(sh: &Shared, v: &mut Value) {
     }).collect::<Vec<_>>());
     if let Some((k, seq)) = c.pending_announce {
         v["remplacement de la clé d'alerte"] = json!({
-            "nouvelle clé": s3m_protocol::pseudo::fingerprint(&k),
-            "clé actuelle": c.announce.map(|a| s3m_protocol::pseudo::fingerprint(&a)),
-            "message n°": seq,
-            "à savoir": "Votre Nœud demande à remplacer la clé qui signe ses alertes de compromission (sa phrase d'annonce a été perdue). Acceptez seulement si son opérateur vous l'a confirmé par un autre moyen (téléphone, courriel…) : un pirate qui aurait volé l'identité du Nœud pourrait faire la même demande. Tant que vous n'acceptez pas, l'ancienne clé reste retenue.",
+            "_contenu": {
+                "nouvelle clé": s3m_protocol::pseudo::fingerprint(&k),
+                "clé actuelle": c.announce.map(|a| s3m_protocol::pseudo::fingerprint(&a)),
+                "message n°": seq,
+                "à savoir": "Votre Nœud demande à remplacer la clé qui signe ses alertes de compromission (sa phrase d'annonce a été perdue). Acceptez seulement si son opérateur vous l'a confirmé par un autre moyen (téléphone, courriel…) : un pirate qui aurait volé l'identité du Nœud pourrait faire la même demande. Tant que vous n'acceptez pas, l'ancienne clé reste retenue.",
+            },
+            "_formulaires": announce_forms,
         });
+    }
+    // Mode simple : panneau sur l'accueil.
+    if let Some(p) = &announce_panel {
+        v["nouvelle clé d'alerte à vérifier"] = json!({
+            "_contenu": { "à faire": "Votre Nœud propose une nouvelle clé d'alerte : lisez l'explication puis acceptez ou refusez." },
+            "_formulaires": [{ "nom": "accept_announce_replacement", "libellé": "Lire et décider", "panneau": p }],
+        });
+    }
+    if c.alert.is_some() && !c.alert_acknowledged {
+        let a = v["alerte du nœud"].take();
+        v["alerte du nœud"] = json!({ "_contenu": a, "_formulaires": [ack_form.clone()] });
     }
     v["messages envoyés au nœud"] = json!(c
         .sent
@@ -1127,15 +1194,6 @@ fn channel_status(sh: &Shared, v: &mut Value) {
                 "titre": format!("{unread} message{} de votre Nœud non lu{}", if unread > 1 { "s" } else { "" }, if unread > 1 { "s" } else { "" }),
                 "texte": "Cliquez sur un message pour le lire, ou marquez-les tous comme lus.",
                 "libellé": "Tout marquer comme lu", "style": "secondary", "champs": [] }));
-        }
-        if c.pending_announce.is_some() {
-            a.push(json!({ "nom": "accept_announce_replacement", "titre": "Remplacement de la clé d'alerte",
-                "libellé": "Accepter la nouvelle clé", "champs": [],
-                "confirmer": "Accepter la nouvelle clé d'alerte de votre Nœud ?\n\nFaites-le seulement si son opérateur vous a confirmé ce remplacement par un autre moyen." }));
-            a.push(json!({ "nom": "refuse_announce_replacement", "libellé": "Refuser (garder l'ancienne clé)", "champs": [] }));
-        }
-        if c.alert.is_some() && !c.alert_acknowledged {
-            a.push(json!({ "nom": "acknowledge_alert", "titre": "Alerte du Nœud", "libellé": "J'ai lu l'alerte", "champs": [] }));
         }
     }
 }
@@ -1910,6 +1968,70 @@ pub fn health_status(sh: &Shared) -> Value {
 
 /// Journal de S3m (`logs\s3m.log` du dossier de l'application), le plus
 /// récent d'abord ; vide pour `s3m-connector` lancé seul.
+/// Conservation par défaut du journal (jours).
+pub const LOG_DAYS: u64 = 90;
+
+/// Conservation du journal de S3m (`logs/conservation-jours`), en jours.
+pub fn log_days(logs: &Path) -> u64 {
+    std::fs::read_to_string(logs.join("conservation-jours"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(LOG_DAYS)
+}
+
+/// Purge d'un journal `<instant> <texte>` : lignes plus anciennes que
+/// `days` jours retirées (remplacement atomique). Rend leur nombre.
+pub fn purge_log(path: &Path, days: u64, now: u64) -> std::io::Result<usize> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Ok(0);
+    };
+    let limit = now.saturating_sub(days.saturating_mul(86_400));
+    let mut dropped = 0;
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|l| {
+            let old = l
+                .split_once(' ')
+                .and_then(|(t, _)| t.parse::<u64>().ok())
+                .is_some_and(|t| t < limit);
+            if old {
+                dropped += 1;
+            }
+            !old
+        })
+        .collect();
+    if dropped > 0 {
+        let tmp = path.with_extension("log.tmp");
+        std::fs::write(&tmp, kept.join("\n") + "\n")?;
+        std::fs::rename(tmp, path)?;
+    }
+    Ok(dropped)
+}
+
+/// Dossier des journaux de S3m.
+fn logs_dir(sh: &Shared) -> Option<std::path::PathBuf> {
+    let src = sh.config.source.as_deref()?;
+    let dir = src.parent()?;
+    let base = match identity_number(src) {
+        Some(_) => dir.parent().and_then(Path::parent).unwrap_or(dir),
+        None => dir,
+    };
+    Some(base.join("logs"))
+}
+
+/// Règle la conservation du journal de S3m et purge aussitôt.
+fn set_log_retention(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let days = v
+        .get("conservation (jours)")
+        .and_then(crate::share_ops::parse_days)
+        .filter(|d| *d > 0)
+        .ok_or("durée invalide (au moins 1 jour)")?;
+    let logs = logs_dir(sh).ok_or("journal de S3m introuvable")?;
+    std::fs::write(logs.join("conservation-jours"), days.to_string()).map_err(|e| e.to_string())?;
+    let n = purge_log(&logs.join("s3m.log"), days, (sh.clock)()).map_err(|e| e.to_string())?;
+    Ok(json!({ "ok": true, "message": format!("Journal conservé {days} jours ; {n} ligne(s) plus ancienne(s) retirée(s)") }))
+}
+
 fn journal_rows(sh: &Shared) -> Value {
     let Some(src) = sh.config.source.as_deref() else {
         return json!([]);
@@ -3045,6 +3167,7 @@ pub async fn start(
                     Ok(json!({ "ok": true, "message": "Synchronisation lancée" }))
                 }
                 "purge_versions" => purge_versions(&sh, &v),
+                "set_log_retention" => set_log_retention(&sh, &v),
                 "rotate_identity" => rotate_identity(&sh, &v),
                 "phrase_noted" => {
                     let _ = std::fs::remove_file(sh.config.data_dir.join(NEW_PHRASE_FILE));

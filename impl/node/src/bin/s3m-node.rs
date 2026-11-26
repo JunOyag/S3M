@@ -50,6 +50,7 @@ fn init(dir: &Path, identity: bool) -> Result<(), Box<dyn std::error::Error>> {
         record_user_ips: true,
         history_days: 30,
         alerts: Default::default(),
+        journal_days: 90,
         upnp: true,
         relay_server: true,
         relay_limits: Default::default(),
