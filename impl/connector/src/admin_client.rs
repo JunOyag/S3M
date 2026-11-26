@@ -92,6 +92,27 @@ impl AdminClient {
         }
     }
 
+    /// `PeerId` de déverrouillage annoncé par un Nœud ouvert.
+    pub async fn unlock_peer(&self, addr: &Multiaddr) -> Result<Option<String>, String> {
+        match self.request(addr, AdminRequest::Hello {}).await? {
+            AdminResponse::Hello { unlock, .. } => Ok(unlock),
+            _ => Err("réponse inattendue".into()),
+        }
+    }
+
+    /// Déverrouille un Nœud démarré verrouillé (adresse suffixée de son
+    /// `PeerId` de déverrouillage, retenu quand il était ouvert).
+    pub async fn unlock(&self, addr: &Multiaddr, passphrase: &str) -> Result<(), String> {
+        if self.hello(addr).await? != s3m_protocol::admin::MODE_LOCKED {
+            return Err("ce Nœud n'est pas verrouillé".into());
+        }
+        match self.request(addr, AdminRequest::Unlock { passphrase: passphrase.into() }).await? {
+            AdminResponse::Result(_) => Ok(()),
+            AdminResponse::Error(e) => Err(e),
+            _ => Err("réponse inattendue".into()),
+        }
+    }
+
     /// Appairage d'un Nœud sous identité temporaire avec son code.
     pub async fn pair(&self, addr: &Multiaddr, code: &str) -> Result<RemoteSession, String> {
         let node = peer_of(addr).ok_or("adresse sans /p2p/<identifiant>")?;
@@ -271,6 +292,14 @@ pub fn default_admin_addr(blocks_addr: &str) -> Result<Multiaddr, String> {
         .with(ip)
         .with(Protocol::Tcp(s3m_protocol::admin::DEFAULT_PORT))
         .with(Protocol::P2p(peer)))
+}
+
+/// Même adresse, autre `PeerId` (déverrouillage).
+pub fn with_peer(addr: &Multiaddr, peer: &str) -> Result<Multiaddr, String> {
+    let peer: PeerId = peer.parse().map_err(|e| format!("identifiant : {e}"))?;
+    let mut m: Multiaddr = addr.iter().filter(|p| !matches!(p, Protocol::P2p(_))).collect();
+    m.push(Protocol::P2p(peer));
+    Ok(m)
 }
 
 /// Partage d'une session entre le dashboard distant et ses tâches.

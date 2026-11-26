@@ -101,17 +101,30 @@ pub enum Source {
     Dht,
 }
 
-/// Suivi du `migration_pointer` du Nœud courant (un seul saut automatique).
+/// `migration_pointer` du Nœud courant : jamais suivi sans l'accord de
+/// l'utilisateur (`securite.incidents-compromissions`, N1 : la clé de
+/// secours dérive de la même seed que le Nœud).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Migration {
     /// Aucun pointeur valide.
     None,
-    /// Pointeur valide suivi : le Nœud courant devient `new_node_id`
-    /// (réattache à déclencher).
-    Followed { from: [u8; 32] },
-    /// Le nouveau Nœud porte lui-même un pointeur : confirmation explicite
-    /// de l'utilisateur requise avant tout second saut.
-    NeedsConfirmation { next: Vec<u8> },
+    /// Pointeur valide vers une entrée Node existante : proposé à
+    /// l'utilisateur. `chained` : le Nœud proposé porte lui-même un pointeur.
+    Proposed { to: [u8; 32], chained: bool },
+}
+
+/// Remplaçant annoncé (et vérifié) par le Nœud `node_id`, s'il existe.
+pub async fn migration_target(client: &DhtClient, node_id: &[u8; 32]) -> Migration {
+    let Ok(Some(node)) = read_node(client, node_id).await else {
+        return Migration::None;
+    };
+    let Some(to) = node.pointer_target.and_then(|t| <[u8; 32]>::try_from(t.as_slice()).ok()) else {
+        return Migration::None;
+    };
+    match read_node(client, &to).await {
+        Ok(Some(n)) => Migration::Proposed { to, chained: n.pointer_target.is_some() },
+        _ => Migration::None,
+    }
 }
 
 /// Résultat de la résolution.
@@ -230,7 +243,7 @@ pub async fn resolve(
     cache: Option<&LocalCache>,
 ) -> Result<Resolution, BootstrapError> {
     let user = read_user(client, priv_user, pub_user).await?;
-    let (source, mut node_id, fs_root_hash, salt, key_version, ts) = match (user, cache) {
+    let (source, node_id, fs_root_hash, salt, key_version, ts) = match (user, cache) {
         (Some(u), Some(c)) if c.timestamp >= u.timestamp => (
             Source::Cache,
             c.node_id,
@@ -257,24 +270,10 @@ pub async fn resolve(
         ),
         (None, None) => return Err(BootstrapError::UserNotFound),
     };
-    let mut node = read_node(client, &node_id)
+    let node = read_node(client, &node_id)
         .await?
         .ok_or(BootstrapError::NodeNotFound)?;
-    let mut migration = Migration::None;
-    if let Some(target) = node.pointer_target.clone() {
-        if let Ok(new_id) = <[u8; 32]>::try_from(target.as_slice()) {
-            if let Some(new_node) = read_node(client, &new_id).await? {
-                migration = match &new_node.pointer_target {
-                    Some(next) => Migration::NeedsConfirmation { next: next.clone() },
-                    None => Migration::Followed { from: node_id },
-                };
-                if matches!(migration, Migration::Followed { .. }) {
-                    node_id = new_id;
-                    node = new_node;
-                }
-            }
-        }
-    }
+    let migration = migration_target(client, &node_id).await;
     Ok(Resolution {
         source,
         node_id,

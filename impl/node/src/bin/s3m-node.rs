@@ -106,8 +106,24 @@ async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     println!("Dashboard : {url}");
-    if !c.seed_file.exists() {
+    // Coffre local (`deploiement.packaging#coffre-local`) : phrase en
+    // clair rangée dans le coffre du système ; sous phrase de passe, le
+    // Nœud attend d'être déverrouillé (ici ou à distance).
+    use s3m_protocol::vault::{self, Storage};
+    if vault::storage(&c.seed_file) == Storage::Missing {
         s3m_node::setup::run(&c, &switch).await?;
+    }
+    if vault::auto_protect(&c.seed_file) == Storage::Passphrase {
+        // Relancé par « Redémarrer » : phrase transmise par le parent.
+        if restarted {
+            let mut line = String::new();
+            if std::io::stdin().read_line(&mut line).is_ok() && !line.trim().is_empty() {
+                vault::provide(&c.seed_file, &line);
+            }
+        }
+        if vault::read(&c.seed_file).is_err() {
+            s3m_node::unlock::wait(&c, &switch).await?;
+        }
     }
     let shared = match start_with(c, &switch).await {
         Ok(s) => s,
@@ -148,10 +164,21 @@ async fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 /// `node.pid` à côté de la configuration (Nœuds d'essai) suit le nouveau
 /// processus.
 fn relaunch(config: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let child = std::process::Command::new(std::env::current_exe()?)
+    // Phrase sous phrase de passe : transmise au nouveau processus.
+    let words = Config::load(config).ok().and_then(|c| {
+        (s3m_protocol::vault::storage(&c.seed_file) == s3m_protocol::vault::Storage::Passphrase)
+            .then(|| s3m_protocol::vault::read(&c.seed_file).ok())
+            .flatten()
+    });
+    let mut child = std::process::Command::new(std::env::current_exe()?)
         .arg(config)
         .env(RESTARTED_ENV, "1")
+        .stdin(if words.is_some() { std::process::Stdio::piped() } else { std::process::Stdio::null() })
         .spawn()?;
+    if let (Some(w), Some(mut stdin)) = (words, child.stdin.take()) {
+        use std::io::Write;
+        let _ = writeln!(stdin, "{}", w.trim());
+    }
     println!("Redémarrage : nouveau processus {}", child.id());
     if let Some(pid) = config.parent().map(|d| d.join("node.pid")) {
         if pid.exists() {
@@ -197,7 +224,7 @@ fn reconcile(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
         let config = Config::load(&cfg)?;
-        let Ok(phrase) = std::fs::read_to_string(&config.seed_file) else {
+        let Ok(phrase) = s3m_protocol::vault::read(&config.seed_file) else {
             continue;
         };
         let seed = s3m_node::daemon::node_seed_from_mnemonic(&phrase, config.identity_index)?;

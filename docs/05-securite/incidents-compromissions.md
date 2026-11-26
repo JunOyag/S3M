@@ -95,6 +95,15 @@ protège ni l'annuaire DHT ni un rattachement ailleurs (aucun
 vérificateur) : la parade y reste le délai de 72 h, l'alerte de nouvel
 appareil et le changement d'identité.
 
+## Nouvel appareil connecté {: #nouvel-appareil }
+
+Le Nœud retient, par Utilisateur, les appareils (`PeerId` du Connecteur,
+32 au plus) qui se sont authentifiés. Le premier est enregistré sans
+bruit ; chaque nouveau est annoncé par un message adressé à l'Utilisateur
+(lu par tous ses appareils) avec son empreinte et la conduite à tenir
+(activer le 2FA, changer d'identité). Une personne qui utiliserait une
+phrase volée se signale donc dès sa première connexion.
+
 ## Compromission Clé Node
 
 Contrairement au User, ce cas implique **tous les Utilisateurs rattachés** —
@@ -133,12 +142,17 @@ invalide leur attachement simultanément, nécessitant une réattache complète.
    `migration_pointer` valide sur l'entrée de son `node_id` connu. Avant de
    le suivre, il vérifie que **l'entrée Node de `new_node_id` existe et est
    valide** (preuve VDF et signature vérifiées) : un pointeur vers une
-   identité inexistante ou non vérifiable est ignoré. Le suivi automatique
-   se limite à **un seul saut** : si l'entrée de `new_node_id` porte
-   elle-même un `migration_pointer`, le Connecteur ne le suit pas et
-   demande une confirmation explicite à l'utilisateur. Un suivi valide
-   déclenche la réattache, selon le même flux que
-   [`protocols.migration-noeud`](../04-protocols/migration-noeud.md).
+   identité inexistante ou non vérifiable est ignoré. Depuis le
+   2026-11-26, le pointeur n'est **jamais suivi sans l'accord de
+   l'utilisateur** : la clé de secours dérive de la même seed que le Nœud,
+   un voleur de cette seed pourrait donc publier un pointeur valide. Le
+   Connecteur (vérification horaire) affiche en tête de l'accueil
+   l'empreinte du Nœud proposé, explique de la faire confirmer par
+   l'opérateur, signale une chaîne (le Nœud proposé porte lui-même un
+   pointeur) et permet d'ignorer l'annonce ; l'utilisateur qui accepte
+   suit « Changer de Nœud », selon le même flux que
+   [`protocols.migration-noeud`](../04-protocols/migration-noeud.md). Une
+   alerte signée par la clé d'annonce l'emporte sur le pointeur.
 4. **Continuité réseau** : si la même machine/IP/port est conservée, le
    nouveau Nœud peut être joignable à la même adresse sous sa nouvelle
    identité.
@@ -152,8 +166,9 @@ Utilisateurs passe alors par l'alerte signée par la clé d'annonce, extérieure
 à la seed et épinglée par chaque Connecteur
 ([`protocols.canal-noeud`](../04-protocols/canal-noeud.md)) ; si cette clé a
 fuité elle aussi, seule une communication hors du protocole reste possible. La limite
-d'un seul saut automatique réduit toutefois l'impact d'une redirection en
-chaîne par un attaquant qui aurait obtenu la seed.
+de l'accord de l'utilisateur, après vérification de l'empreinte auprès de
+l'opérateur, réduit toutefois l'impact d'une redirection par un attaquant
+qui aurait obtenu la seed.
 
 ### Variante — perte sans compromission (panne matérielle) {: #variante-perte-sans-compromission }
 

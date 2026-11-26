@@ -1073,6 +1073,7 @@ function actionForm(a, done) {
       if (tip) l.lastChild.appendChild(el("span", " ⓘ", "tip"));
     } else {
       if (types[name] === "number") i.type = "number";
+      if (types[name] === "secret") { i.type = "password"; i.autocomplete = "off"; }
       if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
       // `options` d'un champ texte : suggestions (ex. pseudos des contacts).
       if (Array.isArray(options[name]) && options[name].length) {

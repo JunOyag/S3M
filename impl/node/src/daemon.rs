@@ -323,6 +323,9 @@ pub struct SavedUser {
     pub twofa: Option<crate::user2fa::TwoFa>,
     #[serde(default)]
     pub pending: Vec<crate::user2fa::Pending>,
+    /// Appareils vus `(PeerId hex, première connexion)`.
+    #[serde(default)]
+    pub devices: Vec<(String, u64)>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -426,6 +429,7 @@ impl SavedState {
                 root_since: s.root_since.get(id).copied().unwrap_or(0),
                 twofa: s.twofa.get(id).cloned(),
                 pending: s.pending_ops.get(id).cloned().unwrap_or_default(),
+                devices: s.devices.get(id).cloned().unwrap_or_default(),
             })
             .collect();
         users.sort_by(|a, b| a.user_id.cmp(&b.user_id));
@@ -541,6 +545,9 @@ impl SavedState {
             }
             if !u.pending.is_empty() {
                 s.pending_ops.insert(unhex32(&u.user_id)?, u.pending.clone());
+            }
+            if !u.devices.is_empty() {
+                s.devices.insert(unhex32(&u.user_id)?, u.devices.clone());
             }
         }
         for p in &self.partners {
@@ -812,6 +819,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     v["republication DHT"] = republication_status(sh);
     volumes_status(sh, &mut v);
     v["administration à distance"] = admin_status(sh);
+    v["phrase secrète du Nœud"] = vault_status(sh);
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
         a.push(
             json!({ "nom": "show_totp", "titre": "Double authentification (2FA)",
@@ -901,7 +909,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         { "id": "reseau", "titre": "Réseau",
           "sections": ["traversée de NAT", "annuaire (entrée Node)", "republication DHT", "géolocalisation"], "actions": ["geoip_update"] },
         { "id": "distance", "titre": "Administration à distance",
-          "sections": ["administration à distance"], "actions": ["show_totp", "regenerate_totp"] },
+          "sections": ["administration à distance", "phrase secrète du Nœud"], "actions": ["show_totp", "regenerate_totp"] },
         { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config", "test_alerts"], "onglets": true },
         { "id": "diagnostic", "titre": "Diagnostic", "autres": true, "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "Général", "sections": ["migration"] },
@@ -1164,6 +1172,59 @@ fn admin_status(sh: &Shared) -> Value {
         v["clé 2FA"] = json!(s3m_core::identity_derivation::base32_encode(&secret));
     }
     v
+}
+
+/// Section « phrase secrète du Nœud » (`deploiement.packaging#coffre-local`).
+fn vault_status(sh: &Shared) -> Value {
+    use s3m_protocol::vault::{storage, system_available, Storage};
+    let seed = &sh.config.seed_file;
+    let st = storage(seed);
+    let note = match st {
+        Storage::Plain => "⚠ La phrase de récupération du Nœud est dans un fichier en clair : toute personne qui lit ce disque peut se faire passer pour lui. Rangez-la dans le coffre du système, ou sous une phrase de passe.",
+        Storage::System => "Phrase rangée dans le coffre du système (compte Windows / macOS qui fait tourner le Nœud) : le Nœud démarre seul.",
+        _ => "Phrase chiffrée sous une phrase de passe : à chaque démarrage, le Nœud attend cette phrase de passe (ici, ou à distance depuis S3m).",
+    };
+    let mut forms = vec![json!({ "nom": "vault_passphrase", "libellé": if st == Storage::Passphrase { "Changer la phrase de passe" } else { "Protéger par une phrase de passe" },
+        "champs": ["phrase de passe", "confirmation"], "types": { "phrase de passe": "secret", "confirmation": "secret" },
+        "aide": { "phrase de passe": "8 caractères au moins ; elle n'est enregistrée nulle part : si vous l'oubliez, seule la phrase de récupération (24 mots) permet de reconstruire le Nœud" },
+        "confirmer": "Le Nœud devra être déverrouillé à chaque démarrage. Continuer ?" })];
+    if system_available() && st != Storage::System {
+        forms.push(json!({ "nom": "vault_system", "libellé": "Ranger dans le coffre du système", "champs": [] }));
+    }
+    if st != Storage::Plain {
+        forms.push(json!({ "nom": "vault_plain", "libellé": "Remettre en clair", "style": "secondary", "champs": [],
+            "confirmer": "Remettre la phrase du Nœud dans un fichier en clair ? Toute personne qui lit ce disque pourra se faire passer pour le Nœud." }));
+    }
+    let mut c = json!({ "rangement": st.label(), "_note": note });
+    if st == Storage::Passphrase {
+        c["identifiant de déverrouillage"] =
+            json!(crate::unlock::unlock_peer(seed).map(|p| p.to_string()).unwrap_or_default());
+    }
+    json!({ "_contenu": c, "_formulaires": forms })
+}
+
+fn vault_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
+    use s3m_protocol::vault;
+    let seed = &sh.config.seed_file;
+    let words = vault::read(seed).map_err(|e| e.to_string())?;
+    let text = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    match name {
+        "vault_passphrase" => {
+            if text("phrase de passe") != text("confirmation") {
+                return Err("les deux saisies diffèrent".into());
+            }
+            vault::protect_passphrase(seed, words.trim(), &text("phrase de passe"), true).map_err(|e| e.to_string())?;
+            Ok(json!({ "ok": true, "message": "Phrase du Nœud chiffrée : la phrase de passe sera demandée au prochain démarrage (ici ou à distance)" }))
+        }
+        "vault_system" => {
+            vault::protect_system(seed, words.trim()).map_err(|e| e.to_string())?;
+            Ok(json!({ "ok": true, "message": "Phrase du Nœud rangée dans le coffre du système" }))
+        }
+        _ => {
+            vault::to_plain(seed, &words).map_err(|e| e.to_string())?;
+            Ok(json!({ "ok": true, "message": "Phrase du Nœud remise en clair" }))
+        }
+    }
 }
 
 /// Régénère le secret 2FA : série + 1, enregistrée dans `node.json`.
@@ -1997,6 +2058,9 @@ pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
     if name.starts_with("volume_") {
         return volume_action(sh, name, &v);
     }
+    if name.starts_with("vault_") {
+        return vault_action(sh, name, &v);
+    }
     if name == "regenerate_totp" {
         regenerate_totp(sh)?;
     }
@@ -2613,7 +2677,7 @@ pub async fn start_with(
     switch: &Arc<crate::local_http::Switch>,
 ) -> Result<Arc<Shared>, DaemonError> {
     let start = |e: &dyn std::fmt::Display| DaemonError::Start(e.to_string());
-    let mnemonic = std::fs::read_to_string(&config.seed_file)?;
+    let mnemonic = s3m_protocol::vault::read(&config.seed_file).map_err(|e| start(&e))?;
     let seed = node_seed_from_mnemonic(&mnemonic, config.identity_index)?;
     let recovery_pub = node_recovery_pub(&mnemonic, config.identity_index)?;
     std::fs::create_dir_all(&config.data_dir)?;
@@ -2830,7 +2894,10 @@ pub async fn start_with(
             key,
             &config.admin_listen,
             false,
-            crate::admin::Mode::Node { secret },
+            crate::admin::Mode::Node {
+                secret,
+                unlock: crate::unlock::unlock_peer(&config.seed_file).map(|p| p.to_string()),
+            },
             switch.status_fn(),
             switch.action_fn(),
             Some(switch.map_fn()),

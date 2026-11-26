@@ -279,10 +279,10 @@ async fn unknown_user_without_cache_is_an_explicit_error() {
     ));
 }
 
-/// `migration_pointer` : suivi d'un seul saut vers une entrée Node valide ;
-/// ignoré vers une identité inexistante ; second saut → confirmation.
+/// `migration_pointer` : jamais suivi seul, proposé à l'utilisateur
+/// (vers une entrée Node valide) ; chaîne signalée.
 #[tokio::test(flavor = "multi_thread")]
-async fn migration_pointer_is_followed_one_hop_only() {
+async fn migration_pointer_is_only_proposed_never_followed() {
     let (a, c) = setup().await;
     let (s1, s2, s3) = ([0x31; 32], [0x32; 32], [0x33; 32]);
     let (n1, n2, n3) = (pub_of(&s1), pub_of(&s2), pub_of(&s3));
@@ -296,8 +296,8 @@ async fn migration_pointer_is_followed_one_hop_only() {
         .await
         .unwrap();
     let r = resolve(&c, &PRIV_USER, &PUB_USER, None).await.unwrap();
-    assert_eq!((r.node_id, r.node_port), (n2, 2));
-    assert_eq!(r.migration, Migration::Followed { from: n1 });
+    assert_eq!((r.node_id, r.node_port), (n1, 1), "pas de suivi sans accord");
+    assert_eq!(r.migration, Migration::Proposed { to: n2, chained: false });
 
     // n2 → n3 → … : le second saut demande confirmation, on reste sur n2.
     let ext = [0x44; 32];
@@ -312,7 +312,7 @@ async fn migration_pointer_is_followed_one_hop_only() {
         .unwrap();
     let r = resolve(&c, &PRIV_USER, &PUB_USER, None).await.unwrap();
     assert_eq!(r.node_id, n4);
-    assert!(matches!(r.migration, Migration::NeedsConfirmation { .. }));
+    assert_eq!(r.migration, Migration::Proposed { to: n3, chained: true });
 }
 
 #[test]

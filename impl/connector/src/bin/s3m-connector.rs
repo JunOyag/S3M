@@ -66,6 +66,12 @@ fn init(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Coffre local : phrase en clair rangée dans celui du système, puis démarrage.
+async fn start_protected(c: Config) -> Result<(std::sync::Arc<Shared>, String), DaemonError> {
+    s3m_protocol::vault::auto_protect(&c.seed_file);
+    start(c, std::sync::Arc::new(system_clock)).await
+}
+
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -73,7 +79,7 @@ async fn main() {
         [cmd, dir] if cmd == "init" => init(Path::new(dir)),
         [config] => match Config::load(Path::new(config)) {
             Err(e) => Err(e.into()),
-            Ok(c) => match start(c, std::sync::Arc::new(system_clock)).await {
+            Ok(c) => match start_protected(c).await {
                 Err(e) => Err(e.into()),
                 Ok((_shared, url)) => {
                     println!("Connecteur démarré.");

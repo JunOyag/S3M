@@ -34,6 +34,7 @@ pub mod rir;
 pub mod self_repair;
 pub mod settings;
 pub mod setup;
+pub mod unlock;
 pub mod snapshot_engine;
 pub mod tombstones;
 pub mod twin;

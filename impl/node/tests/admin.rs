@@ -147,7 +147,7 @@ fn totp_login_refuses_replay_and_local_only_actions_and_follows_the_serial() {
     let secret = Arc::new(std::sync::Mutex::new([3u8; 20]));
     let s2 = secret.clone();
     let f: SecretFn = Arc::new(move || Some(*s2.lock().unwrap()));
-    let mut auth = Auth::new(Mode::Node { secret: f }, node);
+    let mut auth = Auth::new(Mode::Node { secret: f, unlock: None }, node);
     let (st, act) = fns();
     let (now, unix) = (Instant::now(), 1_800_000_000u64);
     let code = format!("{:06}", hotp(&[3u8; 20], unix / TOTP_STEP, 6));
@@ -222,4 +222,32 @@ fn recovery_input_accepts_the_words_only() {
         "plus de code S3M1"
     );
     assert!(parse_recovery("abandon abandon").is_err());
+}
+
+/// Nœud verrouillé (`deploiement.packaging#coffre-local`) : seule la phrase
+/// de passe est acceptée, essais limités ; un Nœud ouvert annonce son
+/// identifiant de déverrouillage.
+#[test]
+fn a_locked_node_only_accepts_its_passphrase_with_limited_tries() {
+    use s3m_node::admin::UnlockFn;
+    let (node, client) = (PeerId::random(), PeerId::random());
+    let unlock: UnlockFn = Arc::new(|p: &str| if p == "bonne phrase" { Ok(()) } else { Err(None) });
+    let mut auth = Auth::new(Mode::Locked { unlock }, node);
+    let (st, act) = fns();
+    let (now, unix) = (Instant::now(), 1_800_000_000u64);
+    let mut h = |req| auth.handle(client, req, now, unix, &st, &act);
+    assert!(matches!(h(AdminRequest::Hello {}), AdminResponse::Hello { ref mode, unlock: None, .. } if mode == "locked"));
+    assert!(matches!(h(AdminRequest::Login { totp: "123456".into() }), AdminResponse::Error(_)));
+    assert!(matches!(h(AdminRequest::Unlock { passphrase: "bonne phrase".into() }), AdminResponse::Result(_)));
+    for _ in 0..5 {
+        assert!(matches!(h(AdminRequest::Unlock { passphrase: "x".into() }), AdminResponse::Error(_)));
+    }
+    let r = h(AdminRequest::Unlock { passphrase: "bonne phrase".into() });
+    assert!(matches!(r, AdminResponse::Error(ref e) if e.contains("trop d'essais")), "{r:?}");
+    let f: SecretFn = Arc::new(|| Some([1; 20]));
+    let mut open = Auth::new(Mode::Node { secret: f, unlock: Some("12D3Koo".into()) }, node);
+    let r = open.handle(client, AdminRequest::Hello {}, now, unix, &st, &act);
+    assert!(matches!(r, AdminResponse::Hello { unlock: Some(ref u), .. } if u == "12D3Koo"));
+    let r = open.handle(client, AdminRequest::Unlock { passphrase: "bonne phrase".into() }, now, unix, &st, &act);
+    assert!(matches!(r, AdminResponse::Error(_)));
 }

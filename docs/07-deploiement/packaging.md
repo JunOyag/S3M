@@ -426,6 +426,37 @@ identités Utilisateur, chacune comme un Connecteur complet et indépendant.
 - Deux identités peuvent être rattachées au même Nœud (deux Utilisateurs
   distincts pour lui) ou à des Nœuds différents.
 
+### Coffre local des phrases secrètes {: #coffre-local }
+
+Ajout du 2026-11-26. Les phrases de récupération (`user.seed` du
+Connecteur, `node.seed` du Nœud) ne restent plus en clair sur le disque :
+
+- **Coffre du système** (Windows : Gestionnaire d'identification ;
+  macOS : Trousseau) : au démarrage, les exécutables y rangent une phrase
+  encore en clair ; le fichier `<phrase>.coffre` ne garde que la référence.
+  Le programme démarre seul, sous le compte qui l'a rangée.
+- **Phrase de passe** (Nœud ; Linux sans coffre du système) : la phrase
+  est chiffrée dans `<phrase>.coffre` (Argon2id puis ChaCha20-Poly1305,
+  [`crypto.symmetric-suite`](../03-crypto/symmetric-suite.md)). Le Nœud
+  démarre **verrouillé** : son tableau de bord ne propose que le
+  déverrouillage. À distance, le canal d'administration
+  ([`deploiement.appairage-admin`](appairage-admin.md)) écoute sous une
+  **clé de déverrouillage** distincte (en clair dans le coffre, sans
+  autre pouvoir) et n'accepte que `Unlock { passphrase }`, essais limités
+  comme le 2FA. Le Nœud ouvert annonce cet identifiant (`Hello.unlock`) ;
+  le Connecteur le retient à chaque connexion d'administration et s'y
+  adresse (« Administrer mon Nœud à distance », champ « phrase de
+  passe »). « Redémarrer le Nœud » transmet la phrase au nouveau
+  processus (entrée standard) sans la redemander.
+- **En clair** : sur demande explicite (« Remettre en clair », tableau de
+  bord local seulement) ; plus de migration automatique ensuite. Le
+  tableau de bord le signale (⚠).
+
+L'ancienne phrase gardée après un changement d'identité suit le même
+rangement ; supprimer une identité archivée la retire du coffre. Limite :
+le coffre protège contre la lecture du disque, pas contre un programme
+malveillant qui s'exécute sous le compte de l'utilisateur.
+
 ## API locale {: #api-locale }
 
 Chaque dashboard dialogue avec son moteur par une **API locale** (HTTP et

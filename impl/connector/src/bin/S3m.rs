@@ -266,9 +266,11 @@ fn start_connector(
     rt.spawn(async move {
         let r = match Config::load(&path) {
             Err(e) => Err(e.to_string()),
-            Ok(c) => daemon::start(c, Arc::new(clock))
-                .await
-                .map_err(|e| e.to_string()),
+            Ok(c) => {
+                // Coffre local : phrase en clair rangée dans celui du système.
+                s3m_protocol::vault::auto_protect(&c.seed_file);
+                daemon::start(c, Arc::new(clock)).await.map_err(|e| e.to_string())
+            }
         };
         let _ = proxy.send_event(match r {
             Ok((sh, url)) => UserEvent::Started(i, sh, url),

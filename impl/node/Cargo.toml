@@ -18,7 +18,7 @@ futures = "0.3"
 libp2p = { version = "0.54", features = ["kad", "tcp", "noise", "yamux", "tokio", "macros", "ed25519", "request-response", "identify", "autonat", "relay", "dcutr", "quic", "mdns", "json"] }
 igd-next = { version = "0.14", features = ["aio_tokio"] }
 s3m-core = { path = "../core" }
-s3m-protocol = { path = "../protocol" }
+s3m-protocol = { path = "../protocol", features = ["vault"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
 libc = "0.2"
 rusqlite = { version = "0.32", features = ["bundled"] }

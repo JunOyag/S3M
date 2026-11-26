@@ -22,6 +22,9 @@ pub const DEFAULT_PORT: u16 = 4003;
 pub const MODE_SETUP: &str = "setup";
 /// Mode `node` : identité définitive.
 pub const MODE_NODE: &str = "node";
+/// Nœud démarré verrouillé (phrase de passe du coffre local attendue),
+/// sous sa clé de déverrouillage (`deploiement.packaging#coffre-local`).
+pub const MODE_LOCKED: &str = "locked";
 
 /// Requête du canal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -36,6 +39,10 @@ pub enum AdminRequest {
     },
     Login {
         totp: String,
+    },
+    /// Déverrouille un Nœud démarré verrouillé (mode `locked`).
+    Unlock {
+        passphrase: String,
     },
     Call {
         token: String,
@@ -54,6 +61,10 @@ pub enum AdminResponse {
     Hello {
         mode: String,
         version: u32,
+        /// `PeerId` de déverrouillage à distance, à retenir par le client
+        /// (Nœud dont la phrase est gardée sous phrase de passe).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unlock: Option<String>,
     },
     PakeReply {
         msg: String,

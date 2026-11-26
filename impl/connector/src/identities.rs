@@ -14,7 +14,8 @@ pub fn identities_dir(app: &Path) -> PathBuf {
 /// Identité créée : configurée, ou phrase présente (changement de Nœud en
 /// cours, assistant à rouvrir).
 fn started(dir: &Path) -> bool {
-    config_path(dir).exists() || dir.join("user.seed").exists()
+    config_path(dir).exists()
+        || s3m_protocol::vault::storage(&dir.join("user.seed")) != s3m_protocol::vault::Storage::Missing
 }
 
 /// Identités à lancer : l'identité d'origine (`app`, configurée ou non),
@@ -208,6 +209,13 @@ pub fn restore(app: &Path, dir: &Path) -> Result<(u32, PathBuf), String> {
 /// récupération comprise : seule la phrase notée permet de la retrouver).
 pub fn purge(app: &Path, dir: &Path) -> Result<(), String> {
     check_archived(app, dir)?;
+    // Phrase rangée dans le coffre du système : retirée aussi.
+    s3m_protocol::vault::remove(&dir.join("user.seed"));
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if e.file_name().to_string_lossy().starts_with("user.seed.revoquee-") {
+            s3m_protocol::vault::remove(&e.path());
+        }
+    }
     std::fs::remove_dir_all(dir).map_err(|e| e.to_string())
 }
 

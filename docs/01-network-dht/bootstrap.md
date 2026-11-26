@@ -84,8 +84,8 @@ Aucun état local préexistant n'est requis — seule la seed BIP-39 suffit
 3. Déchiffrement avec `K_self` ([`crypto.k-self`](../03-crypto/k-self.md))
    pour obtenir `fs_root_hash` et l'historique `attachments` ; le Node
    courant est l'attachement au `timestamp` le plus récent. Son entrée DHT
-   donne son adresse ; un `migration_pointer` valide y est suivi d'un seul
-   saut ([`securite.incidents-compromissions`](../05-securite/incidents-compromissions.md)).
+   donne son adresse ; un `migration_pointer` valide y est proposé à
+   l'utilisateur, jamais suivi sans son accord ([`securite.incidents-compromissions`](../05-securite/incidents-compromissions.md)).
 4. Contact de ce Node pour récupérer le bloc racine et reconstruire le cache
    local. Cette étape dépend du protocole d'échange de blocs
    Connecteur ↔ Nœud, défini par

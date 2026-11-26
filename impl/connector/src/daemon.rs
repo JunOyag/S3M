@@ -563,6 +563,9 @@ pub struct Shared {
     /// opérations différées)`.
     pub twofa_setup: Mutex<Option<(Vec<u8>, Vec<String>)>>,
     pub security: Mutex<Option<(bool, Vec<s3m_protocol::exchange::PendingOp>)>>,
+    /// Remplaçant annoncé par le Nœud (pointeur de migration vérifié),
+    /// jamais suivi sans l'accord de l'utilisateur ; `(proposition, vérifié le)`.
+    pub migration_offer: Mutex<(crate::bootstrap::Migration, u64)>,
     /// Synchronisation en cours.
     pub syncing: std::sync::atomic::AtomicBool,
     pub user_entry: Mutex<UserEntryState>,
@@ -744,7 +747,7 @@ pub fn status(sh: &Shared) -> Value {
           "sections": ["accès aux fichiers", "historique des versions", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture", "blocs pas encore dispersés"],
           "actions": ["sync_now", "free_space", "set_auto_free", "keep_offline"] },
         { "id": "noeud", "titre": "Mon Nœud",
-          "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
+          "sections": ["remplacement de mon nœud annoncé", "nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "explorateur", "titre": "Explorateur", "cadre": "explorer.html", "sections": [], "actions": [] },
         { "id": "contacts", "titre": "Contacts", "sections": ["contacts", "mon identifiant"],
           "actions": ["import_contacts", "export_contacts"] },
@@ -835,6 +838,9 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
     // Décisions à prendre : en tête de l'accueil.
     if v.get("2FA à réactiver").is_some() {
         accueil.insert(0, "2FA à réactiver");
+    }
+    if v.get("remplacement de mon nœud annoncé").is_some() {
+        accueil.insert(0, "remplacement de mon nœud annoncé");
     }
     if v.get("opérations de sécurité en attente").is_some() {
         accueil.insert(0, "opérations de sécurité en attente");
@@ -1396,6 +1402,10 @@ fn status_base(sh: &Shared) -> Value {
             "nom": s3m_protocol::pseudo::display(&[Some(names.pseudo.as_str())], &sh.pub_user),
             "empreinte": s3m_protocol::pseudo::fingerprint(&sh.pub_user),
             "user_id": hex::encode(sh.pub_user),
+            "phrase de récupération rangée": match s3m_protocol::vault::storage(&sh.config.seed_file) {
+                s3m_protocol::vault::Storage::Plain => "⚠ fichier en clair sur cet ordinateur",
+                s => s.label(),
+            },
         },
         "autorisation de secours": { "expire le": *sh.grant_expiry.lock().unwrap() },
         "file d'écriture": queue_status(&sh.config),
@@ -1420,8 +1430,10 @@ fn status_base(sh: &Shared) -> Value {
         "actions": [
             { "nom": "sync_now", "libellé": "Synchroniser maintenant", "champs": [] },
             { "nom": "admin_node", "titre": "Administrer mon Nœud à distance",
-              "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration"],
+              "libellé": "Ouvrir son tableau de bord", "champs": ["code 2FA", "adresse d'administration", "phrase de passe"],
+              "types": { "phrase de passe": "secret" },
               "aide": { "code 2FA": "Code à 6 chiffres de votre application d'authentification",
+                        "phrase de passe": "Seulement si le Nœud attend d'être déverrouillé (phrase rangée sous phrase de passe) : il démarre, puis reconnectez-vous avec le code 2FA",
                         "adresse d'administration": "Facultatif : par défaut, IP du Nœud et port 4003" } },
             { "nom": "rotate_identity", "titre": "Ma phrase de récupération a été compromise",
               "libellé": "Changer d'identité", "style": "danger", "champs": ["je confirme", "code 2FA"], "types": { "je confirme": "bool" },
@@ -2485,6 +2497,54 @@ pub fn rotate_identity(sh: &Arc<Shared>, v: &Value) -> Result<Value, String> {
         "fermer": "J'ai noté ma nouvelle phrase" }))
 }
 
+/// Remplaçant ignoré par l'utilisateur.
+const MIGRATION_IGNORED_FILE: &str = "remplacant-ignore.txt";
+
+/// Vérifie (au plus une fois par heure) si le Nœud annonce un remplaçant.
+pub async fn migration_tick(sh: &Shared, now: u64) {
+    if sh.migration_offer.lock().unwrap().1 + 3_600 > now && now >= 3_600 {
+        return;
+    }
+    let (Some(dht), Some(node)) = (
+        sh.dht.get(),
+        hex::decode(&sh.config.node.node_id).ok().and_then(|b| <[u8; 32]>::try_from(b).ok()),
+    ) else {
+        return;
+    };
+    let m = crate::bootstrap::migration_target(dht, &node).await;
+    *sh.migration_offer.lock().unwrap() = (m, now);
+}
+
+/// Section « remplacement de mon Nœud annoncé » (N1).
+fn migration_status(sh: &Shared, v: &mut Value) {
+    let crate::bootstrap::Migration::Proposed { to, chained } = sh.migration_offer.lock().unwrap().0.clone() else {
+        return;
+    };
+    let ignored = std::fs::read_to_string(sh.config.data_dir.join(MIGRATION_IGNORED_FILE)).unwrap_or_default();
+    if ignored.trim() == hex::encode(to) || v.pointer("/alerte du nœud/message").is_some_and(|m| !m.is_null()) {
+        return;
+    }
+    let mut notes = vec![
+        "Votre Nœud annonce qu'il est remplacé par un autre Nœud. C'est normal si son opérateur l'a déplacé (machine changée, incident).".to_string(),
+        "Mais une personne qui aurait volé la phrase secrète du Nœud pourrait publier la même annonce pour attirer vos fichiers vers un Nœud qu'elle contrôle : S3m ne la suit donc jamais tout seul.".to_string(),
+        "Avant de suivre, vérifiez auprès de l'opérateur de votre Nœud que l'empreinte ci-dessous est bien celle de son nouveau Nœud. Pour suivre : « Changer de Nœud » (page Mon compte), avec cet identifiant.".to_string(),
+    ];
+    if chained {
+        notes.push("⚠ Le Nœud proposé annonce lui-même un autre remplaçant : redoublez de prudence.".into());
+    }
+    v["remplacement de mon nœud annoncé"] = json!({
+        "_contenu": {
+            "empreinte du nouveau Nœud": s3m_protocol::pseudo::fingerprint(&to),
+            "identifiant du nouveau Nœud": hex::encode(to),
+            "_note": notes.join(" "),
+        },
+        "_formulaires": [
+            { "nom": "ignore_migration", "libellé": "Ignorer cette annonce", "style": "secondary", "champs": [],
+              "valeurs": { "noeud": hex::encode(to) } }
+        ],
+    });
+}
+
 /// Le 2FA a été actif sur un Nœud de cette identité (aucun secret).
 pub const TWOFA_FLAG_FILE: &str = "2fa-actif";
 
@@ -2493,6 +2553,7 @@ fn security_status(sh: &Shared, v: &mut Value) {
     let setup = sh.twofa_setup.lock().unwrap().clone();
     let sec = sh.security.lock().unwrap().clone();
     let enabled = sec.as_ref().is_some_and(|s| s.0);
+    migration_status(sh, v);
     // 2FA perdu (changement de Nœud, Nœud reconstruit) : à réactiver.
     if sec.is_some() && !enabled && setup.is_none() && sh.config.data_dir.join(TWOFA_FLAG_FILE).exists() {
         v["2FA à réactiver"] = json!({
@@ -2578,6 +2639,10 @@ pub fn security_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, Stri
             }
             *sh.twofa_setup.lock().unwrap() = Some((secret, codes));
             Ok(json!({ "ok": true, "message": "Scannez le QR code, notez les codes de secours, puis confirmez avec un code" }))
+        }
+        "ignore_migration" => {
+            let _ = std::fs::write(sh.config.data_dir.join(MIGRATION_IGNORED_FILE), text("noeud"));
+            Ok(json!({ "ok": true, "message": "Annonce ignorée" }))
         }
         "forget_2fa" => {
             let _ = std::fs::remove_file(sh.config.data_dir.join(TWOFA_FLAG_FILE));
@@ -2672,9 +2737,17 @@ fn apply_rotation(sh: &Shared, new_words: &str, salt: &[u8; 16], kc: Option<&cra
     };
     let now = (sh.clock)();
     let seed = &sh.config.seed_file;
-    let _ = std::fs::copy(seed, seed.with_extension(format!("seed.revoquee-{now}")));
-    std::fs::write(seed, format!("{new_words}
-")).map_err(|e| e.to_string())?;
+    // Ancienne phrase gardée (même rangement), puis remplacée.
+    if let Ok(old) = s3m_protocol::vault::read(seed) {
+        let backup = seed.with_extension(format!("seed.revoquee-{now}"));
+        let kept = s3m_protocol::vault::storage(seed) == s3m_protocol::vault::Storage::System
+            && s3m_protocol::vault::protect_system(&backup, old.trim()).is_ok();
+        if !kept {
+            let _ = std::fs::write(&backup, &old);
+            s3m_protocol::vault::restrict(&backup);
+        }
+    }
+    s3m_protocol::vault::write(seed, new_words).map_err(|e| e.to_string())?;
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut raw: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     raw["node"]["salt"] = json!(hex::encode(salt));
@@ -3117,6 +3190,7 @@ pub async fn watch_once(sh: &Shared) {
     let now = (sh.clock)();
     // Rotation programmée : annulée ou exécutée par le Nœud.
     rotation_tick(sh).await;
+    migration_tick(sh, now).await;
     // Sonde : un hash nul n'existe jamais ; `NotFound` prouve que le Nœud
     // répond et accepte notre identifiant.
     let mut probe = sh.session.get_block(&[0; 32]).await;
@@ -3343,7 +3417,7 @@ pub async fn start(
     clock: Arc<dyn Fn() -> u64 + Send + Sync>,
 ) -> Result<(Arc<Shared>, String), DaemonError> {
     state_dir(&config)?;
-    let mnemonic = std::fs::read_to_string(&config.seed_file)?;
+    let mnemonic = s3m_protocol::vault::read(&config.seed_file).map_err(|e| DaemonError::Config(e.to_string()))?;
     let (priv_user, pub_user) = user_keys(&mnemonic, config.identity_index)?;
     // Après une rotation : version courante et anciennes clés du trousseau.
     let keychain = crate::keychain::Keychain::load(&config.data_dir);
@@ -3413,6 +3487,7 @@ pub async fn start(
         unsent: Some(unsent),
         twofa_setup: Mutex::new(None),
         security: Mutex::new(None),
+        migration_offer: Mutex::new((crate::bootstrap::Migration::None, 0)),
         syncing: Default::default(),
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
@@ -3486,7 +3561,7 @@ pub async fn start(
                 "purge_versions" => purge_versions(&sh, &v),
                 "set_log_retention" => set_log_retention(&sh, &v),
                 "rotate_identity" => rotate_identity(&sh, &v),
-                "prepare_2fa" | "cancel_2fa_setup" | "confirm_2fa" | "remove_2fa" | "cancel_pending" | "forget_2fa" => {
+                "prepare_2fa" | "cancel_2fa_setup" | "confirm_2fa" | "remove_2fa" | "cancel_pending" | "forget_2fa" | "ignore_migration" => {
                     security_action(&sh, name, &v)
                 }
                 "phrase_noted" => {
@@ -3498,7 +3573,7 @@ pub async fn start(
                     sync_now(&sh);
                     Ok(json!({ "ok": true, "message": "Synchronisation reprise" }))
                 }
-                "admin_node" => admin_node(&sh.config.node.addr, &v),
+                "admin_node" => admin_node(&sh.config.node.addr, &sh.config.data_dir, &v),
                 "send_node_message"
                 | "mark_message_read"
                 | "mark_all_read"
@@ -4165,11 +4240,14 @@ fn mount_drive(sh: &Arc<Shared>) {
 /// Ouvre le dashboard du Nœud à distance (code 2FA) —
 /// `deploiement.appairage-admin` § Administration à distance. Appelée
 /// depuis un fil bloquant (API locale).
-pub fn admin_node(node_addr: &str, v: &Value) -> Result<Value, String> {
+pub fn admin_node(node_addr: &str, data_dir: &std::path::Path, v: &Value) -> Result<Value, String> {
     let totp = v
         .get("code 2FA")
         .and_then(|x| x.as_str())
         .unwrap_or_default();
+    let pass = v.get("phrase de passe").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    // `PeerId` de déverrouillage du Nœud, retenu à chaque connexion.
+    let unlock_file = data_dir.join("deverrouillage-noeud.txt");
     let addr = match v.get("adresse d'administration").and_then(|x| x.as_str()) {
         Some(a) if !a.trim().is_empty() => {
             a.trim().parse().map_err(|e| format!("adresse : {e}"))?
@@ -4178,7 +4256,25 @@ pub fn admin_node(node_addr: &str, v: &Value) -> Result<Value, String> {
     };
     tokio::runtime::Handle::current().block_on(async move {
         let client = crate::admin_client::AdminClient::start()?;
+        if !pass.is_empty() {
+            let peer = std::fs::read_to_string(&unlock_file).map_err(|_| {
+                "identifiant de déverrouillage inconnu : connectez-vous une fois au Nœud déverrouillé (code 2FA) pour que S3m le retienne"
+                    .to_string()
+            })?;
+            let target = crate::admin_client::with_peer(&addr, peer.trim())?;
+            client.unlock(&target, &pass).await?;
+            return Ok(json!({ "ok": true, "message": "Nœud déverrouillé : il démarre (une minute environ), puis reconnectez-vous avec un code 2FA" }));
+        }
         let session = client.login(&addr, totp).await?;
+        match client.unlock_peer(&addr).await {
+            Ok(Some(p)) => {
+                let _ = std::fs::write(&unlock_file, p);
+            }
+            Ok(None) => {
+                let _ = std::fs::remove_file(&unlock_file);
+            }
+            Err(_) => {}
+        }
         let url = crate::remote::serve_remote(session).await?;
         Ok(json!({ "ok": true, "message": "Connecté au Nœud : son tableau de bord s'ouvre", "ouvrir": url }))
     })

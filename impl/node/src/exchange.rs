@@ -268,6 +268,9 @@ pub struct NodeService {
     /// (`securite.incidents-compromissions#2fa`).
     pub twofa: HashMap<Id, crate::user2fa::TwoFa>,
     pub pending_ops: HashMap<Id, Vec<crate::user2fa::Pending>>,
+    /// Appareils (`PeerId` du Connecteur) déjà vus par Utilisateur, avec
+    /// leur première connexion : un nouveau est signalé aux autres (U4).
+    pub devices: HashMap<Id, Vec<(String, u64)>>,
     /// Saut d'horloge : suppressions liées au temps gelées
     /// (`deploiement.packaging#horloge`).
     pub clock_freeze: Option<crate::clock_guard::Freeze>,
@@ -381,6 +384,7 @@ impl NodeService {
             renamed_users: Vec::new(),
             twofa: Default::default(),
             pending_ops: Default::default(),
+            devices: Default::default(),
             clock_freeze: None,
             inactivity_days: Default::default(),
             attach_policy: AttachPolicy::default(),
@@ -440,9 +444,35 @@ impl NodeService {
         if let Some(u) = user {
             if !matches!(r, Err(Refusal::Unauthorized)) && self.users.contains_key(&u) {
                 self.last_active.insert(u, now);
+                self.note_device(u, from, now);
             }
         }
         r.unwrap_or_else(Response::Failure)
+    }
+
+    /// Appareil de `u` : un nouveau (après le premier) est annoncé à tous
+    /// ses appareils (`securite.incidents-compromissions#nouvel-appareil`).
+    fn note_device(&mut self, u: Id, from: &[u8], now: u64) {
+        const MAX: usize = 32;
+        let peer = hex::encode(from);
+        let list = self.devices.entry(u).or_default();
+        if list.iter().any(|(p, _)| *p == peer) {
+            return;
+        }
+        let first = list.is_empty();
+        list.push((peer, now));
+        if list.len() > MAX {
+            list.remove(0);
+        }
+        if first {
+            return;
+        }
+        let tag = s3m_protocol::pseudo::fingerprint(from);
+        let text = format!(
+            "Sécurité : un nouvel appareil s'est connecté à votre compte (appareil {tag}). Si ce n'est pas vous, quelqu'un utilise votre phrase de récupération : activez le 2FA et changez d'identité (page « Mon compte »)."
+        );
+        let priv_node = self.priv_node();
+        let _ = self.channel.post_info_to(&priv_node, &u, &text, now);
     }
 
     /// Lecteur d'un partage : autorisation signée par un Utilisateur de ce
@@ -1410,6 +1440,7 @@ impl NodeService {
         mv(&mut self.released, &old, new);
         mv(&mut self.undispersed, &old, new);
         mv(&mut self.twofa, &old, new);
+        mv(&mut self.devices, &old, new);
         self.pending_ops.remove(&old);
         self.last_active.remove(&old);
         self.last_active.insert(new, now);

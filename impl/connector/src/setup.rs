@@ -63,11 +63,11 @@ pub struct Prepared {
 pub fn prepare(dir: &Path) -> Result<Prepared, String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let seed = dir.join("user.seed");
-    let mnemonic = match std::fs::read_to_string(&seed) {
+    let mnemonic = match s3m_protocol::vault::read(&seed) {
         Ok(m) => m.trim().to_string(),
         Err(_) => {
             let m = generate_mnemonic().map_err(|e| e.to_string())?;
-            std::fs::write(&seed, format!("{m}\n")).map_err(|e| e.to_string())?;
+            s3m_protocol::vault::write(&seed, &m).map_err(|e| e.to_string())?;
             m
         }
     };
@@ -104,7 +104,7 @@ pub fn parse_user_recovery(input: &str) -> Result<String, String> {
 /// Remplace l'identité préparée par une identité existante.
 pub fn restore(dir: &Path, input: &str) -> Result<Prepared, String> {
     let mnemonic = parse_user_recovery(input)?;
-    std::fs::write(dir.join("user.seed"), format!("{mnemonic}\n")).map_err(|e| e.to_string())?;
+    s3m_protocol::vault::write(&dir.join("user.seed"), &mnemonic).map_err(|e| e.to_string())?;
     prepare(dir)
 }
 

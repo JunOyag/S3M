@@ -14,7 +14,7 @@ use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{identity, mdns, noise, tcp, yamux, Multiaddr, PeerId, StreamProtocol};
 use s3m_protocol::admin::{
-    confirm_mac, pake_finish, pake_start, AdminRequest, AdminResponse, Side, MODE_NODE, MODE_SETUP,
+    confirm_mac, pake_finish, pake_start, AdminRequest, AdminResponse, Side, MODE_LOCKED, MODE_NODE, MODE_SETUP,
     PROTOCOL, VERSION,
 };
 use sha1::Sha1;
@@ -28,7 +28,7 @@ pub const SESSION_IDLE: Duration = Duration::from_secs(30 * 60);
 /// Échecs tolérés avant blocage.
 pub const MAX_FAILURES: u32 = 5;
 /// Actions réservées au dashboard local.
-pub const LOCAL_ONLY: &[&str] = &["show_totp", "regenerate_totp"];
+pub const LOCAL_ONLY: &[&str] = &["show_totp", "regenerate_totp", "vault_plain"];
 
 /// HOTP (RFC 4226) sur HMAC-SHA1, `digits` chiffres.
 pub fn hotp(secret: &[u8], counter: u64, digits: u32) -> u32 {
@@ -70,14 +70,20 @@ fn now_s() -> u64 {
 
 /// Secret TOTP courant (`None` : administration à distance impossible).
 pub type SecretFn = Arc<dyn Fn() -> Option<[u8; 20]> + Send + Sync>;
+/// Essai de la phrase de passe ; `Err(None)` : phrase incorrecte.
+pub type UnlockFn = Arc<dyn Fn(&str) -> Result<(), Option<String>> + Send + Sync>;
 
 /// Mode du serveur.
 #[derive(Clone)]
 pub enum Mode {
     /// Identité temporaire : appairage par code.
     Setup { code: String },
-    /// Identité définitive : TOTP.
-    Node { secret: SecretFn },
+    /// Identité définitive : TOTP ; `unlock` : `PeerId` de déverrouillage
+    /// annoncé au client.
+    Node { secret: SecretFn, unlock: Option<String> },
+    /// Nœud verrouillé, sous sa clé de déverrouillage : seule la phrase de
+    /// passe est acceptée (`deploiement.packaging#coffre-local`).
+    Locked { unlock: UnlockFn },
 }
 
 struct Session {
@@ -175,8 +181,8 @@ impl Auth {
 
     fn current_secret(&self) -> Option<[u8; 20]> {
         match &self.mode {
-            Mode::Node { secret } => secret(),
-            Mode::Setup { .. } => None,
+            Mode::Node { secret, .. } => secret(),
+            _ => None,
         }
     }
 
@@ -193,9 +199,35 @@ impl Auth {
         let setup = matches!(self.mode, Mode::Setup { .. });
         match req {
             AdminRequest::Hello {} => AdminResponse::Hello {
-                mode: if setup { MODE_SETUP } else { MODE_NODE }.into(),
+                mode: match &self.mode {
+                    Mode::Setup { .. } => MODE_SETUP,
+                    Mode::Node { .. } => MODE_NODE,
+                    Mode::Locked { .. } => MODE_LOCKED,
+                }
+                .into(),
                 version: VERSION,
+                unlock: match &self.mode {
+                    Mode::Node { unlock, .. } => unlock.clone(),
+                    _ => None,
+                },
             },
+            AdminRequest::Unlock { passphrase } => {
+                let Mode::Locked { unlock } = &self.mode else {
+                    return AdminResponse::Error("Nœud non verrouillé".into());
+                };
+                if self.locked(now) {
+                    return AdminResponse::Error("trop d'essais : réessayez plus tard".into());
+                }
+                let unlock = unlock.clone();
+                match unlock(&passphrase) {
+                    Ok(()) => {
+                        self.failures = 0;
+                        AdminResponse::Result(serde_json::json!({ "ok": true }))
+                    }
+                    Err(None) => self.fail(now),
+                    Err(Some(e)) => AdminResponse::Error(e),
+                }
+            }
             AdminRequest::PakeStart { msg } => {
                 let Mode::Setup { code } = &self.mode else {
                     return AdminResponse::Error("Nœud déjà configuré : code 2FA attendu".into());

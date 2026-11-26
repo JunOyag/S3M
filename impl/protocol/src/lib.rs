@@ -39,3 +39,5 @@ pub mod message;
 pub mod pseudo;
 pub mod share;
 pub mod snapshot;
+#[cfg(feature = "vault")]
+pub mod vault;

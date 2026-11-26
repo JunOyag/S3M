@@ -169,6 +169,16 @@ async fn a_compromised_phrase_is_replaced_without_losing_files() {
         assert_eq!(st["pages simples"][0]["sections"][0], "2FA à réactiver");
         security_action(&s, "forget_2fa", &json!({})).unwrap();
         assert!(status(&s).get("2FA à réactiver").is_none());
+        // Remplaçant annoncé par le Nœud (N1) : proposé, jamais suivi seul.
+        *s.migration_offer.lock().unwrap() =
+            (s3m_connector::bootstrap::Migration::Proposed { to: [9; 32], chained: true }, 1_000_000);
+        let st = status(&s);
+        let m = &st["remplacement de mon nœud annoncé"];
+        assert_eq!(m["_contenu"]["identifiant du nouveau Nœud"], hex::encode([9u8; 32]));
+        assert!(m["_contenu"]["_note"].as_str().unwrap().contains("redoublez"));
+        assert_eq!(st["pages simples"][0]["sections"][0], "remplacement de mon nœud annoncé");
+        security_action(&s, "ignore_migration", &json!({ "noeud": hex::encode([9u8; 32]) })).unwrap();
+        assert!(status(&s).get("remplacement de mon nœud annoncé").is_none());
     })
     .await;
     stop(sh).await;

@@ -94,6 +94,7 @@ pub fn purge_expired(
         s.undispersed.remove(u);
         s.twofa.remove(u);
         s.pending_ops.remove(u);
+        s.devices.remove(u);
         s.root_since.remove(u);
         s.last_active.remove(u);
         s.inactivity_days.remove(u);

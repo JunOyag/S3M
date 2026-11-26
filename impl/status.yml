@@ -272,6 +272,8 @@ entries:
     owner: claude-code
     tests:
       - clock_guard::a_jump_of_more_than_a_day_is_detected
+      - vault::a_passphrase_vault_locks_unlocks_rewrites_and_returns_to_plain
+      - admin::a_locked_node_only_accepts_its_passphrase_with_limited_tries
       - alerts::an_alert_is_sent_when_it_appears_and_again_if_it_comes_back
       - alerts::the_webhook_receives_the_alert_as_json
       - alerts::a_bad_smtp_configuration_is_reported
@@ -475,7 +477,7 @@ entries:
       - bootstrap::cold_path_resolves_current_node_from_seed_alone
       - bootstrap::fast_path_adopts_newer_dht_entry_otherwise_keeps_cache
       - bootstrap::unknown_user_without_cache_is_an_explicit_error
-      - bootstrap::migration_pointer_is_followed_one_hop_only
+      - bootstrap::migration_pointer_is_only_proposed_never_followed
       - bootstrap::local_cache_roundtrips_and_rejects_corruption
     notes: >-
       impl/connector/src/bootstrap.rs : resolve() — chemin à froid (seed ->
@@ -987,6 +989,8 @@ entries:
     tests:
       - rotation::a_compromised_phrase_is_replaced_without_losing_files
       - rotation::without_2fa_the_rotation_is_deferred_then_applied
+      - exchange::a_new_device_is_announced_to_the_user
+      - bootstrap::migration_pointer_is_only_proposed_never_followed
       - recovery::node_restored_from_seed_alone_recovers_users_partners_and_every_block
       - exchange::twofa_guards_identity_rotation_and_deferred_operations_can_be_cancelled
       - history::a_past_version_is_browsed_restored_then_purged
@@ -995,7 +999,7 @@ entries:
       - incidents::user_rotation_keeps_old_blocks_readable_without_reencryption
       - incidents::node_rotation_publishes_a_pointer_signed_by_the_old_recovery_key
       - dht::migration_pointer_rules
-      - bootstrap::migration_pointer_is_followed_one_hop_only
+      - bootstrap::migration_pointer_is_only_proposed_never_followed
     notes: >-
       connector : impl/connector/src/incidents.rs, rotation User (index
       suivant ou nouvelle mnémonique, nouvelle master_key, re-wrap plat de la

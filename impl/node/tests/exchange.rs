@@ -602,3 +602,23 @@ fn twofa_guards_identity_rotation_and_deferred_operations_can_be_cancelled() {
     assert!(s.users.contains_key(&[0x62; 32]) && s.twofa.contains_key(&[0x62; 32]), "le 2FA suit le compte");
     assert!(s.twofa[&[0x62; 32]].recovery.is_empty());
 }
+
+/// Nouvel appareil (U4) : le premier est enregistré sans bruit, un second
+/// est annoncé à l'Utilisateur ; un appareil connu ne l'est plus.
+#[test]
+fn a_new_device_is_announced_to_the_user() {
+    let mut s = service_with_user(NODE, 1 << 20);
+    let call = |s: &mut NodeService, from: &[u8]| {
+        s.handle(from, None, b"n", user_req(&NODE, Body::ListPending, from, b"n"), NOW)
+    };
+    call(&mut s, b"appareil-1");
+    call(&mut s, b"appareil-1");
+    assert_eq!(s.channel.outbox.sent.len(), 0, "premier appareil : rien");
+    call(&mut s, b"appareil-2");
+    assert_eq!(s.channel.outbox.sent.len(), 1, "nouvel appareil annoncé");
+    call(&mut s, b"appareil-2");
+    assert_eq!(s.channel.outbox.sent.len(), 1);
+    // Identifiant refusé : rien d'enregistré.
+    s.handle(b"intrus", None, b"n", user_req(&NODE, Body::ListPending, b"autre", b"n"), NOW);
+    assert_eq!(s.devices[&pk(&USER)].len(), 2);
+}
