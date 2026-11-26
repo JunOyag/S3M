@@ -754,6 +754,19 @@ impl Drive {
         self.journal.changes.len()
     }
 
+    /// Octets des contenus en attente d'envoi (copies locales).
+    pub fn pending_bytes(&self) -> u64 {
+        self.journal
+            .changes
+            .values()
+            .filter_map(|c| match c {
+                Change::File { cache, .. } => std::fs::metadata(self.workspace.join("files").join(cache)).ok(),
+                _ => None,
+            })
+            .map(|m| m.len())
+            .sum()
+    }
+
     /// Modification locale : nouvelle révision, puis écriture du journal.
     fn changed(&mut self) -> Result<(), DriveError> {
         self.journal.revision += 1;

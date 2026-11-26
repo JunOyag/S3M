@@ -616,7 +616,17 @@ fn unsent_status(sh: &Shared) -> Value {
     })
 }
 
-fn queue_status(c: &Config) -> Value {
+fn queue_status(sh: &Shared) -> Value {
+    let c = &sh.config;
+    // Modifications réelles : journal du lecteur / dossier synchronisé.
+    if let Some(d) = &sh.drive {
+        let d = d.lock().unwrap();
+        return json!({
+            "mutations en attente": d.pending(),
+            "taille (octets)": d.pending_bytes(),
+            "Q_max (octets)": c.q_max_bytes,
+        });
+    }
     let p = c.data_dir.join("write-queue.bin");
     match std::fs::read(&p) {
         Err(_) => {
@@ -1408,7 +1418,7 @@ fn status_base(sh: &Shared) -> Value {
             },
         },
         "autorisation de secours": { "expire le": *sh.grant_expiry.lock().unwrap() },
-        "file d'écriture": queue_status(&sh.config),
+        "file d'écriture": queue_status(sh),
         "blocs pas encore dispersés": unsent_status(sh),
         "incidents d'intégrité": h.incidents,
         "lecteur": drive_status(sh),

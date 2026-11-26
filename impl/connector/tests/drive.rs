@@ -118,6 +118,8 @@ fn concurrent_root_change_is_a_conflict_and_keeps_local_changes() {
     let ws = workspace("conflict");
     let mut d = drive(&node, &ws);
     d.create("/f", false).unwrap();
+    d.write("/f", 0, b"0123456789").unwrap();
+    assert_eq!(d.pending_bytes(), 10, "taille des modifications en attente");
     *node.root.lock().unwrap() = [0xEE; 32];
     assert!(matches!(d.sync(), Err(DriveError::Conflict)));
     assert_eq!(d.conflict, Some([0xEE; 32]));
