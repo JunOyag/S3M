@@ -217,13 +217,22 @@ pages:
     refs: [network.UserEntryPlaintext, deploiement.contacts]
     verified_by: []
 
+  - id: network.DeviceRecord
+    kind: schema
+    path: 02-schemas/network/DeviceRecord.md
+    title: "DeviceRecord"
+    section: "§3.11"
+    fbs: "schemas/network/UserEntry.fbs#DeviceRecord"
+    refs: [network.UserEntryPlaintext, securite.incidents-compromissions]
+    verified_by: [rotation::devices_are_named_merged_and_shown_in_node_messages]
+
   - id: network.UserEntryPlaintext
     kind: schema
     path: 02-schemas/network/UserEntryPlaintext.md
     title: "UserEntryPlaintext"
     section: "§3.9, §3.11"
     fbs: "schemas/network/UserEntry.fbs#UserEntryPlaintext"
-    refs: [crypto.k-self, network.AttachmentRecord, network.ContactRecord, dispersal.MasterKeyEntry, crypto.master-key-chain, network.UserEntry]
+    refs: [crypto.k-self, network.AttachmentRecord, network.ContactRecord, network.DeviceRecord, dispersal.MasterKeyEntry, crypto.master-key-chain, network.UserEntry]
     verified_by:
       - schemas::every_generated_table_builds_and_verifies
 

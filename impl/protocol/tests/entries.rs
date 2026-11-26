@@ -94,6 +94,7 @@ fn user_entry_is_accepted_and_opens_with_the_user_key_only() {
             node_label: "Maison".into(),
         }],
         pseudo: "Perso".into(),
+        devices: vec![DeviceRec { device_id: [1; 16], peer_id: vec![2; 38], name: "PC bureau".into(), added_at: 5, updated_at: 6, deleted: false }],
     };
     let (key, env) =
         user_entry_envelope(&priv_user, &pub_user, 1_000, &proof(), &plain, &[2; 12]).unwrap();
@@ -101,4 +102,13 @@ fn user_entry_is_accepted_and_opens_with_the_user_key_only() {
     assert!(accept_record(&key, &env, None, 1_000, &|id, _| Ok(*id == want)).is_ok());
     assert_eq!(open_user_entry(&priv_user, &env).unwrap(), plain);
     assert!(open_user_entry(&[8; 32], &env).is_err());
+}
+
+#[test]
+fn device_lists_merge_by_latest_change() {
+    let d = |id: u8, name: &str, at: u64| DeviceRec { device_id: [id; 16], name: name.into(), updated_at: at, added_at: id as u64, ..Default::default() };
+    let m = merge_devices(&[d(1, "ancien", 1), d(2, "B", 5)], &[d(1, "PC", 3), d(3, "C", 2)]);
+    assert_eq!(m.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), vec!["PC", "B", "C"]);
+    let many: Vec<_> = (0..40).map(|i| d(i, "x", i as u64)).collect();
+    assert_eq!(merge_devices(&many, &[]).len(), MAX_DEVICES);
 }

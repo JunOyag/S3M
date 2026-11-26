@@ -27,6 +27,17 @@ table ContactRecord {
   deleted: bool = false;          // marque de suppression, purgée après 90 jours
 }
 
+// Un appareil de l'Utilisateur (ajout 2026-11-26, securite.incidents-compromissions#nouvel-appareil) :
+// nom saisi, visible de tous ses appareils seulement (clair sous K_self).
+table DeviceRecord {
+  device_id: [ubyte];             // 16 o, stable par appareil (dérivé de sa clé locale)
+  peer_id: [ubyte];               // PeerId actuel auprès du Nœud (empreinte affichée)
+  name: string;                   // 64 o au plus ; vide : aucun
+  added_at: uint64;
+  updated_at: uint64;             // dernière modification (fusion entre appareils)
+  deleted: bool = false;          // oublié par l'utilisateur
+}
+
 /// Clair chiffré sous K_self (§3.9).
 table UserEntryPlaintext {
   fs_root_hash: [ubyte];
@@ -38,6 +49,7 @@ table UserEntryPlaintext {
   pseudo: string;                 // ajout 2026-11-21 (deploiement.pseudos) : pseudo de l'identité, 64 o au plus
   contacts: [ContactRecord];      // ajout 2026-11-23 (deploiement.contacts) : 200 au plus, marques comprises
   padding: [ubyte];               // ajout 2026-11-23 : zéros, clair complété au multiple de 4 096 o
+  devices: [DeviceRecord];        // ajout 2026-11-26 : 32 au plus
 }
 
 /// Entrée DHT User (§3.9). TTL 315 360 000 s ; republication réactive, ou de secours après 31 536 000 s.

@@ -82,6 +82,7 @@ fn user_envelope(attachments: &[([u8; 32], u64)], fs_root: &[u8], ts: u64) -> Ve
             pseudo: None,
             contacts: None,
             padding: None,
+            devices: None,
         },
     );
     fbb.finish_minimal(p);

@@ -269,3 +269,45 @@ async fn a_restarted_connector_is_the_same_device_for_its_node() {
     drop(s);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Appareils nommés : renommage, fusion des appareils publiés par les
+/// autres, oubli ; les messages du Nœud affichent le nom.
+#[tokio::test(flavor = "multi_thread")]
+async fn devices_are_named_merged_and_shown_in_node_messages() {
+    use s3m_protocol::entries::DeviceRec;
+    let dir = std::env::temp_dir().join(format!("p2p-devices-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("user.seed"), MNEMONIC).unwrap();
+    let path = write_config(&dir, "/ip4/127.0.0.1/tcp/9/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN", "07070707070707070707070707070707");
+    let sh = open(&path).await;
+    let s = sh.clone();
+    blocking(move || {
+        device_action(&s, "rename_device", &json!({ "nom": "PC bureau" })).unwrap();
+        let st = status(&s);
+        let rows = st["mes appareils"]["_contenu"].as_array().unwrap().clone();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["nom"], "PC bureau");
+        let fp = rows[0]["empreinte"].as_str().unwrap().to_string();
+        // Un autre appareil publie sa ligne.
+        let other = DeviceRec { device_id: [9; 16], peer_id: vec![1, 2, 3], name: "Portable".into(), added_at: 5, updated_at: 5, deleted: false };
+        adopt_devices(&s, std::slice::from_ref(&other));
+        assert_eq!(status(&s)["mes appareils"]["_contenu"].as_array().unwrap().len(), 2);
+        let other_fp = s3m_protocol::pseudo::fingerprint(&other.peer_id);
+        let t = name_devices(&s, &format!("Sécurité : un nouvel appareil s'est connecté à votre compte (appareil {other_fp})."));
+        assert!(t.contains("« Portable »"), "{t}");
+        let t = name_devices(&s, "Sécurité : un nouvel appareil s'est connecté à votre compte (appareil AAAA-BBBB-CCCC).");
+        assert!(t.contains("n'est connu d'aucun"), "{t}");
+        assert!(name_devices(&s, &fp).contains("PC bureau"));
+        device_action(&s, "forget_device", &json!({ "appareil": hex::encode([9u8; 16]) })).unwrap();
+        assert_eq!(status(&s)["mes appareils"]["_contenu"].as_array().unwrap().len(), 1);
+        // Cet appareil oublié ailleurs : réinscrit à la fusion.
+        let me = s.devices.lock().unwrap()[0].clone();
+        adopt_devices(&s, &[DeviceRec { deleted: true, updated_at: me.updated_at + 10, ..me }]);
+        assert_eq!(status(&s)["mes appareils"]["_contenu"].as_array().unwrap().len(), 1);
+    })
+    .await;
+    stop(sh).await;
+    assert!(dir.join("data").join("appareils.json").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}

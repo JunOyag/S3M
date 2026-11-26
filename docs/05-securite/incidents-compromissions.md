@@ -104,6 +104,18 @@ bruit ; chaque nouveau est annoncé par un message adressé à l'Utilisateur
 (activer le 2FA, changer d'identité). Une personne qui utiliserait une
 phrase volée se signale donc dès sa première connexion.
 
+L'identité réseau d'un appareil est stable et propre à chaque Nœud
+(dérivée de la clé locale de l'appareil et de `pub_node`) : deux Nœuds ne
+peuvent pas relier les appareils d'un même Utilisateur. Chaque appareil
+porte un nom saisi par l'utilisateur (par défaut, celui de l'ordinateur),
+publié avec son empreinte dans la partie chiffrée de l'entrée User
+(`DeviceRecord`, [`network.UserEntryPlaintext`](../02-schemas/network/UserEntryPlaintext.md)),
+lisible des seuls appareils de l'Utilisateur : fusion par appareil (la
+modification la plus récente l'emporte), 32 au plus, oubli possible
+(un appareil oublié qui se reconnecte se réinscrit). Les messages « nouvel
+appareil » affichent le nom d'un appareil connu, et signalent un appareil
+inconnu de tous.
+
 ## Compromission Clé Node
 
 Contrairement au User, ce cas implique **tous les Utilisateurs rattachés** —

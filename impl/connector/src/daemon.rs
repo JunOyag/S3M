@@ -240,6 +240,141 @@ fn load_names(c: &Config) -> Option<crate::channel::Names> {
         .and_then(|b| serde_json::from_slice(&b).ok())
 }
 
+fn devices_path(dir: &Path) -> PathBuf {
+    dir.join("appareils.json")
+}
+
+fn load_devices(dir: &Path) -> Vec<s3m_protocol::entries::DeviceRec> {
+    std::fs::read(devices_path(dir)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+fn save_devices(sh: &Shared) {
+    let list = sh.devices.lock().unwrap().clone();
+    let p = devices_path(&sh.config.data_dir);
+    let tmp = p.with_extension("json.tmp");
+    if std::fs::write(&tmp, serde_json::to_vec_pretty(&list).expect("sérialisable")).is_ok() {
+        let _ = std::fs::rename(tmp, p);
+    }
+}
+
+/// Ligne de cet appareil : créée (nom : celui de l'ordinateur) ou mise à
+/// jour (identité réseau changée avec le Nœud).
+fn own_device(
+    mut list: Vec<s3m_protocol::entries::DeviceRec>,
+    id: [u8; 16],
+    peer: &[u8],
+    now: u64,
+) -> Vec<s3m_protocol::entries::DeviceRec> {
+    match list.iter_mut().find(|d| d.device_id == id) {
+        Some(d) => {
+            if d.peer_id != peer || d.deleted {
+                d.peer_id = peer.to_vec();
+                d.deleted = false;
+                // Plus récent que l'oubli publié ailleurs.
+                d.updated_at = now.max(d.updated_at + 1);
+            }
+        }
+        None => {
+            let host = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default();
+            list.push(s3m_protocol::entries::DeviceRec {
+                device_id: id,
+                peer_id: peer.to_vec(),
+                name: s3m_protocol::pseudo::sanitize(&host),
+                added_at: now,
+                updated_at: now,
+                deleted: false,
+            });
+        }
+    }
+    list
+}
+
+/// Fusionne les appareils publiés par les autres appareils.
+pub fn adopt_devices(sh: &Shared, published: &[s3m_protocol::entries::DeviceRec]) {
+    let merged = {
+        let mine = sh.devices.lock().unwrap();
+        s3m_protocol::entries::merge_devices(&mine, published)
+    };
+    // Cet appareil oublié par un autre : réinscrit (il est bien là).
+    let merged = own_device(merged, sh.device_id, &sh.session.client().peer_id().to_bytes(), (sh.clock)());
+    *sh.devices.lock().unwrap() = merged;
+    save_devices(sh);
+}
+
+/// Section « mes appareils ».
+fn devices_status(sh: &Shared) -> Value {
+    let list = sh.devices.lock().unwrap().clone();
+    let rows: Vec<Value> = list
+        .iter()
+        .filter(|d| !d.deleted)
+        .map(|d| {
+            let me = d.device_id == sh.device_id;
+            let mut r = json!({
+                "nom": if d.name.is_empty() { "(sans nom)".to_string() } else { d.name.clone() },
+                "empreinte": s3m_protocol::pseudo::fingerprint(&d.peer_id),
+                "ajouté le": format!("le {}", d.added_at),
+                "cet appareil": if me { "✔" } else { "" },
+            });
+            if !me {
+                r["_actions"] = json!([{ "nom": "forget_device", "libellé": "Oublier", "style": "secondary",
+                    "valeurs": { "appareil": hex::encode(d.device_id) },
+                    "confirmer": "Oublier cet appareil ? S'il se reconnecte, il réapparaîtra." }]);
+            }
+            r
+        })
+        .collect();
+    let me = list.iter().find(|d| d.device_id == sh.device_id).map(|d| d.name.clone()).unwrap_or_default();
+    json!({
+        "_contenu": rows,
+        "_note": "Les noms sont visibles de vos seuls appareils (chiffrés dans votre entrée de l'annuaire). Un appareil absent de cette liste qui se connecte à votre compte vous est signalé par votre Nœud.",
+        "_formulaires": [
+            { "nom": "rename_device", "libellé": "Renommer cet appareil", "champs": ["nom"], "valeurs": { "nom": me },
+              "aide": { "nom": "Par exemple « PC bureau » ou « Portable de Léa » (64 caractères au plus)" } }
+        ],
+    })
+}
+
+pub fn device_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
+    let now = (sh.clock)();
+    let text = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    {
+        let mut list = sh.devices.lock().unwrap();
+        if name == "rename_device" {
+            let n = s3m_protocol::pseudo::sanitize(&text("nom"));
+            let d = list.iter_mut().find(|d| d.device_id == sh.device_id).ok_or("appareil inconnu")?;
+            d.name = n;
+            d.updated_at = now;
+        } else {
+            let id = hex::decode(text("appareil")).map_err(|e| e.to_string())?;
+            let d = list.iter_mut().find(|d| d.device_id[..] == id[..]).ok_or("appareil inconnu")?;
+            d.deleted = true;
+            d.updated_at = now;
+        }
+    }
+    save_devices(sh);
+    Ok(json!({ "ok": true, "message": if name == "rename_device" { "Appareil renommé (visible de vos autres appareils sous peu)" } else { "Appareil oublié" } }))
+}
+
+/// Remplace les empreintes d'appareils connus par leur nom dans un message
+/// du Nœud ; « nouvel appareil » inconnu : signalé.
+pub fn name_devices(sh: &Shared, text: &str) -> String {
+    let list = sh.devices.lock().unwrap().clone();
+    let mut out = text.to_string();
+    let mut known = false;
+    for d in list.iter().filter(|d| !d.deleted) {
+        let fp = s3m_protocol::pseudo::fingerprint(&d.peer_id);
+        if out.contains(&fp) {
+            known = true;
+            let n = if d.name.is_empty() { "sans nom".to_string() } else { format!("« {} »", d.name) };
+            out = out.replace(&fp, &format!("{n}, {fp}"));
+        }
+    }
+    if !known && out.contains("nouvel appareil s'est connecté") {
+        out.push_str(" ⚠ Cet appareil n'est connu d'aucun de vos appareils.");
+    }
+    out
+}
+
 fn save_names(sh: &Shared) -> Result<(), String> {
     let st = sh.names.lock().unwrap().clone();
     let p = names_path(&sh.config);
@@ -584,6 +719,10 @@ pub struct Shared {
     /// : `names.json` existait, sinon les noms sont adoptés de l'entrée User.
     pub names: Mutex<crate::channel::Names>,
     pub names_known: std::sync::atomic::AtomicBool,
+    /// Appareils de l'identité (noms partagés par l'entrée User) et
+    /// identifiant stable de celui-ci.
+    pub devices: Mutex<Vec<s3m_protocol::entries::DeviceRec>>,
+    pub device_id: [u8; 16],
     /// Dernière lecture de l'entrée du Nœud (0 : jamais).
     pub node_entry_read_at: Mutex<u64>,
     pub(crate) priv_user: [u8; 32],
@@ -773,7 +912,7 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
-          "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "sécurité renforcée (2FA)", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"] },
+          "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "mes appareils", "sécurité renforcée (2FA)", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"] },
         { "id": "diagnostic", "titre": "Diagnostic", "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "État de santé", "sections": ["santé"] },
                                   { "titre": "Avancé", "sections": ["journal"] }] },
@@ -875,7 +1014,7 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
                 "sections": ["partages donnés", "partages reçus", "contacts", "mon identifiant"],
                 "actions": [] }),
         json!({ "id": "compte", "titre": "Mon compte",
-                "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "sécurité renforcée (2FA)", "espace", "accès aux fichiers", "historique des versions"],
+                "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "mes appareils", "sécurité renforcée (2FA)", "espace", "accès aux fichiers", "historique des versions"],
                 "actions": ["change_node", "rotate_identity"] }),
     ];
     if t.messages_received > 0 || v.pointer("/alerte du nœud/message").is_some_and(|m| !m.is_null()) {
@@ -1175,7 +1314,7 @@ fn channel_status(sh: &Shared, v: &mut Value) {
             "titre": format!("Message de votre Nœud ({kind})"),
             "texte": texte,
             "contenu": { "reçu le": m.timestamp, "pour": if m.personal { "vous seul" } else { "tous les utilisateurs" } },
-            "message": m.text,
+            "message": name_devices(sh, &m.text),
             "ouverture": { "nom": "mark_message_read", "valeurs": { "sorte": if alert { "alerte" } else { "info" }, "n°": m.seq } },
             "formulaires": forms,
         });
@@ -1659,6 +1798,7 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
         let _ = sh.dht.set(client.clone());
         // Nouvel appareil : racine relue dans l'entrée User publiée.
         if let Some(plain) = read_user_entry(&client, &priv_user, &sh.pub_user).await {
+            adopt_devices(&sh, &plain.devices);
             // Nouvel appareil : noms repris de l'entrée User.
             if !sh.names_known.load(std::sync::atomic::Ordering::SeqCst) {
                 let label = plain
@@ -1694,6 +1834,7 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
         };
         sh.user_entry.lock().unwrap().proof_ready = true;
         let since = attached_at(&sh.config.data_dir, (sh.clock)());
+        let mut round = 0u64;
         loop {
             let root = sh.drive.as_ref().map(|d| d.lock().unwrap().root());
             let (fs_root_hash, encryption_salt, key_version) = match root {
@@ -1706,7 +1847,15 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
                 .unwrap()
                 .inactivity_detected_at
                 .unwrap_or(0);
+            // Appareils des autres : relus toutes les 5 minutes.
+            round += 1;
+            if round.is_multiple_of(10) {
+                if let Some(p) = read_user_entry(&client, &priv_user, &sh.pub_user).await {
+                    adopt_devices(&sh, &p.devices);
+                }
+            }
             let names = sh.names.lock().unwrap().clone();
+            let devices = sh.devices.lock().unwrap().clone();
             let plain = UserPlain {
                 fs_root_hash,
                 encryption_salt,
@@ -1719,6 +1868,7 @@ fn spawn_user_entry(sh: Arc<Shared>, priv_user: [u8; 32], pub_node: [u8; 32], sa
                     node_label: names.node_label,
                 }],
                 pseudo: names.pseudo,
+                devices,
             };
             publish_if_changed(
                 &client,
@@ -2569,6 +2719,7 @@ fn security_status(sh: &Shared, v: &mut Value) {
     let sec = sh.security.lock().unwrap().clone();
     let enabled = sec.as_ref().is_some_and(|s| s.0);
     migration_status(sh, v);
+    v["mes appareils"] = devices_status(sh);
     // 2FA perdu (changement de Nœud, Nœud reconstruit) : à réactiver.
     if sec.is_some() && !enabled && setup.is_none() && sh.config.data_dir.join(TWOFA_FLAG_FILE).exists() {
         v["2FA à réactiver"] = json!({
@@ -3461,6 +3612,12 @@ pub async fn start(
         .map_err(|e| DaemonError::Config(e.to_string()))?;
     let client = BlockClient::start_with(keypair)?;
     let session = NodeSession::new(client, addr, &priv_user, &pub_user, &pub_node, &salt)?;
+    let device_id: [u8; 16] = {
+        let mut s = b"s3m/appareil-id".to_vec();
+        s.extend_from_slice(&device);
+        s3m_core::symmetric_suite::hash_sha256(&s)[..16].try_into().unwrap()
+    };
+    let devices = own_device(load_devices(&config.data_dir), device_id, &session.client().peer_id().to_bytes(), clock());
     let mut keeper = GrantKeeper::new(device);
     keeper.grant = load_grant(&config.data_dir);
     let expiry = keeper
@@ -3513,6 +3670,8 @@ pub async fn start(
         security: Mutex::new(None),
         migration_offer: Mutex::new((crate::bootstrap::Migration::None, 0)),
         wake: tokio::sync::Notify::new(),
+        devices: Mutex::new(devices),
+        device_id,
         syncing: Default::default(),
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
@@ -3586,6 +3745,7 @@ pub async fn start(
                 "purge_versions" => purge_versions(&sh, &v),
                 "set_log_retention" => set_log_retention(&sh, &v),
                 "rotate_identity" => rotate_identity(&sh, &v),
+                "rename_device" | "forget_device" => device_action(&sh, name, &v),
                 "prepare_2fa" | "cancel_2fa_setup" | "confirm_2fa" | "remove_2fa" | "cancel_pending" | "forget_2fa" | "ignore_migration" => {
                     security_action(&sh, name, &v)
                 }

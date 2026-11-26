@@ -143,6 +143,38 @@ pub struct Attachment {
     pub node_label: String,
 }
 
+/// Appareil de l'Utilisateur (`DeviceRecord`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceRec {
+    pub device_id: [u8; 16],
+    pub peer_id: Vec<u8>,
+    pub name: String,
+    pub added_at: u64,
+    pub updated_at: u64,
+    #[serde(default)]
+    pub deleted: bool,
+}
+
+/// Appareils au plus dans l'entrée User.
+pub const MAX_DEVICES: usize = 32;
+
+/// Fusion de deux listes d'appareils : la modification la plus récente de
+/// chaque appareil l'emporte ; 32 au plus, les plus récemment modifiés.
+pub fn merge_devices(a: &[DeviceRec], b: &[DeviceRec]) -> Vec<DeviceRec> {
+    let mut out: Vec<DeviceRec> = Vec::new();
+    for d in a.iter().chain(b) {
+        match out.iter_mut().find(|x| x.device_id == d.device_id) {
+            Some(x) if d.updated_at > x.updated_at => *x = d.clone(),
+            Some(_) => {}
+            None => out.push(d.clone()),
+        }
+    }
+    out.sort_by_key(|d| std::cmp::Reverse(d.updated_at));
+    out.truncate(MAX_DEVICES);
+    out.sort_by_key(|d| d.added_at);
+    out
+}
+
 /// Contenu chiffré de l'entrée User (`UserEntryPlaintext`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UserPlain {
@@ -152,6 +184,8 @@ pub struct UserPlain {
     pub attachments: Vec<Attachment>,
     /// Pseudo de l'identité (`deploiement.pseudos`).
     pub pseudo: String,
+    /// Appareils nommés (`securite.incidents-compromissions#nouvel-appareil`).
+    pub devices: Vec<DeviceRec>,
 }
 
 fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
@@ -182,6 +216,29 @@ fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
     let salt = b.create_vector(&u.encryption_salt);
     let pseudo = crate::pseudo::sanitize(&u.pseudo);
     let pseudo = (!pseudo.is_empty()).then(|| b.create_string(&pseudo));
+    let devs: Vec<_> = u
+        .devices
+        .iter()
+        .take(MAX_DEVICES)
+        .map(|d| {
+            let id = b.create_vector(&d.device_id);
+            let peer = b.create_vector(&d.peer_id);
+            let name = crate::pseudo::sanitize(&d.name);
+            let name = (!name.is_empty()).then(|| b.create_string(&name));
+            fb::DeviceRecord::create(
+                &mut b,
+                &fb::DeviceRecordArgs {
+                    device_id: Some(id),
+                    peer_id: Some(peer),
+                    name,
+                    added_at: d.added_at,
+                    updated_at: d.updated_at,
+                    deleted: d.deleted,
+                },
+            )
+        })
+        .collect();
+    let devices = (!devs.is_empty()).then(|| b.create_vector(&devs));
     let p = fb::UserEntryPlaintext::create(
         &mut b,
         &fb::UserEntryPlaintextArgs {
@@ -195,6 +252,7 @@ fn encode_user_plain(u: &UserPlain) -> Vec<u8> {
             // deploiement.contacts : pas encore publiés.
             contacts: None,
             padding: None,
+            devices,
         },
     );
     b.finish_minimal(p);
@@ -288,6 +346,24 @@ pub fn open_user_entry(priv_user: &[u8; 32], envelope: &[u8]) -> Result<UserPlai
             .transpose()?
             .unwrap_or_default(),
         pseudo: crate::pseudo::sanitize(p.pseudo().unwrap_or_default()),
+        devices: p
+            .devices()
+            .map(|v| {
+                v.iter()
+                    .filter_map(|d| {
+                        Some(DeviceRec {
+                            device_id: d.device_id()?.bytes().try_into().ok()?,
+                            peer_id: d.peer_id().map(|x| x.bytes().to_vec()).unwrap_or_default(),
+                            name: crate::pseudo::sanitize(d.name().unwrap_or_default()),
+                            added_at: d.added_at(),
+                            updated_at: d.updated_at(),
+                            deleted: d.deleted(),
+                        })
+                    })
+                    .take(MAX_DEVICES)
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 

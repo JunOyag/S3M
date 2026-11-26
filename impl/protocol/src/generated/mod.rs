@@ -10,6 +10,8 @@ pub mod s3m {
     pub use self::attachment_record_generated::*;
     mod contact_record_generated;
     pub use self::contact_record_generated::*;
+    mod device_record_generated;
+    pub use self::device_record_generated::*;
     mod dht_envelope_generated;
     pub use self::dht_envelope_generated::*;
     mod dispersal_entry_generated;

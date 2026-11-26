@@ -990,6 +990,9 @@ entries:
       - rotation::a_compromised_phrase_is_replaced_without_losing_files
       - rotation::without_2fa_the_rotation_is_deferred_then_applied
       - exchange::a_new_device_is_announced_to_the_user
+      - rotation::a_restarted_connector_is_the_same_device_for_its_node
+      - rotation::devices_are_named_merged_and_shown_in_node_messages
+      - entries::device_lists_merge_by_latest_change
       - bootstrap::migration_pointer_is_only_proposed_never_followed
       - recovery::node_restored_from_seed_alone_recovers_users_partners_and_every_block
       - exchange::twofa_guards_identity_rotation_and_deferred_operations_can_be_cancelled
@@ -1434,6 +1437,14 @@ entries:
     owner: claude-code
     tests:
       - message::messages_requests_and_response_roundtrip
+    notes: ""
+  network.DeviceRecord:
+    kind: schema
+    status: done
+    owner: claude-code
+    tests:
+      - entries::device_lists_merge_by_latest_change
+      - rotation::devices_are_named_merged_and_shown_in_node_messages
     notes: ""
   network.ContactRecord:
     kind: schema

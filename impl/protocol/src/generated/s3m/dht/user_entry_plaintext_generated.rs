@@ -35,6 +35,7 @@ impl<'a> UserEntryPlaintext<'a> {
   pub const VT_PSEUDO: flatbuffers::VOffsetT = 16;
   pub const VT_CONTACTS: flatbuffers::VOffsetT = 18;
   pub const VT_PADDING: flatbuffers::VOffsetT = 20;
+  pub const VT_DEVICES: flatbuffers::VOffsetT = 22;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -46,6 +47,7 @@ impl<'a> UserEntryPlaintext<'a> {
     args: &'args UserEntryPlaintextArgs<'args>
   ) -> flatbuffers::WIPOffset<UserEntryPlaintext<'bldr>> {
     let mut builder = UserEntryPlaintextBuilder::new(_fbb);
+    if let Some(x) = args.devices { builder.add_devices(x); }
     if let Some(x) = args.padding { builder.add_padding(x); }
     if let Some(x) = args.contacts { builder.add_contacts(x); }
     if let Some(x) = args.pseudo { builder.add_pseudo(x); }
@@ -122,6 +124,13 @@ impl<'a> UserEntryPlaintext<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(UserEntryPlaintext::VT_PADDING, None)}
   }
+  #[inline]
+  pub fn devices(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DeviceRecord<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DeviceRecord>>>>(UserEntryPlaintext::VT_DEVICES, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for UserEntryPlaintext<'_> {
@@ -140,6 +149,7 @@ impl flatbuffers::Verifiable for UserEntryPlaintext<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("pseudo", Self::VT_PSEUDO, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ContactRecord>>>>("contacts", Self::VT_CONTACTS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("padding", Self::VT_PADDING, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<DeviceRecord>>>>("devices", Self::VT_DEVICES, false)?
      .finish();
     Ok(())
   }
@@ -154,6 +164,7 @@ pub struct UserEntryPlaintextArgs<'a> {
     pub pseudo: Option<flatbuffers::WIPOffset<&'a str>>,
     pub contacts: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ContactRecord<'a>>>>>,
     pub padding: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub devices: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DeviceRecord<'a>>>>>,
 }
 impl<'a> Default for UserEntryPlaintextArgs<'a> {
   #[inline]
@@ -168,6 +179,7 @@ impl<'a> Default for UserEntryPlaintextArgs<'a> {
       pseudo: None,
       contacts: None,
       padding: None,
+      devices: None,
     }
   }
 }
@@ -214,6 +226,10 @@ impl<'a: 'b, 'b> UserEntryPlaintextBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(UserEntryPlaintext::VT_PADDING, padding);
   }
   #[inline]
+  pub fn add_devices(&mut self, devices: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<DeviceRecord<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(UserEntryPlaintext::VT_DEVICES, devices);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> UserEntryPlaintextBuilder<'a, 'b> {
     let start = _fbb.start_table();
     UserEntryPlaintextBuilder {
@@ -240,6 +256,7 @@ impl core::fmt::Debug for UserEntryPlaintext<'_> {
       ds.field("pseudo", &self.pseudo());
       ds.field("contacts", &self.contacts());
       ds.field("padding", &self.padding());
+      ds.field("devices", &self.devices());
       ds.finish()
   }
 }
