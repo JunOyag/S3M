@@ -288,6 +288,8 @@ async fn devices_are_named_merged_and_shown_in_node_messages() {
         let rows = st["mes appareils"]["_contenu"].as_array().unwrap().clone();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["nom"], "PC bureau");
+        // Ajout d'un contact : lecture du QR code de son identifiant.
+        assert_eq!(st["contacts"]["_formulaires"][0]["panneau"]["formulaires"][0]["scanner"], "identifiant");
         let fp = rows[0]["empreinte"].as_str().unwrap().to_string();
         // Un autre appareil publie sa ligne.
         let other = DeviceRec { device_id: [9; 16], peer_id: vec![1, 2, 3], name: "Portable".into(), added_at: 5, updated_at: 5, deleted: false };

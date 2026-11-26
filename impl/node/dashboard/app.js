@@ -397,6 +397,106 @@ function labelEl(tag, k, cls, extraTip) {
   return e;
 }
 
+// ------------------------------------------------------- scanner de QR code
+
+// Une caméra est-elle utilisable ici (contexte sûr, périphérique vidéo) ?
+async function cameraAvailable() {
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.some((d) => d.kind === "videoinput");
+  } catch (_) {
+    return false;
+  }
+}
+
+// Décodeur QR (jsQR, chargé à la première utilisation).
+function loadJsQR() {
+  if (window.jsQR) return Promise.resolve(window.jsQR);
+  return new Promise((ok, ko) => {
+    const s = document.createElement("script");
+    s.src = "jsqr.js";
+    s.onload = () => (window.jsQR ? ok(window.jsQR) : ko(new Error("jsQR")));
+    s.onerror = ko;
+    document.head.appendChild(s);
+  });
+}
+
+// Fenêtre de lecture : rend le texte du QR code (ou null si fermée).
+function scanQr() {
+  return new Promise(async (resolve) => {
+    const { d, close } = modal("Scanner un QR code");
+    const video = el("video");
+    video.setAttribute("playsinline", "");
+    video.muted = true;
+    video.style.width = "100%";
+    video.style.borderRadius = "8px";
+    const note = el("p", "Présentez le QR code devant la caméra.", "muted");
+    d.append(video, note);
+    d.showModal();
+    let stream = null;
+    let done = false;
+    const finish = (text) => {
+      if (done) return;
+      done = true;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      close();
+      resolve(text);
+    };
+    d.addEventListener("close", () => finish(null));
+    try {
+      const jsQR = await loadJsQR();
+      // Caméra arrière d'un téléphone si possible.
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const tick = () => {
+        if (done) return;
+        if (video.readyState >= 2 && video.videoWidth) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+          if (code && code.data) return finish(code.data.trim());
+        }
+        requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (e) {
+      note.textContent = "Caméra inaccessible : " + (e && e.name === "NotAllowedError" ? "accès refusé (autorisez la caméra pour cette page)" : e && e.message ? e.message : e);
+      note.className = "error";
+    }
+  });
+}
+
+// Bouton « Scanner un QR code » d'un formulaire (`scanner` : champ rempli).
+function scanButton(input) {
+  const b = el("button", "📷 Scanner un QR code", "small secondary");
+  b.type = "button";
+  b.disabled = true;
+  b.title = "Recherche d'une caméra…";
+  cameraAvailable().then((ok) => {
+    b.disabled = !ok;
+    b.title = ok
+      ? "Lire le QR code avec la caméra de cet appareil"
+      : window.isSecureContext
+        ? "Aucune caméra sur cet appareil"
+        : "Caméra indisponible : page non sécurisée (ouvrez le tableau de bord en local ou en https)";
+  });
+  b.addEventListener("click", async () => {
+    const text = await scanQr();
+    if (text) {
+      input.value = text;
+      input.dispatchEvent(new Event("change"));
+      toast("QR code lu");
+    }
+  });
+  return b;
+}
+
 // ---------------------------------------------------------------- messages
 
 function toast(message, kind = "ok", href) {
@@ -1111,6 +1211,9 @@ function actionForm(a, done) {
   };
   inputs.forEach((x) => x.addEventListener("change", sync));
   sync();
+  // `scanner` : bouton de lecture d'un QR code pour ce champ.
+  const scanned = a["scanner"] && inputs.find((x) => x.name === a["scanner"]);
+  if (scanned) f.appendChild(scanButton(scanned));
   const b = el("button", a["libellé"], a["style"]);
   b.type = "submit";
   f.appendChild(b);

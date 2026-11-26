@@ -1988,7 +1988,7 @@ fn contacts_status(sh: &Shared, v: &mut Value) {
     v["contacts"] = json!({ "_contenu": contacts, "_formulaires": [{ "nom": "add_contact", "libellé": "Ajouter un contact",
         "panneau": { "titre": "Ajouter un contact", "formulaires": [{ "nom": "add_contact", "libellé": "Ajouter",
             "texte": "Le pseudo remplace l'identifiant dans S3m (partages) ; il n'est visible que par vous.",
-            "champs": ["pseudo", "identifiant"],
+            "champs": ["pseudo", "identifiant"], "scanner": "identifiant",
             "aide": { "pseudo": "Nom de votre choix, unique dans vos contacts ; facultatif",
                       "identifiant": "Identifiant S3m de la personne (64 caractères, page « Identité et sécurité » de son S3m) ; vérifiez ensemble l'empreinte" } }] } }] });
     if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
@@ -3607,6 +3607,12 @@ fn state_dir(c: &Config) -> Result<(), DaemonError> {
 }
 
 const ASSETS: &[Asset] = &[
+    // Décodeur de QR code jsQR 1.4.0 (Apache-2.0, github.com/cozmo/jsQR).
+    (
+        "jsqr.js",
+        "text/javascript; charset=utf-8",
+        include_bytes!("../dashboard/jsqr.js"),
+    ),
     (
         "logo.png",
         "image/png",

@@ -382,7 +382,11 @@ et reçus de lui, « Partager avec… ». Partage reçu d'un inconnu : « Ajoute
 aux contacts » (identifiant lu dans l'autorisation). « Mon identifiant » :
 identifiant, empreinte et QR code à communiquer. Export (fichier
 `contacts-s3m.json` ou texte à copier) et import (contacts déjà présents
-gardés, pseudo déjà pris abandonné).
+gardés, pseudo déjà pris abandonné). Ajout du 2026-11-26 : la fenêtre
+« Ajouter un contact » propose « Scanner un QR code » (caméra du PC ou du
+téléphone, décodeur jsQR embarqué, aucun envoi d'image) qui remplit
+l'identifiant ; le bouton est grisé, avec une explication au survol, sans
+caméra ou hors contexte sûr (tableau de bord ouvert en http distant).
 
 ### Partages {: #partages }
 
