@@ -122,6 +122,9 @@ tableaux sont écrites en clair. L'espace offert aux partenaires se règle en
 Mio. Les cases à cocher sont des interrupteurs ; le logo a un fond blanc
 (thème foncé). Une saisie en cours garde le focus malgré le rafraîchissement
 périodique ; les formulaires de même nom sont réunis dans un seul onglet.
+Une durée qui n'est pas un nombre entier de l'unité du champ (« 2s » pour
+un champ en jours) est refusée avec un message, jamais arrondie. Les
+messages de retour restent 15 s à l'écran et se ferment d'un clic.
 
 ### Journal {: #journal }
 

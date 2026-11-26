@@ -418,10 +418,17 @@ function toast(message, kind = "ok", href) {
   }
   box.appendChild(t);
   requestAnimationFrame(() => t.classList.add("show"));
-  setTimeout(() => {
+  // 15 s à l'écran ; un clic le ferme (sauf sur le lien « Ouvrir »).
+  const close = () => {
     t.classList.remove("show");
     setTimeout(() => t.remove(), 300);
-  }, kind === "error" || href ? 7000 : 3500);
+  };
+  t.title = "Cliquer pour fermer";
+  t.style.cursor = "pointer";
+  t.addEventListener("click", (e) => {
+    if (e.target.tagName !== "A") close();
+  });
+  setTimeout(close, 15000);
 }
 
 // ---------------------------------------------------------------- actions
@@ -1123,8 +1130,21 @@ function actionForm(a, done) {
       });
     const bad = inputs.find((i) => i.dataset.unit && i.value.trim() !== "" && parseDuration(i.value, Number(i.dataset.unit)) === null);
     if (bad) {
-      toast("Durée non reconnue : " + bad.value + ". " + DUR_HELP, "err");
+      toast("Durée non reconnue : " + bad.value + ". " + DUR_HELP, "error");
       bad.focus();
+      return;
+    }
+    // Durée qui n'est pas un nombre entier de l'unité du champ (« 2s » pour
+    // des jours) : refusée plutôt qu'arrondie (0 aurait un autre sens).
+    const inexact = inputs.find((i) => {
+      if (!i.dataset.unit || i.value.trim() === "") return false;
+      const sec = parseDuration(i.value, Number(i.dataset.unit));
+      return sec !== null && sec % Number(i.dataset.unit) !== 0;
+    });
+    if (inexact) {
+      const u = Number(inexact.dataset.unit);
+      toast("Durée refusée : " + inexact.value + " — ce champ se compte en " + (u === 86400 ? "jours entiers (ex. 180d)" : u === 3600 ? "heures entières" : u === 60 ? "minutes entières" : "secondes") + ".", "error");
+      inexact.focus();
       return;
     }
     // `confirmer` : fenêtre de confirmation avant l'envoi.
