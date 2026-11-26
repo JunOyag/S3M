@@ -353,6 +353,13 @@ synchronisation courantes :
 
 ### Explorateur {: #explorateur }
 
+Nœud injoignable (ajout du 2026-11-26) : les fichiers absents de l'appareil
+sont marqués « indisponible hors ligne » et leur téléchargement est refusé
+aussitôt, avec une explication ; le lecteur et le dossier synchronisé
+répondent de même « fichier hors ligne » à l'Explorateur Windows au lieu de
+le bloquer. La reconstruction d'un bloc depuis les partenaires est bornée à
+20 s, et suspendue 60 s après un échec.
+
 Ajout du 2026-11-23 : page « Explorateur » du dashboard Connecteur
 (`explorer.html`, servie comme la carte du Nœud). Navigation dans l'espace,
 création de dossiers, envoi de fichiers et d'arborescences (bouton ou

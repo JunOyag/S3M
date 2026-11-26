@@ -162,13 +162,20 @@ function rows(entries) {
     name.appendChild(el("span", e["dossier"] ? "📁" : "📄", "ico"));
     name.appendChild(document.createTextNode(e["nom"]));
     if (e["gardé"]) name.appendChild(el("span", "sur cet appareil", "tag"));
+    if (e["indisponible"]) {
+      const t = el("span", "indisponible hors ligne", "tag");
+      t.title = "Votre Nœud est injoignable et ce fichier n'est pas sur cet appareil : il sera lisible à son retour.";
+      name.appendChild(t);
+      tr.style.opacity = "0.55";
+    }
     if (e["ancienne clé"]) {
       const t = el("span", "🔓 ancienne clé", "tag old");
       t.title = "Encore protégé par votre ancienne clé, compromise : rechiffrez-le (menu ⋯)";
       name.appendChild(t);
     }
     name.title = e["dossier"] ? "Ouvrir" : "Télécharger";
-    name.addEventListener("click", () => (e["dossier"] ? load(path) : download(path, e["taille"])));
+    const get = () => (e["indisponible"] ? status("Fichier indisponible hors ligne : votre Nœud est injoignable et ce fichier n'est pas sur cet appareil.", true) : download(path, e["taille"]));
+    name.addEventListener("click", () => (e["dossier"] ? load(path) : get()));
     tr.appendChild(name);
     tr.appendChild(el("td", e["dossier"] ? "" : size(e["taille"] || 0), "num"));
     const t = e["modifié"];
@@ -177,7 +184,7 @@ function rows(entries) {
     // Actions de la ligne : menu « ⋯ » (et clic droit sur la ligne).
     const items = [];
     const btn = (label, fn, cls) => items.push({ label, fn, cls });
-    if (!e["dossier"]) btn("Télécharger", () => download(path, e["taille"]));
+    if (!e["dossier"]) btn("Télécharger", get);
     if (version) {
       btn("Restaurer cette version", () => restore(path, version, versionLabel));
     } else if (cwd !== SHARED && !cwd.startsWith(SHARED + "/")) {

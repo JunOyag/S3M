@@ -19,6 +19,8 @@ use winfsp::{FspError, U16CStr};
 use crate::drive::{Drive, DriveError, Meta};
 
 const STATUS_END_OF_FILE: i32 = 0xC000_0011_u32 as i32;
+/// Fichier hors ligne (Nœud injoignable, contenu absent de l'appareil).
+const STATUS_FILE_IS_OFFLINE: i32 = 0xC000_0267_u32 as i32;
 const STATUS_OBJECT_NAME_NOT_FOUND: i32 = 0xC000_0034_u32 as i32;
 const STATUS_OBJECT_NAME_COLLISION: i32 = 0xC000_0035_u32 as i32;
 const STATUS_FILE_IS_A_DIRECTORY: i32 = 0xC000_00BA_u32 as i32;
@@ -98,6 +100,9 @@ pub struct DriveFs {
     pub on_write: WriteHook,
     /// `(quota, occupé)` communiqué par le Nœud, s'il est connu.
     pub space: Arc<dyn Fn() -> Option<(u64, u64)> + Send + Sync>,
+    /// Nœud injoignable : les fichiers absents de l'appareil sont refusés
+    /// aussitôt (l'Explorateur Windows ne reste pas bloqué).
+    pub offline: Arc<dyn Fn() -> bool + Send + Sync>,
 }
 
 impl DriveFs {
@@ -376,6 +381,9 @@ impl FileSystemContext for DriveFs {
             .unwrap_or(0);
         if offset >= size {
             return Err(FspError::NTSTATUS(STATUS_END_OF_FILE));
+        }
+        if (self.offline)() && !d.is_local(&path) {
+            return Err(FspError::NTSTATUS(STATUS_FILE_IS_OFFLINE));
         }
         let data = d.read(&path, offset, buffer.len()).map_err(ntstatus)?;
         buffer[..data.len()].copy_from_slice(&data);

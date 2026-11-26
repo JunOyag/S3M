@@ -56,6 +56,14 @@ pub struct Favorite {
     pub dossier: bool,
 }
 
+/// Fichier absent de l'appareil, Nœud injoignable.
+pub const OFFLINE_TEXT: &str = "Votre Nœud est injoignable et ce fichier n'est pas sur cet appareil : il sera lisible à son retour. Pour la prochaine fois, gardez vos fichiers importants « sur cet appareil ».";
+
+/// Le Nœud est-il injoignable (dernière sonde, ou échec récent) ?
+pub fn node_offline(sh: &Shared) -> bool {
+    sh.session.is_down() || sh.health.lock().unwrap().reachable == Some(false)
+}
+
 /// Élément récemment envoyé ou téléchargé.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Recent {
@@ -371,6 +379,15 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                 entries.retain(|(n, _)| n != hidden);
             }
             let favs: Vec<String> = favorites(sh).into_iter().map(|f| f.chemin).collect();
+            // Nœud injoignable : fichiers absents de cet appareil signalés.
+            let offline = node_offline(sh);
+            let local: Vec<bool> = {
+                let mut d = drive.lock().unwrap();
+                entries
+                    .iter()
+                    .map(|(n, m)| !offline || m.is_dir || d.is_local(&format!("{}/{n}", p.trim_end_matches('/'))))
+                    .collect()
+            };
             let reencrypt = drive.lock().unwrap().key_version() > crate::drive::KEY_VERSION;
             // Éléments encore protégés par l'ancienne clé (compromise).
             let old: Vec<bool> = if reencrypt {
@@ -392,9 +409,11 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                 "éléments à l'ancienne clé": old.iter().filter(|x| **x).count(),
                 "mode dossier": folder,
                 "lecture seule": writable(&p).is_err() && p != "/",
-                "entrées": entries.iter().zip(&old).map(|((n, m), o)| {
+                "hors ligne": offline,
+                "entrées": entries.iter().zip(&old).zip(&local).map(|(((n, m), o), l)| {
                     let full = format!("{}/{n}", p.trim_end_matches('/'));
                     json!({ "nom": n, "dossier": m.is_dir, "taille": m.size,
+                            "indisponible": !l,
                             "modifié": m.modified_at, "gardé": folder && kept(&full),
                             "ancienne clé": o,
                             "favori": favs.contains(&full),
@@ -443,6 +462,11 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             let p = norm(&text(v, "chemin"));
             let offset = v.get("offset").and_then(|x| x.as_u64()).unwrap_or(0);
             let version = text(v, "version");
+            // Nœud injoignable et contenu absent : refus immédiat (pas
+            // d'attente bloc après bloc).
+            if offset == 0 && version.is_empty() && node_offline(sh) && !drive.lock().unwrap().is_local(&p) {
+                return Err(OFFLINE_TEXT.into());
+            }
             let data = if version.is_empty() {
                 drive.lock().unwrap().read(&p, offset, CHUNK)
             } else {

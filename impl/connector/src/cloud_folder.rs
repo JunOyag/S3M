@@ -70,6 +70,9 @@ pub struct FolderOptions {
     /// Gardés sur cet appareil (chemins du lecteur) : jamais libérés,
     /// téléchargés d'office, y compris ce qui s'y ajoute.
     pub keep: Arc<Mutex<Vec<String>>>,
+    /// Nœud injoignable : un fichier absent de l'appareil est refusé
+    /// aussitôt (l'Explorateur Windows ne reste pas bloqué).
+    pub offline: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 
 /// `chemin` est `racine` ou se trouve dessous (chemins du lecteur).
@@ -352,6 +355,11 @@ impl Folder {
             .insert(path.clone(), unix_now());
         self.hydrated_dirty
             .store(true, std::sync::atomic::Ordering::Relaxed);
+        let offline = self.options.offline.as_ref().is_some_and(|f| f());
+        if offline && !self.drive.lock().unwrap().is_local(&path) {
+            Self::transfer(info, start, &[], STATUS_UNSUCCESSFUL, end - start);
+            return;
+        }
         let mut off = start;
         while off < end {
             let len = CHUNK.min(end - off);

@@ -553,7 +553,16 @@ pub struct NodeIo {
     pub rescue: Option<Arc<crate::rescue::Rescue>>,
     /// Copies des blocs envoyés, gardées jusqu'à leur dispersion.
     pub unsent: Option<Arc<crate::unsent::Unsent>>,
+    /// Dernier échec de la lecture de secours : pendant [`RESCUE_HOLD`],
+    /// les lectures échouent aussitôt (Explorateur Windows et navigateur
+    /// ne restent pas bloqués bloc après bloc).
+    pub rescue_down: Mutex<Option<std::time::Instant>>,
 }
+
+/// Durée maximale de reconstruction d'un bloc depuis les partenaires.
+pub const RESCUE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Pause de la lecture de secours après un échec.
+pub const RESCUE_HOLD: Duration = Duration::from_secs(60);
 
 impl NodeIo {
     fn wait<F: std::future::Future>(&self, f: F) -> F::Output {
@@ -572,7 +581,12 @@ impl BlockIo for NodeIo {
             // Lecture de secours seulement si le Nœud ne répond pas.
             Err(ExchangeError::Network(_)) => {
                 let r = self.rescue.as_ref()?;
-                self.wait(r.get(hash))
+                if self.rescue_down.lock().unwrap().is_some_and(|t| t.elapsed() < RESCUE_HOLD) {
+                    return None;
+                }
+                let got = self.wait(async { tokio::time::timeout(RESCUE_TIMEOUT, r.get(hash)).await.ok().flatten() });
+                *self.rescue_down.lock().unwrap() = got.is_none().then(std::time::Instant::now);
+                got
             }
             Err(_) => None,
         }
@@ -3698,6 +3712,7 @@ pub async fn start(
         true => Some(Arc::new(Mutex::new(
             Drive::open(
                 Arc::new(NodeIo {
+                    rescue_down: Mutex::new(None),
                     session: session.clone(),
                     runtime: tokio::runtime::Handle::current(),
                     rescue: Some(rescue.clone()),
@@ -4398,6 +4413,10 @@ fn mount_folder(sh: &Arc<Shared>) -> bool {
         free_after_s: sh.free_after_s.clone(),
         last_free: sh.last_free.clone(),
         keep: sh.keep_offline.clone(),
+        offline: {
+            let sh = sh.clone();
+            Some(Arc::new(move || crate::explorer::node_offline(&sh)))
+        },
     };
     let r = crate::cloud_folder::start_with(&root, drive, on_write, options).map(|stop| {
         sh.stoppers.lock().unwrap().push(stop);
@@ -4452,6 +4471,10 @@ fn mount_drive(sh: &Arc<Shared>) {
                 drive: drive.clone(),
                 on_write: on_write.clone(),
                 space: Arc::new(move || session.space()),
+                offline: {
+                    let sh = sh2.clone();
+                    Arc::new(move || crate::explorer::node_offline(&sh))
+                },
             };
             let r = crate::winfsp_backend::mount(fs, letter);
             let mut st = sh2.drive_status.lock().unwrap();

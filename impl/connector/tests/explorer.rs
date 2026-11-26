@@ -155,6 +155,25 @@ async fn explorer_creates_uploads_reads_moves_and_deletes() {
         }
     };
     sync(&sh).await;
+    // Nœud injoignable : un fichier absent de cet appareil est signalé et
+    // son téléchargement refusé aussitôt.
+    act("explorer_write", json!({ "chemin": "/loin.txt", "offset": 0, "données": "0909", "fin": true })).unwrap();
+    sync(&sh).await;
+    sh.health.lock().unwrap().reachable = Some(false);
+    let l = act("explorer_list", json!({ "chemin": "/" })).unwrap();
+    let e = l["entrées"].as_array().unwrap().iter().find(|e| e["nom"] == "loin.txt").unwrap().clone();
+    assert_eq!(e["indisponible"], true, "{l}");
+    let t = std::time::Instant::now();
+    let err = act("explorer_read", json!({ "chemin": "/loin.txt", "offset": 0 })).unwrap_err();
+    assert!(err.contains("injoignable") && t.elapsed() < std::time::Duration::from_secs(1), "{err}");
+    sh.health.lock().unwrap().reachable = Some(true);
+    assert_eq!(act("explorer_read", json!({ "chemin": "/loin.txt", "offset": 0 })).unwrap()["données"], "0909");
+    // Lu une fois : désormais sur cet appareil.
+    sh.health.lock().unwrap().reachable = Some(false);
+    let l = act("explorer_list", json!({ "chemin": "/" })).unwrap();
+    assert_eq!(l["entrées"].as_array().unwrap().iter().find(|e| e["nom"] == "loin.txt").unwrap()["indisponible"], false);
+    sh.health.lock().unwrap().reachable = Some(true);
+    act("explorer_delete", json!({ "chemin": "/loin.txt" })).unwrap();
     let used = |s: &Arc<Mutex<NodeService>>| s.lock().unwrap().users[&pub_user].used_bytes;
     let before = used(&service);
     assert!(before > 0);

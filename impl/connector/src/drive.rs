@@ -1029,6 +1029,21 @@ impl Drive {
         }
     }
 
+    /// Le contenu de `path` est-il sur cet appareil (lisible sans le Nœud) ?
+    pub fn is_local(&mut self, path: &str) -> bool {
+        let p = norm(path);
+        match self.journal.changes.get(&p) {
+            Some(Change::File { .. }) | Some(Change::Dir { .. }) => return true,
+            Some(Change::Deleted) => return false,
+            _ => {}
+        }
+        match self.file_entry(&p) {
+            Ok(e) => e.size_bytes == 0 || self.cache_path(&e).exists(),
+            Err(DriveError::IsADirectory) => true,
+            Err(_) => false,
+        }
+    }
+
     /// Lit `len` octets à partir de `offset`.
     pub fn read(&mut self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>, DriveError> {
         let p = norm(path);
