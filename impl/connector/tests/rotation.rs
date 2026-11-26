@@ -240,3 +240,32 @@ async fn without_2fa_the_rotation_is_deferred_then_applied() {
     stop(sh).await;
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Un appareil redémarré reste le même appareil pour son Nœud : pas
+/// d'alerte « nouvel appareil » à chaque démarrage.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restarted_connector_is_the_same_device_for_its_node() {
+    let dir = std::env::temp_dir().join(format!("p2p-device-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("user.seed"), MNEMONIC).unwrap();
+    let (_, user) = user_keys(MNEMONIC, 0).unwrap();
+    let salt = [7u8; 16];
+    let mut ns = NodeService::new(NODE);
+    ns.users.insert(user, UserAccount { salt: salt.to_vec(), quota_bytes: 1 << 30, used_bytes: 0, root: [0; 32] });
+    let service = Arc::new(Mutex::new(ns));
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000_000);
+    let node = BlockServer::start(NODE, "/ip4/127.0.0.1/tcp/0".parse().unwrap(), service.clone(), clock).await.unwrap();
+    let addr = node.listen_addr().await.unwrap().to_string();
+    let path = write_config(&dir, &addr, &hex::encode(salt));
+    for _ in 0..2 {
+        let sh = open(&path).await;
+        watch_once(&sh).await;
+        stop(sh).await;
+    }
+    let s = service.lock().unwrap();
+    assert_eq!(s.devices[&user].len(), 1, "même appareil");
+    assert!(s.channel.outbox.sent.is_empty(), "aucune alerte");
+    drop(s);
+    let _ = std::fs::remove_dir_all(&dir);
+}

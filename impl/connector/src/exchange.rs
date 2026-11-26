@@ -148,8 +148,12 @@ pub struct BlockClient {
 
 impl BlockClient {
     pub fn start() -> Result<Self, ExchangeError> {
+        Self::start_with(identity::Keypair::generate_ed25519())
+    }
+
+    /// Client sous une identité donnée (appareil stable vis-à-vis du Nœud).
+    pub fn start_with(keypair: identity::Keypair) -> Result<Self, ExchangeError> {
         let net = |e: &dyn std::fmt::Display| ExchangeError::Network(e.to_string());
-        let keypair = identity::Keypair::generate_ed25519();
         let peer_id = keypair.public().to_peer_id();
         let swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()

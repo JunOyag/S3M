@@ -3445,9 +3445,18 @@ pub async fn start(
     let addr = learned_node_addr(&config.data_dir, &addr).unwrap_or(addr);
     let pub_node: [u8; 32] = unhex(&config.node.node_id, 32)?.try_into().unwrap();
     let salt = unhex(&config.node.salt, 16)?;
-    let client = BlockClient::start()?;
+    // Identité réseau stable de l'appareil, propre à ce Nœud : il reconnaît
+    // ses appareils (alerte de nouvel appareil) sans pouvoir les relier à
+    // ceux vus par un autre Nœud.
+    let device = device_key(&config.data_dir)?;
+    let mut seed = b"s3m/appareil-libp2p".to_vec();
+    seed.extend_from_slice(&device);
+    seed.extend_from_slice(&pub_node);
+    let keypair = libp2p::identity::Keypair::ed25519_from_bytes(s3m_core::symmetric_suite::hash_sha256(&seed))
+        .map_err(|e| DaemonError::Config(e.to_string()))?;
+    let client = BlockClient::start_with(keypair)?;
     let session = NodeSession::new(client, addr, &priv_user, &pub_user, &pub_node, &salt)?;
-    let mut keeper = GrantKeeper::new(device_key(&config.data_dir)?);
+    let mut keeper = GrantKeeper::new(device);
     keeper.grant = load_grant(&config.data_dir);
     let expiry = keeper
         .grant
