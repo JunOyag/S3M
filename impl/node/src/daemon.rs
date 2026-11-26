@@ -1420,7 +1420,15 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             let name = s3m_protocol::pseudo::display(&[s.partner_names.get(id).map(String::as_str)], id);
             let state = if peer.status.is_empty() { "partenaire".to_string() } else { peer.status.clone() };
             // Colonnes essentielles ; le reste dans le panneau de la ligne.
+            let online = if peer.last_probe == 0 {
+                "?".to_string()
+            } else if peer.last_answer >= peer.last_probe {
+                "✔".to_string()
+            } else {
+                if peer.last_answer == 0 { "✖".to_string() } else { format!("✖ depuis le {}", peer.last_answer) }
+            };
             json!({ "nom": name,
+                    "en ligne": online,
                     "état": state,
                     "score": r2(sc.total),
                     "pays": country(Some(&peer.ip)),

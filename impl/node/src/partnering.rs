@@ -41,6 +41,14 @@ pub struct PartneringConfig {
     pub retire_after_s: u64,
     pub discovery_period_s: u64,
     pub probe_period_s: u64,
+    /// Sonde des partenaires en place (plus fréquente : leur présence est
+    /// affichée).
+    #[serde(default = "default_partner_probe_s")]
+    pub partner_probe_s: u64,
+}
+
+fn default_partner_probe_s() -> u64 {
+    60
 }
 
 impl Default for PartneringConfig {
@@ -57,6 +65,7 @@ impl Default for PartneringConfig {
             retire_after_s: 7 * 86_400,
             discovery_period_s: 600,
             probe_period_s: 300,
+            partner_probe_s: default_partner_probe_s(),
         }
     }
 }
@@ -372,7 +381,8 @@ pub async fn run_partnering(
         .peers
         .iter()
         .filter(|(_, p)| {
-            p.status != "terminé" && !p.addr.is_empty() && now >= p.last_probe + cfg.probe_period_s
+            let period = if p.status == "partenaire" { cfg.partner_probe_s.min(cfg.probe_period_s) } else { cfg.probe_period_s };
+            p.status != "terminé" && !p.addr.is_empty() && now >= p.last_probe + period
         })
         .map(|(n, _)| n.clone())
         .take(32)

@@ -36,6 +36,8 @@ use s3m_protocol::entries::{Attachment, UserPlain};
 pub const DEFAULT_Q_MAX_BYTES: u64 = 4 << 30;
 /// Intervalle de surveillance par défaut : 5 minutes.
 pub const DEFAULT_WATCH_INTERVAL_S: u64 = 300;
+/// Sonde légère de la joignabilité du Nœud (s).
+pub const HEALTH_PROBE_S: u64 = 15;
 
 /// Erreurs de l'exécutable.
 #[derive(Debug, thiserror::Error)]
@@ -566,6 +568,8 @@ pub struct Shared {
     /// Remplaçant annoncé par le Nœud (pointeur de migration vérifié),
     /// jamais suivi sans l'accord de l'utilisateur ; `(proposition, vérifié le)`.
     pub migration_offer: Mutex<(crate::bootstrap::Migration, u64)>,
+    /// Réveil de la surveillance (le Nœud vient de changer d'état).
+    pub wake: tokio::sync::Notify,
     /// Synchronisation en cours.
     pub syncing: std::sync::atomic::AtomicBool,
     pub user_entry: Mutex<UserEntryState>,
@@ -1412,6 +1416,7 @@ fn status_base(sh: &Shared) -> Value {
             "nom": s3m_protocol::pseudo::display(&[Some(names.pseudo.as_str())], &sh.pub_user),
             "empreinte": s3m_protocol::pseudo::fingerprint(&sh.pub_user),
             "user_id": hex::encode(sh.pub_user),
+            "empreinte de cet appareil": s3m_protocol::pseudo::fingerprint(&sh.session.client().peer_id().to_bytes()),
             "phrase de récupération rangée": match s3m_protocol::vault::storage(&sh.config.seed_file) {
                 s3m_protocol::vault::Storage::Plain => "⚠ fichier en clair sur cet ordinateur",
                 s => s.label(),
@@ -3507,6 +3512,7 @@ pub async fn start(
         twofa_setup: Mutex::new(None),
         security: Mutex::new(None),
         migration_offer: Mutex::new((crate::bootstrap::Migration::None, 0)),
+        wake: tokio::sync::Notify::new(),
         syncing: Default::default(),
         user_entry: Mutex::new(UserEntryState::default()),
         attach: Mutex::new(AttachState::default()),
@@ -3671,7 +3677,23 @@ pub async fn start(
             watch_once(&sh).await;
             emergency_tick(&sh).await;
             crate::share_ops::tick(&sh).await;
-            tokio::time::sleep(Duration::from_secs(sh.config.watch_interval_s.max(1))).await;
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(sh.config.watch_interval_s.max(1))) => {}
+                _ = sh.wake.notified() => {}
+            }
+        }
+    });
+    // Sonde légère : le Nœud qui s'arrête ou revient est vu en quelques
+    // secondes, et la surveillance complète repart aussitôt.
+    let sh = shared.clone();
+    spawn_tracked(&shared, async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(HEALTH_PROBE_S)).await;
+            let ok = matches!(sh.session.probe().await, Err(ExchangeError::Refused(Refusal::NotFound)));
+            let was = sh.health.lock().unwrap().reachable;
+            if was.is_some() && was != Some(ok) {
+                sh.wake.notify_one();
+            }
         }
     });
     // Messages du Nœud : relevés toutes les 30 s quand il est joignable.
