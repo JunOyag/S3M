@@ -625,8 +625,40 @@ function bytes(n) {
 // Libellés de tailles et de quantités : jamais pris pour des dates.
 const SIZE_KEY = /(octets|bytes|capacit|quota|taille|budget|\(go\)|\(gio\)|\(mo\)|blocs|fragments|nombre|compte)/i;
 
+// Durées (`deploiement.packaging#durees`) : saisies « 10s », « 10min »,
+// « 2h », « 7d » (ou « 7j ») ; un nombre seul est dans l'unité du champ.
+const DUR_UNITS = { s: 1, sec: 1, min: 60, m: 60, h: 3600, d: 86400, j: 86400 };
+const DUR_HELP = "Formats acceptés : 10s (secondes), 10min (minutes), 2h (heures), 7d (jours) ; un nombre seul est dans l'unité du champ.";
+function parseDuration(text, unit) {
+  const m = String(text).trim().toLowerCase().replace(",", ".").match(/^(\d+(?:\.\d+)?)\s*(s|sec|min|m|h|d|j)?$/);
+  if (!m) return null;
+  return Number(m[1]) * (m[2] ? DUR_UNITS[m[2]] : unit);
+}
+// Écriture compacte : la plus grande unité exacte.
+function shortDuration(sec) {
+  if (!sec) return "0";
+  for (const [u, n] of [["d", 86400], ["h", 3600], ["min", 60]]) if (sec % n === 0) return sec / n + u;
+  return sec + "s";
+}
+function humanDuration(sec) {
+  if (sec === 0) return "0 (aucune)";
+  const parts = [];
+  for (const [n, one, many] of [[86400, "jour", "jours"], [3600, "heure", "heures"], [60, "minute", "minutes"], [1, "seconde", "secondes"]]) {
+    const q = Math.floor(sec / n);
+    if (q) {
+      parts.push(q + " " + (q > 1 ? many : one));
+      sec -= q * n;
+    }
+  }
+  return parts.slice(0, 2).join(" ");
+}
+const DUR_KEY = /\((s|secondes)\)$/;
+const DAYS_KEY = /\((jours|j)\)$/;
+
 function fmt(k, v) {
   if (typeof v === "number" && k) {
+    if (DUR_KEY.test(k)) return humanDuration(v);
+    if (DAYS_KEY.test(k)) return humanDuration(v * 86400);
     if (/octets/i.test(k)) return bytes(v);
     if (isUnixTime(v) && !SIZE_KEY.test(k)) return localTime(v);
   }
@@ -691,7 +723,18 @@ function rowActions(list) {
 // `_ouvrir` s'ouvre dans un panneau au clic.
 const PAGE_SIZES = [10, 50, 100];
 const tableState = {};
-const HIDDEN_COLS = new Set(["_actions", "_ouvrir", "_gras"]);
+const HIDDEN_COLS = new Set(["_actions", "_ouvrir", "_gras", "_explorer"]);
+// `_explorer` : dossier ouvert dans l'Explorateur au clic sur la ligne.
+function openExplorer(path) {
+  try {
+    sessionStorage.setItem("s3m-explorer", path);
+  } catch (e) {
+    /* sans effet */
+  }
+  const f = document.getElementById("frame");
+  if (f) f.remove();
+  go("explorateur");
+}
 
 function csvOf(cols, rows) {
   const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
@@ -791,6 +834,14 @@ function render(value, key) {
         const r = body.insertRow();
         // `_gras` : ligne mise en évidence (ex. message non lu).
         if (o["_gras"]) r.classList.add("unread");
+        if (o["_explorer"] && !o["_ouvrir"]) {
+          r.classList.add("clickable");
+          r.tabIndex = 0;
+          r.title = "Ouvrir dans l'Explorateur";
+          const open = (e) => { if (!e.target.closest("button, input")) openExplorer(o["_explorer"]); };
+          r.addEventListener("click", open);
+          r.addEventListener("keydown", (e) => { if (e.key === "Enter") openExplorer(o["_explorer"]); });
+        }
         if (o["_ouvrir"]) {
           r.classList.add("clickable");
           r.tabIndex = 0;
@@ -851,6 +902,7 @@ function render(value, key) {
     return box;
   }
   if (value !== null && typeof value === "object" && ("_contenu" in value || "_formulaires" in value)) {
+    // (`_repliable` : traité par la section.)
     const box = el("div", undefined, "section-body");
     if (value["_contenu"] !== undefined) box.appendChild(render(value["_contenu"], key));
     (value["_formulaires"] || []).forEach((a) => box.appendChild(cachedForm(a)));
@@ -976,6 +1028,24 @@ function actionForm(a, done) {
       if (values[name] !== undefined && values[name] !== null) i.value = String(values[name]);
       l.append(el("span", text), i, list);
       if (tip) l.firstChild.appendChild(el("span", " ⓘ", "tip"));
+    } else if (type === "durée") {
+      // `unités` : { champ: "s" | "j" } (secondes par défaut).
+      const unit = ((a["unités"] || {})[name] || "s") === "j" ? 86400 : 1;
+      i.dataset.unit = String(unit);
+      i.classList.add("short-input");
+      if (values[name] !== undefined && values[name] !== null && values[name] !== "") {
+        const n = Number(values[name]);
+        i.value = isNaN(n) ? String(values[name]) : shortDuration(n * unit);
+      }
+      const show = () => {
+        const sec = parseDuration(i.value, unit);
+        i.title = i.value.trim() === "" ? DUR_HELP : sec === null ? "Format non reconnu. " + DUR_HELP : humanDuration(sec);
+        i.classList.toggle("bad", i.value.trim() !== "" && sec === null);
+      };
+      i.addEventListener("input", show);
+      show();
+      l.append(el("span", text), i);
+      l.firstChild.appendChild(el("span", " ⓘ", "tip"));
     } else if (type === "bool") {
       i.type = "checkbox";
       i.checked = values[name] === true;
@@ -1001,6 +1071,7 @@ function actionForm(a, done) {
       if (tip) l.firstChild.appendChild(el("span", " ⓘ", "tip"));
     }
     if (tip) l.title = tip;
+    if (type === "durée") l.title = (tip ? tip + " " : "") + DUR_HELP;
     f.appendChild(l);
     return i;
   });
@@ -1021,7 +1092,21 @@ function actionForm(a, done) {
     const body = Object.assign({}, a["fixes"] || {}, a["valeurs"] && !(a["champs"] || []).length ? a["valeurs"] : {});
     inputs
       .filter((i) => !(labelsOf[i.name] && labelsOf[i.name].hidden))
-      .forEach((i) => (body[i.name] = i.type === "checkbox" ? i.checked : i.value.trim()));
+      .forEach((i) => {
+        if (i.dataset.unit && i.value.trim() !== "") {
+          // Durée : envoyée dans l'unité du champ.
+          const sec = parseDuration(i.value, Number(i.dataset.unit));
+          body[i.name] = sec === null ? i.value.trim() : String(Math.round(sec / Number(i.dataset.unit)));
+        } else {
+          body[i.name] = i.type === "checkbox" ? i.checked : i.value.trim();
+        }
+      });
+    const bad = inputs.find((i) => i.dataset.unit && i.value.trim() !== "" && parseDuration(i.value, Number(i.dataset.unit)) === null);
+    if (bad) {
+      toast("Durée non reconnue : " + bad.value + ". " + DUR_HELP, "err");
+      bad.focus();
+      return;
+    }
     // `confirmer` : fenêtre de confirmation avant l'envoi.
     if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
     const send = () =>
@@ -1322,6 +1407,16 @@ function show(status) {
   // dans un filtre de tableau.
   const focused = document.activeElement;
   const filterKey = focused && focused.dataset ? focused.dataset.filterKey : undefined;
+  // Saisie dans un formulaire de section (réutilisé d'un rafraîchissement à
+  // l'autre) : focus et curseur rendus après le redessin.
+  const typing = focused && filterKey === undefined && /^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName) && main.contains(focused) ? focused : null;
+  const sel = typing && typeof typing.selectionStart === "number" ? [typing.selectionStart, typing.selectionEnd] : null;
+  setTimeout(() => {
+    if (typing && document.contains(typing) && document.activeElement !== typing) {
+      typing.focus();
+      if (sel) try { typing.setSelectionRange(sel[0], sel[1]); } catch (e) { /* champ sans sélection */ }
+    }
+  }, 0);
   const caret = filterKey !== undefined ? focused.selectionStart : 0;
   setTimeout(() => {
     if (filterKey === undefined) return;
@@ -1411,8 +1506,33 @@ function show(status) {
     if (!(k in status)) return;
     const s = el("section");
     s.dataset.scrollKey = page + "/" + k;
-    s.appendChild(labelEl("h2", k));
-    s.appendChild(render(status[k], k));
+    const v = status[k];
+    if (v && typeof v === "object" && v["_repliable"]) {
+      // Section repliable ; l'état est retenu dans ce navigateur.
+      const d = el("details", undefined, "foldable");
+      const sum = el("summary");
+      sum.appendChild(labelEl("span", k));
+      d.appendChild(sum);
+      let open = true;
+      try {
+        open = localStorage.getItem("s3m-fold:" + k) !== "0";
+      } catch (e) {
+        /* ouvert */
+      }
+      d.open = open;
+      d.addEventListener("toggle", () => {
+        try {
+          localStorage.setItem("s3m-fold:" + k, d.open ? "1" : "0");
+        } catch (e) {
+          /* sans effet */
+        }
+      });
+      d.appendChild(render(v, k));
+      s.appendChild(d);
+    } else {
+      s.appendChild(labelEl("h2", k));
+      s.appendChild(render(v, k));
+    }
     into.appendChild(s);
   };
   p.sections.forEach((k) => section(k, frag));
@@ -1458,18 +1578,27 @@ function show(status) {
       // Une sous-section par onglet ; l'onglet ouvert est retenu.
       const tabs = el("div", undefined, "tabs");
       tabs.setAttribute("role", "tablist");
-      const panes = actions.map((a) => {
-        const pane = actionForm(a);
+      const name = (a) => (a["titre"] || a["libellé"] || a["nom"]).replace(/^Configuration — /, "");
+      // Formulaires de même nom réunis dans un seul onglet.
+      const groupsByName = [];
+      actions.forEach((a) => {
+        const g = groupsByName.find((x) => x.name === name(a));
+        if (g) g.list.push(a);
+        else groupsByName.push({ name: name(a), list: [a] });
+      });
+      const panes = groupsByName.map((g) => {
+        const pane = el("div", undefined, "tab-pane");
+        g.list.forEach((a) => pane.appendChild(actionForm(a)));
         pane.hidden = true;
         return pane;
       });
-      const name = (a) => (a["titre"] || a["libellé"] || a["nom"]).replace(/^Configuration — /, "");
+      const tabActions = groupsByName.map((g) => g.list[0]);
       const pick = (n) => {
         tabState[page] = n;
         [...tabs.children].forEach((b, j) => b.setAttribute("aria-selected", String(j === n)));
         panes.forEach((x, j) => (x.hidden = j !== n));
       };
-      actions.forEach((a, n) => {
+      tabActions.forEach((a, n) => {
         const b = el("button", name(a), "tab");
         b.type = "button";
         b.setAttribute("role", "tab");

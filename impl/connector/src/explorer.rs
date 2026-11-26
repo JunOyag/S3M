@@ -47,6 +47,69 @@ fn changed(sh: &Arc<Shared>, path: &str, size: u64) {
     crate::daemon::sync_now(sh);
 }
 
+/// Favori de l'Explorateur (`deploiement.packaging#favoris`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Favorite {
+    pub chemin: String,
+    pub nom: String,
+    #[serde(default)]
+    pub dossier: bool,
+}
+
+/// Élément récemment envoyé ou téléchargé.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Recent {
+    pub chemin: String,
+    pub action: String,
+    pub le: u64,
+}
+
+/// Éléments récents gardés.
+pub const RECENTS: usize = 10;
+
+fn store_path(sh: &Shared, f: &str) -> std::path::PathBuf {
+    sh.config.data_dir.join(f)
+}
+
+pub fn favorites(sh: &Shared) -> Vec<Favorite> {
+    std::fs::read(store_path(sh, "favoris.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn save_favorites(sh: &Shared, f: &[Favorite]) -> Result<(), String> {
+    std::fs::write(store_path(sh, "favoris.json"), serde_json::to_vec_pretty(f).expect("sérialisable"))
+        .map_err(|e| e.to_string())
+}
+
+pub fn recents(sh: &Shared) -> Vec<Recent> {
+    std::fs::read(store_path(sh, "recents.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+/// Mémorise un envoi ou un téléchargement (le plus récent en tête).
+pub fn note_recent(sh: &Shared, chemin: &str, action: &str) {
+    let mut r = recents(sh);
+    r.retain(|x| x.chemin != chemin);
+    r.insert(0, Recent { chemin: chemin.into(), action: action.into(), le: (sh.clock)() });
+    r.truncate(RECENTS);
+    let _ = std::fs::write(store_path(sh, "recents.json"), serde_json::to_vec_pretty(&r).expect("sérialisable"));
+}
+
+/// Dossier à ouvrir dans l'Explorateur pour un élément.
+pub fn folder_of(chemin: &str, dossier: bool) -> String {
+    if dossier {
+        return chemin.to_string();
+    }
+    match chemin.rfind('/') {
+        Some(0) | None => "/".into(),
+        Some(i) => chemin[..i].to_string(),
+    }
+}
+
 /// Version passée désignée par son hash (`protocols.historique-versions`).
 fn version_root(sh: &Arc<Shared>, id: &str) -> Result<crate::access::Root, String> {
     let find = |h: &crate::daemon::HistoryView| {
@@ -173,16 +236,70 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             let mut d = drive.lock().unwrap();
             let current = d.stat(&p).map_err(|e| e.to_string())?;
             let mut rows = Vec::new();
-            for ver in &h.versions {
-                let Some(root) = &ver.root else { continue };
+            // Chaque version comparée à la précédente (plus ancienne) : ce
+            // qu'elle a ajouté, supprimé, modifié. La plus récente vient de
+            // l'actuelle.
+            let readable: Vec<(&crate::daemon::Version, crate::access::Root)> = h
+                .versions
+                .iter()
+                .filter_map(|v| v.root.clone().map(|r| (v, r)))
+                .collect();
+            let current_root = d.root();
+            let is_dir = current.map(|m| m.is_dir).unwrap_or(true);
+            if is_dir {
+                if let Some((_, newest)) = readable.first() {
+                    let (a, s, m) = d.diff_at(newest, &current_root, &p);
+                    rows.push(json!({ "version": Value::Null, "du": readable[0].0.replaced_at,
+                        "actuelle": true, "dossier": true, "ajouts": a, "suppressions": s, "modifications": m }));
+                }
+            }
+            for (i, (ver, root)) in readable.iter().enumerate() {
                 if let Ok(Some(m)) = d.stat_at(root, &p) {
+                    let counts = match (m.is_dir, readable.get(i + 1)) {
+                        (true, Some((_, older))) => {
+                            let (a, s, md) = d.diff_at(older, root, &p);
+                            json!([a, s, md])
+                        }
+                        _ => Value::Null,
+                    };
                     rows.push(json!({ "version": hex::encode(ver.hash), "du": ver.valid_from,
                         "remplacée le": ver.replaced_at, "dossier": m.is_dir, "taille": m.size,
-                        "modifié": m.modified_at }));
+                        "modifié": m.modified_at,
+                        "ajouts": counts.get(0), "suppressions": counts.get(1), "modifications": counts.get(2) }));
                 }
             }
             Ok(json!({ "chemin": p, "actuelle": current.map(|m| json!({ "taille": m.size, "modifié": m.modified_at })),
                 "versions": rows, "conservation (jours)": h.retention_s / 86_400 }))
+        }
+        "explorer_favorite" => {
+            let p = norm(&text(v, "chemin"));
+            let mut f = favorites(sh);
+            let on = !f.iter().any(|x| x.chemin == p);
+            if on {
+                let dossier = drive.lock().unwrap().stat(&p).ok().flatten().is_some_and(|m| m.is_dir);
+                let nom = p.rsplit('/').next().filter(|n| !n.is_empty()).unwrap_or("Mon espace").to_string();
+                f.push(Favorite { chemin: p.clone(), nom, dossier });
+            } else {
+                f.retain(|x| x.chemin != p);
+            }
+            save_favorites(sh, &f)?;
+            Ok(json!({ "ok": true, "favori": on, "message": if on { "Ajouté aux favoris" } else { "Retiré des favoris" } }))
+        }
+        "explorer_fav_rename" => {
+            let p = norm(&text(v, "chemin"));
+            let nom = text(v, "nom");
+            let mut f = favorites(sh);
+            let x = f.iter_mut().find(|x| x.chemin == p).ok_or("favori introuvable")?;
+            x.nom = if nom.is_empty() { p.rsplit('/').next().unwrap_or("").to_string() } else { nom };
+            save_favorites(sh, &f)?;
+            Ok(json!({ "ok": true, "message": "Favori renommé" }))
+        }
+        "explorer_fav_remove" => {
+            let p = norm(&text(v, "chemin"));
+            let mut f = favorites(sh);
+            f.retain(|x| x.chemin != p);
+            save_favorites(sh, &f)?;
+            Ok(json!({ "ok": true, "message": "Retiré des favoris" }))
         }
         "explorer_reencrypt" => {
             let p = norm(&text(v, "chemin"));
@@ -253,6 +370,7 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                 let hidden = crate::keychain::TREE_DIR.trim_start_matches('/');
                 entries.retain(|(n, _)| n != hidden);
             }
+            let favs: Vec<String> = favorites(sh).into_iter().map(|f| f.chemin).collect();
             let reencrypt = drive.lock().unwrap().key_version() > crate::drive::KEY_VERSION;
             // Éléments encore protégés par l'ancienne clé (compromise).
             let old: Vec<bool> = if reencrypt {
@@ -279,6 +397,7 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                     json!({ "nom": n, "dossier": m.is_dir, "taille": m.size,
                             "modifié": m.modified_at, "gardé": folder && kept(&full),
                             "ancienne clé": o,
+                            "favori": favs.contains(&full),
                             "lecture seule": writable(&full).is_err() })
                 }).collect::<Vec<_>>(),
             }))
@@ -316,6 +435,7 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             let size = offset + data.len() as u64;
             if last {
                 changed(sh, &p, size);
+                note_recent(sh, &p, "envoyé");
             }
             Ok(json!({ "ok": true, "taille": size }))
         }
@@ -330,6 +450,9 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                 drive.lock().unwrap().read_at(&root, &p, offset, CHUNK)
             }
             .map_err(|e| e.to_string())?;
+            if offset == 0 && version.is_empty() {
+                note_recent(sh, &p, "téléchargé");
+            }
             Ok(json!({ "données": hex::encode(&data), "fin": data.len() < CHUNK }))
         }
         "explorer_move" => {

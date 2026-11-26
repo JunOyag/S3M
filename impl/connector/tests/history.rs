@@ -126,6 +126,22 @@ async fn a_past_version_is_browsed_restored_then_purged() {
         assert_eq!(read(None), "version 1");
         let r = act("explorer_versions", json!({ "chemin": "/a.txt" })).unwrap();
         assert_eq!(r["versions"].as_array().unwrap().len(), 2);
+        // Espace entier : version actuelle en tête, décomptes par version.
+        let all = act("explorer_versions", json!({ "chemin": "/" })).unwrap();
+        let rows = all["versions"].as_array().unwrap();
+        assert_eq!(rows[0]["actuelle"], true);
+        assert_eq!((rows[0]["ajouts"].as_u64(), rows[0]["modifications"].as_u64()), (Some(0), Some(1)));
+        // Favori en un clic, éléments récents sur l'accueil.
+        let r = act("explorer_favorite", json!({ "chemin": "/a.txt" })).unwrap();
+        assert_eq!(r["favori"], true);
+        let listed = act("explorer_list", json!({ "chemin": "/" })).unwrap();
+        assert!(listed["entrées"].as_array().unwrap().iter().any(|e| e["nom"] == "a.txt" && e["favori"] == true));
+        act("explorer_fav_rename", json!({ "chemin": "/a.txt", "nom": "Mon fichier" })).unwrap();
+        let st = status(&sh);
+        assert_eq!(st["favoris"]["_contenu"][0]["nom"], "Mon fichier");
+        assert_eq!(st["favoris"]["_contenu"][0]["_explorer"], "/");
+        assert_eq!(st["récents"]["_contenu"][0]["emplacement"], "/a.txt");
+        assert_eq!(st["pages simples"][0]["sections"].as_array().unwrap().iter().filter(|x| *x == "favoris").count(), 1);
 
         // Purge : plus aucune version, blocs gardés libérés chez le Nœud.
         let msg = purge_versions(&sh, &json!({ "avant": "0" }))

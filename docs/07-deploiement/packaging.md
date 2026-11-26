@@ -112,6 +112,33 @@ noté au journal ; « Envoyer une alerte d'essai » vérifie les canaux.
 
 ## Dashboards : écrans et menu {: #ecrans }
 
+### Saisies et présentation {: #durees }
+
+Ajout du 2026-11-26. Toute durée se saisit sous la forme « 10s », « 10min »,
+« 2h » ou « 7d » (« 7j » accepté ; un nombre seul est dans l'unité du
+champ) ; la valeur saisie est expliquée au survol (« 7 jours ») et le
+libellé du champ rappelle les formats. Les durées affichées dans les
+tableaux sont écrites en clair. L'espace offert aux partenaires se règle en
+Mio. Les cases à cocher sont des interrupteurs ; le logo a un fond blanc
+(thème foncé). Une saisie en cours garde le focus malgré le rafraîchissement
+périodique ; les formulaires de même nom sont réunis dans un seul onglet.
+
+### Favoris, éléments récents et versions {: #favoris }
+
+- **Favoris** : étoile de chaque ligne de l'Explorateur (un clic) ; liste
+  repliable en tête de l'accueil, renommable, ouvrant l'Explorateur au bon
+  dossier.
+- **Récents** : les 10 derniers éléments envoyés ou téléchargés depuis
+  l'Explorateur, repliables, sur l'accueil.
+- **Versions** (« Revenir en arrière ») : regroupées par jour (dépliable) ;
+  pour un dossier, chaque version indique ses ajouts, suppressions et
+  modifications par rapport à la précédente (sous-arbres identiques
+  sautés), la version actuelle en tête.
+- **Partager / Contacts** : partager se fait depuis l'Explorateur ;
+  « Ajouter un contact » et « Ajouter un partage reçu » ouvrent une
+  fenêtre sous leur liste ; le pseudo se règle dans la section Utilisateur.
+
+
 ### Mode simple et mode expert {: #modes }
 
 Ajout du 2026-11-25. Chaque tableau de bord a deux jeux d'écrans : `pages`

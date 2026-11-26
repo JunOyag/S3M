@@ -546,6 +546,59 @@ impl Drive {
         Ok(entries.iter().map(|e| (e.name.clone(), Meta::of(e))).collect())
     }
 
+    /// Entrées de `path` dans la version `root`.
+    fn entries_at(&mut self, root: &Root, path: &str) -> Vec<Entry> {
+        if root.fs_root_hash == NO_ROOT {
+            return Vec::new();
+        }
+        let p = norm(path);
+        self.with_volume(root.clone(), |v| v.list(&p)).unwrap_or_default()
+    }
+
+    /// Éléments (fichiers et dossiers) ajoutés, supprimés et modifiés sous
+    /// `path` de la version `old` à la version `new` ; les sous-arbres
+    /// identiques ne sont pas parcourus.
+    pub fn diff_at(&mut self, old: &Root, new: &Root, path: &str) -> (u64, u64, u64) {
+        let mut budget = 20_000usize;
+        let mut acc = (0, 0, 0);
+        self.diff_dir(old, new, &norm(path), &mut acc, &mut budget);
+        acc
+    }
+
+    fn diff_dir(&mut self, old: &Root, new: &Root, p: &str, acc: &mut (u64, u64, u64), budget: &mut usize) {
+        if *budget == 0 {
+            return;
+        }
+        *budget -= 1;
+        let a: BTreeMap<String, Entry> = self.entries_at(old, p).into_iter().map(|e| (e.name.clone(), e)).collect();
+        let b: BTreeMap<String, Entry> = self.entries_at(new, p).into_iter().map(|e| (e.name.clone(), e)).collect();
+        let names: std::collections::BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+        for n in names {
+            let child = format!("{}/{n}", p.trim_end_matches('/'));
+            match (a.get(n), b.get(n)) {
+                (None, Some(e)) => acc.0 += self.count_at(new, &child, e, budget),
+                (Some(e), None) => acc.1 += self.count_at(old, &child, e, budget),
+                (Some(x), Some(y)) if x.first_block_hash == y.first_block_hash => {}
+                (Some(x), Some(y)) if x.mime_type == DIRECTORY_MIME && y.mime_type == DIRECTORY_MIME => {
+                    self.diff_dir(old, new, &child, acc, budget)
+                }
+                _ => acc.2 += 1,
+            }
+        }
+    }
+
+    fn count_at(&mut self, root: &Root, p: &str, e: &Entry, budget: &mut usize) -> u64 {
+        if e.mime_type != DIRECTORY_MIME || *budget == 0 {
+            return 1;
+        }
+        *budget -= 1;
+        let children = self.entries_at(root, p);
+        1 + children
+            .iter()
+            .map(|c| self.count_at(root, &format!("{}/{}", p.trim_end_matches('/'), c.name), c, budget))
+            .sum::<u64>()
+    }
+
     /// Attributs de `path` dans la version `root`.
     pub fn stat_at(&mut self, root: &Root, path: &str) -> Result<Option<Meta>, DriveError> {
         let p = norm(path);

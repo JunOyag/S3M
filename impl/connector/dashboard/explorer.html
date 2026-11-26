@@ -46,6 +46,10 @@
   .muted { color: var(--muted); }
   .tag { font-size: 11px; color: var(--accent); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 6px; }
   .tag.old { color: var(--bad); border-color: var(--bad); }
+  button.star { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 0 6px 0 0; }
+  button.star.on { color: #e0a800; }
+  details.day { margin: 8px 0; }
+  details.day > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
   #oldkey { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); color: var(--bad); }
   #oldkey span { flex: 1 1 240px; }
   #status { min-height: 1.5em; padding: 6px 16px; color: var(--muted); font-size: 13px; }
@@ -66,7 +70,7 @@
   <nav class="crumbs" id="crumbs" aria-label="Emplacement"></nav>
   <button class="act secondary" id="versions" type="button" title="Parcourir et restaurer les versions passées de vos fichiers (rançongiciel, suppression par erreur)">Revenir en arrière</button>
   <button class="act secondary" id="mkdir" type="button">Nouveau dossier</button>
-  <button class="act secondary" id="upfolder" type="button">Envoyer un dossier</button>
+  <button class="act secondary" id="upfolder" type="button">Importer un dossier</button>
   <button class="act" id="upfiles" type="button">Envoyer des fichiers</button>
   <input type="file" id="pickfiles" multiple hidden>
   <input type="file" id="pickfolder" webkitdirectory multiple hidden>

@@ -148,6 +148,17 @@ function rows(entries) {
     const path = join(cwd, e["nom"]);
     const tr = el("tr", undefined, "row");
     const name = el("td", undefined, "name");
+    if (!version) {
+      // Favori en un clic (affiché sur l'accueil).
+      const star = el("button", e["favori"] ? "★" : "☆", "star" + (e["favori"] ? " on" : ""));
+      star.type = "button";
+      star.title = e["favori"] ? "Retirer des favoris" : "Ajouter aux favoris (affiché sur l'accueil)";
+      star.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        run(e["favori"] ? "Retrait du favori" : "Ajout aux favoris", () => call("explorer_favorite", { chemin: path }));
+      });
+      name.appendChild(star);
+    }
     name.appendChild(el("span", e["dossier"] ? "📁" : "📄", "ico"));
     name.appendChild(document.createTextNode(e["nom"]));
     if (e["gardé"]) name.appendChild(el("span", "sur cet appareil", "tag"));
@@ -569,7 +580,9 @@ function restore(path, v, label) {
   });
 }
 
-// Fenêtre listant les versions d'un élément (ou de tout l'espace).
+// Fenêtre listant les versions d'un élément (ou de tout l'espace),
+// regroupées par jour ; pour un dossier, ce que chaque version a ajouté,
+// supprimé et modifié par rapport à la précédente.
 async function versionsOf(path, isDir) {
   let r;
   try {
@@ -582,20 +595,39 @@ async function versionsOf(path, isDir) {
   }
   const d = $("dlg");
   const f = $("dlgform");
-  f.replaceChildren(el("h3", path === "/" ? "Versions de mon espace" : "Versions de « " + base(path) + " »"));
-  f.appendChild(el("p", "Versions gardées " + (r["conservation (jours)"] || 0) + " jours, comptées dans votre quota (page Fichiers et synchronisation pour les purger).", "muted"));
+  f.replaceChildren(el("h3", path === "/" ? "Revenir en arrière : mon espace" : "Versions de « " + base(path) + " »"));
+  f.appendChild(el("p", "Versions gardées " + (r["conservation (jours)"] || 0) + " jours, comptées dans votre quota (Mon compte pour les purger).", "muted"));
   const list = r["versions"] || [];
   if (!list.length) f.appendChild(el("p", "Aucune version passée."));
-  else {
+  const days = [];
+  for (const v of list) {
+    const t = v["du"] > 1.4e9 ? new Date(v["du"] * 1000) : null;
+    const day = t ? t.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "date inconnue";
+    let g = days.find((x) => x.day === day);
+    if (!g) days.push((g = { day, rows: [] }));
+    g.rows.push(v);
+  }
+  const num = (x) => (x === null || x === undefined ? "—" : String(x));
+  days.forEach((g, gi) => {
+    const det = el("details", undefined, "day");
+    det.open = gi === 0;
+    det.appendChild(el("summary", g.day.charAt(0).toUpperCase() + g.day.slice(1) + " — " + g.rows.length + " version(s)"));
     const t = el("table");
     const head = el("tr");
-    for (const h of ["Version du", "Taille", ""]) head.appendChild(el("th", h));
+    const cols = isDir ? ["Heure", "Ajouts", "Suppressions", "Modifications", ""] : ["Heure", "Taille", ""];
+    for (const h of cols) head.appendChild(el("th", h));
     t.appendChild(head);
-    for (const v of list) {
+    for (const v of g.rows) {
       const tr = el("tr");
-      const label = when(v["du"]);
-      tr.appendChild(el("td", label));
-      tr.appendChild(el("td", v["dossier"] ? "dossier" : size(v["taille"] || 0), "num"));
+      const hour = v["du"] > 1.4e9 ? new Date(v["du"] * 1000).toLocaleTimeString() : "—";
+      tr.appendChild(el("td", v["actuelle"] ? "Version actuelle" : hour));
+      if (isDir) {
+        tr.appendChild(el("td", num(v["ajouts"]), "num"));
+        tr.appendChild(el("td", num(v["suppressions"]), "num"));
+        tr.appendChild(el("td", num(v["modifications"]), "num"));
+      } else {
+        tr.appendChild(el("td", size(v["taille"] || 0), "num"));
+      }
       const td = el("td", undefined, "acts");
       const add = (txt, fn) => {
         const b = el("button", txt, "small");
@@ -606,18 +638,23 @@ async function versionsOf(path, isDir) {
         });
         td.appendChild(b);
       };
-      if (isDir) add("Parcourir", () => browse(v["version"], label, path));
-      else add("Télécharger", () => {
-        const keepVersion = version;
-        version = v["version"];
-        download(path, v["taille"]).finally(() => (version = keepVersion));
-      });
-      if (path !== "/") add("Restaurer", () => restore(path, v["version"], label));
+      const label = when(v["du"]);
+      if (!v["actuelle"]) {
+        if (isDir) add("Parcourir", () => browse(v["version"], label, path));
+        else
+          add("Télécharger", () => {
+            const keepVersion = version;
+            version = v["version"];
+            download(path, v["taille"]).finally(() => (version = keepVersion));
+          });
+        if (path !== "/") add("Restaurer", () => restore(path, v["version"], label));
+      }
       tr.appendChild(td);
       t.appendChild(tr);
     }
-    f.appendChild(t);
-  }
+    det.appendChild(t);
+    f.appendChild(det);
+  });
   const row = el("div", undefined, "row-btns");
   const close = el("button", "Fermer", "act");
   close.value = "ok";

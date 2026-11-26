@@ -23,6 +23,30 @@ pub enum Kind {
     Bool,
     /// Liste de chaînes, saisie séparée par des virgules.
     List,
+    /// Durée en secondes (saisie « 10s », « 10min », « 2h », « 7d »).
+    Seconds,
+    /// Durée en jours (même saisie).
+    Days,
+    /// Taille en octets, présentée et saisie en Mio.
+    Mebibytes,
+}
+
+/// Durée saisie (« 10s », « 10min », « 2h », « 7d » ou « 7j », nombre seul
+/// dans l'unité `unit_s`) en secondes (`deploiement.packaging#durees`).
+pub fn parse_duration(s: &str, unit_s: u64) -> Option<u64> {
+    let t = s.trim().to_lowercase().replace(',', ".");
+    let split = t.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(t.len());
+    let (n, u) = t.split_at(split);
+    let n: f64 = n.trim().parse().ok()?;
+    let mult = match u.trim() {
+        "" => unit_s,
+        "s" | "sec" => 1,
+        "min" | "m" => 60,
+        "h" => 3_600,
+        "d" | "j" => 86_400,
+        _ => return None,
+    };
+    (n >= 0.0).then(|| (n * mult as f64).round() as u64)
 }
 
 /// Champ éditable : `(groupe, libellé, chemin JSON, type, à chaud, aide)`.
@@ -129,9 +153,9 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Relais",
-        "durée maximale d'un circuit (s)",
+        "durée maximale d'un circuit",
         "relay_limits.max_circuit_duration_s",
-        Kind::Number,
+        Kind::Seconds,
         false,
         "",
     ),
@@ -169,9 +193,9 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Partenaires",
-        "espace offert aux partenaires (octets)",
+        "espace offert aux partenaires (Mio)",
         "partner_policy.offer_bytes",
-        Kind::Number,
+        Kind::Mebibytes,
         true,
         "Espace réservé aux fragments des partenaires (10 Gio par défaut), réparti à parts égales entre le nombre maximal de partenaires : c'est ce que chacun peut déposer ici, et réciproquement.",
     ),
@@ -185,9 +209,9 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Partenaires",
-        "période de confiance (s)",
+        "période de confiance",
         "partner_policy.trust_period_s",
-        Kind::Number,
+        Kind::Seconds,
         true,
         "Durée après laquelle la confiance envers un partenaire double s'il a tenu ses promesses (7 jours par défaut).",
     ),
@@ -241,9 +265,9 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Partenaires",
-        "durée avant retrait (s)",
+        "durée avant retrait",
         "partnering.retire_after_s",
-        Kind::Number,
+        Kind::Seconds,
         false,
         "",
     ),
@@ -257,33 +281,33 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Contrôles",
-        "période d'analyse (s)",
+        "période d'analyse",
         "upkeep.analysis_period_s",
-        Kind::Number,
+        Kind::Seconds,
         false,
         "",
     ),
     f(
         "Contrôles",
-        "fenêtre de disponibilité (s)",
+        "fenêtre de disponibilité",
         "upkeep.available_window_s",
-        Kind::Number,
+        Kind::Seconds,
         false,
         "",
     ),
     f(
         "Contrôles",
-        "période de vérification locale (s)",
+        "période de vérification locale",
         "upkeep.scrub_period_s",
-        Kind::Number,
+        Kind::Seconds,
         false,
         "",
     ),
     f(
         "Contrôles",
-        "délai de padding (s)",
+        "délai de padding",
         "dispersal.idle_timeout_s",
-        Kind::Number,
+        Kind::Seconds,
         false,
         "Attente avant de compléter un groupe incomplet.",
     ),
@@ -297,9 +321,9 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Contrôles",
-        "délai de grâce avant purge (s)",
+        "délai de grâce avant purge",
         "dispersal.grace_s",
-        Kind::Number,
+        Kind::Seconds,
         false,
         "",
     ),
@@ -321,9 +345,9 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Utilisateurs",
-        "conservation des versions (jours)",
+        "conservation des versions",
         "history_days",
-        Kind::Number,
+        Kind::Days,
         true,
         "Versions passées des fichiers gardées pour les retours arrière (ransomware, suppression accidentelle), comptées dans le quota de chaque utilisateur ; 0 : aucune.",
     ),
@@ -419,6 +443,10 @@ fn display(v: Option<&Value>, kind: Kind) -> Value {
                 .collect::<Vec<_>>()
                 .join(", "))
         }
+        (Some(x), Kind::Mebibytes) => x
+            .as_u64()
+            .map(|b| json!((b as f64 / 1_048_576.0 * 100.0).round() / 100.0))
+            .unwrap_or_else(|| x.clone()),
         (Some(x), _) => x.clone(),
     }
 }
@@ -446,6 +474,15 @@ fn parse(field: &Field, raw: &Value) -> Result<Value, String> {
         Kind::Text => json!(s),
         Kind::Number if s.is_empty() => Value::Null,
         Kind::Number => json!(s.parse::<u64>().map_err(|_| bad())?),
+        Kind::Seconds if s.is_empty() => Value::Null,
+        Kind::Seconds => json!(parse_duration(&s, 1).ok_or_else(bad)?),
+        Kind::Days if s.is_empty() => Value::Null,
+        Kind::Days => json!(parse_duration(&s, 86_400).ok_or_else(bad)? / 86_400),
+        Kind::Mebibytes if s.is_empty() => Value::Null,
+        Kind::Mebibytes => {
+            let x: f64 = s.replace(',', ".").parse().map_err(|_| bad())?;
+            json!((x * 1_048_576.0).round() as u64)
+        }
         Kind::Decimal => {
             let x: f64 = s.replace(',', ".").parse().map_err(|_| bad())?;
             json!(x)
@@ -470,14 +507,23 @@ pub fn forms(file: &Value, running: &Value) -> (Vec<Value>, Vec<String>) {
             let mut valeurs = Map::new();
             let mut types = Map::new();
             let mut aide = Map::new();
+            let mut unites = Map::new();
             for f in &fields {
                 valeurs.insert(f.label.into(), display(get(file, f.path), f.kind));
                 match f.kind {
                     Kind::Bool => {
                         types.insert(f.label.into(), json!("bool"));
                     }
-                    Kind::Number => {
+                    Kind::Number | Kind::Mebibytes => {
                         types.insert(f.label.into(), json!("number"));
+                    }
+                    Kind::Seconds => {
+                        types.insert(f.label.into(), json!("durée"));
+                        unites.insert(f.label.into(), json!("s"));
+                    }
+                    Kind::Days => {
+                        types.insert(f.label.into(), json!("durée"));
+                        unites.insert(f.label.into(), json!("j"));
                     }
                     _ => {}
                 }
@@ -491,7 +537,7 @@ pub fn forms(file: &Value, running: &Value) -> (Vec<Value>, Vec<String>) {
             json!({
                 "nom": "set_config", "titre": format!("Configuration — {g}"), "libellé": "Enregistrer",
                 "champs": fields.iter().map(|f| f.label).collect::<Vec<_>>(),
-                "valeurs": valeurs, "types": types, "aide": aide,
+                "valeurs": valeurs, "types": types, "aide": aide, "unités": unites,
             })
         })
         .collect();

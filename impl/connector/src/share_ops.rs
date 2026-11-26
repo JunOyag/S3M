@@ -275,12 +275,30 @@ fn received_expiry(p: &CachedPointer) -> Option<u64> {
 
 /// Durée d'expiration saisie (jours, 0 : aucune).
 fn days_of(v: &Value) -> u64 {
-    v.get("expiration (jours)")
-        .and_then(|x| {
-            x.as_u64()
-                .or_else(|| x.as_str().and_then(|s| s.trim().parse().ok()))
-        })
-        .unwrap_or(0)
+    v.get("expiration (jours)").and_then(parse_days).unwrap_or(0)
+}
+
+/// Durée en jours : nombre, ou saisie « 12h », « 7d », « 30j »
+/// (`deploiement.packaging#durees`), arrondie au jour supérieur.
+pub fn parse_days(x: &Value) -> Option<u64> {
+    if let Some(n) = x.as_u64() {
+        return Some(n);
+    }
+    let t = x.as_str()?.trim().to_lowercase().replace(',', ".");
+    if t.is_empty() {
+        return Some(0);
+    }
+    let split = t.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(t.len());
+    let (n, u) = t.split_at(split);
+    let n: f64 = n.trim().parse().ok()?;
+    let secs = match u.trim() {
+        "" | "d" | "j" => 86_400.0,
+        "h" => 3_600.0,
+        "min" | "m" => 60.0,
+        "s" | "sec" => 1.0,
+        _ => return None,
+    };
+    Some((n * secs / 86_400.0).ceil() as u64)
 }
 
 /// Nouveau partage (secret neuf) et texte à transmettre.
@@ -344,7 +362,7 @@ pub fn status(sh: &Shared, v: &mut Value) {
                     vec!["Partage retiré. « Repartager » crée un nouveau partage du même élément pour le même destinataire : un nouveau lien ou une nouvelle invitation, à lui retransmettre."],
                     vec![
                         json!({ "nom": "reshare_share", "titre": "Repartager", "libellé": "Repartager", "champs": ["expiration (jours)"],
-                            "types": { "expiration (jours)": "number" }, "fixes": fixes,
+                            "types": { "expiration (jours)": "durée" }, "unités": { "expiration (jours)": "j" }, "libellés": { "expiration (jours)": "expiration" }, "fixes": fixes,
                             "aide": { "expiration (jours)": "Vide ou 0 : sans expiration" } }),
                         json!({ "nom": "delete_share", "libellé": "Supprimer de la liste", "style": "danger", "champs": [], "fixes": fixes,
                             "confirmer": "Supprimer ce partage retiré de la liste ? Il ne pourra plus être repartagé d'ici." }),
@@ -404,23 +422,12 @@ pub fn status(sh: &Shared, v: &mut Value) {
             })
         })
         .collect::<Vec<_>>());
-    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
-        a.push(json!({ "nom": "create_share", "titre": "Partager un fichier ou un dossier", "libellé": "Créer le partage",
-            "texte": [
-                "En lecture seule. Le destinataire voit l'élément et, pour un dossier, toute son arborescence, à jour à chaque synchronisation.",
-                "Destinataire vide : un lien, lisible par qui le détient. Avec l'identifiant d'un utilisateur S3m : une invitation que lui seul peut ouvrir."
-            ],
-            "champs": ["élément", "destinataire", "expiration (jours)"],
-            "types": { "élément": "chemin", "expiration (jours)": "number" },
-            "options": { "destinataire": contacts.pseudos() },
-            "explorateurs": { "élément": "drive_browse" },
-            "aide": { "élément": "Chemin dans votre espace S3m, par exemple /Photos ; « Parcourir… » pour le choisir (dossier, ou fichier en cliquant dessus)",
-                      "destinataire": "Pseudo d'un de vos contacts (page Contacts), ou identifiant S3m (64 caractères) ; vide : un lien public",
-                      "expiration (jours)": "Vide ou 0 : sans expiration" } }));
-        a.push(json!({ "nom": "add_received", "titre": "Ajouter un partage reçu", "libellé": "Ajouter",
+    // Partager : depuis l'Explorateur (menu ⋯) ; partage reçu : en fenêtre.
+    let received = v["partages reçus"].take();
+    v["partages reçus"] = json!({ "_contenu": received, "_formulaires": [{ "nom": "add_received", "libellé": "Ajouter un partage reçu",
+        "panneau": { "titre": "Ajouter un partage reçu", "formulaires": [{ "nom": "add_received", "libellé": "Ajouter",
             "champs": ["lien ou invitation"], "types": { "lien ou invitation": "texte" },
-            "aide": { "lien ou invitation": "Lien s3m://partage#… ou invitation S3MS1:… reçus du propriétaire" } }));
-    }
+            "aide": { "lien ou invitation": "Lien s3m://partage#… ou invitation S3MS1:… reçus du propriétaire" } }] } }] });
 }
 
 fn reveal(title: &str, text: &str, recipient: bool) -> Value {

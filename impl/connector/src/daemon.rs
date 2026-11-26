@@ -630,11 +630,15 @@ pub fn status(sh: &Shared) -> Value {
     let mut v = status_base(sh);
     channel_status(sh, &mut v);
     crate::share_ops::status(sh, &mut v);
-    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+    {
         let n = sh.names.lock().unwrap().clone();
-        a.push(json!({ "nom": "set_pseudo", "titre": "Pseudo de cette identité", "libellé": "Enregistrer",
-            "champs": ["pseudo"], "valeurs": { "pseudo": n.pseudo },
-            "aide": { "pseudo": "Visible par vous seul, sur tous vos appareils (64 octets au plus) ; vide pour aucun pseudo" } }));
+        // Pseudo : formulaire de la section Utilisateur.
+        let user = v["utilisateur"].take();
+        v["utilisateur"] = json!({ "_contenu": user, "_formulaires": [
+            { "nom": "set_pseudo", "titre": "Pseudo de cette identité", "libellé": "Enregistrer",
+              "champs": ["pseudo"], "valeurs": { "pseudo": n.pseudo },
+              "aide": { "pseudo": "Visible par vous seul, sur tous vos appareils (64 octets au plus) ; vide pour aucun pseudo" } }] });
+        let a = v.get_mut("actions").and_then(|a| a.as_array_mut()).expect("actions");
         a.push(json!({ "nom": "set_node_label", "titre": "Nom de mon Nœud (pour moi)", "libellé": "Enregistrer",
             "champs": ["nom"], "valeurs": { "nom": n.node_label },
             "aide": { "nom": "Remplace pour vous le nom choisi par l'opérateur ; l'empreinte reste toujours affichée" } }));
@@ -658,7 +662,7 @@ pub fn status(sh: &Shared) -> Value {
                 "champs": ["dossier"], "types": { "dossier": "chemin" }, "explorateurs": { "dossier": "drive_browse" },
                 "aide": { "dossier": "Vide : tout le dossier synchronisé ; sinon un sous-dossier (« Parcourir… »)" } }));
             a.push(json!({ "nom": "set_auto_free", "titre": "Libération automatique", "libellé": "Enregistrer",
-                "champs": ["après (jours)"], "types": { "après (jours)": "number" },
+                "champs": ["après (jours)"], "types": { "après (jours)": "durée" }, "unités": { "après (jours)": "j" }, "libellés": { "après (jours)": "après" },
                 "valeurs": { "après (jours)": days },
                 "aide": { "après (jours)": "Place libérée pour les fichiers ni ouverts ni téléchargés depuis ce nombre de jours (vérifié chaque heure) ; 0 : jamais" } }));
             a.push(json!({ "nom": "keep_offline", "titre": "Toujours garder sur cet appareil", "libellé": "Garder",
@@ -668,6 +672,7 @@ pub fn status(sh: &Shared) -> Value {
         }
     }
     v["journal"] = journal_rows(sh);
+    home_lists(sh, &mut v);
     // Nouvelle phrase après un changement d'identité, jusqu'à confirmation.
     let new_phrase = std::fs::read_to_string(sh.config.data_dir.join(NEW_PHRASE_FILE)).ok();
     if let Some(w) = &new_phrase {
@@ -716,10 +721,10 @@ pub fn status(sh: &Shared) -> Value {
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true,
           "sections": match (new_phrase.is_some(), setup.is_some()) {
-              (true, true) => json!(["nouvelle phrase de récupération", "mise en route"]),
-              (true, false) => json!(["nouvelle phrase de récupération"]),
-              (false, true) => json!(["mise en route"]),
-              (false, false) => json!([]),
+              (true, true) => json!(["nouvelle phrase de récupération", "mise en route", "favoris", "récents"]),
+              (true, false) => json!(["nouvelle phrase de récupération", "favoris", "récents"]),
+              (false, true) => json!(["mise en route", "favoris", "récents"]),
+              (false, false) => json!(["favoris", "récents"]),
           }, "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
           "sections": ["accès aux fichiers", "historique des versions", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture", "blocs pas encore dispersés"],
@@ -728,16 +733,16 @@ pub fn status(sh: &Shared) -> Value {
           "sections": ["nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "explorateur", "titre": "Explorateur", "cadre": "explorer.html", "sections": [], "actions": [] },
         { "id": "contacts", "titre": "Contacts", "sections": ["contacts", "mon identifiant"],
-          "actions": ["add_contact", "copy_my_id", "import_contacts", "export_contacts"] },
+          "actions": ["import_contacts", "export_contacts"] },
         { "id": "partages", "titre": "Partages",
-          "sections": ["partages donnés", "partages reçus"], "actions": ["create_share", "add_received"] },
+          "sections": ["partages donnés", "partages reçus"], "actions": [] },
         { "id": "messages", "titre": "Messages du Nœud",
           "sections": ["remplacement de la clé d'alerte", "alerte du nœud", "messages du nœud", "écrire à mon nœud", "messages envoyés au nœud"],
           "actions": ["mark_all_read", "accept_announce_replacement", "refuse_announce_replacement", "acknowledge_alert"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
-          "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["set_pseudo", "rotate_identity"] },
+          "sections": ["utilisateur", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"] },
         { "id": "diagnostic", "titre": "Diagnostic", "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "État de santé", "sections": ["santé"] },
                                   { "titre": "Avancé", "sections": ["journal"] }] },
@@ -746,6 +751,29 @@ pub fn status(sh: &Shared) -> Value {
     ]);
     simple_pages(sh, &mut v, new_phrase.is_some(), setup.is_some());
     v
+}
+
+/// Favoris et éléments récents, sur l'accueil (`deploiement.packaging#favoris`).
+fn home_lists(sh: &Shared, v: &mut Value) {
+    let favs = crate::explorer::favorites(sh);
+    if !favs.is_empty() {
+        v["favoris"] = json!({ "_repliable": true, "_contenu": favs.iter().map(|f| json!({
+            "nom": f.nom, "emplacement": f.chemin,
+            "_explorer": crate::explorer::folder_of(&f.chemin, f.dossier),
+            "_actions": [
+                { "nom": "explorer_fav_rename", "libellé": "Renommer", "panneau": { "titre": "Renommer le favori",
+                    "formulaires": [{ "nom": "explorer_fav_rename", "libellé": "Enregistrer", "champs": ["nom"],
+                        "valeurs": { "nom": f.nom }, "fixes": { "chemin": f.chemin } }] } },
+                { "nom": "explorer_fav_remove", "libellé": "Retirer", "style": "secondary", "valeurs": { "chemin": f.chemin } }
+            ] })).collect::<Vec<_>>() });
+    }
+    let rec = crate::explorer::recents(sh);
+    if !rec.is_empty() {
+        v["récents"] = json!({ "_repliable": true, "_contenu": rec.iter().map(|r| json!({
+            "nom": r.chemin.rsplit('/').next().unwrap_or(""), "emplacement": r.chemin,
+            "action": r.action, "le": format!("le {}", r.le),
+            "_explorer": crate::explorer::folder_of(&r.chemin, false) })).collect::<Vec<_>>() });
+    }
 }
 
 /// Mode simple (`deploiement.packaging#modes`) : quatre écrans (et
@@ -791,15 +819,17 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
         accueil.push("mise en route");
     }
     accueil.push("en un coup d'œil");
+    accueil.push("favoris");
+    accueil.push("récents");
     let mut pages = vec![
         json!({ "id": "accueil", "titre": "Accueil", "sections": accueil, "actions": ["sync_now"] }),
         json!({ "id": "explorateur", "titre": "Mes fichiers", "cadre": "explorer.html", "sections": [], "actions": [] }),
         json!({ "id": "partages", "titre": "Partager",
                 "sections": ["partages donnés", "partages reçus", "contacts", "mon identifiant"],
-                "actions": ["create_share", "add_received", "add_contact", "copy_my_id"] }),
+                "actions": [] }),
         json!({ "id": "compte", "titre": "Mon compte",
                 "sections": ["utilisateur", "espace", "accès aux fichiers", "historique des versions"],
-                "actions": ["set_pseudo", "change_node", "rotate_identity"] }),
+                "actions": ["change_node", "rotate_identity"] }),
     ];
     if t.messages_received > 0 || v.pointer("/alerte du nœud/message").is_some_and(|m| !m.is_null()) {
         pages.push(json!({ "id": "messages", "titre": "Messages",
@@ -1669,7 +1699,7 @@ fn contacts_status(sh: &Shared, v: &mut Value) {
                 "formulaires": [
                     { "nom": "create_share", "titre": format!("Partager avec {name}"), "libellé": "Partager",
                       "champs": ["élément", "expiration (jours)"],
-                      "types": { "élément": "chemin", "expiration (jours)": "number" },
+                      "types": { "élément": "chemin", "expiration (jours)": "durée" }, "unités": { "expiration (jours)": "j" }, "libellés": { "expiration (jours)": "expiration" },
                       "explorateurs": { "élément": "drive_browse" },
                       "fixes": { "destinataire": c.user_id },
                       "aide": { "élément": "Fichier ou dossier de votre espace (« Parcourir… »)",
@@ -1694,25 +1724,29 @@ fn contacts_status(sh: &Shared, v: &mut Value) {
     // Mon identifiant, à communiquer pour qu'on m'ajoute.
     let me = hex::encode(sh.pub_user);
     v["mon identifiant"] = json!({
-        "identifiant": me,
-        "empreinte": s3m_protocol::pseudo::fingerprint(&sh.pub_user),
-        "QR code": qr_svg(&me),
-    });
-    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
-        a.push(json!({ "nom": "copy_my_id", "titre": "Me partager quelque chose", "libellé": "Copier mon identifiant",
+        "_contenu": {
+            "identifiant": me,
+            "empreinte": s3m_protocol::pseudo::fingerprint(&sh.pub_user),
+            "QR code": qr_svg(&me),
+        },
+        "_formulaires": [{ "nom": "copy_my_id", "libellé": "Copier mon identifiant", "style": "secondary",
             "texte": "Communiquez votre identifiant (ou faites scanner le QR code) : on vous ajoute à ses contacts, puis on peut vous partager des fichiers. Vérifiez ensemble l'empreinte.",
-            "champs": [] }));
+            "champs": [] }],
+    });
+    let contacts = v["contacts"].take();
+    v["contacts"] = json!({ "_contenu": contacts, "_formulaires": [{ "nom": "add_contact", "libellé": "Ajouter un contact",
+        "panneau": { "titre": "Ajouter un contact", "formulaires": [{ "nom": "add_contact", "libellé": "Ajouter",
+            "texte": "Le pseudo remplace l'identifiant dans S3m (partages) ; il n'est visible que par vous.",
+            "champs": ["pseudo", "identifiant"],
+            "aide": { "pseudo": "Nom de votre choix, unique dans vos contacts ; facultatif",
+                      "identifiant": "Identifiant S3m de la personne (64 caractères, page « Identité et sécurité » de son S3m) ; vérifiez ensemble l'empreinte" } }] } }] });
+    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
         a.push(json!({ "nom": "export_contacts", "titre": "Exporter les contacts", "libellé": "Exporter",
             "champs": ["dossier"], "types": { "dossier": "chemin" },
             "aide": { "dossier": "Dossier où écrire « contacts-s3m.json » ; vide : contenu affiché, à copier" } }));
         a.push(json!({ "nom": "import_contacts", "titre": "Importer des contacts", "libellé": "Importer",
             "champs": ["contacts"], "types": { "contacts": "texte" },
             "aide": { "contacts": "Contenu d'un export, ou chemin complet du fichier « contacts-s3m.json » ; les contacts déjà présents sont gardés tels quels" } }));
-        a.push(json!({ "nom": "add_contact", "titre": "Ajouter un contact", "libellé": "Ajouter",
-            "texte": "Le pseudo remplace l'identifiant dans S3m (partages) ; il n'est visible que par vous.",
-            "champs": ["pseudo", "identifiant"],
-            "aide": { "pseudo": "Nom de votre choix, unique dans vos contacts ; facultatif",
-                      "identifiant": "Identifiant S3m de la personne (64 caractères, page « Identité et sécurité » de son S3m) ; vérifiez ensemble l'empreinte" } }));
     }
 }
 
@@ -3535,10 +3569,7 @@ fn free_space_action(_: &Shared, _: &Value) -> Result<Value, String> {
 fn set_auto_free(sh: &Shared, v: &Value) -> Result<Value, String> {
     let days = v
         .get("après (jours)")
-        .and_then(|x| {
-            x.as_u64()
-                .or_else(|| x.as_str().and_then(|s| s.trim().parse().ok()))
-        })
+        .and_then(crate::share_ops::parse_days)
         .unwrap_or(0);
     let path = sh
         .config
