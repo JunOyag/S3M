@@ -1253,6 +1253,13 @@ impl Drive {
             return Ok(());
         }
         self.stat(&f)?.ok_or(DriveError::NotFound)?;
+        // Dossier de destination inexistant : refus (sinon l'élément serait
+        // rangé sous un chemin qu'aucun listage ne montre).
+        match self.stat(parent(&t))? {
+            None => return Err(DriveError::NotFound),
+            Some(m) if !m.is_dir => return Err(DriveError::NotADirectory),
+            Some(_) => {}
+        }
         if self.stat(&t)?.is_some() {
             if !replace {
                 return Err(DriveError::Exists);

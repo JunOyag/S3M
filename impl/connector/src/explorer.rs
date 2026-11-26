@@ -495,11 +495,18 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             if to == from || to.starts_with(&format!("{from}/")) {
                 return Err("un dossier ne peut pas être déplacé dans lui-même".into());
             }
-            drive
-                .lock()
-                .unwrap()
-                .rename(&from, &to, false)
-                .map_err(|e| e.to_string())?;
+            let dir = match to.rfind('/') {
+                Some(0) | None => "/".to_string(),
+                Some(i) => to[..i].to_string(),
+            };
+            let mut dr = drive.lock().unwrap();
+            match dr.stat(&dir).map_err(|e| e.to_string())? {
+                None => return Err(format!("le dossier de destination {dir} n'existe pas")),
+                Some(m) if !m.is_dir => return Err(format!("{dir} n'est pas un dossier")),
+                Some(_) => {}
+            }
+            dr.rename(&from, &to, false).map_err(|e| e.to_string())?;
+            drop(dr);
             changed(sh, &to, 0);
             Ok(json!({ "ok": true, "message": format!("{from} → {to}") }))
         }

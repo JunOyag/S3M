@@ -91,6 +91,10 @@ fn rename_delete_and_nested_edits_are_copy_on_write() {
     d.sync().unwrap();
 
     // Déplacement d'un répertoire distant non vide, puis modification dedans.
+    // Destination sous un dossier inexistant ou un fichier : refus, rien ne bouge.
+    assert!(matches!(d.rename("/x", "/nulle/part/x", false), Err(DriveError::NotFound)));
+    assert!(matches!(d.rename("/a", "/x/a", false), Err(DriveError::NotADirectory)));
+    assert!(d.stat("/x").unwrap().is_some() && d.stat("/a").unwrap().is_some());
     d.rename("/a", "/z", false).unwrap();
     assert!(d.stat("/a").unwrap().is_none());
     assert_eq!(d.read("/z/b/f", 0, 10).unwrap(), b"v1");
