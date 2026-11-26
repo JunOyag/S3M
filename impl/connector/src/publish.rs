@@ -41,9 +41,10 @@ pub async fn ensure_user_proof(
 ) -> Result<VdfProof, String> {
     let identity = user_identity(priv_user, pub_user).map_err(|e| e.to_string())?;
     // Preuve en cache valable pour cette identité seulement (une rotation
-    // d'identité en exige une nouvelle).
+    // d'identité en exige une nouvelle). Sans étiquette, l'identité de la
+    // preuve est inconnue : recalculée.
     let tag = cache.with_extension("id");
-    let same = std::fs::read_to_string(&tag).map_or(true, |t| t.trim() == hex::encode(identity));
+    let same = std::fs::read_to_string(&tag).is_ok_and(|t| t.trim() == hex::encode(identity));
     if same {
         if let Some(p) = std::fs::read(cache).ok().and_then(|b| decode_proof(&b)) {
             let _ = std::fs::write(&tag, hex::encode(identity));

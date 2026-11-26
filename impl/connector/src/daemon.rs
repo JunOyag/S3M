@@ -2459,6 +2459,7 @@ pub fn rotate_identity(sh: &Arc<Shared>, v: &Value) -> Result<Value, String> {
     // Nouvelle identité : nouvelle preuve d'identité ; phrase réaffichée
     // après le redémarrage tant qu'elle n'est pas confirmée notée.
     let _ = std::fs::remove_file(sh.config.data_dir.join("vdf_proof.bin"));
+    let _ = std::fs::remove_file(sh.config.data_dir.join("vdf_proof.id"));
     let _ = std::fs::write(sh.config.data_dir.join(NEW_PHRASE_FILE), &new_words);
     // Redémarrage différé : la réponse (et la phrase) parvient d'abord à
     // la page.
@@ -3978,7 +3979,16 @@ async fn deposit(
                 }
                 Err(e) => match spares.next() {
                     Some(s) => cands[slot] = s,
-                    None => return Err(format!("dépôt refusé : {e}")),
+                    None => {
+                        // Refus d'autorisation chez tous : preuve d'identité
+                        // (VDF) en cache périmée ? Recalculée au prochain essai.
+                        if matches!(e, crate::exchange::ExchangeError::Refused(s3m_protocol::exchange::Refusal::Unauthorized)) {
+                            let _ = std::fs::remove_file(&cache);
+                            let _ = std::fs::remove_file(cache.with_extension("id"));
+                            return Err("dépôt refusé par les partenaires : la preuve d'identité est recalculée (quelques minutes), nouvel essai automatique ensuite".into());
+                        }
+                        return Err(format!("dépôt refusé : {e}"));
+                    }
                 },
             }
         }

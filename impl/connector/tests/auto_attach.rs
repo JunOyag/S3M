@@ -30,6 +30,9 @@ async fn unattached_connector_attaches_itself_with_the_node_policy_quota() {
         pi: vec![2; 100],
     };
     std::fs::write(dir.join("data/vdf_proof.bin"), encode_proof(&proof)).unwrap();
+    let (upk, upu) = user_keys(MNEMONIC, 0).unwrap();
+    let id = s3m_protocol::entries::user_identity(&upk, &upu).unwrap();
+    std::fs::write(dir.join("data/vdf_proof.id"), hex::encode(id)).unwrap();
 
     let mut ns = NodeService::new(NODE);
     ns.vdf = Some(Arc::new(|_, _| true));
