@@ -160,6 +160,15 @@ async fn a_compromised_phrase_is_replaced_without_losing_files() {
         // Nouvelle phrase réaffichée jusqu'à confirmation.
         let st = status(&s);
         assert_eq!(st["nouvelle phrase de récupération"]["_contenu"]["24 mots"].as_str().unwrap().split_whitespace().count(), 24);
+        // Nœud qui ne connaît plus le 2FA (changement de Nœud, Nœud
+        // reconstruit) : rappel de réactivation, en tête de l'accueil.
+        assert!(st.get("2FA à réactiver").is_none());
+        *s.security.lock().unwrap() = Some((false, Vec::new()));
+        let st = status(&s);
+        assert!(st.get("2FA à réactiver").is_some());
+        assert_eq!(st["pages simples"][0]["sections"][0], "2FA à réactiver");
+        security_action(&s, "forget_2fa", &json!({})).unwrap();
+        assert!(status(&s).get("2FA à réactiver").is_none());
     })
     .await;
     stop(sh).await;

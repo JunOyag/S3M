@@ -33,6 +33,10 @@ impl<'a> AttachedUser<'a> {
   pub const VT_KEM_CIPHERTEXT: flatbuffers::VOffsetT = 12;
   pub const VT_ROOT: flatbuffers::VOffsetT = 14;
   pub const VT_ROOT_SEAL: flatbuffers::VOffsetT = 16;
+  pub const VT_TWOFA_SECRET: flatbuffers::VOffsetT = 18;
+  pub const VT_TWOFA_RECOVERY: flatbuffers::VOffsetT = 20;
+  pub const VT_TWOFA_LAST_STEP: flatbuffers::VOffsetT = 22;
+  pub const VT_PENDING_OPS: flatbuffers::VOffsetT = 24;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -44,7 +48,11 @@ impl<'a> AttachedUser<'a> {
     args: &'args AttachedUserArgs<'args>
   ) -> flatbuffers::WIPOffset<AttachedUser<'bldr>> {
     let mut builder = AttachedUserBuilder::new(_fbb);
+    builder.add_twofa_last_step(args.twofa_last_step);
     builder.add_attached_at(args.attached_at);
+    if let Some(x) = args.pending_ops { builder.add_pending_ops(x); }
+    if let Some(x) = args.twofa_recovery { builder.add_twofa_recovery(x); }
+    if let Some(x) = args.twofa_secret { builder.add_twofa_secret(x); }
     if let Some(x) = args.root_seal { builder.add_root_seal(x); }
     if let Some(x) = args.root { builder.add_root(x); }
     if let Some(x) = args.kem_ciphertext { builder.add_kem_ciphertext(x); }
@@ -104,6 +112,34 @@ impl<'a> AttachedUser<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(AttachedUser::VT_ROOT_SEAL, None)}
   }
+  #[inline]
+  pub fn twofa_secret(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(AttachedUser::VT_TWOFA_SECRET, None)}
+  }
+  #[inline]
+  pub fn twofa_recovery(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(AttachedUser::VT_TWOFA_RECOVERY, None)}
+  }
+  #[inline]
+  pub fn twofa_last_step(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(AttachedUser::VT_TWOFA_LAST_STEP, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn pending_ops(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PendingUserOp<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PendingUserOp>>>>(AttachedUser::VT_PENDING_OPS, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for AttachedUser<'_> {
@@ -120,6 +156,10 @@ impl flatbuffers::Verifiable for AttachedUser<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("kem_ciphertext", Self::VT_KEM_CIPHERTEXT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("root", Self::VT_ROOT, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("root_seal", Self::VT_ROOT_SEAL, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("twofa_secret", Self::VT_TWOFA_SECRET, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("twofa_recovery", Self::VT_TWOFA_RECOVERY, false)?
+     .visit_field::<u64>("twofa_last_step", Self::VT_TWOFA_LAST_STEP, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<PendingUserOp>>>>("pending_ops", Self::VT_PENDING_OPS, false)?
      .finish();
     Ok(())
   }
@@ -132,6 +172,10 @@ pub struct AttachedUserArgs<'a> {
     pub kem_ciphertext: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub root: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
     pub root_seal: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub twofa_secret: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub twofa_recovery: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+    pub twofa_last_step: u64,
+    pub pending_ops: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<PendingUserOp<'a>>>>>,
 }
 impl<'a> Default for AttachedUserArgs<'a> {
   #[inline]
@@ -144,6 +188,10 @@ impl<'a> Default for AttachedUserArgs<'a> {
       kem_ciphertext: None,
       root: None,
       root_seal: None,
+      twofa_secret: None,
+      twofa_recovery: None,
+      twofa_last_step: 0,
+      pending_ops: None,
     }
   }
 }
@@ -182,6 +230,22 @@ impl<'a: 'b, 'b> AttachedUserBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(AttachedUser::VT_ROOT_SEAL, root_seal);
   }
   #[inline]
+  pub fn add_twofa_secret(&mut self, twofa_secret: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(AttachedUser::VT_TWOFA_SECRET, twofa_secret);
+  }
+  #[inline]
+  pub fn add_twofa_recovery(&mut self, twofa_recovery: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(AttachedUser::VT_TWOFA_RECOVERY, twofa_recovery);
+  }
+  #[inline]
+  pub fn add_twofa_last_step(&mut self, twofa_last_step: u64) {
+    self.fbb_.push_slot::<u64>(AttachedUser::VT_TWOFA_LAST_STEP, twofa_last_step, 0);
+  }
+  #[inline]
+  pub fn add_pending_ops(&mut self, pending_ops: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<PendingUserOp<'b >>>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(AttachedUser::VT_PENDING_OPS, pending_ops);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> AttachedUserBuilder<'a, 'b> {
     let start = _fbb.start_table();
     AttachedUserBuilder {
@@ -206,6 +270,10 @@ impl core::fmt::Debug for AttachedUser<'_> {
       ds.field("kem_ciphertext", &self.kem_ciphertext());
       ds.field("root", &self.root());
       ds.field("root_seal", &self.root_seal());
+      ds.field("twofa_secret", &self.twofa_secret());
+      ds.field("twofa_recovery", &self.twofa_recovery());
+      ds.field("twofa_last_step", &self.twofa_last_step());
+      ds.field("pending_ops", &self.pending_ops());
       ds.finish()
   }
 }

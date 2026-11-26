@@ -103,6 +103,11 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
             root: [5; 32],
         },
     );
+    // 2FA et opération différée : repris à la restauration.
+    let twofa = s3m_node::user2fa::TwoFa { secret: hex::encode([3u8; 20]), recovery: vec![hex::encode([4u8; 32])], last_step: 9 };
+    service.twofa.insert(pk(&USER), twofa.clone());
+    let pending = s3m_node::user2fa::Pending { id: 42, kind: s3m_node::user2fa::PendingKind::Purge { before: 5 }, created_at: 1, due_at: 2 };
+    service.pending_ops.insert(pk(&USER), vec![pending.clone()]);
     let service = Arc::new(Mutex::new(service));
     let originals = [block(1), block(2), block(3)];
     for b in &originals {
@@ -191,6 +196,8 @@ async fn node_restored_from_seed_alone_recovers_users_partners_and_every_block()
     assert_eq!(s.users[&pk(&USER)].salt, vec![7; 16]);
     assert_eq!(s.users[&pk(&USER)].used_bytes, 3 * 65_536);
     assert!(s.adopt_next_root.contains(&pk(&USER)));
+    assert_eq!(s.twofa.get(&pk(&USER)), Some(&twofa));
+    assert_eq!(s.pending_ops.get(&pk(&USER)), Some(&vec![pending]));
     assert!((0..4u8).all(|i| s.partners.contains_key(&pk(&[0x60 + i; 32]))));
     assert!(
         s.partners

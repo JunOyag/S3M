@@ -243,6 +243,8 @@ pub mod s3m {
     pub use self::node_manifest_generated::*;
     mod partner_account_generated;
     pub use self::partner_account_generated::*;
+    mod pending_user_op_generated;
+    pub use self::pending_user_op_generated::*;
     mod stripe_removal_generated;
     pub use self::stripe_removal_generated::*;
     mod user_quota_generated;

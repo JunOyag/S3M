@@ -48,6 +48,24 @@ table AttachedUser {
   // (crypto.k-self#k-root), servis après une restauration du Nœud ; vides : inconnus.
   root: [ubyte];
   root_seal: [ubyte];
+  // Ajouts du 2026-11-26 : 2FA de l'Utilisateur et opérations différées
+  // (securite.incidents-compromissions#2fa), conservés à la restauration
+  // du Nœud ; vides : pas de 2FA.
+  twofa_secret: [ubyte];           // secret TOTP
+  twofa_recovery: [ubyte];         // n × 32 o : SHA-256 des codes de secours restants
+  twofa_last_step: uint64;         // dernier pas TOTP accepté (anti-rejeu)
+  pending_ops: [PendingUserOp];
+}
+
+// Opération sensible différée (securite.incidents-compromissions#2fa).
+table PendingUserOp {
+  id: uint64;
+  kind: uint8;                     // 0 = changement d'identité ; 1 = purge de l'historique ; 2 = retrait du 2FA
+  new_user_id: [ubyte];            // kind 0
+  new_salt: [ubyte];               // kind 0
+  before: uint64;                  // kind 1
+  created_at: uint64;
+  due_at: uint64;
 }
 
 /// Partenaire exclu suite à une fraude PoS avérée (§5.3.5). Champ additif (§3.5).

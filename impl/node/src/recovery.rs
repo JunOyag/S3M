@@ -272,6 +272,20 @@ pub async fn restore_snapshot(
                 s.root_seals.insert(u.user_id, u.root_seal.clone());
             }
             s.adopt_next_root.insert(u.user_id);
+            // 2FA et opérations différées (`securite.incidents-compromissions#2fa`).
+            if !u.twofa_secret.is_empty() && !s.twofa.contains_key(&u.user_id) {
+                s.twofa.insert(
+                    u.user_id,
+                    crate::user2fa::TwoFa {
+                        secret: hex::encode(&u.twofa_secret),
+                        recovery: u.twofa_recovery.chunks(32).map(hex::encode).collect(),
+                        last_step: u.twofa_last_step,
+                    },
+                );
+            }
+            if !u.pending.is_empty() && !s.pending_ops.contains_key(&u.user_id) {
+                s.pending_ops.insert(u.user_id, u.pending.iter().filter_map(crate::user2fa::from_snap).collect());
+            }
         }
     }
     for (n, at, why) in &manifest.blacklist {

@@ -16,6 +16,14 @@ fn desc(users: usize) -> SnapshotDesc {
                 attached_at: i as u64,
                 root: if i < 3 { vec![i as u8 + 1; 32] } else { Vec::new() },
                 root_seal: if i < 3 { vec![i as u8; 47] } else { Vec::new() },
+                twofa_secret: if i == 1 { vec![5; 20] } else { Vec::new() },
+                twofa_recovery: if i == 1 { vec![6; 64] } else { Vec::new() },
+                twofa_last_step: i as u64,
+                pending: if i == 2 {
+                    vec![SnapPending { id: 7, kind: 0, new_user_id: vec![8; 32], new_salt: vec![9; 16], before: 0, created_at: 1, due_at: 2 }]
+                } else {
+                    Vec::new()
+                },
             })
             .collect(),
         partners: vec![SnapPartner {

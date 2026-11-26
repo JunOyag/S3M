@@ -84,6 +84,17 @@ Opérations protégées : `RotateUser`, `PurgeRoots` et le retrait du 2FA
 Les opérations différées suivent le compte (persistance du Nœud) et
 disparaissent avec lui (inactivité, rotation).
 
+Seul le Nœud de rattachement vérifie les codes ; le Connecteur ne garde
+aucun secret (il retient seulement que le 2FA a été actif). Le 2FA et les
+opérations différées font partie du snapshot du Nœud (`AttachedUser`,
+[`node.NodeManifest`](../02-schemas/node/NodeManifest.md)) : un Nœud
+restauré depuis sa seed ou migré les conserve. Un Utilisateur rattaché à
+un autre Nœud doit réactiver le 2FA : son Connecteur le lui rappelle en
+tête de l'accueil dès que le Nœud répond « 2FA non activé ». Un 2FA ne
+protège ni l'annuaire DHT ni un rattachement ailleurs (aucun
+vérificateur) : la parade y reste le délai de 72 h, l'alerte de nouvel
+appareil et le changement d'identité.
+
 ## Compromission Clé Node
 
 Contrairement au User, ce cas implique **tous les Utilisateurs rattachés** —

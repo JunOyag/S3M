@@ -45,6 +45,18 @@ pub fn current_desc(
             attached_at: 0,
             root: if u.root == [0; 32] { Vec::new() } else { u.root.to_vec() },
             root_seal: s.root_seals.get(id).cloned().unwrap_or_default(),
+            twofa_secret: s.twofa.get(id).and_then(|t| hex::decode(&t.secret).ok()).unwrap_or_default(),
+            twofa_recovery: s
+                .twofa
+                .get(id)
+                .map(|t| t.recovery.iter().flat_map(|r| hex::decode(r).unwrap_or_default()).collect())
+                .unwrap_or_default(),
+            twofa_last_step: s.twofa.get(id).map_or(0, |t| t.last_step),
+            pending: s
+                .pending_ops
+                .get(id)
+                .map(|v| v.iter().map(crate::user2fa::to_snap).collect())
+                .unwrap_or_default(),
         })
         .collect();
     users.sort_by_key(|u| u.user_id);

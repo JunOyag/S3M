@@ -73,6 +73,33 @@ pub fn totp_step(secret: &[u8], code: &str, last_step: u64, now: u64) -> Option<
         .find(|s| *s > last_step && hotp(secret, *s, 6) == c)
 }
 
+/// Opération différée ↔ `PendingUserOp` du snapshot.
+pub fn to_snap(p: &Pending) -> s3m_protocol::snapshot::SnapPending {
+    let mut s = s3m_protocol::snapshot::SnapPending { id: p.id, created_at: p.created_at, due_at: p.due_at, ..Default::default() };
+    match &p.kind {
+        PendingKind::Rotate { new_user, salt } => {
+            s.new_user_id = hex::decode(new_user).unwrap_or_default();
+            s.new_salt = hex::decode(salt).unwrap_or_default();
+        }
+        PendingKind::Purge { before } => {
+            s.kind = 1;
+            s.before = *before;
+        }
+        PendingKind::Remove2fa => s.kind = 2,
+    }
+    s
+}
+
+pub fn from_snap(s: &s3m_protocol::snapshot::SnapPending) -> Option<Pending> {
+    let kind = match s.kind {
+        0 => PendingKind::Rotate { new_user: hex::encode(&s.new_user_id), salt: hex::encode(&s.new_salt) },
+        1 => PendingKind::Purge { before: s.before },
+        2 => PendingKind::Remove2fa,
+        _ => return None,
+    };
+    Some(Pending { id: s.id, kind, created_at: s.created_at, due_at: s.due_at })
+}
+
 impl TwoFa {
     /// Vérifie un code TOTP ou de secours (consommé).
     pub fn verify(&mut self, code: &str, now: u64) -> bool {

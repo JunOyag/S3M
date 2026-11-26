@@ -987,6 +987,7 @@ entries:
     tests:
       - rotation::a_compromised_phrase_is_replaced_without_losing_files
       - rotation::without_2fa_the_rotation_is_deferred_then_applied
+      - recovery::node_restored_from_seed_alone_recovers_users_partners_and_every_block
       - exchange::twofa_guards_identity_rotation_and_deferred_operations_can_be_cancelled
       - history::a_past_version_is_browsed_restored_then_purged
       - exchange::rotation_moves_the_account_and_revokes_the_old_identity

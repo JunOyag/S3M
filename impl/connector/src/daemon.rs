@@ -756,7 +756,7 @@ pub fn status(sh: &Shared) -> Value {
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
         { "id": "securite", "titre": "Identité et sécurité",
-          "sections": ["opérations de sécurité en attente", "utilisateur", "sécurité renforcée (2FA)", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"] },
+          "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "sécurité renforcée (2FA)", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"] },
         { "id": "diagnostic", "titre": "Diagnostic", "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "État de santé", "sections": ["santé"] },
                                   { "titre": "Avancé", "sections": ["journal"] }] },
@@ -833,6 +833,9 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
         accueil.push("mise en route");
     }
     // Décisions à prendre : en tête de l'accueil.
+    if v.get("2FA à réactiver").is_some() {
+        accueil.insert(0, "2FA à réactiver");
+    }
     if v.get("opérations de sécurité en attente").is_some() {
         accueil.insert(0, "opérations de sécurité en attente");
     }
@@ -852,7 +855,7 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
                 "sections": ["partages donnés", "partages reçus", "contacts", "mon identifiant"],
                 "actions": [] }),
         json!({ "id": "compte", "titre": "Mon compte",
-                "sections": ["opérations de sécurité en attente", "utilisateur", "sécurité renforcée (2FA)", "espace", "accès aux fichiers", "historique des versions"],
+                "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "sécurité renforcée (2FA)", "espace", "accès aux fichiers", "historique des versions"],
                 "actions": ["change_node", "rotate_identity"] }),
     ];
     if t.messages_received > 0 || v.pointer("/alerte du nœud/message").is_some_and(|m| !m.is_null()) {
@@ -2482,11 +2485,26 @@ pub fn rotate_identity(sh: &Arc<Shared>, v: &Value) -> Result<Value, String> {
         "fermer": "J'ai noté ma nouvelle phrase" }))
 }
 
+/// Le 2FA a été actif sur un Nœud de cette identité (aucun secret).
+pub const TWOFA_FLAG_FILE: &str = "2fa-actif";
+
 /// Section « sécurité renforcée (2FA) » et opérations différées.
 fn security_status(sh: &Shared, v: &mut Value) {
     let setup = sh.twofa_setup.lock().unwrap().clone();
     let sec = sh.security.lock().unwrap().clone();
     let enabled = sec.as_ref().is_some_and(|s| s.0);
+    // 2FA perdu (changement de Nœud, Nœud reconstruit) : à réactiver.
+    if sec.is_some() && !enabled && setup.is_none() && sh.config.data_dir.join(TWOFA_FLAG_FILE).exists() {
+        v["2FA à réactiver"] = json!({
+            "_contenu": {
+                "_note": "Votre double authentification (2FA) était activée, mais votre Nœud actuel ne la connaît pas (changement de Nœud ou Nœud reconstruit). Tant qu'elle n'est pas réactivée, une personne qui volerait votre phrase de récupération pourrait demander à changer d'identité (avec 72 h de délai, annulable).",
+            },
+            "_formulaires": [
+                { "nom": "prepare_2fa", "libellé": "Réactiver le 2FA", "champs": [] },
+                { "nom": "forget_2fa", "libellé": "Je ne veux plus de 2FA", "style": "secondary", "champs": [] }
+            ],
+        });
+    }
     v["sécurité renforcée (2FA)"] = match setup {
         Some((secret, codes)) => {
             let b32 = s3m_core::identity_derivation::base32_encode(&secret);
@@ -2561,6 +2579,10 @@ pub fn security_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, Stri
             *sh.twofa_setup.lock().unwrap() = Some((secret, codes));
             Ok(json!({ "ok": true, "message": "Scannez le QR code, notez les codes de secours, puis confirmez avec un code" }))
         }
+        "forget_2fa" => {
+            let _ = std::fs::remove_file(sh.config.data_dir.join(TWOFA_FLAG_FILE));
+            Ok(json!({ "ok": true, "message": "Rappel retiré" }))
+        }
         "cancel_2fa_setup" => {
             *sh.twofa_setup.lock().unwrap() = None;
             Ok(json!({ "ok": true, "message": "Activation annulée" }))
@@ -2577,11 +2599,13 @@ pub fn security_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, Stri
             rt.block_on(sh.session.set_2fa(&secret, &text("code"), recovery, ""))
                 .map_err(|_| "code refusé : vérifiez l'heure du téléphone et saisissez le code affiché maintenant")?;
             *sh.twofa_setup.lock().unwrap() = None;
+            let _ = std::fs::write(sh.config.data_dir.join(TWOFA_FLAG_FILE), "1");
             refresh(sh);
             Ok(json!({ "ok": true, "message": "2FA activé : les opérations sensibles demanderont désormais un code" }))
         }
         "remove_2fa" => {
             let r = rt.block_on(sh.session.remove_2fa(&text("code 2FA"))).map_err(|_| "code 2FA refusé")?;
+            let _ = std::fs::remove_file(sh.config.data_dir.join(TWOFA_FLAG_FILE));
             refresh(sh);
             Ok(json!({ "ok": true, "message": match r {
                 None => "2FA retiré".to_string(),
@@ -3240,6 +3264,9 @@ pub async fn watch_once(sh: &Shared) {
         unsent_tick(sh).await;
         if let Ok(st) = sh.session.list_pending().await {
             purge_tick(sh, &st.1);
+            if st.0 {
+                let _ = std::fs::write(sh.config.data_dir.join(TWOFA_FLAG_FILE), "1");
+            }
             *sh.security.lock().unwrap() = Some(st);
         }
         // Lecture du quota et de l'occupation : validation sans changement
@@ -3459,7 +3486,7 @@ pub async fn start(
                 "purge_versions" => purge_versions(&sh, &v),
                 "set_log_retention" => set_log_retention(&sh, &v),
                 "rotate_identity" => rotate_identity(&sh, &v),
-                "prepare_2fa" | "cancel_2fa_setup" | "confirm_2fa" | "remove_2fa" | "cancel_pending" => {
+                "prepare_2fa" | "cancel_2fa_setup" | "confirm_2fa" | "remove_2fa" | "cancel_pending" | "forget_2fa" => {
                     security_action(&sh, name, &v)
                 }
                 "phrase_noted" => {
