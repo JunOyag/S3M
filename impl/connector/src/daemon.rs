@@ -4295,9 +4295,40 @@ fn keep_status(sh: &Shared) -> Value {
         .collect::<Vec<_>>())
 }
 
+/// Dossier gardé hors connexion qui contient `path` (lui-même exclu).
+fn kept_ancestor(sh: &Shared, path: &str) -> Option<String> {
+    let p = path.to_lowercase();
+    sh.keep_offline
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|k| {
+            let k = k.trim_end_matches('/').to_lowercase();
+            !k.is_empty() && p != k && p.starts_with(&format!("{k}/"))
+        })
+        .cloned()
+}
+
+/// Ne plus garder un élément d'un dossier gardé : impossible tant que le
+/// dossier l'est (tout son sous-arbre est gardé) — l'utilisateur est averti.
+fn check_unkeep(sh: &Shared, v: &Value, keep: bool) -> Result<(), String> {
+    if keep {
+        return Ok(());
+    }
+    let path = item_path(v)?;
+    match kept_ancestor(sh, &path) {
+        Some(a) => Err(format!(
+            "« {} » est gardé hors connexion parce que le dossier « {a} » l'est, avec tout son contenu. Choisissez « Ne plus garder hors connexion » sur « {a} » (vous pourrez ensuite garder seulement certains de ses éléments).",
+            path.rsplit('/').next().unwrap_or(&path)
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Garde un élément sur cet appareil, ou cesse de le garder.
 #[cfg(all(windows, feature = "folder"))]
 fn keep_action(sh: &Shared, v: &Value, keep: bool) -> Result<Value, String> {
+    check_unkeep(sh, v, keep)?;
     if access_mode(&sh.config) != "dossier" {
         return drive_keep(sh, v, keep);
     }
@@ -4343,6 +4374,7 @@ fn keep_action(sh: &Shared, v: &Value, keep: bool) -> Result<Value, String> {
 
 #[cfg(not(all(windows, feature = "folder")))]
 fn keep_action(sh: &Shared, v: &Value, keep: bool) -> Result<Value, String> {
+    check_unkeep(sh, v, keep)?;
     drive_keep(sh, v, keep)
 }
 

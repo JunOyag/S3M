@@ -3418,25 +3418,33 @@ fn volumes_status(sh: &Shared, v: &mut Value) {
                 "types": { "nouveau chemin": "chemin", "nouvelle capacité (Go)": "number" },
                 "aide": { "nouveau chemin": "Les données doivent déjà s'y trouver",
                           "nouvelle capacité (Go)": "Capacité réservée sur ce disque" } })];
+            // Seul volume actif : ni retrait ni perte avant d'en avoir ajouté un autre.
+            let others = usage.iter().filter(|x| x.volume_id != u.volume_id && !x.draining).count();
             if u.draining {
                 actions.push(act("cancel_remove", "Annuler le retrait",
                     "Le volume redevient actif et reçoit de nouveau des blocs.", "Préparer l'annulation", "secondary"));
-            } else {
+            } else if others > 0 {
                 actions.push(act("remove", "Retirer le volume",
                     "Ses blocs sont recopiés sur les autres volumes, puis il n'est plus utilisé.", "Préparer le retrait", "secondary"));
             }
-            actions.push(act("lost", "Déclarer le volume perdu",
-                "Disque mort ou débranché pour de bon : ses blocs sont reconstruits depuis les partenaires.", "Préparer : déclarer perdu", "danger"));
+            if others > 0 {
+                actions.push(act("lost", "Déclarer le volume perdu",
+                    "Disque mort ou débranché pour de bon : ses blocs sont reconstruits depuis les partenaires.", "Préparer : déclarer perdu", "danger"));
+            }
             if u.blocks == 0 {
                 actions.push(act("wipe", "Effacer le volume",
                     "Le volume est vide : ses fichiers S3m sont supprimés du disque.", "Préparer l'effacement", "danger"));
             }
+            let mut texts = vec![
+                "1. Préparez ici un changement : il s'ajoute aux modifications en attente, rien n'est encore fait.".to_string(),
+                "2. Vérifiez-les en haut de la page Volumes, puis cliquez « Appliquer » pour tout exécuter d'un coup.".to_string(),
+            ];
+            if others == 0 && !u.draining {
+                texts.push("C'est le seul volume actif : il ne peut être ni retiré ni déclaré perdu, le Nœud n'aurait plus où ranger les blocs. Ajoutez d'abord un nouveau volume (bouton « Ajouter un volume » de la page Volumes, puis « Appliquer ») ; ces actions apparaîtront ensuite ici. Disque déjà mort ? Ajoutez le nouveau disque : le Nœud reconstruira les blocs depuis ses partenaires une fois l'ancien déclaré perdu.".into());
+            }
             let actions = vec![json!({ "nom": "edit_volume", "libellé": "Éditer", "panneau": {
                 "titre": format!("Volume {id} — {}", u.mount_path.display()),
-                "texte": [
-                    "1. Préparez ici un changement : il s'ajoute aux modifications en attente, rien n'est encore fait.",
-                    "2. Vérifiez-les en haut de la page Volumes, puis cliquez « Appliquer » pour tout exécuter d'un coup."
-                ],
+                "texte": texts,
                 "formulaires": actions } })];
             json!({
                 "volume": u.volume_id,

@@ -1145,7 +1145,20 @@ function render(value, key) {
     // (`_repliable` : traité par la section.)
     const box = el("div", undefined, "section-body");
     if (value["_contenu"] !== undefined) box.appendChild(render(value["_contenu"], key));
-    (value["_formulaires"] || []).forEach((a) => box.appendChild(cachedForm(a)));
+    // Formulaires réduits à un bouton (sans titre ni texte) : côte à côte.
+    let row = null;
+    (value["_formulaires"] || []).forEach((a) => {
+      const lone = !a["titre"] && !a["texte"] && (a["panneau"] || a["fichier"] || !(a["champs"] || []).length);
+      if (!lone) {
+        row = null;
+        return box.appendChild(cachedForm(a));
+      }
+      if (!row) {
+        row = el("div", undefined, "form-buttons");
+        box.appendChild(row);
+      }
+      row.appendChild(cachedForm(a));
+    });
     return box;
   }
   if (value !== null && typeof value === "object") {

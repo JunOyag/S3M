@@ -170,6 +170,12 @@ td.short{white-space:nowrap}
   .date-filter .table-filter { min-width: 0; }
   .mode-switch input { vertical-align: middle; }
   .theme-switch { align-self: center; }
+  .form-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .form-buttons > form, .form-buttons > .form-button { margin: 0; padding: 0; border: 0; }
+  /* Tableaux clé / valeur : colonnes de libellés de largeur fixe, valeurs
+     alignées d'une section à l'autre (y compris dans les sous-tableaux). */
+  table.kv > tbody > tr > th { width: 18em; white-space: normal; }
+  td table.kv > tbody > tr > th { width: 15em; }
   .theme-switch select { font-size: 13px; padding: 3px 6px; }
   .copyable { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
   .copyable .code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }

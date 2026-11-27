@@ -555,6 +555,16 @@ Ajout du 2026-11-27, Nœud et Connecteur :
 - **Utilisateurs rattachés** (Nœud) : colonne « Pseudo / Empreinte ». La
   clé publique (avec « Copier ») et la racine sont dans la fenêtre
   « Éditer », où « Étiquette » devient « Pseudo ».
+- **Boutons** : les formulaires réduits à un bouton (Ajouter un contact,
+  Exporter, Importer…) sont côte à côte. Les tableaux clé / valeur ont des
+  libellés de largeur fixe : les valeurs, y compris dans les sous-tableaux,
+  sont alignées d'une section à l'autre.
+- **Hors connexion** : « Ne plus garder hors connexion » sur un élément d'un
+  dossier gardé est refusé, avec une explication. Tout le sous-arbre est
+  gardé : il faut retirer la marque sur le dossier.
+- **Volumes** (Nœud) : le seul volume actif ne propose ni « Retirer » ni
+  « Déclarer perdu ». La fenêtre explique pourquoi et dit d'ajouter d'abord
+  un nouveau volume.
 - **Mes appareils** : badge « Cet appareil » à droite du nom ; colonnes
   « Dernière connexion » : adresse IP (« IP (Pays) » avec la carte de
   géolocalisation du Nœud) et date et heure
