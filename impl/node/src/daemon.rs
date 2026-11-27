@@ -798,6 +798,8 @@ pub struct Shared {
     pub priv_node: [u8; 32],
     pub admin_serial: std::sync::atomic::AtomicU32,
     pub admin_reveal_until: Mutex<Option<u64>>,
+    /// 2FA de l'opérateur et actions critiques différées (`crate::node2fa`).
+    pub node2fa: Mutex<crate::node2fa::State>,
     pub admin: Mutex<Option<crate::admin::AdminServer>>,
     /// Brouillon et suivi de la gestion des volumes.
     pub volumes_ui: Mutex<VolumesUi>,
@@ -909,7 +911,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
     }
     v["pages"] = json!([
         { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
-          "sections": ["horloge", "alertes matérielles", "maintenance", "restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
+          "sections": ["opérations critiques en attente", "horloge", "alertes matérielles", "maintenance", "restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
           "actions": ["attach_user", "set_attach_policy"] },
@@ -929,12 +931,13 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         { "id": "reseau", "titre": "Réseau",
           "sections": ["traversée de NAT", "annuaire (entrée Node)", "republication DHT", "géolocalisation"], "actions": ["geoip_update"] },
         { "id": "distance", "titre": "Administration à distance",
-          "sections": ["administration à distance", "phrase secrète du Nœud"], "actions": ["show_totp", "regenerate_totp"] },
+          "sections": ["2FA du nœud", "opérations critiques en attente", "administration à distance", "phrase secrète du Nœud"], "actions": ["show_totp", "regenerate_totp"] },
         { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config", "test_alerts"], "onglets": true },
         { "id": "diagnostic", "titre": "Diagnostic", "autres": true, "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "Général", "sections": ["migration"] },
                                   { "titre": "Avancé", "sections": ["journal"] }] }
     ]);
+    node2fa_status(sh, &mut v);
     simple_pages(&mut v);
     v
 }
@@ -1006,7 +1009,7 @@ fn simple_pages(v: &mut Value) {
     });
     v["pages simples"] = json!([
         { "id": "accueil", "titre": "Accueil",
-          "sections": ["horloge", "alertes matérielles", "maintenance", "restauration", "santé du nœud", "identité"], "actions": ["restart_node"] },
+          "sections": ["opérations critiques en attente", "2FA du nœud", "horloge", "alertes matérielles", "maintenance", "restauration", "santé du nœud", "identité"], "actions": ["restart_node"] },
         { "id": "utilisateurs", "titre": "Utilisateurs", "sections": ["mes utilisateurs"], "actions": ["attach_user"] },
         { "id": "volumes", "titre": "Disques", "sections": ["alertes matérielles", "volumes", "liste des actions", "remplacer un disque"],
           "actions": ["volume_apply", "volume_draft_clear"] },
@@ -2086,8 +2089,191 @@ fn number(v: &Value, k: &str) -> Result<u64, String> {
     }
 }
 
-/// Actions du dashboard Nœud.
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Action critique (`crate::node2fa`) : liste fixe, et application des
+/// volumes si le brouillon déclare un volume perdu ou en efface un.
+fn is_critical(sh: &Shared, name: &str) -> bool {
+    crate::node2fa::CRITICAL.contains(&name)
+        || (name == "volume_apply"
+            && sh.volumes_ui.lock().unwrap().draft.iter().any(|c| {
+                matches!(c, crate::volumes::Change::Lost { .. } | crate::volumes::Change::Wipe { .. })
+            }))
+}
+
+fn twofa_save(sh: &Shared) {
+    let st = sh.node2fa.lock().unwrap().clone();
+    crate::node2fa::save(&sh.config.data_dir, &st);
+}
+
+/// Action critique : exécutée avec un code 2FA valide, sinon différée de
+/// 72 h (annulable), notée au journal et signalée par les alertes.
+fn twofa_gate(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, String>> {
+    if !is_critical(sh, name) {
+        return None;
+    }
+    let now = unix_now();
+    let serial = sh.admin_serial.load(std::sync::atomic::Ordering::SeqCst);
+    let code = v.get("code 2FA").and_then(Value::as_str).unwrap_or("").trim().to_string();
+    let enabled = sh.node2fa.lock().unwrap().enabled(serial);
+    if !code.is_empty() {
+        if !enabled {
+            return Some(Err("2FA du Nœud non activé : laissez le code vide (exécution dans 72 h, annulable) ou activez d'abord le 2FA".into()));
+        }
+        let ok = admin_secret(sh).is_some_and(|s| sh.node2fa.lock().unwrap().check(&s, &code, now));
+        if ok {
+            twofa_save(sh);
+            return None;
+        }
+        return Some(Err("code 2FA invalide ou déjà utilisé".into()));
+    }
+    let mut values = v.clone();
+    if let Some(o) = values.as_object_mut() {
+        o.remove("code 2FA");
+    }
+    if name == "volume_apply" {
+        values["_brouillon"] = json!(sh.volumes_ui.lock().unwrap().draft.clone());
+    }
+    let label = crate::node2fa::label(name);
+    let op = sh.node2fa.lock().unwrap().defer(name, values, label, now);
+    twofa_save(sh);
+    let when = format!("le {}", op.due_at);
+    note(sh, format!("action critique différée de 72 h (sans code 2FA) : {label}, exécutée {when} sauf annulation"));
+    let cfg = sh.alert_cfg.lock().unwrap().clone();
+    let node = {
+        let s = sh.service.lock().unwrap();
+        s3m_protocol::pseudo::display(&[s.name.as_deref()], &s.node_id())
+    };
+    let text = format!("Une action critique a été demandée sur le tableau de bord de votre Nœud sans code 2FA : {label}. Elle sera exécutée dans 72 h. Si ce n'est pas vous, annulez-la (tableau de bord, « Opérations critiques en attente ») et activez le 2FA du Nœud.");
+    std::thread::spawn(move || {
+        let _ = crate::alerts::dispatch(&cfg, &node, "Action critique en attente", &text);
+    });
+    Some(Ok(json!({ "ok": true, "message": format!(
+        "Sans code 2FA : « {label} » sera exécutée dans 72 h, sauf annulation (« Opérations critiques en attente »)") })))
+}
+
+/// Actions critiques échues : exécutées (un brouillon de volumes modifié
+/// depuis la demande abandonne l'opération).
+pub fn run_due_node_ops(sh: &Shared, now: u64) {
+    let due = sh.node2fa.lock().unwrap().take_due(now);
+    if due.is_empty() {
+        return;
+    }
+    twofa_save(sh);
+    for op in due {
+        let mut v = op.values.clone();
+        if op.name == "volume_apply" {
+            let draft = json!(sh.volumes_ui.lock().unwrap().draft.clone());
+            if v.get("_brouillon") != Some(&draft) {
+                note(sh, format!("action différée abandonnée : {} (modifications de volumes changées depuis la demande)", op.label));
+                continue;
+            }
+            if let Some(o) = v.as_object_mut() {
+                o.remove("_brouillon");
+            }
+        }
+        match act_inner(sh, &op.name, v) {
+            Ok(_) => note(sh, format!("action différée exécutée : {}", op.label)),
+            Err(e) => note(sh, format!("action différée en échec : {} ({e})", op.label)),
+        }
+    }
+}
+
+/// Section « 2FA du nœud » et opérations critiques en attente ; bandeau
+/// tant que le 2FA n'est pas activé ; champ « code 2FA » des actions critiques.
+fn node2fa_status(sh: &Shared, v: &mut Value) {
+    let serial = sh.admin_serial.load(std::sync::atomic::Ordering::SeqCst);
+    let st = sh.node2fa.lock().unwrap().clone();
+    let enabled = st.enabled(serial);
+    let reveal = sh.admin_reveal_until.lock().unwrap().is_some_and(|t| unix_now() < t);
+    let mut content = json!({ "état": if enabled { "activé" } else if st.enabled_serial.is_some() { "à réactiver (2FA régénéré)" } else { "non activé" } });
+    if let (true, Some(secret)) = (reveal && !enabled, admin_secret(sh)) {
+        let node_id = ed25519_dalek::SigningKey::from_bytes(&sh.priv_node).verifying_key().to_bytes();
+        content["QR code 2FA"] = json!(crate::admin::qr_svg(&crate::admin::otpauth_uri(&secret, &node_id)));
+        content["clé 2FA"] = json!(s3m_core::identity_derivation::base32_encode(&secret));
+    }
+    let forms = if enabled {
+        json!([{ "nom": "disable_node_2fa", "titre": "Désactiver le 2FA", "libellé": "Désactiver", "style": "danger", "champs": [] }])
+    } else {
+        json!([
+            { "nom": "show_totp", "libellé": "1. Afficher le QR code (2 min)", "style": "secondary", "champs": [] },
+            { "nom": "enable_node_2fa", "titre": "2. Confirmer avec un code", "libellé": "Activer le 2FA",
+              "champs": ["code"], "types": { "code": "secret" },
+              "aide": { "code": "Code à 6 chiffres affiché par l'application (Aegis, 2FAS, Google Authenticator…) après avoir scanné le QR code" } }
+        ])
+    };
+    v["2FA du nœud"] = json!({ "_contenu": content, "_formulaires": forms,
+        "_note": "Le même 2FA sert à l'administration à distance. Sans code, les actions critiques (clé d'annonce, alerte de compromission, volume perdu ou effacé, phrase secrète en clair, 2FA) attendent 72 h." });
+    let rows: Vec<Value> = st.pending.iter().map(|o| json!({
+        "opération": o.label, "demandée le": o.created_at, "exécutée le": o.due_at,
+        "_actions": [{ "nom": "cancel_node_op", "libellé": "Annuler", "style": "danger", "valeurs": { "id": o.id.to_string() },
+            "confirmer": "Annuler cette opération ? Si ce n'est pas vous qui l'avez demandée, activez le 2FA du Nœud." }] })).collect();
+    if !rows.is_empty() {
+        v["opérations critiques en attente"] = json!(rows);
+    }
+    if !enabled {
+        v["bandeau"] = json!({
+            "texte": "Sécurité : le tableau de bord de ce Nœud n'est pas protégé par la double authentification (2FA)",
+            "détail": [
+                "Toute personne qui ouvre ce tableau de bord (session laissée ouverte, ordinateur partagé ou piraté) peut, par exemple, envoyer une fausse alerte de compromission à vos utilisateurs, remplacer votre clé d'annonce ou déclarer un disque perdu. Ces actions attendent 72 h et vous êtes prévenu, mais seulement si vous voyez l'alerte à temps.",
+                "Avec le 2FA, elles demandent un code à 6 chiffres affiché par une application de votre téléphone : sans votre téléphone, personne ne peut les faire. L'activation prend deux minutes.",
+            ],
+            "page": "distance", "page simple": "accueil", "bouton": "Activer le 2FA maintenant",
+        });
+    }
+    let critical = |n: &str| is_critical(sh, n);
+    crate::node2fa::add_code_fields(v, &critical, enabled);
+}
+
+/// Actions du dashboard Nœud ; les actions critiques passent par le 2FA.
 pub fn act(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
+    if name == "enable_node_2fa" {
+        let code = v.get("code").and_then(Value::as_str).unwrap_or("").to_string();
+        let serial = sh.admin_serial.load(std::sync::atomic::Ordering::SeqCst);
+        let secret = admin_secret(sh).ok_or("2FA indisponible")?;
+        let ok = sh.node2fa.lock().unwrap().check(&secret, &code, unix_now());
+        if !ok {
+            return Err("code invalide : vérifiez l'heure du téléphone et réessayez avec le code suivant".into());
+        }
+        sh.node2fa.lock().unwrap().enabled_serial = Some(serial);
+        twofa_save(sh);
+        *sh.admin_reveal_until.lock().unwrap() = None;
+        note(sh, "2FA du Nœud activé");
+        return Ok(json!({ "ok": true, "message": "2FA du Nœud activé : les actions critiques demandent désormais un code (ou attendent 72 h)" }));
+    }
+    if name == "cancel_node_op" {
+        let id: u64 = v.get("id").and_then(Value::as_str).and_then(|s| s.parse().ok()).ok_or("opération inconnue")?;
+        let label = {
+            let mut st = sh.node2fa.lock().unwrap();
+            let pos = st.pending.iter().position(|o| o.id == id).ok_or("opération déjà exécutée ou annulée")?;
+            st.pending.remove(pos).label
+        };
+        twofa_save(sh);
+        note(sh, format!("action différée annulée : {label}"));
+        return Ok(json!({ "ok": true, "message": format!("Annulée : {label}") }));
+    }
+    if let Some(r) = twofa_gate(sh, name, &v) {
+        return r;
+    }
+    let mut v = v;
+    if let Some(o) = v.as_object_mut() {
+        o.remove("code 2FA");
+    }
+    act_inner(sh, name, v)
+}
+
+fn act_inner(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
+    if name == "disable_node_2fa" {
+        sh.node2fa.lock().unwrap().enabled_serial = None;
+        twofa_save(sh);
+        note(sh, "2FA du Nœud désactivé");
+        return Ok(json!({ "ok": true, "message": "2FA du Nœud désactivé" }));
+    }
     if name == "set_config" {
         return set_config(sh, &v);
     }
@@ -2950,6 +3136,7 @@ pub async fn start_with(
         priv_node: seed,
         admin_serial: std::sync::atomic::AtomicU32::new(config.admin_totp_serial),
         admin_reveal_until: Mutex::new(None),
+        node2fa: Mutex::new(crate::node2fa::load(&config.data_dir)),
         admin: Mutex::new(None),
         volumes_ui: Mutex::new(VolumesUi::default()),
         unblacklist: Mutex::new(Vec::new()),
@@ -3189,6 +3376,7 @@ pub async fn start_with(
                     .await;
                     *sh.last_upkeep.lock().unwrap() = Some((now, up));
                     // Opérations différées arrivées à échéance (rotation, purge, retrait du 2FA).
+                    run_due_node_ops(&sh, crate::daemon::unix_now());
                     let n = sh.service.lock().unwrap().run_due_ops(now);
                     if n > 0 {
                         crate::daemon::note(&sh, format!("{n} opération(s) différée(s) exécutée(s)"));

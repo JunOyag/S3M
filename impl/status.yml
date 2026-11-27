@@ -283,6 +283,7 @@ entries:
       - local_api::http_requests_require_bearer_token_host_and_matching_origin
       - local_api::websocket_checks_handshake_then_first_message_token
       - daemon::node_starts_serves_a_guarded_dashboard_and_persists_its_state
+      - daemon::critical_actions_need_the_node_2fa_or_wait_72_hours
       - daemon::saved_state_roundtrips_users_partners_and_addresses
       - daemon::connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboard
       - lan::local_node_is_found_by_mdns_and_confirmed_by_probe

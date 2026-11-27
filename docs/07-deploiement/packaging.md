@@ -540,6 +540,32 @@ WebSocket). Les mêmes protections s'appliquent au Nœud et au Connecteur
 - Côté Connecteur, cette API ne sert **pas** les fichiers de l'utilisateur :
   l'accès aux données passe uniquement par le lecteur monté.
 
+### 2FA du Nœud {: #2fa-noeud }
+
+Ajout du 2026-11-28, même principe que le 2FA des utilisateurs
+([`securite.incidents-compromissions#2fa`](../05-securite/incidents-compromissions.md#2fa)).
+
+- **Activation** : section « 2FA du nœud » (accueil en mode simple, page
+  Administration à distance en mode expert). « Afficher le QR code » montre
+  le secret TOTP de l'administration à distance pendant 2 min, puis un code
+  à 6 chiffres le confirme. L'état est gardé dans
+  `data/operations-noeud.json`. Régénérer le 2FA change de série : il est à
+  réactiver.
+- **Bandeau rouge** tant que le 2FA n'est pas activé, avec les risques
+  expliqués simplement.
+- **Actions critiques** : remplacer la clé d'annonce, envoyer une alerte de
+  compromission, appliquer des modifications de volumes qui déclarent un
+  volume perdu ou en effacent un, remettre la phrase secrète en clair,
+  régénérer ou désactiver le 2FA. Leur formulaire porte un champ « code
+  2FA » :
+  - avec un code valide, elles sont exécutées aussitôt (un code ne sert
+    qu'une fois) ;
+  - sans code, ou si le 2FA n'est pas activé, elles sont différées de
+    72 h : notées au journal, signalées par les alertes de l'opérateur et
+    annulables depuis « Opérations critiques en attente » ;
+  - à l'échéance, une modification de volumes est abandonnée si la liste a
+    changé depuis la demande.
+
 ### Affichage commun des tableaux de bord {: #affichage }
 
 Ajout du 2026-11-27, Nœud et Connecteur :

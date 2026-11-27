@@ -6,6 +6,7 @@
 //! thresholds used by the NodeManifest mutation cycle.
 
 pub mod admin;
+pub mod node2fa;
 pub mod alerts;
 pub mod blacklist;
 pub mod channel;

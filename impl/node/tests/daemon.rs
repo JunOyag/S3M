@@ -295,3 +295,40 @@ fn listen_setting_is_single_and_old_files_still_load() {
         ]
     );
 }
+
+/// 2FA du Nœud (`deploiement.packaging#2fa-noeud`) : bandeau tant qu'il n'est
+/// pas activé ; une action critique sans code est différée de 72 h,
+/// annulable, puis exécutée à échéance ; avec un code valide, aussitôt.
+#[tokio::test(flavor = "multi_thread")]
+async fn critical_actions_need_the_node_2fa_or_wait_72_hours() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let dir = temp_dir("node2fa");
+    let (sh, _url) = start(config(&dir)).await.unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let st = status(&sh, now);
+    assert!(st["bandeau"]["texte"].as_str().unwrap().contains("2FA"));
+    // Le formulaire d'une action critique porte le champ « code 2FA ».
+    assert!(st.to_string().contains("code 2FA"));
+    // Sans code : différée, puis annulée.
+    let r = act(&sh, "regenerate_totp", serde_json::json!({})).unwrap();
+    assert!(r["message"].as_str().unwrap().contains("72 h"), "{r}");
+    assert_eq!(sh.admin_serial.load(SeqCst), 0, "rien d'exécuté");
+    let id = sh.node2fa.lock().unwrap().pending[0].id;
+    act(&sh, "cancel_node_op", serde_json::json!({ "id": id.to_string() })).unwrap();
+    assert!(sh.node2fa.lock().unwrap().pending.is_empty());
+    // Activation par un code, puis code exigé et vérifié.
+    let secret = admin_secret(&sh).unwrap();
+    let code = |t: u64| format!("{:06}", s3m_node::admin::hotp(&secret, t / 30, 6));
+    act(&sh, "enable_node_2fa", serde_json::json!({ "code": code(now - 30) })).unwrap();
+    assert!(status(&sh, now).get("bandeau").is_none(), "bandeau retiré");
+    assert!(act(&sh, "regenerate_totp", serde_json::json!({ "code 2FA": "000000" })).is_err());
+    // Différée puis exécutée à échéance : nouvelle série, 2FA à réactiver.
+    act(&sh, "regenerate_totp", serde_json::json!({})).unwrap();
+    run_due_node_ops(&sh, now + 71 * 3600);
+    assert_eq!(sh.admin_serial.load(SeqCst), 0);
+    run_due_node_ops(&sh, now + 73 * 3600);
+    assert_eq!(sh.admin_serial.load(SeqCst), 1, "exécutée à échéance");
+    assert!(status(&sh, now).get("bandeau").is_some(), "2FA à réactiver");
+    // État conservé sur disque.
+    assert_eq!(s3m_node::node2fa::load(&dir.join("data")).enabled_serial, Some(0));
+}
