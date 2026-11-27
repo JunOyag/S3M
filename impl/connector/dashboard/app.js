@@ -711,6 +711,7 @@ function cell(v) {
   if (v === false) return "Non";
   if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object"))
     return v.length ? v.map((x) => (typeof x === "string" ? datesIn(x) : cell(x))).join("\n") : "Aucun";
+  if (typeof v === "object" && "_badge" in v) return String(v["_texte"] || "");
   if (typeof v === "object") return JSON.stringify(v);
   return cap(typeof v === "string" ? datesIn(v) : String(v));
 }
@@ -1087,7 +1088,12 @@ function render(value, key) {
         cols.forEach((c) => {
           const text = fmt(c, o[c]);
           // Valeur longue (chemin, identifiant) : largeur minimale lisible.
-          r.appendChild(el("td", text, text.length > 40 ? "long" : text.length <= 16 ? "short" : undefined));
+          const td = el("td", undefined, text.length > 40 ? "long" : text.length <= 16 ? "short" : undefined);
+          // Badge ou code à copier : rendu riche ; sinon texte.
+          const v = o[c];
+          if ((v !== null && typeof v === "object" && "_badge" in v) || copyable(c, v)) td.appendChild(valueNode(v, c));
+          else td.textContent = text;
+          r.appendChild(td);
         });
         if (withActions) r.appendChild(rowActions(o["_actions"]));
       });

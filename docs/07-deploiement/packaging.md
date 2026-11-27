@@ -357,11 +357,14 @@ Ergonomie (ajout du 2026-11-27) :
 
 - **Ouvrir** : double-clic (ou Entrée) ouvre un dossier ou télécharge un
   fichier ; une ligne fixe « Dossier parent » est en tête, sauf à la racine.
+- **Pagination** : 10, 50 ou 100 lignes par page, ou un autre nombre
+  (mémorisé), avec numéro de page.
 - **Sélection** : clic (un élément), Ctrl+clic (ajout unitaire), Maj+clic
-  (intervalle), Ctrl+A ou case d'en-tête (tout le dossier affiché). Une
-  barre indique le nombre d'éléments et leur volume, et agit sur toute la
-  sélection : télécharger (fichiers un par un), déplacer, rendre disponible
-  hors connexion, libérer l'espace, supprimer.
+  (intervalle), case d'en-tête (page affichée), « Tout sélectionner » ou
+  Ctrl+A (toutes pages). Une barre fixée en bas de l'écran (la liste ne se
+  décale pas) indique le nombre d'éléments et leur volume, et agit sur toute
+  la sélection : télécharger (fichiers un par un), déplacer, rendre
+  disponible hors connexion, libérer l'espace, supprimer.
 - **Renommer** : nouveau nom, ou chemin relatif ou absolu. Une destination
   sous un dossier inexistant est refusée et signalée dans la fenêtre.
 - **Organiser** (sous-menu) : « Déplacer… » (fenêtre de navigation dans les

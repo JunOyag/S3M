@@ -40,6 +40,14 @@ let entries = [];
 // Sélection : chemins choisis et ancre du shift+clic.
 let selected = new Set();
 let anchor = null;
+// Pagination : lignes par page (mémorisé) et page affichée.
+let pageSize = 50;
+try {
+  pageSize = Number(localStorage.getItem("s3m-explorer-lignes")) || 50;
+} catch (_) {}
+let pageNo = 0;
+const pageCount = () => Math.max(1, Math.ceil(entries.length / pageSize));
+const shown = () => entries.slice(pageNo * pageSize, (pageNo + 1) * pageSize);
 // Identité changée : « Rechiffrer avec la nouvelle clé » proposé.
 let reencryptable = false;
 // Version passée parcourue (`protocols.historique-versions`) : hash de sa
@@ -296,6 +304,7 @@ async function load(path) {
     if (r["chemin"] !== cwd) {
       selected.clear();
       anchor = null;
+      pageNo = 0;
     }
     cwd = r["chemin"];
     if (!version) {
@@ -383,11 +392,17 @@ function paintSelection() {
     const c = tr.querySelector("input.check");
     if (c) c.checked = on;
   }
+  // Case d'en-tête : la page affichée.
+  const page = shown();
+  const onPage = page.filter((e) => selected.has(e.path)).length;
   const all = $("checkall");
-  all.checked = entries.length > 0 && selected.size === entries.length;
-  all.indeterminate = selected.size > 0 && selected.size < entries.length;
+  all.checked = page.length > 0 && onPage === page.length;
+  all.indeterminate = onPage > 0 && onPage < page.length;
   const bar = $("selbar");
   bar.hidden = selected.size === 0;
+  document.body.classList.toggle("has-sel", selected.size > 0);
+  $("selall").hidden = selected.size >= entries.length;
+  $("selall").textContent = "Tout sélectionner (" + entries.length + " éléments, toutes pages)";
   if (selected.size) {
     const list = [...selected].map(byPath).filter(Boolean);
     const files = list.filter((e) => !e["dossier"]);
@@ -441,10 +456,14 @@ function rows() {
     td.colSpan = 5;
     tr.appendChild(td);
     tb.appendChild(tr);
+    pageNo = 0;
+    pager();
     paintSelection();
     return;
   }
-  for (const e of entries) {
+  pageNo = Math.min(pageNo, pageCount() - 1);
+  pager();
+  for (const e of shown()) {
     const path = e.path;
     const tr = el("tr", undefined, "row");
     tr.dataset.path = path;
@@ -548,6 +567,77 @@ function rows() {
     tb.appendChild(tr);
   }
   paintSelection();
+}
+
+// Pied de liste : lignes par page (10, 50, 100, autre) et numéro de page.
+function pager() {
+  const box = $("pager");
+  box.replaceChildren();
+  if (!entries.length) return;
+  const n = pageCount();
+  const l = el("label", "Lignes par page ");
+  const s = el("select");
+  const sizes = [10, 50, 100];
+  for (const v of sizes) {
+    const o = el("option", String(v));
+    o.value = String(v);
+    s.appendChild(o);
+  }
+  if (!sizes.includes(pageSize)) {
+    const o = el("option", String(pageSize));
+    o.value = String(pageSize);
+    s.appendChild(o);
+  }
+  const other = el("option", "Autre…");
+  other.value = "autre";
+  s.appendChild(other);
+  s.value = String(pageSize);
+  s.addEventListener("change", async () => {
+    let v = Number(s.value);
+    if (s.value === "autre") {
+      const r = await dialog("Lignes par page", [["Nombre de lignes", String(pageSize)]], "Appliquer", async ([x]) =>
+        Number.isInteger(Number(x)) && Number(x) >= 1 && Number(x) <= 10000 ? null : "Saisissez un nombre entier entre 1 et 10 000.",
+      );
+      v = r ? Number(r[0]) : pageSize;
+    }
+    const first = pageNo * pageSize;
+    pageSize = v;
+    pageNo = Math.floor(first / pageSize);
+    try {
+      localStorage.setItem("s3m-explorer-lignes", String(pageSize));
+    } catch (_) {}
+    rows();
+  });
+  l.appendChild(s);
+  box.appendChild(l);
+  const nav = el("span", undefined, "pages");
+  const btn = (label, to, disabled) => {
+    const b = el("button", label, "small");
+    b.type = "button";
+    b.disabled = disabled;
+    b.addEventListener("click", () => {
+      pageNo = to;
+      rows();
+    });
+    nav.appendChild(b);
+  };
+  btn("‹ Précédente", pageNo - 1, pageNo === 0);
+  const lp = el("label", " Page ");
+  const num = el("input", undefined, "pageno");
+  num.type = "number";
+  num.min = "1";
+  num.max = String(n);
+  num.value = String(pageNo + 1);
+  num.addEventListener("change", () => {
+    const v = Math.min(n, Math.max(1, Math.round(Number(num.value)) || 1));
+    pageNo = v - 1;
+    rows();
+  });
+  lp.append(num, document.createTextNode(" / " + n + " "));
+  nav.appendChild(lp);
+  btn("Suivante ›", pageNo + 1, pageNo >= n - 1);
+  box.appendChild(nav);
+  box.appendChild(el("span", entries.length + " élément(s)", "muted"));
 }
 
 function menuItems(e) {
@@ -1206,8 +1296,16 @@ $("pickfolder").addEventListener("change", (ev) => {
   sendAll([...ev.target.files].map((f) => ({ file: f, rel: f.webkitRelativePath || f.name })), cwd);
   ev.target.value = "";
 });
+// Case d'en-tête : toute la page affichée (ajoutée à la sélection, ou retirée).
 $("checkall").addEventListener("change", (ev) => {
-  selected = ev.target.checked ? new Set(entries.map((e) => e.path)) : new Set();
+  for (const e of shown()) {
+    if (ev.target.checked) selected.add(e.path);
+    else selected.delete(e.path);
+  }
+  paintSelection();
+});
+$("selall").addEventListener("click", () => {
+  selected = new Set(entries.map((e) => e.path));
   paintSelection();
 });
 $("selnone").addEventListener("click", () => {

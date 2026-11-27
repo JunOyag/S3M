@@ -50,7 +50,13 @@
   button.qa { background: none; border: 1px solid transparent; border-radius: 50%; width: 30px; height: 30px; padding: 0; cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
   button.qa:hover, button.qa:focus-visible { background: var(--card); border-color: var(--line); color: var(--fg); }
   button.qa svg.ico { margin: 0; width: 18px; height: 18px; }
-  #selbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; background: var(--sel); border-bottom: 1px solid var(--line); }
+  /* Bandeau de sélection : fixé en bas de l'écran, la liste ne bouge pas. */
+  #selbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; background: var(--sel); border-top: 1px solid var(--line); position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; box-shadow: 0 -4px 16px #0002; }
+  body.has-sel main { padding-bottom: 96px; }
+  #pager { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 13px; }
+  #pager select, #pager input.pageno { font: inherit; padding: 2px 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg); }
+  #pager input.pageno { width: 4.5em; }
+  #pager .pages { display: inline-flex; gap: 6px; align-items: center; }
   #selbar span { flex: 1 1 240px; font-weight: 500; }
   .menu button.has-sub::after { content: "›"; float: right; color: var(--muted); }
   .dlg-err { color: var(--bad); white-space: pre-line; }
@@ -127,16 +133,18 @@
   <button class="act secondary" id="selkeep" type="button">Rendre disponible hors connexion</button>
   <button class="act secondary" id="selfree" type="button">Libérer l'espace</button>
   <button class="act secondary" id="seldelete" type="button">Supprimer</button>
+  <button class="act secondary" id="selall" type="button">Tout sélectionner</button>
   <button class="act secondary" id="selnone" type="button">Tout désélectionner</button>
 </div>
 <div id="status" role="status" aria-live="polite"></div>
 <main>
   <div id="zone">
     <table>
-      <thead><tr><th class="ck"><input type="checkbox" class="check" id="checkall" aria-label="Tout sélectionner dans ce dossier" title="Tout sélectionner dans ce dossier"></th><th>Nom</th><th class="num">Taille</th><th class="num date">Modifié</th><th></th></tr></thead>
+      <thead><tr><th class="ck"><input type="checkbox" class="check" id="checkall" aria-label="Sélectionner la page affichée" title="Sélectionner la page affichée"></th><th>Nom</th><th class="num">Taille</th><th class="num date">Modifié</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
-    <p class="muted" id="hint">Double-clic : ouvrir un dossier ou télécharger un fichier. Clic : sélectionner (Ctrl+clic : ajouter, Maj+clic : intervalle, Ctrl+A : tout). Glissez des fichiers ou des dossiers ici pour les importer ; glissez des éléments sur un dossier (ou sur l'emplacement en haut) pour les y déplacer.</p>
+    <div id="pager"></div>
+    <p class="muted" id="hint">Double-clic : ouvrir un dossier ou télécharger un fichier. Clic : sélectionner (Ctrl+clic : ajouter, Maj+clic : intervalle, Ctrl+A : tout, toutes pages). Glissez des fichiers ou des dossiers ici pour les importer ; glissez des éléments sur un dossier (ou sur l'emplacement en haut) pour les y déplacer.</p>
   </div>
 </main>
 <dialog id="dlg"><form method="dialog" id="dlgform"></form></dialog>
