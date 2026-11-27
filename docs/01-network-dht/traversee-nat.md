@@ -74,6 +74,13 @@ Deux Nœuds derrière des NAT symétriques, sans aucun Nœud public dans le
 réseau, ne peuvent pas se joindre : il faut au moins un Nœud public (le
 Nœud d'amorçage, par exemple).
 
+Un relais ouvre au plus 16 circuits à la fois (4 par pair), et au plus 30
+circuits d'affilée par pair source, puis un toutes les 4 s (limites par
+défaut de libp2p). Un circuit coupé (volume ou durée atteints) fait
+échouer la requête en cours, reprise au prochain essai, sans manquement
+pour le partenaire. Sans perçage réussi, le débit soutenu via un relais
+plafonne donc vers 4 MiB/s par pair (16 MiB toutes les 4 s).
+
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 
 ## Référencé par
