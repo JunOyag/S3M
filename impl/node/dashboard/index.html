@@ -9,8 +9,10 @@
 <style>
   :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6; --card: #ffffff; --accent: #2f5d8a; --bad: #a4302a; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --card: #1f1f1d; --accent: #7fb0e0; --bad: #e07a72; }
+    :root:not([data-theme="light"]) { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --card: #1f1f1d; --accent: #7fb0e0; --bad: #e07a72; color-scheme: dark; }
   }
+  :root[data-theme="dark"] { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --card: #1f1f1d; --accent: #7fb0e0; --bad: #e07a72; color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
   * { box-sizing: border-box; }
   /* `hidden` l'emporte sur les `display` ci-dessous (onglets, champs conditionnels). */
   [hidden] { display: none !important; }
@@ -167,6 +169,21 @@ td.short{white-space:nowrap}
   .date-filter { display: flex; align-items: center; gap: 6px; }
   .date-filter .table-filter { min-width: 0; }
   .mode-switch input { vertical-align: middle; }
+  .theme-switch { align-self: center; }
+  .theme-switch select { font-size: 13px; padding: 3px 6px; }
+  .copyable { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+  .copyable .code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }
+  button.copy-btn { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 2px 5px; line-height: 0; border-radius: 4px; flex: none; }
+  button.copy-btn:hover, button.copy-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+  button.copy-btn.done { color: #2e9d5b; border-color: #2e9d5b; }
+  dialog.confirm { width: min(460px, 92vw); }
+  dialog.confirm p { margin: 8px 0 16px; white-space: pre-line; }
+  .confirm-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .alert-banner { border: 1px solid var(--bad); border-left: 6px solid var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--card)); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+  .alert-banner strong { color: var(--bad); font-size: 15px; display: block; }
+  .alert-banner p { margin: 6px 0; }
+  .alert-banner button { background: var(--bad); margin-top: 4px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 10px; padding: 0 7px; margin-left: 8px; vertical-align: 1px; }
 </style>
 </head>
 <body>

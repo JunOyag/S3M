@@ -90,8 +90,8 @@ const LABELS = {
   "conflit (racine du Nœud)": ["Conflit", "Un autre appareil a modifié vos fichiers en même temps ; rien n'est perdu."],
   "file d'écriture": ["File d'écriture hors ligne", "Modifications gardées sur ce PC pendant une coupure réseau."],
   "mutations en attente": ["Modifications en attente", ""],
-  "taille (octets)": ["Taille", ""],
-  "Q_max (octets)": ["Budget hors ligne", "Volume maximal de modifications gardées pendant une coupure (Q_max, 4 Gio par défaut)."],
+  "volume en attente (octets)": ["Taille", "Volume des modifications faites sur cet appareil et pas encore reçues par votre Nœud."],
+  "budget hors ligne (octets)": ["Budget hors ligne", "Volume maximal de modifications gardées sur cet appareil pendant une coupure (4 Gio par défaut)."],
   "intervalle de surveillance (s)": ["Intervalle de surveillance (secondes)", "Fréquence des vérifications de la joignabilité du Nœud."],
   "configuration": ["Configuration", ""],
 
@@ -347,7 +347,9 @@ const LABELS = {
   "pointeurs de migration connus": ["Pointeurs de migration connus", ""],
   "événements récents": ["Événements récents", ""],
   "instant": ["Instant", ""],
-  "heure (s)": ["Heure", ""],
+  "heure de la machine": ["Heure de la machine", "Horloge de l'ordinateur du Nœud : elle doit être à l'heure (contrôles des partenaires, expirations)."],
+  "pseudo / empreinte": ["Pseudo / Empreinte", "Pseudo donné par vous, suivi de l'empreinte : seule l'empreinte identifie avec certitude."],
+  "racine": ["Racine", "Empreinte de l'état actuel de l'espace de cet utilisateur (change à chaque modification)."],
   // Canal Nœud ↔ Utilisateurs
   "messages des utilisateurs": ["Messages des utilisateurs", "Messages reçus de vos utilisateurs, conservés 30 jours."],
   "messages envoyés": ["Messages envoyés", "Messages et alertes envoyés à vos utilisateurs, conservés 30 jours."],
@@ -561,6 +563,19 @@ async function runAction(nom, body, button, label) {
       toast(res.message || (label ? `${label} : c'est fait` : "C'est fait"), "ok", w ? undefined : res.ouvrir);
       // `révéler` : secret à noter, affiché une seule fois dans un panneau.
       if (res["révéler"]) showReveal(res["révéler"]);
+      // `télécharger` : { nom, contenu, type } enregistré par le navigateur.
+      const dl = res["télécharger"];
+      if (dl) {
+        const link = el("a");
+        link.href = URL.createObjectURL(new Blob([dl["contenu"] || ""], { type: dl["type"] || "application/octet-stream" }));
+        link.download = dl["nom"] || "export";
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          URL.revokeObjectURL(link.href);
+          link.remove();
+        }, 1000);
+      }
       ok = true;
       refresh();
     } else {
@@ -681,8 +696,8 @@ function showReveal(r) {
   }
   const b = el("button", r["fermer"] || "Fermer");
   b.type = "button";
-  b.addEventListener("click", () => {
-    if (!r["24 mots"] || window.confirm("Avez-vous bien noté les 24 mots ? Ils ne seront plus affichés.")) close();
+  b.addEventListener("click", async () => {
+    if (!r["24 mots"] || (await askConfirm("Avez-vous bien noté les 24 mots ? Ils ne seront plus affichés.", "Oui, je les ai notés"))) close();
   });
   d.appendChild(b);
   d.showModal();
@@ -796,6 +811,12 @@ function progressNode(v) {
 
 function valueNode(v, k) {
   if (v !== null && typeof v === "object" && !Array.isArray(v) && "_barre" in v) return progressNode(v);
+  // `{ "_texte": …, "_badge": … }` : texte suivi d'un badge (ex. « Cet appareil »).
+  if (v !== null && typeof v === "object" && !Array.isArray(v) && "_badge" in v) {
+    const s = el("span", v["_texte"] || "");
+    s.appendChild(el("span", v["_badge"], "badge"));
+    return s;
+  }
   if (/24 mots|phrase d'annonce/.test(k || "") && typeof v === "string" && v.trim().split(/\s+/).length === 24) return wordGrid(v);
   if (v !== null && typeof v === "object" && !(Array.isArray(v) && v.every((x) => x === null || typeof x !== "object"))) {
     return render(v);
@@ -806,7 +827,77 @@ function valueNode(v, k) {
     i.alt = "QR code";
     return i;
   }
+  if (copyable(k, v)) {
+    const s = el("span", undefined, "copyable");
+    s.appendChild(el("span", v, "code"));
+    s.appendChild(copyButton(v));
+    return s;
+  }
   return document.createTextNode(fmt(k, v));
+}
+
+// Identifiants, clés, sels, empreintes… : difficiles à recopier à la main.
+const COPY_KEY = /^(identifiant|clé|sel|empreinte|racine|peer_id|node_id|user_id|hash|adresse du nœud|mon identifiant|nœud de remplacement|clé publique|clé d'annonce)/i;
+function copyable(k, v) {
+  if (typeof v !== "string" || v.length < 12 || v.includes("…") || /\s/.test(v.trim())) return false;
+  return COPY_KEY.test(k || "") || /^[0-9a-f]{32,}$/i.test(v) || /^12D3Koo/.test(v) || /^(S3MS1:|s3m:\/\/)/.test(v);
+}
+
+function copyButton(text) {
+  const b = el("button", "", "copy-btn");
+  b.type = "button";
+  b.title = "Copier";
+  b.setAttribute("aria-label", "Copier");
+  b.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M9 4h9a2 2 0 0 1 2 2v11M6 8h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+  b.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const t = el("textarea");
+      t.value = text;
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand("copy");
+      t.remove();
+    }
+    b.title = "Copié !";
+    b.classList.add("done");
+    setTimeout(() => {
+      b.title = "Copier";
+      b.classList.remove("done");
+    }, 1500);
+    toast("Copié dans le presse-papiers", "ok");
+  });
+  return b;
+}
+
+// Confirmation dans une vraie fenêtre (remplace window.confirm).
+function askConfirm(text, okLabel, title) {
+  return new Promise((resolve) => {
+    const { d, close } = modal(title || "Confirmer");
+    d.classList.add("confirm");
+    d.appendChild(el("p", text));
+    const row = el("div", undefined, "confirm-btns");
+    const no = el("button", "Annuler", "secondary");
+    no.type = "button";
+    const yes = el("button", okLabel || "Confirmer", /supprim|retir|purg|oubli|effac|révoqu/i.test(text) ? "danger" : "");
+    yes.type = "button";
+    let done = false;
+    const end = (v) => {
+      if (done) return;
+      done = true;
+      close();
+      resolve(v);
+    };
+    no.addEventListener("click", () => end(false));
+    yes.addEventListener("click", () => end(true));
+    d.addEventListener("close", () => end(false));
+    row.append(no, yes);
+    d.appendChild(row);
+    d.showModal();
+    yes.focus();
+  });
 }
 
 function rowActions(list) {
@@ -826,10 +917,10 @@ function rowActions(list) {
     b.type = "button";
     // `panneau` : le bouton ouvre un panneau (formulaires) ; `confirmer` :
     // confirmation avant l'envoi.
-    b.addEventListener("click", (ev) => {
+    b.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       if (a["panneau"]) return openPanel(a["panneau"]);
-      if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
+      if (a["confirmer"] && !(await askConfirm(a["confirmer"]))) return;
       const v = Object.assign({}, a["valeurs"] || {});
       inputs.forEach((i) => (v[i.name] = i.value));
       runAction(a["nom"], v, b, a["libellé"]);
@@ -880,7 +971,7 @@ function render(value, key) {
       value.forEach((v) => ul.appendChild(el("li", cell(v))));
       return ul;
     }
-    const cols = [...new Set(value.flatMap((o) => Object.keys(o)))].filter((c) => !HIDDEN_COLS.has(c));
+    const cols = [...new Set(value.flatMap((o) => Object.keys(o)))].filter((c) => !HIDDEN_COLS.has(c) && !c.startsWith("_"));
     const withActions = value.some((o) => o["_actions"]);
     const box = el("div", undefined, "table-box");
     const t = el("table");
@@ -1081,6 +1172,28 @@ function render(value, key) {
 // `fixes` : valeurs envoyées sans champ visible (ligne éditée) ; `done` :
 // appelé après succès (fermeture du panneau).
 function actionForm(a, done) {
+  // `fichier` : bouton qui fait choisir un fichier sur l'appareil ; son
+  // contenu (texte) est envoyé dans ce champ.
+  if (a["fichier"]) {
+    const box = el("div", undefined, "form-button");
+    const b = el("button", a["libellé"], a["style"]);
+    b.type = "button";
+    const pick = el("input");
+    pick.type = "file";
+    pick.hidden = true;
+    if (a["accepte"]) pick.accept = a["accepte"];
+    pick.addEventListener("change", async () => {
+      const file = pick.files && pick.files[0];
+      pick.value = "";
+      if (!file) return;
+      const body = Object.assign({}, a["fixes"] || {});
+      body[a["fichier"]] = await file.text();
+      runAction(a["nom"], body, b, a["libellé"]).then((ok) => ok && done && done());
+    });
+    b.addEventListener("click", () => pick.click());
+    box.append(b, pick);
+    return box;
+  }
   // `panneau` : simple bouton qui ouvre le panneau (ex. « Ajouter un volume »).
   if (a["panneau"]) {
     const box = el("div", undefined, "form-button");
@@ -1231,7 +1344,7 @@ function actionForm(a, done) {
   const b = el("button", a["libellé"], a["style"]);
   b.type = "submit";
   f.appendChild(b);
-  f.addEventListener("submit", (ev) => {
+  f.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const body = Object.assign({}, a["fixes"] || {}, a["valeurs"] && !(a["champs"] || []).length ? a["valeurs"] : {});
     inputs
@@ -1265,7 +1378,7 @@ function actionForm(a, done) {
       return;
     }
     // `confirmer` : fenêtre de confirmation avant l'envoi.
-    if (a["confirmer"] && !window.confirm(a["confirmer"])) return;
+    if (a["confirmer"] && !(await askConfirm(a["confirmer"]))) return;
     const send = () =>
       runAction(a["nom"], body, b, a["libellé"]).then((ok) => {
         if (!ok) return;
@@ -1313,6 +1426,8 @@ function actionForm(a, done) {
 let formCache = new Map();
 let formCacheNext = new Map();
 function cachedForm(a) {
+  // `expert` : formulaire réservé au mode expert.
+  if (a["expert"] && !expert) return document.createDocumentFragment();
   const k = JSON.stringify(a);
   const f = formCache.get(k) || actionForm(a);
   formCacheNext.set(k, f);
@@ -1419,7 +1534,62 @@ function openBrowser(start, pick, explorer = "fs_browse") {
 
 // Écrans : le moteur décrit `pages` (sections et actions de chacune) et
 // `résumé` (indicateurs de la vue d'ensemble). Sans `pages`, un seul écran.
-const RESERVED = new Set(["titre", "actions", "carte", "pages", "pages simples", "résumé", "à signaler"]);
+const RESERVED = new Set(["titre", "actions", "carte", "pages", "pages simples", "résumé", "à signaler", "bandeau"]);
+
+// Thème clair / foncé / système, mémorisé dans ce navigateur (aussi lu par
+// l'Explorateur et la carte).
+function themeChoice() {
+  try {
+    return localStorage.getItem("s3m-theme") || "systeme";
+  } catch (_) {
+    return "systeme";
+  }
+}
+function applyTheme(t) {
+  if (t === "clair") document.documentElement.dataset.theme = "light";
+  else if (t === "fonce") document.documentElement.dataset.theme = "dark";
+  else delete document.documentElement.dataset.theme;
+}
+applyTheme(themeChoice());
+function themeSwitch() {
+  if (document.getElementById("theme")) return;
+  const box = el("label", undefined, "theme-switch");
+  box.title = "Thème de l'affichage";
+  const s = el("select");
+  s.id = "theme";
+  s.setAttribute("aria-label", "Thème");
+  for (const [v, t] of [["systeme", "Thème : système"], ["clair", "Thème : clair"], ["fonce", "Thème : foncé"]]) {
+    const o = el("option", t);
+    o.value = v;
+    s.appendChild(o);
+  }
+  s.value = themeChoice();
+  s.addEventListener("change", () => {
+    try {
+      localStorage.setItem("s3m-theme", s.value);
+    } catch (_) {}
+    applyTheme(s.value);
+  });
+  box.appendChild(s);
+  document.querySelector("header").insertBefore(box, document.getElementById("live"));
+}
+themeSwitch();
+
+// Bandeau persistant en haut du dashboard : `{ texte, détail, page, niveau }`.
+function bannerNode(b) {
+  const s = el("section", undefined, "alert-banner " + (b["niveau"] || "critique"));
+  s.setAttribute("role", "alert");
+  s.appendChild(el("strong", b["texte"] || ""));
+  (Array.isArray(b["détail"]) ? b["détail"] : b["détail"] ? [b["détail"]] : []).forEach((t) => s.appendChild(el("p", t)));
+  const target = (!expert && b["page simple"]) || b["page"];
+  if (target) {
+    const go_ = el("button", b["bouton"] || "Régler maintenant");
+    go_.type = "button";
+    go_.addEventListener("click", () => go(target));
+    s.appendChild(go_);
+  }
+  return s;
+}
 // Mode simple (par défaut) ou expert : `pages simples` / `pages` du moteur
 // (`deploiement.packaging#modes`), choix mémorisé dans ce navigateur.
 let expert = false;
@@ -1627,6 +1797,7 @@ function show(status) {
   }
   [...main.children].forEach((c) => c !== keep && c !== frame && c.remove());
   const frag = document.createDocumentFragment();
+  if (status["bandeau"]) frag.appendChild(bannerNode(status["bandeau"]));
   if (pages.length > 1) frag.appendChild(el("h2", p.titre, "page-title"));
   if (highlighted.length) {
     const b = el("section", undefined, "callout");

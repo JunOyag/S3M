@@ -966,7 +966,7 @@ fn simple_pages(v: &mut Value) {
     v["mes utilisateurs"] = json!(users
         .iter()
         .map(|u| json!({
-            "nom": u["nom"], "espace utilisé (octets)": u["utilisé (octets)"], "quota (octets)": u["quota (octets)"],
+            "pseudo / empreinte": u["pseudo / empreinte"], "espace utilisé (octets)": u["utilisé (octets)"], "quota (octets)": u["quota (octets)"],
             "dernière activité": u["dernière activité"], "jours avant suppression": u["jours avant suppression"],
             "_gras": u["_gras"], "_actions": u["_actions"],
         }))
@@ -1361,8 +1361,8 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         .map(|(id, u)| {
             let name = s3m_protocol::pseudo::display(&[s.user_labels.get(id).map(String::as_str)], id);
             let gib = (u.quota_bytes as f64 / (1u64 << 30) as f64 * 100.0).round() / 100.0;
-            json!({ "utilisateur": hx(id),
-                    "nom": name,
+            json!({ "pseudo / empreinte": name,
+                    "_id": hx(id),
                     "quota (octets)": u.quota_bytes,
                     "utilisé (octets)": u.used_bytes,
                     "rattachement": if s.auto_attached.contains(id) { "automatique" } else { "manuel" },
@@ -1373,9 +1373,9 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                     },
                     "_gras": crate::inactivity::remaining_days(&s, id, now).is_some_and(|d| d <= 30),
                     "pays": country(s.last_user_ip.get(id)),
-                    "racine": hx(&u.root),
                     "_actions": [{ "nom": "edit_user", "libellé": "Éditer", "panneau": {
                         "titre": format!("Utilisateur {name}"),
+                        "contenu": { "clé publique": hx(id), "empreinte": s3m_protocol::pseudo::fingerprint(id), "racine": hx(&u.root) },
                         "formulaires": [
                             { "nom": "set_quota", "titre": "Quota", "libellé": "Changer le quota",
                               "champs": ["quota (Gio)"], "fixes": { "user_id": hx(id) },
@@ -1387,10 +1387,10 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                               "aide": { "jours": format!("Vide : politique du Nœud ({}) ; 0 : éternel ; sinon au moins {} jours sans connexion avant suppression définitive",
                                   if s.auto_attached.contains(id) { format!("{} j", s.attach_policy.inactivity_days) } else { "éternel, rattachement manuel".into() },
                                   crate::inactivity::MIN_DAYS) } },
-                            { "nom": "set_user_label", "titre": "Étiquette", "libellé": "Enregistrer",
-                              "champs": ["étiquette"], "fixes": { "utilisateur": hx(id) },
-                              "valeurs": { "étiquette": s.user_labels.get(id).cloned().unwrap_or_default() },
-                              "aide": { "étiquette": "Visible par vous seul ; vide pour l'effacer" } },
+                            { "nom": "set_user_label", "titre": "Pseudo", "libellé": "Enregistrer",
+                              "champs": ["pseudo"], "fixes": { "utilisateur": hx(id) },
+                              "valeurs": { "pseudo": s.user_labels.get(id).cloned().unwrap_or_default() },
+                              "aide": { "pseudo": "Visible par vous seul ; vide pour l'effacer" } },
                             { "nom": "send_user_message", "titre": "Message à cet utilisateur", "libellé": "Envoyer",
                               "champs": ["message"], "fixes": { "utilisateur": hx(id) }, "types": { "message": "texte" }, "différer": 5,
                               "aide": { "message": "Lu par cet utilisateur seul à son prochain contact (4 096 octets au plus, conservé 30 jours)" } },
@@ -1404,7 +1404,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                             ] } }] })
         })
         .collect();
-    users.sort_by_key(|v| v["utilisateur"].to_string());
+    users.sort_by_key(|v| v["_id"].to_string());
     let mut partners: Vec<Value> = s
         .partners
         .iter()
@@ -1501,7 +1501,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             "peer_id": sh.peer_id,
             // Échange de blocs et annuaire partagent la même adresse.
             "adresse du nœud": sh.blocks_addr.clone().or_else(|| sh.dht_addr.clone()),
-            "heure (s)": now,
+            "heure de la machine": now,
         },
         "volumes": volumes,
         "utilisateurs rattachés": users,
@@ -2302,13 +2302,13 @@ fn channel_action(sh: &Shared, name: &str, v: &Value) -> Option<Result<Value, St
                 if !s.users.contains_key(&u) {
                     return Err("utilisateur inconnu".to_string());
                 }
-                let l = s3m_protocol::pseudo::sanitize(v.get("étiquette").and_then(Value::as_str).unwrap_or(""));
+                let l = s3m_protocol::pseudo::sanitize(v.get("pseudo").or_else(|| v.get("étiquette")).and_then(Value::as_str).unwrap_or(""));
                 if l.is_empty() {
                     s.user_labels.remove(&u);
                 } else {
                     s.user_labels.insert(u, l);
                 }
-                Ok(json!({ "ok": true, "message": "Étiquette enregistrée" }))
+                Ok(json!({ "ok": true, "message": "Pseudo enregistré" }))
             })(),
             "delete_user_message" => (|| {
                 let u = unhex32(field(v, "utilisateur")?.trim())?;
