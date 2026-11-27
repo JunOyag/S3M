@@ -162,7 +162,7 @@ async fn node_starts_serves_a_guarded_dashboard_and_persists_its_state() {
     let body: serde_json::Value = serde_json::from_str(st.split("\r\n\r\n").nth(1).unwrap()).unwrap();
     let simple = body["pages simples"].as_array().unwrap();
     assert_eq!(simple.len(), 5);
-    assert_eq!(body["santé du nœud"].as_array().unwrap().len(), 4);
+    assert_eq!(body["santé du nœud"].as_array().unwrap().len(), 5);
     let names: Vec<&str> = body["actions"].as_array().unwrap().iter().filter_map(|a| a["nom"].as_str()).collect();
     for p in simple {
         for a in p["actions"].as_array().unwrap() {

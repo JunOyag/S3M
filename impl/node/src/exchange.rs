@@ -120,8 +120,12 @@ impl Default for AttachPolicy {
 pub struct PartnerPolicy {
     pub accept: bool,
     pub max_partners: usize,
-    /// Espace offert aux partenaires (octets).
+    /// Espace offert aux partenaires (octets) ; recalculé par le Nœud tant
+    /// que `offer_auto` (`node.PartnerAccount#dimensionnement`).
     pub offer_bytes: u64,
+    /// Espace offert calculé : coef × données des utilisateurs, plafonné à
+    /// coef / (1 + coef) de la capacité des volumes.
+    pub offer_auto: bool,
     /// Confiance initiale envers un partenaire (fragments).
     pub trust_initial_blocks: u64,
     /// Période de confiance (secondes).
@@ -138,6 +142,7 @@ impl Default for PartnerPolicy {
             accept: true,
             max_partners: 32,
             offer_bytes: 10 << 30,
+            offer_auto: true,
             trust_initial_blocks: 256,
             trust_period_s: 7 * 86_400,
             filler: true,
@@ -305,6 +310,8 @@ pub struct NodeService {
     /// Fragments de parité du dernier stripe restés sans partenaire : la
     /// recherche de partenaires relève sa cible d'autant.
     pub missing_partners: usize,
+    /// Capacité des volumes actifs (octets ; 0 : inconnue, aucun plafond).
+    pub capacity_bytes: u64,
     /// Partages retirés par leur propriétaire (`protocols.partage`).
     pub revoked_shares: std::collections::HashSet<Id>,
     /// Sous-réseau de chaque partenaire (diversité des adresses).
@@ -416,6 +423,7 @@ impl NodeService {
             partner_names: HashMap::new(),
             emergency_verified: Default::default(),
             missing_partners: 0,
+            capacity_bytes: 0,
             revoked_shares: Default::default(),
             subnets: HashMap::new(),
             need_room: Default::default(),
@@ -431,6 +439,38 @@ impl NodeService {
 
     pub fn node_id(&self) -> Id {
         self.node_id
+    }
+
+    /// Part du disque réservée aux utilisateurs : 1 / (1 + coef) de la
+    /// capacité (`node.PartnerAccount#dimensionnement`) ; `None` : inconnue.
+    pub fn users_cap(&self) -> Option<u64> {
+        (self.capacity_bytes > 0).then(|| self.capacity_bytes / (1 + crate::dispersal_engine::COEF as u64))
+    }
+
+    /// Quotas accordés, hors `except`.
+    pub fn quotas_total(&self, except: Option<&Id>) -> u64 {
+        self.users.iter().filter(|(i, _)| Some(*i) != except).map(|(_, u)| u.quota_bytes).sum()
+    }
+
+    /// Place encore attribuable aux quotas (hors `except`) ; `None` : sans plafond.
+    pub fn user_room(&self, except: Option<&Id>) -> Option<u64> {
+        self.users_cap().map(|c| c.saturating_sub(self.quotas_total(except)))
+    }
+
+    /// Espace offert calculé (`offer_auto`) : coef × max(quotas, utilisé),
+    /// 10 Gio au moins, plafonné à coef / (1 + coef) de la capacité.
+    pub fn refresh_offer(&mut self) {
+        if !self.partner_policy.offer_auto {
+            return;
+        }
+        let coef = crate::dispersal_engine::COEF as u64;
+        let used: u64 = self.users.values().map(|u| u.used_bytes).sum();
+        let want = (coef * self.quotas_total(None).max(used)).max(10 << 30);
+        self.partner_policy.offer_bytes = if self.capacity_bytes > 0 {
+            want.min(self.capacity_bytes / (1 + coef) * coef)
+        } else {
+            want
+        };
     }
 
     /// Graine `priv_node` (signatures du moteur de dispersion).
@@ -1069,7 +1109,8 @@ impl NodeService {
                     .filter_map(|u| self.users.get(u))
                     .map(|u| u.quota_bytes)
                     .sum();
-                if self.auto_attached.len() >= p.max_users || used + p.quota_bytes > p.budget_bytes
+                let room = self.user_room(None).is_none_or(|r| p.quota_bytes <= r);
+                if self.auto_attached.len() >= p.max_users || used + p.quota_bytes > p.budget_bytes || !room
                 {
                     return Err(Refusal::QuotaExceeded);
                 }

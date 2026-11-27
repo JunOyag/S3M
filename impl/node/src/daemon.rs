@@ -938,6 +938,7 @@ pub fn status(sh: &Shared, now: u64) -> Value {
                                   { "titre": "Avancé", "sections": ["journal"] }] }
     ]);
     node2fa_status(sh, &mut v);
+    balance_status(sh, &mut v);
     simple_pages(&mut v);
     v
 }
@@ -983,7 +984,16 @@ fn simple_pages(v: &mut Value) {
         format!("{} utilisateur(s){}", users.len(), if soon > 0 { format!(", dont {soon} supprimé(s) dans moins de 30 jours faute de connexion") } else { String::new() }),
         if soon > 0 { "Écran Utilisateurs : prévenez-les, ou rendez-les éternels (Éditer)." } else { "" },
     );
-    v["santé du nœud"] = json!([disks, net, part, usr]);
+    let b = &v["équilibre du stockage"];
+    let gio = |k: &str| b[k].as_u64().map_or("—".to_string(), |x| format!("{:.1} Gio", x as f64 / (1u64 << 30) as f64));
+    let bal = voyant(
+        Some(b["tenable"].as_bool().unwrap_or(true)),
+        "Équilibre du stockage",
+        format!("utilisateurs : {} (quotas {}, part {}) ; partenaires : {} offerts", gio("données des utilisateurs (octets)"),
+            gio("quotas accordés (octets)"), gio("part des utilisateurs (octets)"), gio("espace offert aux partenaires (octets)")),
+        if b["tenable"].as_bool().unwrap_or(true) { "" } else { "Les quotas dépassent le quart des disques ou l'espace offert est trop petit : ajoutez un volume, réduisez des quotas, ou laissez l'espace offert en automatique." },
+    );
+    v["santé du nœud"] = json!([disks, net, part, usr, bal]);
     v["mes utilisateurs"] = json!(users
         .iter()
         .map(|u| json!({
@@ -2089,6 +2099,56 @@ fn number(v: &Value, k: &str) -> Result<u64, String> {
     }
 }
 
+/// Quota refusé s'il dépasse la part des utilisateurs (1 / (1 + coef) des
+/// volumes), avec une explication.
+fn quota_room(s: &crate::exchange::NodeService, id: &[u8; 32], quota: u64) -> Result<(), String> {
+    match s.user_room(Some(id)) {
+        Some(room) if quota > room => {
+            let g = |b: u64| format!("{:.1} Gio", b as f64 / (1u64 << 30) as f64);
+            Err(format!(
+                "quota refusé : il reste {} pour les utilisateurs. Chaque donnée d'utilisateur demande trois fois sa taille chez les partenaires, et autant ici pour eux : les utilisateurs ont droit au quart des volumes ({} sur {}). Ajoutez un volume ou réduisez d'autres quotas.",
+                g(room), g(s.users_cap().unwrap_or(0)), g(s.capacity_bytes)
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Capacité des volumes actifs et espace offert recalculés.
+pub fn refresh_capacity(sh: &Shared) {
+    let cap: u64 = volume_usage(sh).iter().filter(|u| !u.draining).map(|u| u.max_capacity_bytes).sum();
+    let mut s = sh.service.lock().unwrap();
+    s.capacity_bytes = cap;
+    s.refresh_offer();
+}
+
+/// Section « équilibre du stockage » (`node.PartnerAccount#dimensionnement`) :
+/// les utilisateurs ont droit à 1 / (1 + coef) des volumes, les partenaires
+/// au reste.
+fn balance_status(sh: &Shared, v: &mut Value) {
+    let s = sh.service.lock().unwrap();
+    let used: u64 = s.users.values().map(|u| u.used_bytes).sum();
+    let quotas = s.quotas_total(None);
+    let hosted: u64 = s.partners.values().map(|p| p.ledger.hosted_by_partner).sum::<u64>() * crate::exchange::FRAGMENT_BYTES;
+    let coef = crate::dispersal_engine::COEF as u64;
+    let cap = s.users_cap();
+    let offer = s.partner_policy.offer_bytes;
+    // Tenable : quotas dans la part des utilisateurs, et offre suffisante
+    // pour disperser ce qui est déjà stocké.
+    let ok = cap.is_none_or(|c| quotas <= c) && offer >= coef * used;
+    v["équilibre du stockage"] = json!({
+        "capacité des volumes (octets)": s.capacity_bytes,
+        "part des utilisateurs (octets)": cap,
+        "quotas accordés (octets)": quotas,
+        "données des utilisateurs (octets)": used,
+        "espace offert aux partenaires (octets)": offer,
+        "fragments des partenaires gardés ici (octets)": hosted,
+        "réglage de l'espace offert": if s.partner_policy.offer_auto { "automatique" } else { "manuel" },
+        "tenable": ok,
+        "_note": "Chaque donnée d'un utilisateur est protégée par trois fois sa taille de fragments chez les partenaires, et ce Nœud garde autant pour eux : un quart des volumes pour les utilisateurs, trois quarts pour les partenaires.",
+    });
+}
+
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -2384,6 +2444,7 @@ fn act_inner(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             let quota_bytes = gib(&v, "quota (Gio)")?
                 .or(number(&v, "quota_bytes").ok())
                 .ok_or("quota manquant")?;
+            quota_room(&s, &id, quota_bytes)?;
             let e = s.users.entry(id).or_insert(UserAccount {
                 salt: salt.clone(),
                 quota_bytes,
@@ -2428,6 +2489,7 @@ fn act_inner(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             let q = gib(&v, "quota (Gio)")?
                 .or(number(&v, "quota_bytes").ok())
                 .ok_or("quota manquant")?;
+            quota_room(&s, &id, q)?;
             s.users
                 .get_mut(&id)
                 .ok_or("utilisateur inconnu")?
@@ -3153,6 +3215,7 @@ pub async fn start_with(
                 .map(|p| p.country)
         }));
     }
+    refresh_capacity(&shared);
     {
         // Réponses aux OwnershipQuery des partenaires (import d'un volume).
         let weak = Arc::downgrade(&shared);
@@ -3377,6 +3440,7 @@ pub async fn start_with(
                     *sh.last_upkeep.lock().unwrap() = Some((now, up));
                     // Opérations différées arrivées à échéance (rotation, purge, retrait du 2FA).
                     run_due_node_ops(&sh, crate::daemon::unix_now());
+                    refresh_capacity(&sh);
                     let n = sh.service.lock().unwrap().run_due_ops(now);
                     if n > 0 {
                         crate::daemon::note(&sh, format!("{n} opération(s) différée(s) exécutée(s)"));

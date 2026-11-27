@@ -99,6 +99,27 @@ Les partenaires mis en retrait à tort se réhabilitent depuis le dashboard
 (« Réhabiliter les partenaires en retrait » : manquements effacés,
 fragments gardés).
 
+### Dimensionnement {: #dimensionnement }
+
+Ajout du 2026-11-28. Chaque stripe de k = 4 blocs d'un utilisateur, gardés
+sur ce Nœud, produit k × coef = 12 fragments de parité confiés aux
+partenaires. L'échange étant de 1 pour 1, ce Nœud garde autant de fragments
+pour eux. À l'équilibre, un Nœud consacre donc **1 / (1 + coef) de ses
+volumes à ses utilisateurs (25 %) et coef / (1 + coef) à ses partenaires
+(75 %)**, hors index, sauvegarde du Nœud et versions passées.
+
+- **Quotas** : la somme des quotas accordés (rattachement manuel ou
+  automatique, changement de quota) ne dépasse jamais 1 / (1 + coef) de la
+  capacité des volumes actifs. Au-delà, la demande est refusée avec une
+  explication.
+- **Espace offert automatique** (`partner_policy.offer_auto`, par défaut) :
+  `offer_bytes` = coef × max(quotas accordés, données stockées), 10 Gio au
+  moins, plafonné à coef / (1 + coef) de la capacité. Il est recalculé à
+  chaque cycle. Désactivé, la valeur saisie s'applique telle quelle.
+- **Voyant « Équilibre du stockage »** (santé du Nœud) : rouge si les
+  quotas dépassent la part des utilisateurs, ou si l'espace offert est
+  inférieur à coef fois les données déjà stockées.
+
 ### Réconciliation {: #reconciliation }
 
 Ajout du 2026-11-28. Une fois par jour et par partenaire joignable, P liste

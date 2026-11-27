@@ -193,11 +193,19 @@ pub const FIELDS: &[Field] = &[
     ),
     f(
         "Partenaires",
+        "espace offert automatique",
+        "partner_policy.offer_auto",
+        Kind::Bool,
+        true,
+        "Calculé par le Nœud : trois fois les quotas de ses utilisateurs (10 Gio au moins), sans dépasser les trois quarts des volumes. Désactivez pour fixer l'espace offert ci-dessous.",
+    ),
+    f(
+        "Partenaires",
         "espace offert aux partenaires (Mio)",
         "partner_policy.offer_bytes",
         Kind::Mebibytes,
         true,
-        "Espace réservé aux fragments des partenaires (10 Gio par défaut), réparti à parts égales entre le nombre maximal de partenaires : c'est ce que chacun peut déposer ici, et réciproquement.",
+        "Espace réservé aux fragments des partenaires, réparti à parts égales entre le nombre maximal de partenaires : c'est ce que chacun peut déposer ici, et réciproquement. Pris en compte seulement si l'espace offert automatique est désactivé.",
     ),
     f(
         "Partenaires",

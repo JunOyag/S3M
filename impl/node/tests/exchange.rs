@@ -663,3 +663,24 @@ fn a_scheduled_purge_is_unique_and_a_2fa_code_purges_at_once() {
     assert_eq!(call(&mut s, Body::PurgeRoots { before: 0, code: code(NOW) }), Response::Ack { freed: 0 });
     assert!(s.pending_ops.get(&pk(&USER)).is_none_or(|v| v.is_empty()), "purge programmée retirée");
 }
+
+/// Dimensionnement (`node.PartnerAccount#dimensionnement`) : les
+/// utilisateurs ont droit au quart des volumes (k = 4, coef = 3), l'espace
+/// offert suit trois fois leurs quotas, plafonné aux trois quarts.
+#[test]
+fn users_get_a_quarter_and_partners_three_quarters_of_the_volumes() {
+    const G: u64 = 1 << 30;
+    let mut s = service_with_user(NODE, 10 * G);
+    s.capacity_bytes = 400 * G;
+    assert_eq!(s.users_cap(), Some(100 * G));
+    assert_eq!(s.user_room(None), Some(90 * G));
+    s.refresh_offer();
+    assert_eq!(s.partner_policy.offer_bytes, 30 * G, "trois fois les quotas");
+    s.users.get_mut(&pk(&USER)).unwrap().quota_bytes = 200 * G;
+    s.refresh_offer();
+    assert_eq!(s.partner_policy.offer_bytes, 300 * G, "plafonné aux trois quarts");
+    s.partner_policy.offer_auto = false;
+    s.partner_policy.offer_bytes = 5 * G;
+    s.refresh_offer();
+    assert_eq!(s.partner_policy.offer_bytes, 5 * G, "réglage manuel gardé");
+}
