@@ -287,7 +287,8 @@ async fn devices_are_named_merged_and_shown_in_node_messages() {
         let st = status(&s);
         let rows = st["mes appareils"]["_contenu"].as_array().unwrap().clone();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["nom"], "PC bureau");
+        assert_eq!(rows[0]["nom"]["_texte"], "PC bureau");
+        assert_eq!(rows[0]["nom"]["_badge"], "Cet appareil");
         // Ajout d'un contact : lecture du QR code de son identifiant.
         assert_eq!(st["contacts"]["_formulaires"][0]["panneau"]["formulaires"][0]["scanner"], "identifiant");
         let fp = rows[0]["empreinte"].as_str().unwrap().to_string();

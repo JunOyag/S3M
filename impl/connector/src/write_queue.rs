@@ -50,7 +50,7 @@ pub struct Queued {
 /// Erreurs de la file.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum QueueError {
-    #[error("budget Q_max atteint")]
+    #[error("budget hors ligne atteint")]
     QueueFull,
     #[error("update_entry sans écriture préalable de son premier bloc")]
     OrphanPointer,

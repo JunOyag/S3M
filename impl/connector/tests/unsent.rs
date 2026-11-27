@@ -65,6 +65,7 @@ async fn a_block_lost_before_dispersal_is_sent_again() {
         emergency_write: false,
         n_secours: 4,
         free_after_days: 0,
+        always_free: false,
         keep_offline: vec![],
         source: None,
     };

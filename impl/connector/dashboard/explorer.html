@@ -7,10 +7,11 @@
 <title>Explorateur S3m</title>
 <link rel="icon" href="logo.png">
 <style>
-  :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6; --card: #ffffff; --accent: #2f5d8a; --bad: #a4302a; --drop: #e6eef6; }
+  :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6; --card: #ffffff; --accent: #2f5d8a; --bad: #a4302a; --drop: #e6eef6; --sel: #d7e5f4; --folder: #8a9bb0; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --card: #1f1f1d; --accent: #7fb0e0; --bad: #e07a72; --drop: #23303b; }
+    :root:not([data-theme="light"]) { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --card: #1f1f1d; --accent: #7fb0e0; --bad: #e07a72; --drop: #23303b; --sel: #2a3d52; --folder: #8394a8; }
   }
+  :root[data-theme="dark"] { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --card: #1f1f1d; --accent: #7fb0e0; --bad: #e07a72; --drop: #23303b; --sel: #2a3d52; --folder: #8394a8; }
   [hidden] { display: none !important; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
@@ -32,8 +33,42 @@
   tr:last-child td { border-bottom: none; }
   tr.row:hover { background: var(--drop); }
   tr.drop-target { outline: 2px solid var(--accent); outline-offset: -2px; }
-  td.name { cursor: pointer; word-break: break-word; }
-  td.name .ico { display: inline-block; width: 1.4em; }
+  td.name { cursor: default; word-break: break-word; user-select: none; }
+  svg.ico { width: 20px; height: 20px; vertical-align: -5px; margin-right: 8px; flex: none; }
+  tr.row { cursor: default; }
+  tr.row.sel, tr.row.sel:hover { background: var(--sel); }
+  tr.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  tr.row.dim { opacity: 0.55; }
+  tr.row.up td.name { color: var(--muted); }
+  td.ck, th.ck { width: 1%; padding-right: 0; }
+  input.check { margin: 0; cursor: pointer; }
+  .fav { color: #e0a800; margin-left: 6px; font-size: 13px; }
+  button.shared { background: none; border: none; padding: 0 4px 0 0; color: var(--accent); cursor: pointer; vertical-align: middle; }
+  button.shared svg.ico { width: 18px; height: 18px; margin-right: 2px; }
+  .quick { display: inline-flex; gap: 2px; visibility: hidden; margin-right: 4px; vertical-align: middle; }
+  tr.row:hover .quick, tr.row.sel .quick, tr.row:focus-within .quick { visibility: visible; }
+  button.qa { background: none; border: 1px solid transparent; border-radius: 50%; width: 30px; height: 30px; padding: 0; cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
+  button.qa:hover, button.qa:focus-visible { background: var(--card); border-color: var(--line); color: var(--fg); }
+  button.qa svg.ico { margin: 0; width: 18px; height: 18px; }
+  #selbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; background: var(--sel); border-bottom: 1px solid var(--line); }
+  #selbar span { flex: 1 1 240px; font-weight: 500; }
+  .menu button.has-sub::after { content: "›"; float: right; color: var(--muted); }
+  .dlg-err { color: var(--bad); white-space: pre-line; }
+  dialog p { white-space: pre-line; }
+  button.act.danger { background: var(--bad); }
+  .pick-where { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; margin-bottom: 6px; }
+  .pick-where button.crumb { background: none; border: none; color: var(--accent); padding: 2px 4px; cursor: pointer; font: inherit; }
+  .pick { border: 1px solid var(--line); border-radius: 8px; height: 280px; overflow: auto; padding: 4px; min-width: min(420px, 80vw); }
+  button.pick-row { display: flex; align-items: center; width: 100%; text-align: left; background: none; border: none; color: var(--fg); padding: 6px 8px; border-radius: 5px; cursor: pointer; font: inherit; }
+  button.pick-row:hover, button.pick-row:focus-visible { background: var(--drop); outline: none; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  button.swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--card); outline: 1px solid var(--line); cursor: pointer; padding: 0; }
+  button.swatch.on { outline: 3px solid var(--fg); }
+  dialog label.inline { display: flex; gap: 8px; align-items: center; }
+  dialog label.inline input { width: 48px; height: 32px; padding: 2px; }
+  .copyrow { display: flex; gap: 6px; align-items: flex-start; }
+  button.copy { background: none; border: 1px solid var(--line); border-radius: 6px; color: var(--fg); cursor: pointer; padding: 4px 8px; font-size: 16px; }
+  dialog td.acts button { margin-left: 4px; }
   td.num, th.num { text-align: right; white-space: nowrap; color: var(--muted); }
   td.acts { white-space: nowrap; text-align: right; }
   td.acts { width: 1%; }
@@ -68,10 +103,10 @@
 <body>
 <div class="bar">
   <nav class="crumbs" id="crumbs" aria-label="Emplacement"></nav>
-  <button class="act secondary" id="versions" type="button" title="Parcourir et restaurer les versions passées de vos fichiers (rançongiciel, suppression par erreur)">Revenir en arrière</button>
+  <button class="act secondary" id="versions" type="button" title="Parcourir et restaurer les versions passées de vos fichiers (rançongiciel, suppression par erreur)">Historique des versions</button>
   <button class="act secondary" id="mkdir" type="button">Nouveau dossier</button>
   <button class="act secondary" id="upfolder" type="button">Importer un dossier</button>
-  <button class="act" id="upfiles" type="button">Envoyer des fichiers</button>
+  <button class="act" id="upfiles" type="button">Importer des fichiers</button>
   <input type="file" id="pickfiles" multiple hidden>
   <input type="file" id="pickfolder" webkitdirectory multiple hidden>
 </div>
@@ -85,14 +120,23 @@
   <span id="oldkeytext"></span>
   <button class="act" id="reencryptall" type="button">Tout rechiffrer ici</button>
 </div>
+<div id="selbar" hidden>
+  <span id="seltext"></span>
+  <button class="act secondary" id="seldownload" type="button">Télécharger</button>
+  <button class="act secondary" id="selmove" type="button">Déplacer…</button>
+  <button class="act secondary" id="selkeep" type="button">Rendre disponible hors connexion</button>
+  <button class="act secondary" id="selfree" type="button">Libérer l'espace</button>
+  <button class="act secondary" id="seldelete" type="button">Supprimer</button>
+  <button class="act secondary" id="selnone" type="button">Tout désélectionner</button>
+</div>
 <div id="status" role="status" aria-live="polite"></div>
 <main>
   <div id="zone">
     <table>
-      <thead><tr><th>Nom</th><th class="num">Taille</th><th class="num date">Modifié</th><th></th></tr></thead>
+      <thead><tr><th class="ck"><input type="checkbox" class="check" id="checkall" aria-label="Tout sélectionner dans ce dossier" title="Tout sélectionner dans ce dossier"></th><th>Nom</th><th class="num">Taille</th><th class="num date">Modifié</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
-    <p class="muted" id="hint">Glissez des fichiers ou des dossiers ici pour les envoyer ; glissez un élément sur un dossier (ou sur l'emplacement en haut) pour l'y déplacer.</p>
+    <p class="muted" id="hint">Double-clic : ouvrir un dossier ou télécharger un fichier. Clic : sélectionner (Ctrl+clic : ajouter, Maj+clic : intervalle, Ctrl+A : tout). Glissez des fichiers ou des dossiers ici pour les importer ; glissez des éléments sur un dossier (ou sur l'emplacement en haut) pour les y déplacer.</p>
   </div>
 </main>
 <dialog id="dlg"><form method="dialog" id="dlgform"></form></dialog>

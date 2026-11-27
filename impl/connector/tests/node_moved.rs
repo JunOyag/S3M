@@ -88,6 +88,7 @@ async fn connector_finds_its_node_again_after_an_address_change() {
         emergency_write: false,
         n_secours: 4,
         free_after_days: 0,
+        always_free: false,
         keep_offline: vec![],
         source: None,
     };

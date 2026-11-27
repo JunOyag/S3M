@@ -76,6 +76,7 @@ async fn a_root_unknown_to_the_node_is_not_committed() {
         emergency_write: false,
         n_secours: 4,
         free_after_days: 0,
+        always_free: false,
         keep_offline: vec![],
         source: None,
     };

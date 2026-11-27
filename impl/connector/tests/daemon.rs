@@ -91,6 +91,7 @@ async fn connector_watches_its_node_keeps_a_rescue_grant_and_serves_its_dashboar
         emergency_write: false,
         n_secours: 4,
         free_after_days: 0,
+        always_free: false,
         keep_offline: vec![],
         source: None,
     };
@@ -231,6 +232,7 @@ async fn a_new_identity_explains_its_setup_steps() {
         emergency_write: false,
         n_secours: 4,
         free_after_days: 0,
+        always_free: false,
         keep_offline: vec![],
         source: None,
     };

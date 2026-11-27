@@ -230,6 +230,7 @@ pub fn write_config(
         emergency_write: true,
         n_secours: crate::emergency::DEFAULT_N_SECOURS,
         free_after_days: 0,
+        always_free: false,
         keep_offline: vec![],
         source: None,
     };

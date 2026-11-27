@@ -152,11 +152,11 @@ de l'alerte, et sur l'accueil tant qu'elle n'est pas acquittée.
   dossier.
 - **Récents** : les 10 derniers éléments envoyés ou téléchargés depuis
   l'Explorateur, repliables, sur l'accueil.
-- **Versions** (« Revenir en arrière ») : regroupées par jour (dépliable) ;
+- **Versions** (« Historique des versions ») : regroupées par jour (dépliable) ;
   pour un dossier, chaque version indique ses ajouts, suppressions et
   modifications par rapport à la précédente (sous-arbres identiques
   sautés), la version actuelle en tête.
-- **Partager / Contacts** : partager se fait depuis l'Explorateur ;
+- **Partager / Contacts** : partager se fait uniquement depuis l'Explorateur ;
   « Ajouter un contact » et « Ajouter un partage reçu » ouvrent une
   fenêtre sous leur liste ; le pseudo se règle dans la section Utilisateur.
 
@@ -353,6 +353,30 @@ synchronisation courantes :
 
 ### Explorateur {: #explorateur }
 
+Ergonomie (ajout du 2026-11-27) :
+
+- **Ouvrir** : double-clic (ou Entrée) ouvre un dossier ou télécharge un
+  fichier ; une ligne fixe « Dossier parent » est en tête, sauf à la racine.
+- **Sélection** : clic (un élément), Ctrl+clic (ajout unitaire), Maj+clic
+  (intervalle), Ctrl+A ou case d'en-tête (tout le dossier affiché). Une
+  barre indique le nombre d'éléments et leur volume, et agit sur toute la
+  sélection : télécharger (fichiers un par un), déplacer, rendre disponible
+  hors connexion, libérer l'espace, supprimer.
+- **Renommer** : nouveau nom, ou chemin relatif ou absolu. Une destination
+  sous un dossier inexistant est refusée et signalée dans la fenêtre.
+- **Organiser** (sous-menu) : « Déplacer… » (fenêtre de navigation dans les
+  dossiers de l'espace), favoris, « Couleur de dossier… » (8 couleurs
+  prédéfinies, couleurs récentes, couleur libre). Les couleurs sont gardées
+  sur l'appareil (`couleurs.json`) et suivent les déplacements.
+- **Actions rapides** sur la ligne survolée ou sélectionnée : partager,
+  télécharger (fichiers), renommer, favori.
+- **Élément partagé** : icône devant le nom. Un clic ouvre ses partages
+  actifs : afficher le lien ou l'invitation, retirer, nouveau partage.
+- **Fenêtres** : confirmations et saisies dans des fenêtres stylées, et non
+  plus celles du navigateur. Entrée valide (Échap annule) ; une erreur
+  s'affiche dans la fenêtre.
+- **Page** : son titre porte le pseudo de l'identité.
+
 Nœud injoignable (ajout du 2026-11-26) : avec des partenaires en ligne, les
 fichiers absents de l'appareil sont reconstruits depuis la parité
 (lecture de secours) ; sans partenaire joignable, ou après un échec récent,
@@ -393,9 +417,12 @@ les écrans affichent le pseudo d'un contact à la place de l'empreinte
 son autorisation signée). Fiche d'un contact : partages faits avec lui
 et reçus de lui, « Partager avec… ». Partage reçu d'un inconnu : « Ajouter
 aux contacts » (identifiant lu dans l'autorisation). « Mon identifiant » :
-identifiant, empreinte et QR code à communiquer. Export (fichier
-`contacts-s3m.json` ou texte à copier) et import (contacts déjà présents
-gardés, pseudo déjà pris abandonné). Ajout du 2026-11-26 : la fenêtre
+identifiant, empreinte et QR code à communiquer. « Exporter » (à côté de
+« Ajouter un contact ») télécharge `contacts-s3m.json` ; « Importer »
+ouvre le choix d'un fichier JSON (contacts déjà présents gardés, pseudo
+déjà pris abandonné). Même panneau en mode simple et en mode expert ; la
+fiche d'un contact ne propose plus de partager (c'est l'Explorateur qui
+partage). Ajout du 2026-11-26 : la fenêtre
 « Ajouter un contact » propose « Scanner un QR code » (caméra du PC ou du
 téléphone, décodeur jsQR embarqué, aucun envoi d'image) qui remplit
 l'identifiant ; le bouton est grisé, avec une explication au survol, sans
@@ -509,6 +536,30 @@ WebSocket). Les mêmes protections s'appliquent au Nœud et au Connecteur
   `Host` sont vérifiés dès la poignée de main.
 - Côté Connecteur, cette API ne sert **pas** les fichiers de l'utilisateur :
   l'accès aux données passe uniquement par le lecteur monté.
+
+### Affichage commun des tableaux de bord {: #affichage }
+
+Ajout du 2026-11-27, Nœud et Connecteur :
+
+- **Thème** : sélecteur clair / foncé / système dans la barre du haut.
+  Le choix est mémorisé dans le navigateur et suivi par l'Explorateur.
+- **Copier** : bouton presse-papiers, avec infobulle, à côté de chaque
+  identifiant, clé, sel, empreinte ou racine.
+- **Bandeau persistant** (`bandeau`) en haut de l'écran. Le Connecteur
+  l'affiche en rouge tant que le 2FA n'est pas activé, avec les risques
+  expliqués simplement et un bouton « Activer le 2FA maintenant ». S3m.exe
+  le rappelle aussi par une notification au lancement.
+- **Utilisateurs rattachés** (Nœud) : colonne « Pseudo / Empreinte ». La
+  clé publique (avec « Copier ») et la racine sont dans la fenêtre
+  « Éditer », où « Étiquette » devient « Pseudo ».
+- **Mes appareils** : badge « Cet appareil » à droite du nom.
+- **« Toujours libérer l'espace »** (Connecteur, mode expert, Accès aux
+  fichiers) : quand plus rien n'attend d'être reçu par le Nœud ni dispersé
+  chez ses partenaires, le contenu local est libéré, sauf les éléments
+  gardés hors connexion. Rien n'est lisible sur l'appareil quand S3m ne
+  tourne pas.
+- **Barre des tâches** : quand l'icône est dans la moitié droite de
+  l'écran, le menu s'ouvre à gauche du curseur.
 
 <!-- GENERATED:BACKLINKS:START (ne pas éditer, voir gen_docs.py) -->
 

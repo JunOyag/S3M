@@ -66,6 +66,7 @@ async fn a_past_version_is_browsed_restored_then_purged() {
         emergency_write: false,
         n_secours: 4,
         free_after_days: 0,
+        always_free: false,
         keep_offline: vec![],
         source: None,
     };

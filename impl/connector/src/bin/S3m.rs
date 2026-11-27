@@ -19,7 +19,8 @@ use s3m_connector::setup::{app_dir, config_path, serve_setup};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use tray_icon::menu::ContextMenu;
+use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "S3m";
@@ -126,6 +127,8 @@ fn single_instance(dir: &Path) -> Option<std::fs::File> {
 
 enum UserEvent {
     Menu(MenuEvent),
+    /// Clic droit sur l'icône : menu ouvert par S3m (sens choisi).
+    TrayMenu(i32, i32),
     Started(usize, Arc<Shared>, String),
     Setup(usize, String),
     ConfigReady(usize, PathBuf),
@@ -135,6 +138,24 @@ enum UserEvent {
     Restarted(usize, Result<(), String>),
     /// Identité arrêtée pour appliquer un nouvel accès aux fichiers.
     Relaunch(usize),
+}
+
+/// Menu de l'icône, aligné à droite du curseur (il s'ouvre vers la gauche,
+/// sous-menus compris) quand l'icône est dans la moitié droite de l'écran.
+fn show_menu(hwnd: isize, menu: isize, x: i32, y: i32) {
+    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, PostMessageW, SetForegroundWindow, TrackPopupMenu, HMENU, SM_CXSCREEN,
+        TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTALIGN, WM_NULL,
+    };
+    unsafe {
+        let w = HWND(hwnd as _);
+        let right = x > GetSystemMetrics(SM_CXSCREEN) / 2;
+        let flags = TPM_BOTTOMALIGN | if right { TPM_RIGHTALIGN } else { TPM_LEFTALIGN };
+        let _ = SetForegroundWindow(w);
+        let _ = TrackPopupMenu(HMENU(menu as _), flags, x, y, None, w, None);
+        let _ = PostMessageW(Some(w), WM_NULL, WPARAM(0), LPARAM(0));
+    }
 }
 
 fn clock() -> u64 {
@@ -493,6 +514,14 @@ fn main() {
             let _ = proxy.send_event(UserEvent::Menu(e));
         }));
     }
+    {
+        let proxy = proxy.clone();
+        TrayIconEvent::set_event_handler(Some(move |e| {
+            if let TrayIconEvent::Click { button: MouseButton::Right, button_state: MouseButtonState::Up, position, .. } = e {
+                let _ = proxy.send_event(UserEvent::TrayMenu(position.x as i32, position.y as i32));
+            }
+        }));
+    }
 
     let status = MenuItem::new("Démarrage…", false, None);
     let add = MenuItem::new("Ajouter une identité…", true, None);
@@ -541,6 +570,9 @@ fn main() {
             Event::NewEvents(StartCause::Init) => {
                 tray = TrayIconBuilder::new()
                     .with_menu(Box::new(menu.clone()))
+                    // Ouvert par S3m (UserEvent::TrayMenu) : vers la gauche
+                    // quand l'icône est dans la moitié droite de l'écran.
+                    .with_menu_on_right_click(false)
                     .with_tooltip("S3m — démarrage…")
                     .with_icon(icon(TrayState::Starting))
                     .build()
@@ -606,6 +638,11 @@ fn main() {
                 id.failed = true;
                 id.status.set_text("Erreur au démarrage (voir les journaux)");
                 say(id, &format!("S3m n'a pas pu démarrer : {e}"));
+            }
+            Event::UserEvent(UserEvent::TrayMenu(x, y)) => {
+                if let Some(t) = &tray {
+                    show_menu(t.window_handle() as isize, menu.hpopupmenu(), x, y);
+                }
             }
             Event::UserEvent(UserEvent::Menu(e)) => {
                 if e.id == quit.id() {
@@ -755,6 +792,10 @@ fn main() {
                         }
                         if v.sync_error.is_some() && prev.as_ref().is_none_or(|p| p.sync_error.is_none()) {
                             say(id, &format!("Erreur de synchronisation : {}", v.sync_error.clone().unwrap_or_default()));
+                        }
+                        // Rappel au lancement : 2FA non activé.
+                        if v.twofa_missing == Some(true) && prev.as_ref().is_none_or(|p| p.twofa_missing != Some(true)) {
+                            say(id, "Sécurité : activez la double authentification (2FA). Sans elle, quelqu'un qui obtiendrait vos 24 mots pourrait agir sur votre compte. Tableau de bord, « Mon compte ».");
                         }
                         // Au démarrage : messages non lus en attente.
                         if prev.is_none() && v.unread_messages > 0 {

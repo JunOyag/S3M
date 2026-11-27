@@ -99,6 +99,25 @@ fn save_favorites(sh: &Shared, f: &[Favorite]) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Couleurs de dossier choisies dans l'Explorateur (chemin → couleur CSS).
+pub fn colors(sh: &Shared) -> std::collections::BTreeMap<String, String> {
+    std::fs::read(store_path(sh, "couleurs.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn save_colors(sh: &Shared, c: &std::collections::BTreeMap<String, String>) -> Result<(), String> {
+    std::fs::write(store_path(sh, "couleurs.json"), serde_json::to_vec_pretty(c).expect("sérialisable"))
+        .map_err(|e| e.to_string())
+}
+
+/// Couleur CSS acceptée : `#rgb` ou `#rrggbb`.
+fn valid_color(c: &str) -> bool {
+    let h = c.strip_prefix('#').unwrap_or("");
+    (h.len() == 3 || h.len() == 6) && h.chars().all(|x| x.is_ascii_hexdigit())
+}
+
 pub fn recents(sh: &Shared) -> Vec<Recent> {
     std::fs::read(store_path(sh, "recents.json"))
         .ok()
@@ -301,6 +320,36 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             save_favorites(sh, &f)?;
             Ok(json!({ "ok": true, "favori": on, "message": if on { "Ajouté aux favoris" } else { "Retiré des favoris" } }))
         }
+        "explorer_color" => {
+            let p = norm(&text(v, "chemin"));
+            let c = text(v, "couleur");
+            let mut all = colors(sh);
+            if c.is_empty() {
+                all.remove(&p);
+            } else if valid_color(&c) {
+                all.insert(p, c.to_lowercase());
+            } else {
+                return Err("couleur invalide".into());
+            }
+            save_colors(sh, &all)?;
+            Ok(json!({ "ok": true, "message": if c.is_empty() { "Couleur retirée" } else { "Couleur du dossier enregistrée" } }))
+        }
+        "explorer_shares" => {
+            let p = norm(&text(v, "chemin"));
+            let contacts = sh.contacts.lock().unwrap().clone();
+            let s = sh.shares.lock().unwrap();
+            let rows: Vec<Value> = s
+                .given
+                .iter()
+                .filter(|g| g.path == p && !g.revoked)
+                .map(|g| json!({ "id": g.id,
+                    "pour": g.recipient.as_ref().map(|r| contacts.display(r)).unwrap_or_else(|| "Lien public".into()),
+                    "lien public": g.recipient.is_none(),
+                    "créé le": g.created_at, "expire le": g.expires_at,
+                    "état": match &g.last_error { Some(e) => format!("erreur : {e}"), None if g.seq == 0 => "publication en cours".into(), None => "actif".into() } }))
+                .collect();
+            Ok(json!({ "chemin": p, "partages": rows }))
+        }
         "explorer_fav_rename" => {
             let p = norm(&text(v, "chemin"));
             let nom = text(v, "nom");
@@ -387,6 +436,17 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                 entries.retain(|(n, _)| n != hidden);
             }
             let favs: Vec<String> = favorites(sh).into_iter().map(|f| f.chemin).collect();
+            let tints = colors(sh);
+            let shared: Vec<String> = sh
+                .shares
+                .lock()
+                .unwrap()
+                .given
+                .iter()
+                .filter(|g| !g.revoked)
+                .map(|g| g.path.clone())
+                .collect();
+            let pseudo = sh.names.lock().unwrap().pseudo.clone();
             // Nœud injoignable : fichiers absents de cet appareil signalés.
             let offline = remote_unreadable(sh);
             let local: Vec<bool> = {
@@ -412,6 +472,7 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             };
             Ok(json!({
                 "chemin": p,
+                "pseudo": pseudo,
                 "contacts": pseudos,
                 "rechiffrer": reencrypt,
                 "éléments à l'ancienne clé": old.iter().filter(|x| **x).count(),
@@ -425,6 +486,8 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
                             "modifié": m.modified_at, "gardé": kept(&full),
                             "ancienne clé": o,
                             "favori": favs.contains(&full),
+                            "partages": shared.iter().filter(|s| **s == full).count(),
+                            "couleur": tints.get(&full),
                             "lecture seule": writable(&full).is_err() })
                 }).collect::<Vec<_>>(),
             }))
@@ -507,6 +570,20 @@ pub fn action(sh: &Arc<Shared>, name: &str, v: &Value) -> Option<Result<Value, S
             }
             dr.rename(&from, &to, false).map_err(|e| e.to_string())?;
             drop(dr);
+            // Couleurs de dossier : suivent l'élément déplacé.
+            let mut tints = colors(sh);
+            let moved: Vec<(String, String)> = tints
+                .iter()
+                .filter(|(k, _)| **k == from || k.starts_with(&format!("{from}/")))
+                .map(|(k, c)| (k.clone(), c.clone()))
+                .collect();
+            if !moved.is_empty() {
+                for (k, c) in moved {
+                    tints.remove(&k);
+                    tints.insert(format!("{to}{}", &k[from.len()..]), c);
+                }
+                let _ = save_colors(sh, &tints);
+            }
             changed(sh, &to, 0);
             Ok(json!({ "ok": true, "message": format!("{from} → {to}") }))
         }

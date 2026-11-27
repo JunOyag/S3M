@@ -105,6 +105,10 @@ pub struct Config {
     /// depuis ce nombre de jours libérée automatiquement ; 0 : jamais.
     #[serde(default)]
     pub free_after_days: u64,
+    /// Aucune donnée gardée sur cet appareil une fois reçue par le Nœud et
+    /// dispersée chez ses partenaires (sauf éléments gardés hors connexion).
+    #[serde(default)]
+    pub always_free: bool,
     /// Dossier synchronisé : fichiers et dossiers gardés sur cet appareil
     /// (chemins du lecteur), jamais libérés.
     #[serde(default)]
@@ -309,11 +313,11 @@ fn devices_status(sh: &Shared) -> Value {
         .filter(|d| !d.deleted)
         .map(|d| {
             let me = d.device_id == sh.device_id;
+            let name = if d.name.is_empty() { "(sans nom)".to_string() } else { d.name.clone() };
             let mut r = json!({
-                "nom": if d.name.is_empty() { "(sans nom)".to_string() } else { d.name.clone() },
+                "nom": if me { json!({ "_texte": name, "_badge": "Cet appareil" }) } else { json!(name) },
                 "empreinte": s3m_protocol::pseudo::fingerprint(&d.peer_id),
                 "ajouté le": format!("le {}", d.added_at),
-                "cet appareil": if me { "✔" } else { "" },
             });
             if !me {
                 r["_actions"] = json!([{ "nom": "forget_device", "libellé": "Oublier", "style": "secondary",
@@ -676,6 +680,8 @@ pub struct Shared {
     pub restart_identity: std::sync::atomic::AtomicBool,
     /// Libération automatique (secondes, 0 : jamais), modifiable à chaud.
     pub free_after_s: Arc<std::sync::atomic::AtomicU64>,
+    /// « Toujours libérer l'espace » (réglable à chaud).
+    pub always_free: std::sync::atomic::AtomicBool,
     /// Dernière libération automatique : `(instant, bilan)`.
     pub last_free: Arc<Mutex<Option<(u64, crate::folder_sync::Freed)>>>,
     /// Gardés sur cet appareil (chemins du lecteur), modifiable à chaud.
@@ -766,7 +772,7 @@ fn unsent_status(sh: &Shared) -> Value {
         "taille de leur copie locale (octets)": bytes,
         "blocs renvoyés au Nœud qui les avait perdus": u.resent.load(r),
         "copies abandonnées faute de place": u.dropped.load(r),
-        "_note": "Chaque bloc envoyé reste copié sur cet appareil jusqu'à ce que votre Nœud l'ait dispersé chez ses partenaires (dans la limite de Q_max).",
+        "_note": "Chaque bloc envoyé reste copié sur cet appareil jusqu'à ce que votre Nœud l'ait dispersé chez ses partenaires (dans la limite du budget hors ligne).",
     })
 }
 
@@ -776,21 +782,21 @@ fn queue_status(sh: &Shared) -> Value {
     if let Some(d) = &sh.drive {
         let d = d.lock().unwrap();
         return json!({
-            "mutations en attente": d.pending(),
-            "taille (octets)": d.pending_bytes(),
-            "Q_max (octets)": c.q_max_bytes,
+            "modifications en attente": d.pending(),
+            "volume en attente (octets)": d.pending_bytes(),
+            "budget hors ligne (octets)": c.q_max_bytes,
         });
     }
     let p = c.data_dir.join("write-queue.bin");
     match std::fs::read(&p) {
         Err(_) => {
-            json!({ "mutations en attente": 0, "taille (octets)": 0, "Q_max (octets)": c.q_max_bytes })
+            json!({ "modifications en attente": 0, "volume en attente (octets)": 0, "budget hors ligne (octets)": c.q_max_bytes })
         }
         Ok(b) => match WriteQueue::decode(&b, c.q_max_bytes) {
             Ok(q) => json!({
-                "mutations en attente": q.mutations.len(),
-                "taille (octets)": q.used_bytes(),
-                "Q_max (octets)": c.q_max_bytes,
+                "modifications en attente": q.mutations.len(),
+                "volume en attente (octets)": q.used_bytes(),
+                "budget hors ligne (octets)": c.q_max_bytes,
             }),
             Err(e) => json!({ "erreur": e.to_string() }),
         },
@@ -914,7 +920,7 @@ pub fn status(sh: &Shared) -> Value {
           "sections": ["remplacement de mon nœud annoncé", "nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
         { "id": "explorateur", "titre": "Explorateur", "cadre": "explorer.html", "sections": [], "actions": [] },
         { "id": "contacts", "titre": "Contacts", "sections": ["contacts", "mon identifiant"],
-          "actions": ["import_contacts", "export_contacts"] },
+          "actions": [] },
         { "id": "partages", "titre": "Partages",
           "sections": ["partages donnés", "partages reçus"], "actions": [] },
         { "id": "messages", "titre": "Messages du Nœud",
@@ -1584,7 +1590,7 @@ fn status_base(sh: &Shared) -> Value {
         "annuaire (entrée User)": user_entry_status(sh),
         "rattachement automatique": attach_status(sh),
         "configuration": {
-            "Q_max (octets)": sh.config.q_max_bytes,
+            "budget hors ligne (octets)": sh.config.q_max_bytes,
             "intervalle de surveillance (s)": sh.config.watch_interval_s,
             "lecteur monté": drive_letter(sh),
             "accès aux fichiers": access_mode(&sh.config),
@@ -1592,7 +1598,11 @@ fn status_base(sh: &Shared) -> Value {
         },
         "accès aux fichiers": {
             "_contenu": crate::setup::access_summary(&current_access(sh), &identity_dir(sh)),
-            "_formulaires": [crate::setup::access_form(&current_access(sh), &identity_dir(sh))],
+            "_formulaires": [crate::setup::access_form(&current_access(sh), &identity_dir(sh)),
+                { "nom": "set_always_free", "titre": "Protection contre le vol", "libellé": "Enregistrer", "expert": true,
+                  "champs": ["toujours libérer l'espace"], "types": { "toujours libérer l'espace": "bool" },
+                  "valeurs": { "toujours libérer l'espace": sh.always_free.load(std::sync::atomic::Ordering::Relaxed) },
+                  "aide": { "toujours libérer l'espace": "Ne garde aucun contenu de fichier sur cet appareil une fois reçu par votre Nœud et dispersé chez ses partenaires : un voleur de l'ordinateur ne trouve rien quand S3m n'est pas lancé. Chaque ouverture retélécharge le fichier ; hors connexion, seuls les éléments « gardés sur cet appareil » restent lisibles." } }],
         },
         "écriture d'urgence": emergency_status(sh, now),
         "actions": [
@@ -1690,7 +1700,7 @@ fn emergency_status(sh: &Shared, now: u64) -> Value {
         },
         "partenaires de dispersion en ligne": h.partners_online.map(|(up, n)| format!("{up}/{n}")),
         "partenaires de secours (n_secours)": sh.config.n_secours,
-        "Q_max (octets)": sh.config.q_max_bytes,
+        "budget hors ligne (octets)": sh.config.q_max_bytes,
         "dernier dépôt": e.last_deposit_at,
         "dernière tentative": e.last_attempt,
         "séquence publiée": e.published_seq,
@@ -1941,6 +1951,8 @@ pub struct TrayView {
     pub unread_messages: usize,
     pub last_message: Option<String>,
     pub files_missing: bool,
+    /// 2FA non activé (connu une fois le Nœud joint).
+    pub twofa_missing: Option<bool>,
 }
 
 /// Page « Contacts » : liste, panneau d'édition, ajout.
@@ -1959,13 +1971,6 @@ fn contacts_status(sh: &Shared, v: &mut Value) {
                 "contenu": { "pseudo": c.pseudo, "empreinte": fp, "identifiant": c.user_id,
                              "partagés avec lui": given, "reçus de lui": received },
                 "formulaires": [
-                    { "nom": "create_share", "titre": format!("Partager avec {name}"), "libellé": "Partager",
-                      "champs": ["élément", "expiration (jours)"],
-                      "types": { "élément": "chemin", "expiration (jours)": "durée" }, "unités": { "expiration (jours)": "j" }, "libellés": { "expiration (jours)": "expiration" },
-                      "explorateurs": { "élément": "drive_browse" },
-                      "fixes": { "destinataire": c.user_id },
-                      "aide": { "élément": "Fichier ou dossier de votre espace (« Parcourir… »)",
-                                "expiration (jours)": "Vide ou 0 : sans expiration" } },
                     { "nom": "edit_contact", "titre": "Modifier", "libellé": "Enregistrer",
                       "champs": ["pseudo", "identifiant"],
                       "valeurs": { "pseudo": c.pseudo, "identifiant": c.user_id },
@@ -2001,15 +2006,11 @@ fn contacts_status(sh: &Shared, v: &mut Value) {
             "texte": "Le pseudo remplace l'identifiant dans S3m (partages) ; il n'est visible que par vous.",
             "champs": ["pseudo", "identifiant"], "scanner": "identifiant",
             "aide": { "pseudo": "Nom de votre choix, unique dans vos contacts ; facultatif",
-                      "identifiant": "Identifiant S3m de la personne (64 caractères, page « Identité et sécurité » de son S3m) ; vérifiez ensemble l'empreinte" } }] } }] });
-    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
-        a.push(json!({ "nom": "export_contacts", "titre": "Exporter les contacts", "libellé": "Exporter",
-            "champs": ["dossier"], "types": { "dossier": "chemin" },
-            "aide": { "dossier": "Dossier où écrire « contacts-s3m.json » ; vide : contenu affiché, à copier" } }));
-        a.push(json!({ "nom": "import_contacts", "titre": "Importer des contacts", "libellé": "Importer",
-            "champs": ["contacts"], "types": { "contacts": "texte" },
-            "aide": { "contacts": "Contenu d'un export, ou chemin complet du fichier « contacts-s3m.json » ; les contacts déjà présents sont gardés tels quels" } }));
-    }
+                      "identifiant": "Identifiant S3m de la personne (64 caractères, page « Identité et sécurité » de son S3m) ; vérifiez ensemble l'empreinte" } }] } },
+        // Export : fichier JSON téléchargé ; import : fichier choisi sur l'appareil.
+        { "nom": "export_contacts", "libellé": "Exporter", "style": "secondary", "champs": [] },
+        { "nom": "import_contacts", "libellé": "Importer", "style": "secondary", "champs": [],
+          "fichier": "contacts", "accepte": ".json,application/json" }] });
 }
 
 fn text_of(v: &Value, k: &str) -> String {
@@ -2057,8 +2058,8 @@ fn contact_action(sh: &Shared, name: &str, v: &Value) -> Result<Value, String> {
         let dir = text_of(v, "dossier");
         if dir.is_empty() {
             return Ok(
-                json!({ "ok": true, "message": format!("{} contact(s)", c.list.len()),
-                "révéler": { "titre": "Export des contacts", "texte": ["À coller dans « Importer des contacts » sur un autre appareil."], "à copier": text } }),
+                json!({ "ok": true, "message": format!("{} contact(s) exporté(s)", c.list.len()),
+                "télécharger": { "nom": "contacts-s3m.json", "contenu": text, "type": "application/json" } }),
             );
         }
         let path = Path::new(&dir).join("contacts-s3m.json");
@@ -2344,6 +2345,12 @@ pub fn tray_view(sh: &Shared) -> TrayView {
         unread_messages,
         last_message,
         files_missing: h.files_missing,
+        twofa_missing: sh
+            .security
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| !s.0 && sh.twofa_setup.lock().unwrap().is_none()),
     }
 }
 
@@ -2765,6 +2772,17 @@ fn security_status(sh: &Shared, v: &mut Value) {
     let enabled = sec.as_ref().is_some_and(|s| s.0);
     migration_status(sh, v);
     v["mes appareils"] = devices_status(sh);
+    if sec.is_some() && !enabled && setup.is_none() {
+        v["bandeau"] = json!({
+            "texte": "Sécurité : votre compte n'est pas protégé par la double authentification (2FA)",
+            "détail": [
+                "Aujourd'hui, vos 24 mots de récupération suffisent pour agir sur votre compte. Si quelqu'un les obtient (photo, papier trouvé, ordinateur piraté), il peut demander à changer votre identité ou effacer l'historique de vos fichiers. Vous seriez prévenu et auriez 72 heures pour annuler — à condition de voir l'alerte à temps.",
+                "Avec le 2FA, ces opérations demandent en plus un code à 6 chiffres affiché par une application de votre téléphone : sans votre téléphone, les 24 mots ne suffisent plus. L'activation prend deux minutes.",
+            ],
+            "page": "securite", "page simple": "compte",
+            "bouton": "Activer le 2FA maintenant",
+        });
+    }
     // 2FA perdu (changement de Nœud, Nœud reconstruit) : à réactiver.
     if sec.is_some() && !enabled && setup.is_none() && sh.config.data_dir.join(TWOFA_FLAG_FILE).exists() {
         v["2FA à réactiver"] = json!({
@@ -3587,6 +3605,7 @@ pub async fn watch_once(sh: &Shared) {
                 }
             }
         }
+        always_free_tick(sh).await;
         if let Ok(st) = sh.session.list_pending().await {
             purge_tick(sh, &st.1);
             if st.0 {
@@ -3782,6 +3801,7 @@ pub async fn start(
         change_node: Default::default(),
         restart_identity: Default::default(),
         free_after_s: Arc::new(config.free_after_days.saturating_mul(86_400).into()),
+        always_free: config.always_free.into(),
         last_free: Default::default(),
         keep_offline: Arc::new(Mutex::new(config.keep_offline.clone())),
         mount_point: Mutex::new(config.mount_point.clone()),
@@ -3825,6 +3845,7 @@ pub async fn start(
                 "add_contact" | "edit_contact" | "delete_contact" | "copy_my_id"
                 | "export_contacts" | "import_contacts" => contact_action(&sh, name, &v),
                 "free_space" => free_space_action(&sh, &v),
+                "set_always_free" => set_always_free(&sh, &v),
                 "release_old_versions" => release_old_versions(&sh),
                 "set_auto_free" => set_auto_free(&sh, &v),
                 "keep_offline" => keep_action(&sh, &v, true),
@@ -4444,6 +4465,31 @@ fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
 #[cfg(not(all(windows, feature = "folder")))]
 fn free_space_action(sh: &Shared, v: &Value) -> Result<Value, String> {
     drive_free(sh, v)
+}
+
+/// « Toujours libérer l'espace » : dès que tout ce qui a été envoyé est reçu
+/// par le Nœud et dispersé chez ses partenaires (plus aucun bloc en attente
+/// sur cet appareil), le contenu local est libéré — rien à voler sur cet
+/// appareil quand S3m ne tourne pas.
+async fn always_free_tick(sh: &Shared) {
+    if !sh.always_free.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let undispersed = sh.unsent.as_ref().is_some_and(|u| u.usage().0 > 0);
+    let pending = sh.drive.as_ref().is_some_and(|d| d.lock().unwrap().pending() > 0);
+    if undispersed || pending {
+        return;
+    }
+    let _ = tokio::task::block_in_place(|| free_space_action(sh, &json!({ "élément": "/" })));
+}
+
+fn set_always_free(sh: &Shared, v: &Value) -> Result<Value, String> {
+    let on = v.get("toujours libérer l'espace").and_then(Value::as_bool).unwrap_or(false);
+    write_config_key(sh, "always_free", json!(on))?;
+    sh.always_free.store(on, std::sync::atomic::Ordering::Relaxed);
+    Ok(json!({ "ok": true, "message": if on {
+        "Rien ne sera gardé sur cet appareil une fois vos fichiers dispersés par votre Nœud (sauf ce que vous gardez hors connexion)"
+    } else { "Les fichiers ouverts restent sur cet appareil" } }))
 }
 
 /// Règle la libération automatique (jours, 0 : jamais), à chaud.

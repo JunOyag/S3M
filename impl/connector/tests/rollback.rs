@@ -67,6 +67,7 @@ async fn the_whole_space_goes_back_and_a_node_rollback_is_refused() {
         emergency_write: false,
         n_secours: 4,
         free_after_days: 0,
+        always_free: false,
         keep_offline: vec![],
         source: None,
     };
