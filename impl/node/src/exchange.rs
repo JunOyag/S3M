@@ -787,6 +787,19 @@ impl NodeService {
                 }
                 Ok(Response::Ack { freed: 0 })
             }
+            Body::ListFragments { after, limit } => {
+                let p = self.partner(from_node, now)?;
+                let mut all: Vec<Id> = self
+                    .store
+                    .hashes(Space::Fragment, &p)
+                    .into_iter()
+                    .filter(|h| h.as_slice() > after.as_slice())
+                    .collect();
+                all.sort();
+                let more = all.len() > limit as usize;
+                all.truncate(limit as usize);
+                Ok(Response::BlockList { hashes: all.concat(), more })
+            }
             Body::ListBlocks { after, limit } => {
                 let u = self.user(cred, from, local)?;
                 let (list, more) = self.list_user_blocks(&u, &after, limit as usize);

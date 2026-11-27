@@ -347,19 +347,20 @@ pub(crate) async fn place(
     placed
 }
 
-/// Refus `QuotaExceeded` d'un partenaire : manquement s'il garde moins
-/// que le quota de ce Nœud, sinon du remplissage y sera libéré
-/// (`node.PartnerAccount#manquements`).
-pub(crate) fn refused(service: &Mutex<NodeService>, p: &Id, now: u64) {
+/// Refus `QuotaExceeded` d'un partenaire : jamais un manquement (les
+/// comptes des deux Nœuds peuvent diverger, ex. fragments orphelins après
+/// une restauration) ; le partenaire est compté plein et du remplissage y
+/// sera libéré (`node.PartnerAccount#manquements`).
+pub(crate) fn refused(service: &Mutex<NodeService>, p: &Id, _now: u64) {
     let mut s = service.lock().unwrap();
     let Some(st) = s.partners.get(p).copied() else {
         return;
     };
-    if st.ledger.hosted_for_partner < s.partner_policy.limit(&st) {
-        s.record_failure(p, now);
-    } else {
-        s.need_room.insert(*p);
+    let limit = s.partner_policy.limit(&st);
+    if let Some(x) = s.partners.get_mut(p) {
+        x.ledger.hosted_for_partner = x.ledger.hosted_for_partner.max(limit);
     }
+    s.need_room.insert(*p);
 }
 
 /// Disperse un stripe de k blocs de 65 536 o.
@@ -380,6 +381,30 @@ pub(crate) async fn disperse(
     let parity = encode_parity(&refs, cfg.coef).map_err(|e| e.to_string())?;
     let mut candidates: Vec<Id> = fabric.partners().iter().map(|p| p.node_id).collect();
     by_xor_distance(&mut candidates, &sid);
+    // Pas assez de partenaires avec de la place : aucun dépôt (il serait
+    // aussitôt mis au rebut) ; le remplissage des partenaires pleins est
+    // libéré, nouvel essai au cycle suivant.
+    {
+        let mut s = service.lock().unwrap();
+        let full: Vec<Id> = candidates
+            .iter()
+            .filter(|p| {
+                s.partners
+                    .get(*p)
+                    .is_some_and(|st| st.ledger.hosted_for_partner >= s.partner_policy.limit(st))
+            })
+            .copied()
+            .collect();
+        let room = candidates.len() - full.len();
+        if room < cfg.min_confirmations() {
+            s.need_room.extend(full);
+            return Err(format!(
+                "en attente de place : {room} partenaire(s) avec de la place sur {}, il en faut {}",
+                candidates.len(),
+                cfg.min_confirmations()
+            ));
+        }
+    }
     let frags = parity
         .into_iter()
         .enumerate()

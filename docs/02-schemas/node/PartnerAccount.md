@@ -99,11 +99,32 @@ Les partenaires mis en retrait à tort se réhabilitent depuis le dashboard
 (« Réhabiliter les partenaires en retrait » : manquements effacés,
 fragments gardés).
 
+### Réconciliation {: #reconciliation }
+
+Ajout du 2026-11-28. Une fois par jour et par partenaire joignable, P liste
+les fragments qu'il garde pour ce Nœud (`ListFragments`, réponse
+`BlockList` par pages, [`network.BlockRequest`](../network/BlockRequest.md)).
+Un fragment que ce Nœud ne référence plus nulle part (stripes de données
+et d'index, snapshot, remplissage, fragments au rebut) est **orphelin**,
+par exemple s'il date d'avant la perte du volume. S'il l'est encore au
+passage suivant, au moins une heure plus tard, ce Nœud le fait effacer par
+avis de suppression ([`protocols.tombstones`](../../04-protocols/tombstones.md)).
+`hosted_for_partner` est alors recalé sur le compte de P, moins ce qui
+vient d'être libéré.
+
+Ce passage n'a jamais lieu pendant une restauration, ni avant la première
+sauvegarde du Nœud : les données des utilisateurs pas encore restaurés
+passeraient pour orphelines. Une restauration de la sauvegarde du Nœud
+relance la réconciliation de chaque partenaire.
+
 ### Manquements {: #manquements }
 
-Constituent un **manquement** de P : refuser (`QuotaExceeded`) un dépôt
-alors que ce Nœud garde chez lui moins de Q fragments, ou ne plus détenir
-un fragment confié (contrôle `NotFound`). Un manquement ramène `T_P` à sa
+Constitue un **manquement** de P : ne plus détenir un fragment confié
+(contrôle `NotFound`). Un refus de dépôt faute de place (`QuotaExceeded`)
+n'en est jamais un, depuis le 2026-11-28 : les comptes des deux Nœuds
+peuvent diverger, par exemple avec des fragments orphelins après une
+restauration. P est alors compté plein, et le remplissage qu'il garde est
+libéré. Un manquement ramène `T_P` à sa
 valeur initiale et suspend tout nouveau placement chez P jusqu'à la fin de
 la période en cours ; **3 manquements dans une période** font passer P en
 retrait ([`protocols.partenariat-automatique`](../../04-protocols/partenariat-automatique.md#placement-et-retrait)) :

@@ -62,7 +62,12 @@ Précisions d'implémentation (2026-11-20, `impl/SPEC_GAPS.md`) :
   un partenaire injoignable ou qui refuse (`QuotaExceeded`) est remplacé par
   le suivant. Seul un reçu signé compte comme confirmation. Les fragments
   d'un stripe partent en parallèle (chacun vers son partenaire), un refus
-  étant reporté sur le partenaire suivant (ajout du 2026-11-24).
+  étant reporté sur le partenaire suivant (ajout du 2026-11-24). Si moins de
+  partenaires que le seuil de confirmation ont encore de la place selon
+  `hosted_for_partner`, aucun fragment n'est déposé, puisqu'il serait
+  aussitôt mis au rebut. Le Nœud fait libérer le remplissage des
+  partenaires pleins, puis réessaie au cycle suivant ; le motif, « en
+  attente de place », s'affiche (ajout du 2026-11-28).
 - **Arbre d'index** : un `IndexNode` tient dans un bloc chiffré
   ([`crypto.k-dispersal`](../03-crypto/k-dispersal.md)) ; il forme le bloc 0
   d'un stripe complet dont les k−1 autres blocs de données sont du padding,

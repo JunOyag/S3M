@@ -239,6 +239,12 @@ pub enum Body {
         after: Vec<u8>,
         limit: u32,
     },
+    /// Fragments gardés par ce partenaire pour le Nœud demandeur, par pages
+    /// (`node.PartnerAccount#reconciliation`). Réponse : `BlockList`.
+    ListFragments {
+        after: Vec<u8>,
+        limit: u32,
+    },
     /// Versions passées de la racine (`protocols.historique-versions`).
     ListRoots,
     /// Oublie les versions remplacées avant `before` (0 : toutes).
@@ -731,6 +737,11 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             );
             (fb::RequestBody::ListBlocks, o.as_union_value())
         }
+        Body::ListFragments { after, limit } => {
+            let v = b.create_vector(after);
+            let o = fb::ListFragments::create(&mut b, &fb::ListFragmentsArgs { after: Some(v), limit: *limit });
+            (fb::RequestBody::ListFragments, o.as_union_value())
+        }
         Body::ListRoots => {
             let o = fb::ListRoots::create(&mut b, &fb::ListRootsArgs {});
             (fb::RequestBody::ListRoots, o.as_union_value())
@@ -1001,6 +1012,13 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
         fb::RequestBody::ListBlocks => {
             let x = r.body_as_list_blocks().ok_or(m)?;
             Body::ListBlocks {
+                after: bytes(x.after()),
+                limit: x.limit().min(MAX_RELEASE_BLOCKS as u32),
+            }
+        }
+        fb::RequestBody::ListFragments => {
+            let x = r.body_as_list_fragments().ok_or(m)?;
+            Body::ListFragments {
                 after: bytes(x.after()),
                 limit: x.limit().min(MAX_RELEASE_BLOCKS as u32),
             }

@@ -993,6 +993,7 @@ entries:
       - exchange::each_device_reports_its_last_connection
       - exchange::a_scheduled_purge_is_unique_and_a_2fa_code_purges_at_once
       - upkeep::retired_partners_can_be_rehabilitated
+      - upkeep::orphan_fragments_are_reconciled_and_full_partners_are_not_failures
       - rotation::a_restarted_connector_is_the_same_device_for_its_node
       - rotation::devices_are_named_merged_and_shown_in_node_messages
       - entries::device_lists_merge_by_latest_change

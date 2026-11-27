@@ -92,6 +92,13 @@ pub struct UpkeepState {
     /// (`node.PartnerAccount#remplissage`).
     #[serde(default)]
     pub fillers: BTreeMap<String, Vec<(u64, String)>>,
+    /// Réconciliation avec chaque partenaire (`node.PartnerAccount#reconciliation`) :
+    /// dernier passage, et fragments inconnus vus au passage précédent
+    /// (libérés s'ils le sont encore au suivant).
+    #[serde(default)]
+    pub reconciled: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub orphans: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub filler_next: u64,
     #[serde(default)]
@@ -288,6 +295,135 @@ async fn replace_fragments(
     }
     rec.parity.sort();
     placed.len()
+}
+
+/// Réconciliation périodique avec un partenaire.
+pub const RECONCILE_PERIOD_S: u64 = 86_400;
+
+/// Fragments de ce Nœud que le moteur connaît encore, par partenaire :
+/// stripes de données et d'index, snapshot, remplissage, fragments au rebut.
+fn known_fragments(state: &DispersalState, up: &UpkeepState) -> BTreeMap<String, HashSet<String>> {
+    let mut k: BTreeMap<String, HashSet<String>> = BTreeMap::new();
+    let mut add = |p: &str, h: &str| {
+        k.entry(p.to_string()).or_default().insert(h.to_string());
+    };
+    for u in state.users.values() {
+        for rec in u.stripes.iter().chain(&u.index) {
+            for (_, h, p) in &rec.parity {
+                add(p, h);
+            }
+        }
+        for r in &u.retired {
+            add(&r.partner, &r.hash);
+        }
+    }
+    if let Some(rec) = &state.snapshot.stripe {
+        for (_, h, p) in &rec.parity {
+            add(p, h);
+        }
+    }
+    for r in &state.snapshot.retired {
+        add(&r.partner, &r.hash);
+    }
+    for (p, v) in &up.fillers {
+        for (_, h) in v {
+            add(p, h);
+        }
+    }
+    k
+}
+
+/// Réconciliation (`node.PartnerAccount#reconciliation`) : chaque partenaire
+/// liste les fragments qu'il garde pour ce Nœud (`ListFragments`). Ceux que
+/// le moteur ne connaît pas (orphelins, ex. d'avant une perte du volume)
+/// sont libérés s'ils le sont encore au passage suivant (une heure au
+/// moins plus tard, délai de grâce) ; le compte des fragments confiés est
+/// recalé sur celui du partenaire. Une fois par jour et par partenaire, plus
+/// souvent tant que des orphelins attendent.
+async fn reconcile(
+    service: &Mutex<NodeService>,
+    fabric: &dyn Fabric,
+    state: &mut DispersalState,
+    up: &mut UpkeepState,
+    cfg: &EngineConfig,
+    now: u64,
+) {
+    // Restauration en cours (utilisateurs pas encore connus du moteur) ou
+    // aucune sauvegarde du Nœud : rien ne peut être jugé orphelin.
+    let (priv_node, partners) = {
+        let s = service.lock().unwrap();
+        if !s.restoring.is_empty() || state.snapshot.stripe.is_none() {
+            return;
+        }
+        (s.priv_node(), s.partners.keys().copied().collect::<Vec<Id>>())
+    };
+    let reachable: HashSet<Id> = fabric.partners().iter().map(|p| p.node_id).collect();
+    let known = known_fragments(state, up);
+    let empty = HashSet::new();
+    for p in partners.into_iter().filter(|p| reachable.contains(p)) {
+        let key = hx(&p);
+        let waiting = up.orphans.get(&key).is_some_and(|v| !v.is_empty());
+        let due = match up.reconciled.get(&key).copied() {
+            None => true,
+            Some(last) if waiting => now >= last + cfg.grace_s.max(60),
+            Some(last) => now >= last + RECONCILE_PERIOD_S,
+        };
+        if !due {
+            continue;
+        }
+        // Liste complète, par pages.
+        let mut held: Vec<String> = Vec::new();
+        let mut after: Vec<u8> = Vec::new();
+        let complete = loop {
+            let req = Request { credential: None, body: Body::ListFragments { after: after.clone(), limit: 2048 } };
+            match tokio::time::timeout(Duration::from_secs(20), fabric.request(&p, req)).await {
+                Ok(Ok(Response::BlockList { hashes, more })) => {
+                    if hashes.len() % 32 != 0 {
+                        break false;
+                    }
+                    for c in hashes.chunks(32) {
+                        held.push(hx(c));
+                    }
+                    if !more || hashes.is_empty() {
+                        break true;
+                    }
+                    after = hashes[hashes.len() - 32..].to_vec();
+                }
+                _ => break false,
+            }
+        };
+        if !complete {
+            continue;
+        }
+        up.reconciled.insert(key.clone(), now);
+        let mine = known.get(&key).unwrap_or(&empty);
+        let orphans: Vec<String> = held.iter().filter(|h| !mine.contains(*h)).cloned().collect();
+        let before: HashSet<String> = up.orphans.remove(&key).unwrap_or_default().into_iter().collect();
+        let (free, wait): (Vec<String>, Vec<String>) = orphans.into_iter().partition(|h| before.contains(h));
+        let mut freed = 0u64;
+        for batch in free.chunks(1024) {
+            let last_ts = state.last_tombstone.get(&key).copied().unwrap_or(0);
+            let ts = now.max(last_ts + 1);
+            let notice = TombstoneNotice::sign(&priv_node, ts, batch.iter().map(|h| id(h)).collect());
+            if let Ok(n) = fabric.tombstone(&p, &notice).await {
+                state.last_tombstone.insert(key.clone(), ts);
+                freed += n;
+            }
+        }
+        if !wait.is_empty() {
+            up.orphans.insert(key.clone(), wait);
+        }
+        // Compte recalé sur le partenaire (ce qu'il garde, moins ce qu'il vient de libérer).
+        if let Some(st) = service.lock().unwrap().partners.get_mut(&p) {
+            st.ledger.hosted_for_partner = (held.len() as u64).saturating_sub(freed);
+        }
+        if freed > 0 {
+            up.log(
+                now,
+                format!("réconciliation avec {}… : {freed} fragment(s) orphelin(s) libéré(s)", &key[..12.min(key.len())]),
+            );
+        }
+    }
 }
 
 /// Remplissage de l'espace promis (`node.PartnerAccount#remplissage`) :
@@ -613,6 +749,7 @@ pub async fn run_upkeep(
 
     // 1 bis. Remplissage : libération, dépôt, contrôle.
     fillers(service, fabric, &mut up, &mut state.last_tombstone, &mut frauds, ucfg, &mut report, now).await;
+    reconcile(service, fabric, state, &mut up, cfg, now).await;
 
     // 2. Fraude : rupture et réparation immédiate.
     for p in &frauds {

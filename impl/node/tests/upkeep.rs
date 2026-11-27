@@ -440,3 +440,86 @@ fn retired_partners_can_be_rehabilitated() {
     assert!(!state.upkeep.retiring.contains(&name));
     assert_eq!(service.lock().unwrap().partners[&p].failures, 0);
 }
+
+/// Réconciliation (`node.PartnerAccount#reconciliation`) : un fragment
+/// orphelin (inconnu du moteur) est libéré au second passage, les fragments
+/// connus restent, le compte confié est recalé sur le partenaire ; un refus
+/// faute de place n'est pas un manquement, et sans assez de partenaires
+/// avec de la place rien n'est déposé.
+#[tokio::test(flavor = "multi_thread")]
+async fn orphan_fragments_are_reconciled_and_full_partners_are_not_failures() {
+    let cfg = EngineConfig { k: 2, coef: 1, idle_timeout_s: 100, grace_s: 0, min_confirmations: 2 };
+    let ucfg = UpkeepConfig { challenges_per_cycle: 0, ..Default::default() };
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 1_000);
+    let listen: libp2p::Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
+    let mut servers = Vec::new();
+    let mut partners = Vec::new();
+    let mut addrs = HashMap::new();
+    let mut service = NodeService::new(NODE);
+    service.partner_policy.filler = false;
+    let orphan = block(9);
+    let oh = hash_sha256(&orphan);
+    for i in 0..2u8 {
+        let seed = [0x70 + i; 32];
+        let mut ps = NodeService::new(seed);
+        ps.partners.insert(pk(&NODE), PartnerState::default());
+        if i == 0 {
+            ps.store.put(Space::Fragment, &pk(&NODE), &oh, &orphan).unwrap();
+            ps.partners.get_mut(&pk(&NODE)).unwrap().ledger.hosted_by_partner = 1;
+        }
+        let ps = Arc::new(Mutex::new(ps));
+        let s = BlockServer::start(seed, listen.clone(), ps.clone(), clock.clone()).await.unwrap();
+        addrs.insert(pk(&seed), s.listen_addr().await.unwrap().to_string());
+        service.partners.insert(pk(&seed), PartnerState::default());
+        partners.push((pk(&seed), ps));
+        servers.push(s);
+    }
+    service.users.insert(pk(&USER), UserAccount { salt: vec![7; 16], quota_bytes: 1 << 30, used_bytes: 0, root: [0; 32] });
+    let service = Arc::new(Mutex::new(service));
+    for b in [block(1), block(2)] {
+        let mut s = service.lock().unwrap();
+        let h = hash_sha256(&b);
+        s.store.put(Space::UserBlock, &pk(&USER), &h, &b).unwrap();
+        s.dispersal_queue.push((pk(&USER), h));
+    }
+    let dht = DhtNode::start(DhtConfig { node_seed: NODE, listen: listen.clone(), bootstrap: vec![], vdf: Arc::new(|_, _| Ok(true)), clock: clock.clone() })
+        .await
+        .unwrap();
+    let fabric = NetFabric {
+        server: Arc::new(BlockServer::start(NODE, listen, service.clone(), clock).await.unwrap()),
+        dht: Arc::new(dht),
+        service: service.clone(),
+        addrs: Arc::new(Mutex::new(addrs)),
+        excluded: Default::default(),
+    };
+    let mut state = DispersalState::default();
+    // Sans assez de partenaires avec de la place : aucun dépôt, aucun manquement.
+    let full = partners[1].0;
+    {
+        let mut s = service.lock().unwrap();
+        let limit = s.partner_policy.limit(&s.partners[&full]);
+        s.partners.get_mut(&full).unwrap().ledger.hosted_for_partner = limit;
+    }
+    let r = run_cycle(&service, &mut state, &fabric, &cfg, 1_000).await;
+    assert_eq!(r.stripes_dispersed, 0);
+    assert!(r.errors.iter().any(|e| e.contains("en attente de place")), "{r:?}");
+    assert_eq!(partners[0].1.lock().unwrap().store.hashes(Space::Fragment, &pk(&NODE)).len(), 1, "rien de déposé");
+    service.lock().unwrap().partners.get_mut(&full).unwrap().ledger.hosted_for_partner = 0;
+    let r = run_cycle(&service, &mut state, &fabric, &cfg, 1_010).await;
+    assert_eq!(r.stripes_dispersed, 1, "{r:?}");
+    assert!(service.lock().unwrap().partners.values().all(|p| p.failures == 0));
+    // Sauvegarde du Nœud présente : la réconciliation peut juger.
+    state.snapshot.stripe = Some(StripeRec { id: "00".into(), data: vec![], padding: vec![], parity: vec![], salt: None });
+    let holder = partners[0].0;
+    let known = partners[0].1.lock().unwrap().store.hashes(Space::Fragment, &pk(&NODE)).len() - 1;
+    assert!(known >= 1);
+    run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, 1_020).await;
+    assert_eq!(partners[0].1.lock().unwrap().store.hashes(Space::Fragment, &pk(&NODE)).len(), known + 1, "orphelin gardé au premier passage");
+    assert_eq!(service.lock().unwrap().partners[&holder].ledger.hosted_for_partner, known as u64 + 1, "compte recalé");
+    run_upkeep(&service, &mut state, &fabric, &cfg, &ucfg, 1_100).await;
+    let left = partners[0].1.lock().unwrap().store.hashes(Space::Fragment, &pk(&NODE));
+    assert_eq!(left.len(), known, "orphelin libéré au second passage");
+    assert!(!left.contains(&oh));
+    assert_eq!(service.lock().unwrap().partners[&holder].ledger.hosted_for_partner, known as u64);
+    drop(servers);
+}

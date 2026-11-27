@@ -129,6 +129,8 @@ pub mod s3m {
     pub use self::list_blocks_generated::*;
     mod list_devices_generated;
     pub use self::list_devices_generated::*;
+    mod list_fragments_generated;
+    pub use self::list_fragments_generated::*;
     mod list_pending_generated;
     pub use self::list_pending_generated::*;
     mod list_roots_generated;

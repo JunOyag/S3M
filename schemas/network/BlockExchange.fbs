@@ -259,6 +259,12 @@ table CancelPending {
 // dernière connexion de chaque appareil de l'Utilisateur. Réponse : DeviceList.
 table ListDevices {
 }
+// Ajout du 2026-11-28 (node.PartnerAccount#reconciliation) : fragments que
+// ce partenaire garde pour le Nœud demandeur, par pages. Réponse : BlockList.
+table ListFragments {
+  after: [ubyte];             // dernier hash de la page précédente ; vide : début
+  limit: uint32 = 2048;
+}
 
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
@@ -267,7 +273,8 @@ union RequestBody {
   EmergencyPut, EmergencyGet, EmergencyRelease,
   ReadMessages, PostMessage, RevokeShare,
   ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots, BlockStatus, RotateUser,
-  Set2fa, Remove2fa, ListPending, CancelPending, ListDevices
+  Set2fa, Remove2fa, ListPending, CancelPending, ListDevices,
+  ListFragments
 }
 
 // Requête : une par flux libp2p request-response.

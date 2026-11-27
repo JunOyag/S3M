@@ -313,6 +313,9 @@ pub async fn restore_snapshot(
     }
     state.snapshot.stripe = Some(rec);
     state.snapshot.last_at = now;
+    // Fragments d'avant la perte inconnus du moteur : réconciliation
+    // avec chaque partenaire dès le prochain entretien.
+    state.upkeep.reconciled.clear();
     Ok(Some((
         manifest
             .users
