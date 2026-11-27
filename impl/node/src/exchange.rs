@@ -198,6 +198,9 @@ pub type VdfCheck =
 /// État et règles du service d'échange d'un Nœud.
 /// `(partenaire demandeur, hashes)` → pour chacun, placé chez lui et
 /// toujours tenu pour sien ? `None` : réessayer plus tard.
+/// Pays d'une adresse IP.
+pub type Locate = std::sync::Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
 pub type PlacementCheck = std::sync::Arc<dyn Fn(&Id, &[Id]) -> Option<Vec<bool>> + Send + Sync>;
 
 /// Taille maximale d'une `OwnershipQuery` (hashes).
@@ -271,6 +274,11 @@ pub struct NodeService {
     /// Appareils (`PeerId` du Connecteur) déjà vus par Utilisateur, avec
     /// leur première connexion : un nouveau est signalé aux autres (U4).
     pub devices: HashMap<Id, Vec<(String, u64)>>,
+    /// Dernière connexion de chaque appareil : `PeerId hex → (instant, IP)`
+    /// (IP vide si `record_user_ips` est désactivé).
+    pub device_seen: HashMap<Id, HashMap<String, (u64, String)>>,
+    /// Pays d'une adresse IP (carte de géolocalisation du dashboard).
+    pub locate: Option<Locate>,
     /// Saut d'horloge : suppressions liées au temps gelées
     /// (`deploiement.packaging#horloge`).
     pub clock_freeze: Option<crate::clock_guard::Freeze>,
@@ -387,6 +395,8 @@ impl NodeService {
             twofa: Default::default(),
             pending_ops: Default::default(),
             devices: Default::default(),
+            device_seen: Default::default(),
+            locate: None,
             clock_freeze: None,
             inactivity_days: Default::default(),
             attach_policy: AttachPolicy::default(),
@@ -455,9 +465,26 @@ impl NodeService {
 
     /// Appareil de `u` : un nouveau (après le premier) est annoncé à tous
     /// ses appareils (`securite.incidents-compromissions#nouvel-appareil`).
+    /// Adresse IP de la dernière connexion d'un appareil.
+    pub fn note_device_ip(&mut self, u: &Id, from: &[u8], ip: &str) {
+        if let Some(e) = self.device_seen.get_mut(u).and_then(|m| m.get_mut(&hex::encode(from))) {
+            e.1 = ip.to_string();
+        }
+    }
+
     fn note_device(&mut self, u: Id, from: &[u8], now: u64) {
         const MAX: usize = 32;
         let peer = hex::encode(from);
+        {
+            let seen = self.device_seen.entry(u).or_default();
+            let ip = seen.get(&peer).map(|e| e.1.clone()).unwrap_or_default();
+            seen.insert(peer.clone(), (now, ip));
+            if seen.len() > MAX {
+                if let Some(old) = seen.iter().min_by_key(|(_, e)| e.0).map(|(k, _)| k.clone()) {
+                    seen.remove(&old);
+                }
+            }
+        }
         let list = self.devices.entry(u).or_default();
         if list.iter().any(|(p, _)| *p == peer) {
             return;
@@ -672,6 +699,32 @@ impl NodeService {
                     })
                     .unwrap_or_default();
                 Ok(Response::PendingList { twofa: self.twofa.contains_key(&u), ops })
+            }
+            Body::ListDevices => {
+                let u = self.user(cred, from, local)?;
+                let mut devices: Vec<s3m_protocol::exchange::DeviceSeen> = self
+                    .device_seen
+                    .get(&u)
+                    .map(|m| {
+                        m.iter()
+                            .filter_map(|(p, (t, ip))| {
+                                Some(s3m_protocol::exchange::DeviceSeen {
+                                    peer_id: hex::decode(p).ok()?,
+                                    last_at: *t,
+                                    ip: ip.clone(),
+                                    country: self
+                                        .locate
+                                        .as_ref()
+                                        .filter(|_| !ip.is_empty())
+                                        .and_then(|f| f(ip))
+                                        .unwrap_or_default(),
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                devices.sort_by_key(|d| std::cmp::Reverse(d.last_at));
+                Ok(Response::DeviceList { devices })
             }
             Body::CancelPending { id } => {
                 let u = self.user(cred, from, local)?;
@@ -1451,6 +1504,7 @@ impl NodeService {
         mv(&mut self.undispersed, &old, new);
         mv(&mut self.twofa, &old, new);
         mv(&mut self.devices, &old, new);
+        mv(&mut self.device_seen, &old, new);
         self.pending_ops.remove(&old);
         self.last_active.remove(&old);
         self.last_active.insert(new, now);
@@ -1978,6 +2032,7 @@ impl ExchangeLoop {
                                 ) {
                                     if sv.record_user_ips && sv.users.contains_key(&u) {
                                         sv.last_user_ip.insert(u, ip.to_string());
+                                        sv.note_device_ip(&u, &peer.to_bytes(), &ip.to_string());
                                     }
                                 }
                                 r

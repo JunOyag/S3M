@@ -277,6 +277,20 @@ pub enum Body {
     CancelPending {
         id: u64,
     },
+    /// Dernière connexion de chaque appareil de l'Utilisateur.
+    ListDevices,
+}
+
+/// Dernière connexion d'un appareil vue par le Nœud
+/// (`securite.incidents-compromissions#nouvel-appareil`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DeviceSeen {
+    pub peer_id: Vec<u8>,
+    pub last_at: u64,
+    /// Vide si le Nœud n'enregistre pas les adresses IP.
+    pub ip: String,
+    /// Pays (carte de géolocalisation du Nœud), sinon vide.
+    pub country: String,
 }
 
 /// Opération différée (`securite.incidents-compromissions#2fa`).
@@ -382,6 +396,10 @@ pub enum Response {
     PendingList {
         twofa: bool,
         ops: Vec<PendingOp>,
+    },
+    /// Réponse à `ListDevices`.
+    DeviceList {
+        devices: Vec<DeviceSeen>,
     },
 }
 
@@ -739,6 +757,10 @@ pub fn encode_request(r: &Request) -> Vec<u8> {
             let o = fb::ListPending::create(&mut b, &fb::ListPendingArgs {});
             (fb::RequestBody::ListPending, o.as_union_value())
         }
+        Body::ListDevices => {
+            let o = fb::ListDevices::create(&mut b, &fb::ListDevicesArgs {});
+            (fb::RequestBody::ListDevices, o.as_union_value())
+        }
         Body::CancelPending { id } => {
             let o = fb::CancelPending::create(&mut b, &fb::CancelPendingArgs { id: *id });
             (fb::RequestBody::CancelPending, o.as_union_value())
@@ -1001,6 +1023,7 @@ pub fn decode_request(buf: &[u8]) -> Result<Request, Refusal> {
             code: r.body_as_remove_2fa().ok_or(m)?.code().unwrap_or("").to_string(),
         },
         fb::RequestBody::ListPending => Body::ListPending,
+        fb::RequestBody::ListDevices => Body::ListDevices,
         fb::RequestBody::CancelPending => Body::CancelPending {
             id: r.body_as_cancel_pending().ok_or(m)?.id(),
         },
@@ -1241,6 +1264,20 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             let o = fb::PendingList::create(&mut b, &fb::PendingListArgs { twofa: *twofa, ops: Some(list) });
             (fb::ResponseBody::PendingList, o.as_union_value())
         }
+        Response::DeviceList { devices } => {
+            let list: Vec<_> = devices
+                .iter()
+                .map(|d| {
+                    let p = b.create_vector(&d.peer_id);
+                    let ip = b.create_string(&d.ip);
+                    let c = b.create_string(&d.country);
+                    fb::DeviceSeen::create(&mut b, &fb::DeviceSeenArgs { peer_id: Some(p), last_at: d.last_at, ip: Some(ip), country: Some(c) })
+                })
+                .collect();
+            let list = b.create_vector(&list);
+            let o = fb::DeviceList::create(&mut b, &fb::DeviceListArgs { devices: Some(list) });
+            (fb::ResponseBody::DeviceList, o.as_union_value())
+        }
     };
     let root = fb::BlockResponse::create(
         &mut b,
@@ -1395,6 +1432,24 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
                                 kind: o.kind().unwrap_or("").to_string(),
                                 created_at: o.created_at(),
                                 due_at: o.due_at(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            }
+        }
+        fb::ResponseBody::DeviceList => {
+            let x = r.body_as_device_list().ok_or(m)?;
+            Response::DeviceList {
+                devices: x
+                    .devices()
+                    .map(|v| {
+                        v.iter()
+                            .map(|d| DeviceSeen {
+                                peer_id: d.peer_id().map(|p| p.bytes().to_vec()).unwrap_or_default(),
+                                last_at: d.last_at(),
+                                ip: d.ip().unwrap_or("").to_string(),
+                                country: d.country().unwrap_or("").to_string(),
                             })
                             .collect()
                     })

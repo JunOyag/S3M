@@ -101,6 +101,10 @@ pub mod s3m {
     pub use self::delegate_generated::*;
     mod delegated_credential_generated;
     pub use self::delegated_credential_generated::*;
+    mod device_list_generated;
+    pub use self::device_list_generated::*;
+    mod device_seen_generated;
+    pub use self::device_seen_generated::*;
     mod emergency_credential_generated;
     pub use self::emergency_credential_generated::*;
     mod emergency_get_generated;
@@ -123,6 +127,8 @@ pub mod s3m {
     pub use self::grant_issued_generated::*;
     mod list_blocks_generated;
     pub use self::list_blocks_generated::*;
+    mod list_devices_generated;
+    pub use self::list_devices_generated::*;
     mod list_pending_generated;
     pub use self::list_pending_generated::*;
     mod list_roots_generated;

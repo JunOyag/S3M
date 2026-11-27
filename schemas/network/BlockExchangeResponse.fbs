@@ -128,11 +128,22 @@ table PendingList {
   twofa: bool;
   ops: [PendingOp];
 }
+// Ajout du 2026-11-27 : dernière connexion d'un appareil vue par le Nœud.
+table DeviceSeen {
+  peer_id: [ubyte];          // PeerId libp2p de l'appareil (octets)
+  last_at: uint64;           // dernière requête acceptée
+  ip: string;                // vide si le Nœud n'enregistre pas les IP
+  country: string;           // pays (carte de géolocalisation du Nœud), sinon vide
+}
+table DeviceList {
+  devices: [DeviceSeen];
+}
 
 union ResponseBody {
   Failure, BlockData, Stored, RootState, FragmentReceipt, ChallengeResponse,
   Ack, GrantIssued, ProbeReply, PartnershipAnswer, Attached, OwnershipAnswer,
-  Messages, BlockList, RootList, BlockStatusAnswer, Deferred, PendingList
+  Messages, BlockList, RootList, BlockStatusAnswer, Deferred, PendingList,
+  DeviceList
 }
 
 table BlockResponse {

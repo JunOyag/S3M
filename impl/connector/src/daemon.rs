@@ -308,6 +308,7 @@ pub fn adopt_devices(sh: &Shared, published: &[s3m_protocol::entries::DeviceRec]
 /// Section « mes appareils ».
 fn devices_status(sh: &Shared) -> Value {
     let list = sh.devices.lock().unwrap().clone();
+    let seen = sh.device_seen.lock().unwrap().clone();
     let rows: Vec<Value> = list
         .iter()
         .filter(|d| !d.deleted)
@@ -318,6 +319,10 @@ fn devices_status(sh: &Shared) -> Value {
                 "nom": if me { json!({ "_texte": name, "_badge": "Cet appareil" }) } else { json!(name) },
                 "empreinte": s3m_protocol::pseudo::fingerprint(&d.peer_id),
                 "ajouté le": format!("le {}", d.added_at),
+                "dernière connexion : adresse IP": seen.get(&d.peer_id).filter(|s| !s.ip.is_empty()).map(|s| {
+                    if s.country.is_empty() { s.ip.clone() } else { format!("{} ({})", s.ip, s.country) }
+                }),
+                "dernière connexion : date et heure": seen.get(&d.peer_id).map(|s| s.last_at),
             });
             if !me {
                 r["_actions"] = json!([{ "nom": "forget_device", "libellé": "Oublier", "style": "secondary",
@@ -717,6 +722,8 @@ pub struct Shared {
     /// opérations différées)`.
     pub twofa_setup: Mutex<Option<(Vec<u8>, Vec<String>)>>,
     pub security: Mutex<Option<(bool, Vec<s3m_protocol::exchange::PendingOp>)>>,
+    /// Dernière connexion de chaque appareil vue par le Nœud (`PeerId` →).
+    pub device_seen: Mutex<std::collections::HashMap<Vec<u8>, s3m_protocol::exchange::DeviceSeen>>,
     /// Remplaçant annoncé par le Nœud (pointeur de migration vérifié),
     /// jamais suivi sans l'accord de l'utilisateur ; `(proposition, vérifié le)`.
     pub migration_offer: Mutex<(crate::bootstrap::Migration, u64)>,
@@ -3606,6 +3613,9 @@ pub async fn watch_once(sh: &Shared) {
             }
         }
         always_free_tick(sh).await;
+        if let Ok(list) = sh.session.list_devices().await {
+            *sh.device_seen.lock().unwrap() = list.into_iter().map(|d| (d.peer_id.clone(), d)).collect();
+        }
         if let Ok(st) = sh.session.list_pending().await {
             purge_tick(sh, &st.1);
             if st.0 {
@@ -3778,6 +3788,7 @@ pub async fn start(
         unsent: Some(unsent),
         twofa_setup: Mutex::new(None),
         security: Mutex::new(None),
+        device_seen: Mutex::new(std::collections::HashMap::new()),
         migration_offer: Mutex::new((crate::bootstrap::Migration::None, 0)),
         wake: tokio::sync::Notify::new(),
         devices: Mutex::new(devices),

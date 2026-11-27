@@ -624,6 +624,27 @@ fn a_new_device_is_announced_to_the_user() {
     assert_eq!(s.devices[&pk(&USER)].len(), 2);
 }
 
+/// Dernière connexion par appareil : instant, IP (si enregistrée) et pays.
+#[test]
+fn each_device_reports_its_last_connection() {
+    let mut s = service_with_user(NODE, 1 << 20);
+    s.locate = Some(std::sync::Arc::new(|ip: &str| (ip == "203.0.113.7").then(|| "FR".to_string())));
+    let call = |s: &mut NodeService, from: &[u8], t: u64| {
+        s.handle(from, None, b"n", user_req(&NODE, Body::ListDevices, from, b"n"), t)
+    };
+    call(&mut s, b"appareil-1", NOW - 100);
+    s.note_device_ip(&pk(&USER), b"appareil-1", "203.0.113.7");
+    call(&mut s, b"appareil-2", NOW - 50);
+    call(&mut s, b"appareil-1", NOW - 10);
+    // La requête en cours est comptée après sa réponse.
+    let Response::DeviceList { devices } = call(&mut s, b"appareil-2", NOW) else { panic!() };
+    assert_eq!(devices.len(), 2);
+    assert_eq!(devices[0].peer_id, b"appareil-1".to_vec(), "plus récent en tête");
+    assert_eq!(devices[0].last_at, NOW - 10);
+    assert_eq!((devices[0].ip.as_str(), devices[0].country.as_str()), ("203.0.113.7", "FR"), "IP gardée d'une connexion à l'autre");
+    assert_eq!((devices[1].last_at, devices[1].ip.as_str()), (NOW - 50, ""));
+}
+
 /// Purge programmée : pas de seconde sans 2FA ; avec un code, purge
 /// immédiate et purge programmée retirée.
 #[test]

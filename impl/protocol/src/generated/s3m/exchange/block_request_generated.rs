@@ -610,6 +610,21 @@ impl<'a> BlockRequest<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_list_devices(&self) -> Option<ListDevices<'a>> {
+    if self.body_type() == RequestBody::ListDevices {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ListDevices::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockRequest<'_> {
@@ -662,6 +677,7 @@ impl flatbuffers::Verifiable for BlockRequest<'_> {
           RequestBody::Remove2fa => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Remove2fa>>("RequestBody::Remove2fa", pos),
           RequestBody::ListPending => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListPending>>("RequestBody::ListPending", pos),
           RequestBody::CancelPending => v.verify_union_variant::<flatbuffers::ForwardsUOffset<CancelPending>>("RequestBody::CancelPending", pos),
+          RequestBody::ListDevices => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ListDevices>>("RequestBody::ListDevices", pos),
           _ => Ok(()),
         }
      })?
@@ -982,6 +998,13 @@ impl core::fmt::Debug for BlockRequest<'_> {
         },
         RequestBody::CancelPending => {
           if let Some(x) = self.body_as_cancel_pending() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        RequestBody::ListDevices => {
+          if let Some(x) = self.body_as_list_devices() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

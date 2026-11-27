@@ -326,6 +326,9 @@ pub struct SavedUser {
     /// Appareils vus `(PeerId hex, première connexion)`.
     #[serde(default)]
     pub devices: Vec<(String, u64)>,
+    /// Dernière connexion de chaque appareil `(PeerId hex, instant, IP)`.
+    #[serde(default)]
+    pub device_seen: Vec<(String, u64, String)>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -430,6 +433,15 @@ impl SavedState {
                 twofa: s.twofa.get(id).cloned(),
                 pending: s.pending_ops.get(id).cloned().unwrap_or_default(),
                 devices: s.devices.get(id).cloned().unwrap_or_default(),
+                device_seen: {
+                    let mut v: Vec<(String, u64, String)> = s
+                        .device_seen
+                        .get(id)
+                        .map(|m| m.iter().map(|(p, (t, ip))| (p.clone(), *t, ip.clone())).collect())
+                        .unwrap_or_default();
+                    v.sort();
+                    v
+                },
             })
             .collect();
         users.sort_by(|a, b| a.user_id.cmp(&b.user_id));
@@ -548,6 +560,12 @@ impl SavedState {
             }
             if !u.devices.is_empty() {
                 s.devices.insert(unhex32(&u.user_id)?, u.devices.clone());
+            }
+            if !u.device_seen.is_empty() {
+                s.device_seen.insert(
+                    unhex32(&u.user_id)?,
+                    u.device_seen.iter().map(|(p, t, ip)| (p.clone(), (*t, ip.clone()))).collect(),
+                );
             }
         }
         for p in &self.partners {
@@ -2940,6 +2958,14 @@ pub async fn start_with(
         journal: Mutex::new(Vec::new()),
         emergency_ui: Mutex::new(EmergencyUi::default()),
     });
+    {
+        let weak = Arc::downgrade(&shared);
+        shared.service.lock().unwrap().locate = Some(Arc::new(move |ip: &str| {
+            weak.upgrade()
+                .and_then(|sh| sh.geo.read().unwrap().locate(ip))
+                .map(|p| p.country)
+        }));
+    }
     {
         // Réponses aux OwnershipQuery des partenaires (import d'un volume).
         let weak = Arc::downgrade(&shared);

@@ -347,6 +347,8 @@ const LABELS = {
   "pointeurs de migration connus": ["Pointeurs de migration connus", ""],
   "événements récents": ["Événements récents", ""],
   "instant": ["Instant", ""],
+  "dernière connexion : adresse IP": ["Dernière connexion : adresse IP", "Adresse vue par votre Nœud à la dernière connexion de l'appareil (pays si la carte de géolocalisation est installée sur le Nœud) ; vide si le Nœud n'enregistre pas les adresses."],
+  "dernière connexion : date et heure": ["Dernière connexion : date et heure", "Dernière requête de l'appareil acceptée par votre Nœud."],
   "heure de la machine": ["Heure de la machine", "Horloge de l'ordinateur du Nœud : elle doit être à l'heure (contrôles des partenaires, expirations)."],
   "pseudo / empreinte": ["Pseudo / Empreinte", "Pseudo donné par vous, suivi de l'empreinte : seule l'empreinte identifie avec certitude."],
   "racine": ["Racine", "Empreinte de l'état actuel de l'espace de cet utilisateur (change à chaque modification)."],
@@ -782,6 +784,7 @@ function fmt(k, v) {
     if (DUR_KEY.test(k)) return humanDuration(v);
     if (DAYS_KEY.test(k)) return humanDuration(v * 86400);
     if (/octets/i.test(k)) return bytes(v);
+    if (isUnixTime(v) && /date et heure/i.test(k)) return new Date(v * 1000).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
     if (isUnixTime(v) && !SIZE_KEY.test(k)) return localTime(v);
   }
   return cell(v);

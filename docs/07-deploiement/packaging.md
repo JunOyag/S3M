@@ -552,7 +552,10 @@ Ajout du 2026-11-27, Nœud et Connecteur :
 - **Utilisateurs rattachés** (Nœud) : colonne « Pseudo / Empreinte ». La
   clé publique (avec « Copier ») et la racine sont dans la fenêtre
   « Éditer », où « Étiquette » devient « Pseudo ».
-- **Mes appareils** : badge « Cet appareil » à droite du nom.
+- **Mes appareils** : badge « Cet appareil » à droite du nom ; colonnes
+  « Dernière connexion » : adresse IP (« IP (Pays) » avec la carte de
+  géolocalisation du Nœud) et date et heure
+  ([dernière connexion](../05-securite/incidents-compromissions.md#nouvel-appareil)).
 - **« Toujours libérer l'espace »** (Connecteur, mode expert, Accès aux
   fichiers) : quand plus rien n'attend d'être reçu par le Nœud ni dispersé
   chez ses partenaires, le contenu local est libéré, sauf les éléments

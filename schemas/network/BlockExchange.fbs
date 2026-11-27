@@ -255,6 +255,10 @@ table ListPending {
 table CancelPending {
   id: uint64;
 }
+// Ajout du 2026-11-27 (securite.incidents-compromissions#nouvel-appareil) :
+// dernière connexion de chaque appareil de l'Utilisateur. Réponse : DeviceList.
+table ListDevices {
+}
 
 union RequestBody {
   GetBlock, PutBlock, CommitRoot, ReportIncident, RenewGrant, Delegate,
@@ -263,7 +267,7 @@ union RequestBody {
   EmergencyPut, EmergencyGet, EmergencyRelease,
   ReadMessages, PostMessage, RevokeShare,
   ReleaseBlocks, ListBlocks, ListRoots, PurgeRoots, BlockStatus, RotateUser,
-  Set2fa, Remove2fa, ListPending, CancelPending
+  Set2fa, Remove2fa, ListPending, CancelPending, ListDevices
 }
 
 // Requête : une par flux libp2p request-response.

@@ -337,6 +337,21 @@ impl<'a> BlockResponse<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_device_list(&self) -> Option<DeviceList<'a>> {
+    if self.body_type() == ResponseBody::DeviceList {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { DeviceList::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for BlockResponse<'_> {
@@ -367,6 +382,7 @@ impl flatbuffers::Verifiable for BlockResponse<'_> {
           ResponseBody::BlockStatusAnswer => v.verify_union_variant::<flatbuffers::ForwardsUOffset<BlockStatusAnswer>>("ResponseBody::BlockStatusAnswer", pos),
           ResponseBody::Deferred => v.verify_union_variant::<flatbuffers::ForwardsUOffset<Deferred>>("ResponseBody::Deferred", pos),
           ResponseBody::PendingList => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PendingList>>("ResponseBody::PendingList", pos),
+          ResponseBody::DeviceList => v.verify_union_variant::<flatbuffers::ForwardsUOffset<DeviceList>>("ResponseBody::DeviceList", pos),
           _ => Ok(()),
         }
      })?
@@ -549,6 +565,13 @@ impl core::fmt::Debug for BlockResponse<'_> {
         },
         ResponseBody::PendingList => {
           if let Some(x) = self.body_as_pending_list() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        ResponseBody::DeviceList => {
+          if let Some(x) = self.body_as_device_list() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

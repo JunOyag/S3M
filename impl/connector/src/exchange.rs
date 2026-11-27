@@ -467,6 +467,14 @@ impl NodeSession {
         }
     }
 
+    /// Dernière connexion de chacun de mes appareils, vue par le Nœud.
+    pub async fn list_devices(&self) -> Result<Vec<s3m_protocol::exchange::DeviceSeen>, ExchangeError> {
+        match self.call(Body::ListDevices).await? {
+            Response::DeviceList { devices } => Ok(devices),
+            _ => Err(ExchangeError::Unexpected),
+        }
+    }
+
     pub async fn cancel_pending(&self, id: u64) -> Result<(), ExchangeError> {
         match self.call(Body::CancelPending { id }).await? {
             Response::Ack { .. } => Ok(()),

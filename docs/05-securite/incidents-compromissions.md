@@ -120,6 +120,16 @@ modification la plus récente l'emporte), 32 au plus, oubli possible
 appareil » affichent le nom d'un appareil connu, et signalent un appareil
 inconnu de tous.
 
+**Dernière connexion** (ajout du 2026-11-27). Le Nœud retient pour chaque
+appareil l'instant de sa dernière requête acceptée. Il retient aussi son
+adresse IP, seulement si l'enregistrement des adresses des utilisateurs est
+activé (`record_user_ips`). Le Connecteur les lit par `ListDevices` (réponse
+`DeviceList`, [`network.BlockRequest`](../02-schemas/network/BlockRequest.md)).
+« Mes appareils » affiche alors l'adresse IP (avec le pays si la carte de
+géolocalisation est installée sur le Nœud) et la date et l'heure. Ces
+données sont propres à chaque Nœud et suivent l'Utilisateur : changement
+d'identité, suppression pour inactivité.
+
 ## Compromission Clé Node
 
 Contrairement au User, ce cas implique **tous les Utilisateurs rattachés** —

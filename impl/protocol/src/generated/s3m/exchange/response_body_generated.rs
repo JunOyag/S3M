@@ -12,10 +12,10 @@ use super::*;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_RESPONSE_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_RESPONSE_BODY: u8 = 18;
+pub const ENUM_MAX_RESPONSE_BODY: u8 = 19;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_RESPONSE_BODY: [ResponseBody; 19] = [
+pub const ENUM_VALUES_RESPONSE_BODY: [ResponseBody; 20] = [
   ResponseBody::NONE,
   ResponseBody::Failure,
   ResponseBody::BlockData,
@@ -35,6 +35,7 @@ pub const ENUM_VALUES_RESPONSE_BODY: [ResponseBody; 19] = [
   ResponseBody::BlockStatusAnswer,
   ResponseBody::Deferred,
   ResponseBody::PendingList,
+  ResponseBody::DeviceList,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -61,9 +62,10 @@ impl ResponseBody {
   pub const BlockStatusAnswer: Self = Self(16);
   pub const Deferred: Self = Self(17);
   pub const PendingList: Self = Self(18);
+  pub const DeviceList: Self = Self(19);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 18;
+  pub const ENUM_MAX: u8 = 19;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Failure,
@@ -84,6 +86,7 @@ impl ResponseBody {
     Self::BlockStatusAnswer,
     Self::Deferred,
     Self::PendingList,
+    Self::DeviceList,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -107,6 +110,7 @@ impl ResponseBody {
       Self::BlockStatusAnswer => Some("BlockStatusAnswer"),
       Self::Deferred => Some("Deferred"),
       Self::PendingList => Some("PendingList"),
+      Self::DeviceList => Some("DeviceList"),
       _ => None,
     }
   }
