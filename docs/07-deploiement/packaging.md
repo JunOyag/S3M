@@ -476,6 +476,30 @@ identités Utilisateur, chacune comme un Connecteur complet et indépendant.
 - Deux identités peuvent être rattachées au même Nœud (deux Utilisateurs
   distincts pour lui) ou à des Nœuds différents.
 
+### Identités montées et démontées {: #identites-montees }
+
+Ajout du 2026-11-28. Chaque identité de S3m.exe propose « Démonter cette
+identité » / « Monter cette identité », sans l'archiver. C'est utile pour des
+données confidentielles (santé, comptabilité, juridique, pièces
+d'identité, accès bancaires) qu'on ne veut pas laisser accessibles en
+permanence.
+
+- **Démonter** :
+  - le contenu local déjà reçu par le Nœud est libéré, comme « Libérer
+    l'espace » sur tout l'espace ;
+  - le Connecteur de l'identité s'arrête : le lecteur est démonté, ou le
+    dossier synchronisé n'est plus servi ;
+  - un marqueur `demontee` est écrit dans son dossier ;
+  - les autres identités continuent.
+- **Au démarrage de S3m**, seules les identités montées sont lancées. Une
+  identité démontée reste dans le menu, avec seulement « Monter » et
+  « Archiver ».
+- **Restent sur l'appareil** : les éléments gardés hors connexion, et les
+  modifications pas encore envoyées (signalées, elles partent au prochain
+  montage). En mode dossier synchronisé, les noms des fichiers restent
+  visibles dans l'Explorateur Windows, sans leur contenu. Le mode lecteur
+  n'en laisse rien voir.
+
 ### Coffre local des phrases secrètes {: #coffre-local }
 
 Ajout du 2026-11-26. Les phrases de récupération (`user.seed` du

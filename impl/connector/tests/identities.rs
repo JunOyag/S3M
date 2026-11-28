@@ -138,3 +138,21 @@ fn each_identity_gets_its_own_synced_folder() {
     assert!(folder_path(&first).ends_with("S3m"));
     assert!(folder_path(&second).ends_with("S3m 2"));
 }
+
+/// Identité démontée (`deploiement.packaging#identites-montees`) : marqueur
+/// gardé dans son dossier, montée par défaut, remontée sans rien perdre.
+#[test]
+fn an_identity_can_be_unmounted_and_mounted_again() {
+    let d = std::env::temp_dir().join(format!("s3m-mount-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("connector.json"), b"{}").unwrap();
+    assert!(is_mounted(&d), "montée par défaut");
+    set_mounted(&d, false).unwrap();
+    assert!(!is_mounted(&d));
+    set_mounted(&d, true).unwrap();
+    set_mounted(&d, true).unwrap();
+    assert!(is_mounted(&d));
+    assert!(d.join("connector.json").exists(), "rien d'autre touché");
+    let _ = std::fs::remove_dir_all(&d);
+}

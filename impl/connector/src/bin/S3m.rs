@@ -138,6 +138,8 @@ enum UserEvent {
     Restarted(usize, Result<(), String>),
     /// Identité arrêtée pour appliquer un nouvel accès aux fichiers.
     Relaunch(usize),
+    /// Identité démontée (modifications restées en attente).
+    Unmounted(usize, usize),
 }
 
 /// Menu de l'icône, aligné à droite du curseur (il s'ouvre vers la gauche,
@@ -176,6 +178,9 @@ struct Ident {
     sync: MenuItem,
     pause: MenuItem,
     change: MenuItem,
+    /// « Démonter » / « Monter cette identité ».
+    mount: MenuItem,
+    mounted: bool,
     remove: Option<MenuItem>,
     shared: Option<Arc<Shared>>,
     url: Option<String>,
@@ -195,6 +200,8 @@ impl Ident {
         let sync = MenuItem::new("Synchroniser maintenant", false, None);
         let pause = MenuItem::new("Suspendre la synchronisation", false, None);
         let change = MenuItem::new("Changer de Nœud…", true, None);
+        let mounted = s3m_connector::identities::is_mounted(&dir);
+        let mount = MenuItem::new(if mounted { UNMOUNT_TEXT } else { MOUNT_TEXT }, true, None);
         // L'identité d'origine ne se retire que s'il en reste une autre
         // (activé à chaque tour).
         let remove = Some(MenuItem::new(ARCHIVE_TEXT, num > 1, None));
@@ -208,6 +215,7 @@ impl Ident {
             &sync,
             &pause,
             &PredefinedMenuItem::separator(),
+            &mount,
             &change,
         ]);
         if let Some(r) = &remove {
@@ -223,6 +231,8 @@ impl Ident {
             sync,
             pause,
             change,
+            mount,
+            mounted,
             remove,
             shared: None,
             url: None,
@@ -241,7 +251,20 @@ impl Ident {
         }
     }
 
+    /// Démontée : affichée comme telle, menu réduit à « Monter ».
+    fn show_unmounted(&self) {
+        self.status.set_text("Démontée : fichiers inaccessibles sur cet ordinateur");
+        for item in [&self.files, &self.dash, &self.sync, &self.pause, &self.change] {
+            item.set_enabled(false);
+        }
+        self.mount.set_text(MOUNT_TEXT);
+        self.mount.set_enabled(true);
+    }
+
     fn state(&self) -> TrayState {
+        if !self.mounted {
+            return TrayState::Ok;
+        }
         match (&self.last, self.failed) {
             (_, true) => TrayState::Error,
             (Some(v), _) => v.state,
@@ -301,6 +324,41 @@ fn start_connector(
 }
 
 const ARCHIVE_TEXT: &str = "Archiver cette identité";
+const UNMOUNT_TEXT: &str = "Démonter cette identité";
+const MOUNT_TEXT: &str = "Monter cette identité";
+
+/// Démonte une identité : contenu local libéré, Connecteur arrêté (lecteur
+/// ou dossier fermé), marqueur écrit — elle ne sera pas lancée au prochain
+/// démarrage de S3m.
+fn begin_unmount(
+    rt: &tokio::runtime::Runtime,
+    i: usize,
+    id: &mut Ident,
+    proxy: tao::event_loop::EventLoopProxy<UserEvent>,
+) {
+    let _ = s3m_connector::identities::set_mounted(&id.dir, false);
+    id.mounted = false;
+    id.url = None;
+    id.last = None;
+    id.failed = false;
+    id.status.set_text("Démontage : libération des copies locales…");
+    for item in [&id.files, &id.dash, &id.sync, &id.pause, &id.change, &id.mount] {
+        item.set_enabled(false);
+    }
+    let Some(sh) = id.shared.take() else {
+        id.show_unmounted();
+        return;
+    };
+    rt.spawn(async move {
+        let s2 = sh.clone();
+        let (pending, msg) = tokio::task::spawn_blocking(move || daemon::prepare_unmount(&s2))
+            .await
+            .unwrap_or_default();
+        log(&format!("démontage : {msg}"));
+        daemon::stop(sh).await;
+        let _ = proxy.send_event(UserEvent::Unmounted(i, pending));
+    });
+}
 
 /// Entrée du menu « Identités archivées ».
 struct ArchivedItem {
@@ -550,7 +608,11 @@ fn main() {
         &quit,
     ]);
     for (i, id) in idents.iter().enumerate() {
-        launch(&rt, i, id.dir.clone(), proxy.clone());
+        if id.mounted {
+            launch(&rt, i, id.dir.clone(), proxy.clone());
+        } else {
+            id.show_unmounted();
+        }
     }
 
     let mut tray: Option<TrayIcon> = None;
@@ -595,6 +657,12 @@ fn main() {
                 id.after_setup = true;
                 start_connector(&rt, i, path, proxy.clone());
             }
+            Event::UserEvent(UserEvent::Started(i, sh, url)) if !idents[i].mounted => {
+                // Démontée pendant son démarrage : arrêtée aussitôt.
+                let _ = url;
+                rt.spawn(daemon::stop(sh));
+                idents[i].show_unmounted();
+            }
             Event::UserEvent(UserEvent::Started(i, sh, url)) => {
                 let id = &mut idents[i];
                 // Premier lancement : le tableau de bord suit l'assistant.
@@ -631,6 +699,16 @@ fn main() {
                         *flow = ControlFlow::Exit;
                     }
                 }
+            }
+            Event::UserEvent(UserEvent::Unmounted(i, pending)) => {
+                let id = &mut idents[i];
+                id.show_unmounted();
+                log(&format!("identité {} démontée", id.num));
+                say(id, &if pending > 0 {
+                    format!("Identité démontée. {pending} modification(s) pas encore envoyée(s) restent sur cet ordinateur : elles partiront au prochain montage.")
+                } else {
+                    "Identité démontée : ses fichiers ne sont plus accessibles sur cet ordinateur et elle ne sera pas lancée au démarrage. « Monter cette identité » pour y revenir.".to_string()
+                });
             }
             Event::UserEvent(UserEvent::Failed(i, e)) => {
                 let id = &mut idents[i];
@@ -699,7 +777,7 @@ fn main() {
                     return;
                 }
                 let Some(i) = idents.iter().position(|id| {
-                    [&id.files, &id.dash, &id.sync, &id.pause, &id.change]
+                    [&id.files, &id.dash, &id.sync, &id.pause, &id.change, &id.mount]
                         .iter()
                         .any(|m| m.id() == &e.id)
                         || id.remove.as_ref().is_some_and(|r| r.id() == &e.id)
@@ -707,7 +785,20 @@ fn main() {
                     return;
                 };
                 let id = &mut idents[i];
-                if e.id == *id.change.id() {
+                if e.id == *id.mount.id() {
+                    if id.mounted {
+                        log(&format!("démontage demandé (identité {})", id.num));
+                        begin_unmount(&rt, i, id, proxy.clone());
+                    } else {
+                        log(&format!("montage demandé (identité {})", id.num));
+                        let _ = s3m_connector::identities::set_mounted(&id.dir, true);
+                        id.mounted = true;
+                        id.mount.set_text(UNMOUNT_TEXT);
+                        id.status.set_text("Démarrage…");
+                        id.change.set_enabled(true);
+                        launch(&rt, i, id.dir.clone(), proxy.clone());
+                    }
+                } else if e.id == *id.change.id() {
                     log(&format!("changement de Nœud demandé (identité {})", id.num));
                     say(id, "Changement de Nœud : cette identité s'arrête puis l'assistant s'ouvre ; votre identité est conservée, les autres continuent.");
                     begin_change(&rt, i, id, proxy.clone());

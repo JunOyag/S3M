@@ -7,6 +7,25 @@ use crate::daemon::TrayState;
 use crate::setup::config_path;
 
 /// Dossier des identités ajoutées.
+/// Marqueur d'une identité démontée : pas lancée au démarrage de S3m, ses
+/// fichiers ne sont pas accessibles (`deploiement.packaging#identites-montees`).
+const UNMOUNTED: &str = "demontee";
+
+pub fn is_mounted(dir: &Path) -> bool {
+    !dir.join(UNMOUNTED).exists()
+}
+
+pub fn set_mounted(dir: &Path, mounted: bool) -> std::io::Result<()> {
+    if mounted {
+        match std::fs::remove_file(dir.join(UNMOUNTED)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    } else {
+        std::fs::write(dir.join(UNMOUNTED), b"1")
+    }
+}
+
 pub fn identities_dir(app: &Path) -> PathBuf {
     app.join("identites")
 }

@@ -4023,6 +4023,19 @@ where
 /// plus), lecteur démonté ou dossier synchronisé déconnecté, tableau de
 /// bord fermé. Les fichiers de l'identité sont ensuite libres (mise de
 /// côté de sa configuration) une fois la dernière référence relâchée.
+/// Avant un démontage : contenu local déjà reçu par le Nœud libéré (rien de
+/// lisible ne reste sur l'appareil, sauf les éléments gardés hors connexion
+/// et les modifications pas encore envoyées). Rend `(modifications en
+/// attente, message de libération)`.
+pub fn prepare_unmount(sh: &Shared) -> (usize, String) {
+    let pending = sh.drive.as_ref().map_or(0, |d| d.lock().unwrap().pending());
+    let msg = free_space_action(sh, &json!({ "élément": "/" }))
+        .ok()
+        .and_then(|v| v["message"].as_str().map(str::to_string))
+        .unwrap_or_default();
+    (pending, msg)
+}
+
 pub async fn stop(sh: Arc<Shared>) {
     use std::sync::atomic::Ordering::SeqCst;
     sh.paused.store(true, SeqCst);

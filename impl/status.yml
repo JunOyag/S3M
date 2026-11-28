@@ -272,6 +272,7 @@ entries:
     owner: claude-code
     tests:
       - clock_guard::a_jump_of_more_than_a_day_is_detected
+      - identities::an_identity_can_be_unmounted_and_mounted_again
       - vault::a_passphrase_vault_locks_unlocks_rewrites_and_returns_to_plain
       - admin::a_locked_node_only_accepts_its_passphrase_with_limited_tries
       - alerts::an_alert_is_sent_when_it_appears_and_again_if_it_comes_back
