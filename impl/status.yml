@@ -1208,6 +1208,8 @@ entries:
     owner: claude-code
     tests:
       - fuzz::random_and_mutated_messages_never_panic
+      - release::released_blocks_refund_quota_and_are_erased_after_the_grace_period
+      - release::released_blocks_outlive_the_history_unless_it_is_purged
       - fuzz_requests::random_requests_never_panic_the_node
       - exchange::a_new_device_recovers_the_root_salt_from_the_node
       - exchange::connector_proof_is_bound_to_both_peers_and_k_attach

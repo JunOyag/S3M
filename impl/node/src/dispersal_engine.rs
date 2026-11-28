@@ -477,12 +477,21 @@ pub fn purge_released(service: &Mutex<NodeService>, state: &mut DispersalState, 
     }
     let due: Vec<(Id, std::collections::HashSet<Id>)> = {
         let s = service.lock().unwrap();
+        // Blocs libérés gardés au moins la durée de l'historique : une
+        // libération ne peut pas effacer les versions passées plus tôt
+        // qu'une purge (protégée par le 2FA).
         s.released
             .iter()
             .map(|(u, m)| {
+                // Plus de versions passées (purgées) : délai court.
+                let grace = if s.root_history.get(u).is_none_or(|h| h.is_empty()) {
+                    RELEASE_GRACE_S
+                } else {
+                    RELEASE_GRACE_S.max(s.history_retention_s)
+                };
                 let d: std::collections::HashSet<Id> = m
                     .iter()
-                    .filter(|(_, t)| **t + RELEASE_GRACE_S <= now)
+                    .filter(|(_, t)| **t + grace <= now)
                     .map(|(h, _)| *h)
                     .collect();
                 (*u, d)

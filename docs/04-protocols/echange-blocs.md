@@ -253,7 +253,12 @@ modification consomme du quota pour toujours.
   ignoré. Pour chaque bloc libéré, il **rend le quota aussitôt**
   (`used_bytes`) et note l'instant de libération. Le bloc reste lisible
   pendant un **délai de 24 h** (un autre appareil resté sur l'ancienne
-  racine peut encore la lire), puis :
+  racine peut encore la lire). Si l'Utilisateur a encore des versions
+  passées, ce délai passe à la **durée de conservation de l'historique**
+  (ajout du 2026-11-28) : une libération ne peut pas effacer des versions
+  plus tôt qu'une purge, protégée par le 2FA
+  ([`securite.incidents-compromissions#2fa`](../05-securite/incidents-compromissions.md#2fa)).
+  Ensuite :
     - bloc en attente de dispersion : retiré de la file et effacé ;
     - bloc d'un stripe : effacé quand **tous** les blocs réels du stripe
       sont libérés et leur délai échu ; le stripe est alors retiré et ses

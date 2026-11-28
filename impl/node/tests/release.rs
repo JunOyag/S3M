@@ -19,6 +19,8 @@ fn block(n: u8) -> Vec<u8> {
 #[test]
 fn released_blocks_refund_quota_and_are_erased_after_the_grace_period() {
     let mut s = NodeService::new(NODE);
+    // Sans historique : seul le délai court s'applique.
+    s.history_retention_s = 0;
     for u in [USER, OTHER] {
         s.users.insert(
             u,
@@ -123,4 +125,26 @@ fn released_blocks_refund_quota_and_are_erased_after_the_grace_period() {
         "stripe gardé"
     );
     assert!(s.released[&USER].contains_key(&h[2]));
+}
+
+/// Avec l'historique, un bloc libéré reste au moins la durée de conservation
+/// des versions (une libération ne contourne pas la purge protégée par le
+/// 2FA) ; une purge de l'historique ramène au délai court.
+#[test]
+fn released_blocks_outlive_the_history_unless_it_is_purged() {
+    let mut s = NodeService::new(NODE);
+    s.history_retention_s = 30 * 86_400;
+    s.users.insert(USER, UserAccount { salt: vec![1; 16], quota_bytes: 1 << 30, used_bytes: 0, root: [0; 32] });
+    let b = block(9);
+    let h = s3m_core::symmetric_suite::hash_sha256(&b);
+    s.store.put(s3m_node::chunk_store::Space::UserBlock, &USER, &h, &b).unwrap();
+    s.release_user_blocks(&USER, &[h], 1_000);
+    s.root_history.entry(USER).or_default().push(s3m_protocol::exchange::RootVersion { root: vec![1; 32], root_seal: vec![], valid_from: 800, replaced_at: 900 });
+    let service = Mutex::new(s);
+    let mut state = DispersalState::default();
+    state.users.entry(hex::encode(USER)).or_default().pending.push(hex::encode(h));
+    assert_eq!(purge_released(&service, &mut state, 1_000 + RELEASE_GRACE_S), 0, "gardé pour l'historique");
+    service.lock().unwrap().purge_history(&USER, 0);
+    assert_eq!(purge_released(&service, &mut state, 1_000 + RELEASE_GRACE_S), 1);
+    assert!(!service.lock().unwrap().released.get(&USER).is_some_and(|r| r.contains_key(&h)), "effacé après la purge");
 }
