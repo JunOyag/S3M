@@ -384,15 +384,13 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                 return json!({ "titre": "S3m — configuration terminée",
                     "état": format!("Configuration enregistrée ({}). S3m démarre et ouvre le tableau de bord : vous pouvez fermer cette page.", path.display()) });
             }
-            // Seuls les Nœuds qui acceptent de nouveaux utilisateurs (et ceux
-            // à configurer, sous identité temporaire) ; le numéro reste celui
-            // de la liste complète.
-            let hidden = s.found.iter().filter(|n| !n.to_configure && !n.accepting_users).count();
+            // Tous les Nœuds du réseau local ; ceux qui n'acceptent pas de
+            // nouveaux utilisateurs portent un badge.
+            let closed = s.found.iter().filter(|n| !n.to_configure && !n.accepting_users).count();
             let found: Vec<Value> = s
                 .found
                 .iter()
                 .enumerate()
-                .filter(|(_, n)| n.to_configure || n.accepting_users || s.selected.as_deref() == Some(n.addr.as_str()))
                 .map(|(i, n)| {
                     if n.to_configure {
                         return json!({
@@ -410,7 +408,12 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                         "numéro": i + 1,
                         "nœud": s3m_protocol::pseudo::display(&[n.name.as_deref()], &n.node_id),
                         "adresse": n.addr,
-                        "état": if chosen { "✔ choisi" } else { "accepte de nouveaux utilisateurs" },
+                        "état": match (chosen, n.accepting_users) {
+                            (true, true) => json!("✔ choisi"),
+                            (true, false) => json!({ "_texte": "✔ choisi", "_badge": "Fermé au rattachement automatique" }),
+                            (false, true) => json!("accepte de nouveaux utilisateurs"),
+                            (false, false) => json!({ "_texte": "prêt", "_badge": "Fermé au rattachement automatique" }),
+                        },
                         "_gras": chosen,
                     });
                     if !chosen {
@@ -442,13 +445,9 @@ pub async fn serve_setup(dir: PathBuf) -> Result<(String, oneshot::Receiver<Path
                     ],
                 },
                 "nœuds trouvés sur le réseau local": {
-                    "_contenu": if s.scanning { json!("recherche en cours…") } else if found.is_empty() { json!(if hidden > 0 {
-                        format!("aucun Nœud n'accepte de nouveaux utilisateurs pour l'instant ({hidden} trouvé(s), complets ou sur invitation seulement)")
-                    } else {
-                        "aucun (le Nœud est-il allumé, sur le même réseau, annonce locale active ?)".to_string()
-                    }) } else { json!(found) },
-                    "_note": format!("Votre Nœud garde vos fichiers et les protège en les répartissant chez ses partenaires. Seuls les Nœuds qui acceptent de nouveaux utilisateurs sont listés : leur opérateur a ouvert le rattachement automatique et il leur reste de la place.{} Un Nœud absent de la liste peut quand même vous accueillir sur invitation : transmettez à son opérateur l'identifiant et le sel affichés plus bas, ou saisissez son identité dans « Retrouver mon Nœud ».",
-                        if hidden > 0 { format!(" {hidden} autre(s) Nœud(s) trouvé(s) n'en acceptent pas en ce moment.") } else { String::new() }),
+                    "_contenu": if s.scanning { json!("recherche en cours…") } else if found.is_empty() { json!("aucun (le Nœud est-il allumé, sur le même réseau, annonce locale active ?)") } else { json!(found) },
+                    "_note": format!("Votre Nœud garde vos fichiers et les protège en les répartissant chez ses partenaires. Choisissez de préférence un Nœud qui « accepte de nouveaux utilisateurs » : son opérateur a ouvert le rattachement automatique et il lui reste de la place, vous êtes rattaché tout de suite.{} Un Nœud « Fermé au rattachement automatique » peut quand même vous accueillir sur invitation : transmettez à son opérateur l'identifiant et le sel affichés plus bas. Un Nœud « à configurer » vient d'être installé : son propriétaire l'ouvre avec son code d'appairage.",
+                        if closed > 0 { format!(" {closed} Nœud(s) trouvé(s) sont fermés au rattachement automatique.") } else { String::new() }),
                     "_formulaires": [
                         { "nom": "scan", "libellé": "Rechercher à nouveau", "style": "secondary", "champs": [] },
                     ],
