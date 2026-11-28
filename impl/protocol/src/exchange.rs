@@ -356,6 +356,9 @@ pub enum Response {
         accepting_partners: bool,
         /// Nom actuel du Nœud (`deploiement.pseudos`).
         node_name: Option<String>,
+        /// Rattachement automatique ouvert, avec de la place pour un
+        /// utilisateur de plus (`protocols.partenariat-automatique#rattachement`).
+        accepting_users: bool,
     },
     /// 0 : refusé.
     PartnershipAnswer {
@@ -1137,6 +1140,7 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
             nonce,
             accepting_partners,
             node_name,
+            accepting_users,
         } => {
             let n = b.create_vector(nonce);
             let name = node_name
@@ -1150,6 +1154,7 @@ pub fn encode_response(r: &Response) -> Vec<u8> {
                     nonce: Some(n),
                     accepting_partners: *accepting_partners,
                     node_name: name,
+                    accepting_users: *accepting_users,
                 },
             );
             (fb::ResponseBody::ProbeReply, o.as_union_value())
@@ -1362,6 +1367,7 @@ pub fn decode_response(buf: &[u8]) -> Result<Response, Refusal> {
                     .node_name()
                     .map(crate::pseudo::sanitize)
                     .filter(|n| !n.is_empty()),
+                accepting_users: x.accepting_users(),
             }
         }
         fb::ResponseBody::PartnershipAnswer => Response::PartnershipAnswer {

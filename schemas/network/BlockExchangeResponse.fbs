@@ -61,6 +61,7 @@ table ProbeReply {
   nonce: [ubyte];
   accepting_partners: bool;   // accepte de nouvelles propositions
   node_name: string;          // ajout du 2026-11-22 (deploiement.pseudos) : nom actuel du Nœud, absent sans nom
+  accepting_users: bool;      // ajout du 2026-11-28 : rattachement automatique ouvert et place pour un utilisateur de plus
 }
 // ProposePartnership
 table PartnershipAnswer {

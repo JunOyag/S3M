@@ -994,6 +994,7 @@ entries:
       - exchange::a_new_device_is_announced_to_the_user
       - exchange::each_device_reports_its_last_connection
       - exchange::users_get_a_quarter_and_partners_three_quarters_of_the_volumes
+      - exchange::probe_tells_whether_new_users_are_accepted
       - exchange::a_scheduled_purge_is_unique_and_a_2fa_code_purges_at_once
       - upkeep::retired_partners_can_be_rehabilitated
       - upkeep::orphan_fragments_are_reconciled_and_full_partners_are_not_failures

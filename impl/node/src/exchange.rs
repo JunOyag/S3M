@@ -470,6 +470,22 @@ impl NodeService {
             .saturating_sub(self.quotas_total(None) + self.emergency_reserve() + self.system_reserve())
     }
 
+    /// Rattachement automatique ouvert, avec de la place pour un utilisateur
+    /// de plus (nombre maxi, budget, part des utilisateurs des volumes).
+    pub fn accepting_users(&self) -> bool {
+        let p = self.attach_policy;
+        let used: u64 = self
+            .auto_attached
+            .iter()
+            .filter_map(|u| self.users.get(u))
+            .map(|u| u.quota_bytes)
+            .sum();
+        p.enabled
+            && self.auto_attached.len() < p.max_users
+            && used + p.quota_bytes <= p.budget_bytes
+            && self.user_room(None).is_none_or(|r| p.quota_bytes <= r)
+    }
+
     /// Quotas accordés, hors `except`.
     pub fn quotas_total(&self, except: Option<&Id>) -> u64 {
         self.users.iter().filter(|(i, _)| Some(*i) != except).map(|(_, u)| u.quota_bytes).sum()
@@ -1050,6 +1066,7 @@ impl NodeService {
                 node_name: self.name.clone(),
                 accepting_partners: self.partner_policy.accept
                     && self.partners.len() < self.partner_policy.max_partners,
+                accepting_users: self.accepting_users(),
             }),
             Body::ProposePartnership {
                 allowance_blocks,

@@ -24,6 +24,8 @@ pub struct FoundNode {
     /// Adresse d'échange de blocs retenue (TCP IPv4 de préférence).
     pub addr: String,
     pub accepting_partners: bool,
+    /// Rattachement automatique ouvert, avec de la place (`ProbeReply`).
+    pub accepting_users: bool,
     /// Nom du Nœud (`deploiement.pseudos`), lu dans `ProbeReply`.
     pub name: Option<String>,
     /// Nœud sous identité temporaire, à configurer par appairage
@@ -155,6 +157,7 @@ async fn probe_found(found: BTreeMap<PeerId, Vec<Multiaddr>>) -> Result<Vec<Foun
             if let Ok(Ok(Response::ProbeReply {
                 accepting_partners,
                 node_name,
+                accepting_users,
                 ..
             })) = r
             {
@@ -162,6 +165,7 @@ async fn probe_found(found: BTreeMap<PeerId, Vec<Multiaddr>>) -> Result<Vec<Foun
                     node_id,
                     addr: a.to_string(),
                     accepting_partners,
+                    accepting_users,
                     name: node_name,
                     to_configure: false,
                 });
@@ -182,6 +186,7 @@ async fn probe_found(found: BTreeMap<PeerId, Vec<Multiaddr>>) -> Result<Vec<Foun
                         node_id,
                         addr: a.to_string(),
                         accepting_partners: false,
+                        accepting_users: false,
                         name: None,
                         to_configure: true,
                     });

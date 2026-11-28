@@ -142,6 +142,7 @@ fn proposals_are_accepted_within_policy_and_verified_entries_only() {
             nonce: vec![7; 16],
             accepting_partners: false,
             node_name: None,
+            accepting_users: false,
         }
     );
     let mut b2 = NodeService::new(B);

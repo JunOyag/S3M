@@ -1145,6 +1145,7 @@ function render(value, key) {
     // (`_repliable` : traité par la section.)
     const box = el("div", undefined, "section-body");
     if (value["_contenu"] !== undefined) box.appendChild(render(value["_contenu"], key));
+    if (value["_note"]) box.appendChild(el("p", value["_note"], "muted kv-note"));
     // Formulaires réduits à un bouton (sans titre ni texte) : côte à côte.
     let row = null;
     (value["_formulaires"] || []).forEach((a) => {

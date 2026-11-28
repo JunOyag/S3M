@@ -323,7 +323,15 @@ synchronisation courantes :
   la [phrase de récupération](../03-crypto/identity-derivation.md#phrase-seule)
   (24 mots), ou reprise d'une identité existante par ses 24 mots, recherche des
   Nœuds du réseau local
-  ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)),
+  ([`network.bootstrap`](../01-network-dht/bootstrap.md#reseau-local)).
+  Seuls ceux qui acceptent de nouveaux utilisateurs sont listés (ajout du
+  2026-11-28) : `ProbeReply.accepting_users`, vrai si le rattachement
+  automatique est ouvert et qu'il reste de la place (nombre maxi
+  d'utilisateurs, budget, part des utilisateurs des volumes,
+  [`node.PartnerAccount#dimensionnement`](../02-schemas/node/PartnerAccount.md#dimensionnement)).
+  Les Nœuds à configurer (identité temporaire) restent listés. Un texte
+  explique le choix, compte les Nœuds écartés et rappelle le rattachement
+  sur invitation (identifiant et sel à transmettre à l'opérateur) ;
   bouton « Choisir » sur chaque Nœud trouvé (qui ne fait que le mettre en
   évidence) ou saisie manuelle de son adresse ; un bouton unique « Démarrer
   sous cette identité », en bas de page, prend en compte tout ce qui est

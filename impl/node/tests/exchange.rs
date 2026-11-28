@@ -685,3 +685,22 @@ fn users_get_a_quarter_and_partners_three_quarters_of_the_volumes() {
     s.refresh_offer();
     assert_eq!(s.partner_policy.offer_bytes, 5 * G, "réglage manuel gardé");
 }
+
+/// `ProbeReply.accepting_users` : rattachement automatique ouvert et place
+/// pour un utilisateur de plus (nombre maxi, budget, part des volumes).
+#[test]
+fn probe_tells_whether_new_users_are_accepted() {
+    let mut s = NodeService::new(NODE);
+    let probe = |s: &mut NodeService| match s.handle(b"x", None, b"n", Request { credential: None, body: Body::Probe { nonce: vec![1; 16] } }, NOW) {
+        Response::ProbeReply { accepting_users, .. } => accepting_users,
+        r => panic!("{r:?}"),
+    };
+    assert!(!probe(&mut s), "rattachement automatique fermé par défaut");
+    s.attach_policy.enabled = true;
+    assert!(probe(&mut s));
+    s.attach_policy.max_users = 0;
+    assert!(!probe(&mut s), "complet");
+    s.attach_policy.max_users = 10;
+    s.capacity_bytes = 1 << 30;
+    assert!(!probe(&mut s), "plus de place dans les volumes pour un quota de plus");
+}

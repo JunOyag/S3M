@@ -131,11 +131,13 @@ fn every_request_and_response_roundtrips() {
             nonce: vec![1; 16],
             accepting_partners: true,
             node_name: None,
+            accepting_users: true,
         },
         Response::ProbeReply {
             nonce: vec![1; 16],
             accepting_partners: false,
             node_name: Some("Cheval".into()),
+            accepting_users: false,
         },
         Response::PartnershipAnswer { granted_blocks: 42 },
         Response::Attached {
