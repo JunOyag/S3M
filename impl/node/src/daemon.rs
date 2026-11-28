@@ -995,15 +995,13 @@ fn simple_pages(v: &mut Value) {
         if soon > 0 { "Écran Utilisateurs : prévenez-les, ou rendez-les éternels (Éditer)." } else { "" },
     );
     let b = &v["équilibre du stockage"];
-    let gio = |k: &str| b[k].as_u64().map_or("—".to_string(), |x| format!("{:.1} Gio", x as f64 / (1u64 << 30) as f64));
+    let tenable = b["_tenable"].as_bool().unwrap_or(true);
     let bal = voyant(
-        Some(b["tenable"].as_bool().unwrap_or(true)),
+        Some(tenable),
         "Équilibre du stockage",
-        format!("capacité {} : utilisateurs {}, secours {}, système {}, partenaires {} — ratio {}",
-            gio("capacité totale (octets)"), gio("quota utilisateurs total (octets)"), gio("quota utilisateurs de secours (octets)"),
-            gio("réservé système (octets)"), gio("quota à disposition des partenaires (octets)"),
-            b["ratio de sauvegarde"].as_str().unwrap_or("—")),
-        if b["tenable"].as_bool().unwrap_or(true) { "" } else { "Ratio de sauvegarde sous 3 : ajoutez un volume, ou réduisez les quotas des utilisateurs ou l'espace de secours." },
+        format!("{} ; partenaires : {}", b["équilibre du stockage"].as_str().unwrap_or("—"),
+            b["espace restant pour les partenaires"].as_str().unwrap_or("—")),
+        if tenable { "" } else { "Voir « Équilibre du stockage » ci-dessous : ajoutez des disques, ou réduisez le quota par utilisateur, le nombre maxi d'utilisateurs ou l'espace de secours." },
     );
     v["santé du nœud"] = json!([disks, net, part, usr, bal]);
     v["mes utilisateurs"] = json!(users
@@ -2148,34 +2146,48 @@ fn users_buttons(v: &mut Value) {
 /// au reste.
 fn balance_status(sh: &Shared, v: &mut Value) {
     let s = sh.service.lock().unwrap();
-    let used: u64 = s.users.values().map(|u| u.used_bytes).sum();
-    let quotas = s.quotas_total(None);
-    let hosted: u64 = s.partners.values().map(|p| p.ledger.hosted_by_partner).sum::<u64>() * crate::exchange::FRAGMENT_BYTES;
-    let coef = crate::dispersal_engine::COEF as u64;
-    let (emergency, system, room) = (s.emergency_reserve(), s.system_reserve(), s.partners_room());
-    let offer = s.partner_policy.offer_bytes;
-    // Ratio de sauvegarde : quota des partenaires / (quotas + système) ;
-    // tenable à partir de coef (3 fragments de parité par bloc).
-    let base = quotas + system;
-    let ratio = if base == 0 { None } else { Some((room as f64 / base as f64 * 100.0).round() / 100.0) };
-    let ok = s.capacity_bytes == 0 || ratio.is_none_or(|r| r >= coef as f64);
+    let coef = crate::dispersal_engine::COEF as f64;
+    let g = |b: i128| {
+        let x = b as f64 / (1u64 << 30) as f64;
+        if x < 0.0 { format!("−{:.1} Gio", -x) } else { format!("{x:.1} Gio") }
+    };
+    let cap = s.capacity_bytes as i128;
+    let quotas = s.quotas_total(None) as i128;
+    // Quota total autorisé : nombre maxi d'utilisateurs × quota par
+    // utilisateur (rattachement automatique), au moins les quotas accordés.
+    let allowed = (s.attach_policy.quota_bytes as i128 * s.attach_policy.max_users as i128).max(quotas);
+    let (emergency, system) = (s.emergency_reserve() as i128, s.system_reserve() as i128);
+    let partners = cap - allowed - emergency - system;
+    let base = allowed + emergency + system;
+    let ratio = if base > 0 { partners as f64 / base as f64 } else { 0.0 };
+    let ok = cap == 0 || (partners >= 0 && ratio >= coef);
     let mut b = json!({
-        "capacité totale (octets)": s.capacity_bytes,
-        "quota utilisateurs total (octets)": quotas,
-        "quota utilisateurs de secours (octets)": emergency,
-        "réservé système (octets)": system,
-        "quota à disposition des partenaires (octets)": room,
-        "ratio de sauvegarde": ratio.map(|r| format!("{r} (objectif : {coef} au moins)")),
-        "données des utilisateurs (octets)": used,
-        "fragments des partenaires gardés ici (octets)": hosted,
-        "tenable": ok,
-        "_note": "Quota à disposition des partenaires = capacité totale − quotas des utilisateurs − secours − système. Chaque donnée d'un utilisateur est protégée par trois fois sa taille de fragments chez les partenaires, qui en gardent autant ici : le ratio de sauvegarde doit valoir 3 au moins.",
+        "capacité totale": g(cap),
+        "espace des utilisateurs": format!("{} / {}", g(quotas), g(allowed)),
+        "espace de secours": g(emergency),
+        "espace système": g(system),
+        "espace restant pour les partenaires": g(partners),
+        "équilibre du stockage": format!("{:.2} (objectif : {} au moins)", ratio, coef as u64),
+        "_note": format!("Espace des utilisateurs : quotas accordés / quota total autorisé (nombre maxi d'utilisateurs × quota par utilisateur). Équilibre = espace des partenaires / (utilisateurs + secours + système) : chaque donnée gardée ici demande {} fois sa taille chez les partenaires, qui en gardent autant ici.", coef as u64),
     });
-    if !s.partner_policy.offer_auto {
-        b["espace offert aux partenaires, réglé à la main (octets)"] = json!(offer);
+    if !ok {
+        let need = (coef * base as f64) as i128 + base - cap;
+        b["à corriger"] = json!([
+            if partners < 0 {
+                format!("Mauvaise configuration : les espaces promis dépassent la capacité de {} ; les partenaires n'ont plus de place pour protéger les données.", g(-partners))
+            } else {
+                format!("Mauvaise configuration : l'espace des partenaires ne protège que {:.2} fois les données promises (il en faut {}).", ratio, coef as u64)
+            },
+            format!("Solution 1 : ajouter des disques (environ {} de plus) — écran Disques.", g(need.max(0))),
+            "Solution 2 : réduire le quota par utilisateur — Configuration, onglet Utilisateurs.".to_string(),
+            "Solution 3 : réduire le nombre maxi d'utilisateurs — Configuration, onglet Utilisateurs.".to_string(),
+            "Solution 4 : réduire l'espace de secours — Configuration, onglet Espace de secours.".to_string(),
+        ]);
     }
+    b["_tenable"] = json!(ok);
     v["équilibre du stockage"] = b;
 }
+
 
 fn unix_now() -> u64 {
     std::time::SystemTime::now()

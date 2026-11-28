@@ -934,7 +934,7 @@ pub fn status(sh: &Shared) -> Value {
           "actions": ["sync_now", "release_old_versions"],
           "configurer": { "accès aux fichiers": "Fichiers", "libération d'espace": "Fichiers" } },
         { "id": "noeud", "titre": "Mon Nœud",
-          "sections": ["remplacement de mon nœud annoncé", "nœud rattaché", "espace", "rattachement automatique"], "actions": ["admin_node", "change_node"],
+          "sections": ["remplacement de mon nœud annoncé", "nœud rattaché", "clé d'annonce du nœud", "espace", "rattachement automatique"], "actions": ["admin_node", "change_node"],
           "configurer": { "nœud rattaché": "Mon Nœud" } },
         { "id": "explorateur", "titre": "Mes fichiers", "cadre": "explorer.html", "sections": [], "actions": [] },
         { "id": "contacts", "titre": "Contacts", "sections": ["contacts", "mon identifiant"],
@@ -953,7 +953,7 @@ pub fn status(sh: &Shared) -> Value {
           "onglets de sections": [{ "titre": "État de santé", "sections": ["santé"] },
                                   { "titre": "Avancé", "sections": ["journal"] }],
           "configurer": { "journal": "Journal" } },
-        { "id": "parametres", "titre": "Paramètres", "sections": [],
+        { "id": "parametres", "titre": "Paramètres", "sections": ["configuration"],
           "actions": ["set_pseudo", "set_node_label", "set_access", "set_always_free", "set_auto_free", "set_log_retention"], "onglets": true }
     ]);
     simple_pages(sh, &mut v, new_phrase.is_some(), setup.is_some());
@@ -1060,7 +1060,7 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
             "sections": ["alerte du nœud", "messages du nœud", "écrire à mon nœud"],
             "actions": ["mark_all_read"] }));
     }
-    pages.push(json!({ "id": "parametres", "titre": "Paramètres", "sections": [],
+    pages.push(json!({ "id": "parametres", "titre": "Paramètres", "sections": ["configuration"],
           "actions": ["set_pseudo", "set_node_label", "set_access", "set_always_free", "set_auto_free", "set_log_retention"], "onglets": true }));
     v["pages simples"] = json!(pages);
 }
@@ -1615,9 +1615,10 @@ fn status_base(sh: &Shared) -> Value {
         "configuration": {
             "budget hors ligne (octets)": sh.config.q_max_bytes,
             "intervalle de surveillance (s)": sh.config.watch_interval_s,
-            "lecteur monté": drive_letter(sh),
             "accès aux fichiers": access_mode(&sh.config),
-            "dossier synchronisé": folder_path(&sh.config).display().to_string(),
+            // Selon le mode : lettre du lecteur, ou dossier synchronisé.
+            "lecteur monté": (access_mode(&sh.config) != "dossier").then(|| drive_letter(sh)).flatten(),
+            "dossier synchronisé": (access_mode(&sh.config) == "dossier").then(|| folder_path(&sh.config).display().to_string()),
         },
         "accès aux fichiers": crate::setup::access_summary(&current_access(sh), &identity_dir(sh)),
         "_réglages de l'accès": [

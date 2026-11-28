@@ -163,6 +163,12 @@ async fn node_starts_serves_a_guarded_dashboard_and_persists_its_state() {
     let simple = body["pages simples"].as_array().unwrap();
     assert_eq!(simple.len(), 5);
     assert_eq!(body["santé du nœud"].as_array().unwrap().len(), 5);
+    // Équilibre (100 Gio ; 10 × 10 Gio autorisés ; 20 Gio de secours ; 2 % de
+    // système) : il manque 22 Gio aux partenaires, alerte et solutions.
+    let bal = &body["équilibre du stockage"];
+    assert_eq!(bal["espace restant pour les partenaires"], "−22.0 Gio", "{bal}");
+    assert!(bal["espace des utilisateurs"].as_str().unwrap().ends_with("/ 100.0 Gio"));
+    assert!(bal["à corriger"].as_array().unwrap().len() >= 4);
     let names: Vec<&str> = body["actions"].as_array().unwrap().iter().filter_map(|a| a["nom"].as_str()).collect();
     for p in simple {
         for a in p["actions"].as_array().unwrap() {

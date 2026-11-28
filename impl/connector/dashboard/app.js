@@ -1166,7 +1166,7 @@ function render(value, key) {
     // ouvre un panneau (ex. tableau complet derrière un agrégat).
     const t = el("table", undefined, "kv");
     Object.entries(value)
-      .filter(([k]) => k !== "_note" && k !== "_détails")
+      .filter(([k]) => !k.startsWith("_"))
       .forEach(([k, v]) => {
         const r = t.insertRow();
         r.appendChild(labelEl("th", k));
@@ -1562,7 +1562,7 @@ function openBrowser(start, pick, explorer = "fs_browse") {
 
 // Écrans : le moteur décrit `pages` (sections et actions de chacune) et
 // `résumé` (indicateurs de la vue d'ensemble). Sans `pages`, un seul écran.
-const RESERVED = new Set(["titre", "actions", "carte", "pages", "pages simples", "résumé", "à signaler", "bandeau"]);
+const RESERVED = new Set(["titre", "actions", "carte", "pages", "pages simples", "résumé", "à signaler", "bandeau", "page des réglages"]);
 
 // Thème clair / foncé / système, mémorisé dans ce navigateur (aussi lu par
 // l'Explorateur et la carte).

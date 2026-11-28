@@ -114,8 +114,7 @@ volumes à ses utilisateurs (25 %) et coef / (1 + coef) à ses partenaires
   utilisateurs accueillis × espace par utilisateur), le **réservé système**
   (2 % de la capacité : index, sauvegarde du Nœud, journal) et le **quota à
   disposition des partenaires** (capacité − quotas − secours − système).
-  Le **ratio de sauvegarde** = quota des partenaires / (quotas +
-  système) doit valoir coef (3) au moins.
+  L'équilibre (ci-dessous) doit valoir coef (3) au moins.
 - **Quotas** : la somme des quotas accordés (rattachement manuel ou
   automatique, changement de quota) ne dépasse jamais 1 / (1 + coef) de la
   capacité restante après le secours et le système. Au-delà, la demande est
@@ -124,9 +123,19 @@ volumes à ses utilisateurs (25 %) et coef / (1 + coef) à ses partenaires
   `offer_bytes` = quota à disposition des partenaires, recalculé à chaque
   cycle ; capacité inconnue : coef × max(quotas, données stockées), 10 Gio
   au moins. Désactivé, la valeur saisie s'applique telle quelle.
-- **Équilibre du stockage** : section et voyant (santé du Nœud, dans les
-  deux modes) qui montrent la pile et le ratio. Le voyant est rouge si le
-  ratio passe sous coef.
+- **Équilibre du stockage** (section et voyant de la santé du Nœud, dans
+  les deux modes) : un tableau, une ligne par espace. On y lit la capacité
+  totale, puis l'espace des utilisateurs : quotas accordés / quota total
+  autorisé (nombre maxi d'utilisateurs × quota par utilisateur). Suivent
+  l'espace de secours, l'espace système, et l'espace restant pour les
+  partenaires : capacité − autorisé − secours − système, qui peut être
+  négatif. L'équilibre vaut espace des partenaires / (utilisateurs +
+  secours + système), calculé sur ce qui est autorisé et non sur ce qui est
+  utilisé : une configuration intenable est signalée avant d'être
+  remplie. Sous coef, ou avec un espace négatif, le voyant est rouge.
+  « À corriger » explique pourquoi et propose des solutions : ajouter des
+  disques (taille estimée), réduire le quota par utilisateur, le nombre
+  maxi d'utilisateurs ou l'espace de secours.
 
 ### Réconciliation {: #reconciliation }
 
