@@ -148,6 +148,8 @@ async fn node_starts_serves_a_guarded_dashboard_and_persists_its_state() {
         body.len()
     );
     assert!(http(port, post).await.starts_with("HTTP/1.1 200"));
+    // Rattachement automatique actif : l'équilibre compte l'autorisé.
+    shared.service.lock().unwrap().attach_policy.enabled = true;
     // Ligne d'utilisateur : bouton « Éditer » et panneau (quota, étiquette).
     let st = http(port, get(port, "/api/status", &auth)).await;
     assert!(
@@ -337,4 +339,38 @@ async fn critical_actions_need_the_node_2fa_or_wait_72_hours() {
     assert!(status(&sh, now).get("bandeau").is_some(), "2FA à réactiver");
     // État conservé sur disque.
     assert_eq!(s3m_node::node2fa::load(&dir.join("data")).enabled_serial, Some(0));
+}
+
+/// Équilibre du stockage (`node.PartnerAccount#dimensionnement`) :
+/// rattachement automatique désactivé, l'autorisé = les quotas accordés ;
+/// espace offert réglé à la main : il compte pour les partenaires, avec un
+/// bandeau s'il dépasse l'espace restant, l'espace inexploité sinon.
+#[tokio::test(flavor = "multi_thread")]
+async fn storage_balance_follows_attach_and_manual_offer_settings() {
+    const G: u64 = 1 << 30;
+    let dir = temp_dir("balance");
+    let (sh, _url) = start(config(&dir)).await.unwrap();
+    let now = 2_000_000_000;
+    {
+        let mut s = sh.service.lock().unwrap();
+        s.attach_policy.enabled = false;
+        s.partner_policy.offer_auto = false;
+        s.partner_policy.offer_bytes = 10 * G;
+    }
+    let st = status(&sh, now);
+    let b = &st["équilibre du stockage"];
+    assert_eq!(b["espace des utilisateurs"], "0.0 Gio / 0.0 Gio", "{b}");
+    // 100 − 0 − 20 − 2 = 78 Gio restants, 10 offerts : 68 inexploités.
+    assert!(b["espace vide inexploité"].as_str().unwrap().starts_with("68.0 Gio"), "{b}");
+    let banners = |st: &serde_json::Value| -> Vec<String> {
+        let v = st["bandeau"].clone();
+        let list = if v.is_array() { v.as_array().unwrap().clone() } else { vec![v] };
+        list.iter().filter_map(|x| x["texte"].as_str().map(str::to_string)).collect()
+    };
+    assert!(!banners(&st).iter().any(|t| t.contains("espace offert")));
+    sh.service.lock().unwrap().partner_policy.offer_bytes = 90 * G;
+    let st = status(&sh, now);
+    assert!(banners(&st).iter().any(|t| t.contains("espace offert")), "bandeau d'alerte");
+    assert!(banners(&st).iter().any(|t| t.contains("2FA")), "le bandeau 2FA reste");
+    assert!(st["équilibre du stockage"].get("espace vide inexploité").is_none());
 }

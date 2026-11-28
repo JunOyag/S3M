@@ -1610,12 +1610,8 @@ function bannerNode(b) {
   s.appendChild(el("strong", b["texte"] || ""));
   (Array.isArray(b["détail"]) ? b["détail"] : b["détail"] ? [b["détail"]] : []).forEach((t) => s.appendChild(el("p", t)));
   const target = (!expert && b["page simple"]) || b["page"];
-  if (target) {
-    const go_ = el("button", b["bouton"] || "Régler maintenant");
-    go_.type = "button";
-    go_.addEventListener("click", () => go(target));
-    s.appendChild(go_);
-  }
+  // `onglet` : onglet des réglages à ouvrir.
+  if (target) s.appendChild(goButton(b["bouton"] || "Régler maintenant", target, b["onglet"], ""));
   return s;
 }
 // Mode simple (par défaut) ou expert : `pages simples` / `pages` du moteur
@@ -1839,7 +1835,8 @@ function show(status) {
   }
   [...main.children].forEach((c) => c !== keep && c !== frame && c.remove());
   const frag = document.createDocumentFragment();
-  if (status["bandeau"]) frag.appendChild(bannerNode(status["bandeau"]));
+  // `bandeau` : un objet, ou une liste de bandeaux.
+  [].concat(status["bandeau"] || []).forEach((b) => frag.appendChild(bannerNode(b)));
   if (pages.length > 1) frag.appendChild(el("h2", p.titre, "page-title"));
   if (highlighted.length) {
     const b = el("section", undefined, "callout");

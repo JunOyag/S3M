@@ -2153,11 +2153,21 @@ fn balance_status(sh: &Shared, v: &mut Value) {
     };
     let cap = s.capacity_bytes as i128;
     let quotas = s.quotas_total(None) as i128;
-    // Quota total autorisé : nombre maxi d'utilisateurs × quota par
-    // utilisateur (rattachement automatique), au moins les quotas accordés.
-    let allowed = (s.attach_policy.quota_bytes as i128 * s.attach_policy.max_users as i128).max(quotas);
+    // Quota total autorisé : rattachement automatique actif, nombre maxi
+    // d'utilisateurs × quota par utilisateur (au moins les quotas accordés) ;
+    // sinon les quotas des utilisateurs rattachés.
+    let auto_attach = s.attach_policy.enabled;
+    let allowed = if auto_attach {
+        (s.attach_policy.quota_bytes as i128 * s.attach_policy.max_users as i128).max(quotas)
+    } else {
+        quotas
+    };
     let (emergency, system) = (s.emergency_reserve() as i128, s.system_reserve() as i128);
-    let partners = cap - allowed - emergency - system;
+    let remaining = cap - allowed - emergency - system;
+    // Espace offert à la main : c'est lui qui compte pour les partenaires.
+    let manual = !s.partner_policy.offer_auto;
+    let offer = s.partner_policy.offer_bytes as i128;
+    let partners = if manual { offer } else { remaining };
     let base = allowed + emergency + system;
     let ratio = if base > 0 { partners as f64 / base as f64 } else { 0.0 };
     let ok = cap == 0 || (partners >= 0 && ratio >= coef);
@@ -2166,8 +2176,9 @@ fn balance_status(sh: &Shared, v: &mut Value) {
         "espace des utilisateurs": format!("{} / {}", g(quotas), g(allowed)),
         "espace de secours": g(emergency),
         "espace système": g(system),
-        "espace restant pour les partenaires": g(partners),
+        "espace restant pour les partenaires": g(remaining),
         "équilibre du stockage": format!("{:.2} (objectif : {} au moins)", ratio, coef as u64),
+        "quota total autorisé": if auto_attach { "rattachement automatique : nombre maxi d'utilisateurs × quota par utilisateur" } else { "rattachement automatique désactivé : quotas des utilisateurs rattachés" },
         "_note": format!("Espace des utilisateurs : quotas accordés / quota total autorisé (nombre maxi d'utilisateurs × quota par utilisateur). Équilibre = espace des partenaires / (utilisateurs + secours + système) : chaque donnée gardée ici demande {} fois sa taille chez les partenaires, qui en gardent autant ici.", coef as u64),
     });
     if !ok {
@@ -2184,8 +2195,37 @@ fn balance_status(sh: &Shared, v: &mut Value) {
             "Solution 4 : réduire l'espace de secours — Configuration, onglet Espace de secours.".to_string(),
         ]);
     }
+    if manual {
+        b["espace offert aux partenaires (réglé à la main)"] = json!(g(offer));
+        if remaining >= 0 && offer < remaining {
+            b["espace vide inexploité"] = json!(format!("{} : l'espace offert aux partenaires est inférieur à l'espace restant (bouton « Configurer » : onglet Partenaires).", g(remaining - offer)));
+        }
+    }
     b["_tenable"] = json!(ok);
     v["équilibre du stockage"] = b;
+    drop(s);
+    if manual && offer > remaining {
+        push_banner(v, json!({
+            "texte": "Stockage : l'espace offert aux partenaires dépasse l'espace disponible",
+            "détail": [
+                format!("Vous offrez {} à vos partenaires, mais il ne reste que {} une fois réservés les utilisateurs, l'espace de secours et le système. Si les partenaires remplissent ce qui leur est promis, les disques seront pleins et vos utilisateurs ne pourront plus écrire.", g(offer), g(remaining)),
+                "Réduisez l'espace offert aux partenaires, réactivez « espace offert automatique », ajoutez des disques, ou réduisez les quotas des utilisateurs.".to_string(),
+            ],
+            "page": "configuration", "page simple": "configuration", "onglet": "Partenaires", "bouton": "Configurer l'espace offert",
+        }));
+    }
+}
+
+/// Bandeau d'alerte ajouté à ceux déjà présents (`bandeau` : objet ou liste).
+fn push_banner(v: &mut Value, b: Value) {
+    v["bandeau"] = match v["bandeau"].take() {
+        Value::Null => b,
+        Value::Array(mut a) => {
+            a.push(b);
+            Value::Array(a)
+        }
+        one => json!([one, b]),
+    };
 }
 
 

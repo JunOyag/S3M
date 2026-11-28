@@ -136,6 +136,14 @@ volumes à ses utilisateurs (25 %) et coef / (1 + coef) à ses partenaires
   « À corriger » explique pourquoi et propose des solutions : ajouter des
   disques (taille estimée), réduire le quota par utilisateur, le nombre
   maxi d'utilisateurs ou l'espace de secours.
+- **Réglages pris en compte** (ajout du 2026-11-28) :
+  - rattachement automatique désactivé : le quota total autorisé est celui
+    des utilisateurs déjà rattachés ;
+  - « espace offert automatique » désactivé : l'espace des partenaires est
+    l'espace offert saisi. S'il dépasse l'espace restant, un bandeau rouge
+    avertit l'opérateur. S'il est inférieur, la ligne « espace vide
+    inexploité » donne l'écart, et « Configurer » mène à l'onglet
+    Partenaires.
 
 ### Réconciliation {: #reconciliation }
 
