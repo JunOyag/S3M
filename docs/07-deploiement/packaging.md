@@ -566,6 +566,41 @@ Ajout du 2026-11-28, même principe que le 2FA des utilisateurs
   - à l'échéance, une modification de volumes est abandonnée si la liste a
     changé depuis la demande.
 
+### Organisation des écrans {: #organisation }
+
+Ajout du 2026-11-28.
+
+- **Noms** : chaque écran porte le même nom en mode simple et en mode
+  expert (Accueil, Disques, Mes fichiers, Partages, Messages, Mon
+  compte…).
+- **Réglages** : tous les réglages sont rassemblés dans un écran, avec un
+  onglet par thème. Cet écran est Configuration côté Nœud et Paramètres
+  côté Connecteur, présent dans les deux modes. Les autres écrans ne gardent
+  que des actions. Sous une section qui a des réglages, un bouton
+  « Configurer » ouvre cet écran sur le bon onglet (`configurer` :
+  section → onglet dans la description de l'écran).
+- **Onglets du Nœud** : Réseau, Relais, Partenaires, Contrôles,
+  Administration à distance, Utilisateurs (rattachement automatique,
+  nombre maxi d'utilisateurs, délai d'inactivité avant suppression en jours
+  entiers), Alertes, Journal, Géolocalisation (mise à jour de la base,
+  enregistrement de l'adresse des utilisateurs), Identité, Espace de
+  secours.
+- **Onglets du Connecteur** : Identité (pseudo), Mon Nœud, Fichiers (accès,
+  libération automatique, protection contre le vol), Journal.
+- **Utilisateurs du Nœud** : « Ajouter un utilisateur » (rattachement
+  manuel, en fenêtre) et « Configuration » sous la liste.
+- **Fichiers et synchronisation** (Connecteur) : « Libérer de l'espace »
+  et « Toujours garder sur cet appareil » ne s'y trouvent plus
+  (l'Explorateur le fait). « Nettoyer les blocs inutilisés » (ancien
+  « Libérer les anciennes versions ») libère chez le Nœud les blocs que ni
+  la version actuelle ni l'historique n'utilisent. Les versions gardées ne
+  sont jamais touchées, à la différence de « Purger tout l'historique »,
+  protégée par le 2FA. Le Nœud garde de toute façon un bloc libéré aussi
+  longtemps que l'historique ([`protocols.echange-blocs#liberation`](../04-protocols/echange-blocs.md#liberation)).
+- **Connexion** : « ● En ligne » ou « ● Hors ligne » dans l'en-tête.
+- **Explorateur** : recliquer sur la seule ligne sélectionnée la
+  désélectionne. Les icônes d'action n'apparaissent qu'au survol.
+
 ### Affichage commun des tableaux de bord {: #affichage }
 
 Ajout du 2026-11-27, Nœud et Connecteur :

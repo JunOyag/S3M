@@ -378,6 +378,11 @@ function selectClick(ev, e) {
     if (selected.has(e.path)) selected.delete(e.path);
     else selected.add(e.path);
     anchor = e.path;
+  } else if (selected.size === 1 && selected.has(e.path) && ev.detail === 1) {
+    // Reclic simple sur la seule ligne sélectionnée : désélection (pas le
+    // second clic d'un double-clic).
+    selected.clear();
+    anchor = null;
   } else {
     selected = new Set([e.path]);
     anchor = e.path;

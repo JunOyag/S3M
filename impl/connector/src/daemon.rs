@@ -817,54 +817,63 @@ pub fn status(sh: &Shared) -> Value {
     crate::share_ops::status(sh, &mut v);
     {
         let n = sh.names.lock().unwrap().clone();
-        // Pseudo : formulaire de la section Utilisateur.
-        let user = v["utilisateur"].take();
-        v["utilisateur"] = json!({ "_contenu": user, "_formulaires": [
-            { "nom": "set_pseudo", "titre": "Pseudo de cette identité", "libellé": "Enregistrer",
-              "champs": ["pseudo"], "valeurs": { "pseudo": n.pseudo },
-              "aide": { "pseudo": "Visible par vous seul, sur tous vos appareils (64 octets au plus) ; vide pour aucun pseudo" } }] });
         let a = v.get_mut("actions").and_then(|a| a.as_array_mut()).expect("actions");
-        a.push(json!({ "nom": "set_node_label", "titre": "Nom de mon Nœud (pour moi)", "libellé": "Enregistrer",
+        a.push(json!({ "nom": "set_pseudo", "titre": "Configuration — Identité", "libellé": "Enregistrer le pseudo",
+              "champs": ["pseudo"], "valeurs": { "pseudo": n.pseudo },
+              "aide": { "pseudo": "Visible par vous seul, sur tous vos appareils (64 octets au plus) ; vide pour aucun pseudo" } }));
+        a.push(json!({ "nom": "set_node_label", "titre": "Configuration — Mon Nœud", "libellé": "Enregistrer",
             "champs": ["nom"], "valeurs": { "nom": n.node_label },
             "aide": { "nom": "Remplace pour vous le nom choisi par l'opérateur ; l'empreinte reste toujours affichée" } }));
+    }
+    // Accès aux fichiers : réglages dans Paramètres, onglet Fichiers.
+    {
+        let mut access = crate::setup::access_form(&current_access(sh), &identity_dir(sh));
+        access["titre"] = json!("Configuration — Fichiers");
+        let extra = v.as_object_mut().and_then(|o| o.remove("_réglages de l'accès"));
+        if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+            a.push(access);
+            if let Some(Value::Array(x)) = extra {
+                a.extend(x);
+            }
+        }
     }
     v["santé"] = health_status(sh);
     contacts_status(sh, &mut v);
     if sh.drive.is_some() {
         v["historique des versions"] = history_status(sh);
     }
+    if sh.drive.is_some() {
+        if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+            // Ne touche jamais aux versions gardées (≠ « Purger tout
+            // l'historique », protégée par le 2FA) : blocs que plus rien
+            // n'utilise, ni la version actuelle ni l'historique.
+            a.push(json!({ "nom": "release_old_versions", "titre": "Nettoyage chez le Nœud", "libellé": "Nettoyer les blocs inutilisés",
+                "texte": "Rend au quota la place des blocs que plus rien n'utilise chez votre Nœud (ni vos fichiers actuels, ni les versions gardées de l'historique : rien de récupérable n'est perdu). Pour effacer aussi l'historique, c'est « Purger tout l'historique », protégé par le 2FA. Vos autres appareils doivent être à jour et ne rien envoyer pendant l'opération.",
+                "champs": [],
+                "confirmer": "Libérer chez le Nœud les blocs que ni la version actuelle ni l'historique n'utilisent ?\n\nVos autres appareils doivent être synchronisés et ne rien envoyer pendant l'opération : un envoi en cours pourrait perdre des blocs." }));
+        }
+    }
     if access_mode(&sh.config) == "dossier" {
         v["libération d'espace"] = free_status(sh);
         v["toujours sur cet appareil"] = keep_status(sh);
         let days = sh.free_after_s.load(std::sync::atomic::Ordering::Relaxed) / 86_400;
         if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
-            a.push(json!({ "nom": "release_old_versions", "titre": "Anciennes versions chez le Nœud", "libellé": "Libérer les anciennes versions",
-                "texte": "Rend au quota la place des anciennes versions de vos fichiers accumulées chez votre Nœud. Vos autres appareils doivent être à jour et ne rien envoyer pendant l'opération.",
-                "champs": [],
-                "confirmer": "Libérer chez le Nœud tout ce que la version actuelle de vos fichiers n'utilise pas ?\n\nVos autres appareils doivent être synchronisés et ne rien envoyer pendant l'opération : un envoi en cours pourrait perdre des blocs." }));
-            a.push(json!({ "nom": "free_space", "titre": "Libérer de l'espace", "libellé": "Libérer",
-                "texte": "Retire du disque le contenu des fichiers déjà envoyés à votre Nœud, sans les supprimer : ils restent visibles et reviennent à l'ouverture. Un fichier pas encore envoyé n'est jamais touché.",
-                "champs": ["dossier"], "types": { "dossier": "chemin" }, "explorateurs": { "dossier": "drive_browse" },
-                "aide": { "dossier": "Vide : tout le dossier synchronisé ; sinon un sous-dossier (« Parcourir… »)" } }));
-            a.push(json!({ "nom": "set_auto_free", "titre": "Libération automatique", "libellé": "Enregistrer",
+            a.push(json!({ "nom": "set_auto_free", "titre": "Configuration — Fichiers", "libellé": "Enregistrer la libération automatique",
                 "champs": ["après (jours)"], "types": { "après (jours)": "durée" }, "unités": { "après (jours)": "j" }, "libellés": { "après (jours)": "après" },
                 "valeurs": { "après (jours)": days },
                 "aide": { "après (jours)": "Place libérée pour les fichiers ni ouverts ni téléchargés depuis ce nombre de jours (vérifié chaque heure) ; 0 : jamais" } }));
-            a.push(json!({ "nom": "keep_offline", "titre": "Toujours garder sur cet appareil", "libellé": "Garder",
-                "texte": "Le fichier ou le dossier est téléchargé et n'est jamais libéré, ni à la demande ni automatiquement ; ce qui s'ajoute ensuite dans un dossier gardé est téléchargé aussi. L'Explorateur l'affiche « toujours disponible ».",
-                "champs": ["élément"], "types": { "élément": "chemin" }, "explorateurs": { "élément": "drive_browse" },
-                "aide": { "élément": "Fichier ou dossier de votre espace (« Parcourir… »)" } }));
         }
     }
     let days = logs_dir(sh).map_or(LOG_DAYS, |l| log_days(&l));
-    v["journal"] = json!({
-        "_contenu": journal_rows(sh),
-        "_formulaires": [{ "nom": "set_log_retention", "titre": "Conservation du journal", "libellé": "Enregistrer",
+    v["journal"] = journal_rows(sh);
+    if let Some(a) = v.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        a.push(json!({ "nom": "set_log_retention", "titre": "Configuration — Journal", "libellé": "Enregistrer",
             "champs": ["conservation (jours)"], "types": { "conservation (jours)": "durée" },
             "unités": { "conservation (jours)": "j" }, "libellés": { "conservation (jours)": "conservation" },
             "valeurs": { "conservation (jours)": days },
-            "aide": { "conservation (jours)": "Les lignes plus anciennes sont retirées chaque jour (90 jours par défaut)" } }],
-    });
+            "aide": { "conservation (jours)": "Les lignes plus anciennes sont retirées chaque jour (90 jours par défaut)" } }));
+    }
+    v["page des réglages"] = json!("parametres");
     home_lists(sh, &mut v);
     security_status(sh, &mut v);
     // Nouvelle phrase après un changement d'identité, jusqu'à confirmation.
@@ -913,7 +922,7 @@ pub fn status(sh: &Shared) -> Value {
         ));
     }
     v["pages"] = json!([
-        { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true,
+        { "id": "accueil", "titre": "Accueil", "résumé": true,
           "sections": match (new_phrase.is_some(), setup.is_some()) {
               (true, true) => json!(["nouvelle phrase de récupération", "mise en route", "favoris", "récents"]),
               (true, false) => json!(["nouvelle phrase de récupération", "favoris", "récents"]),
@@ -922,26 +931,30 @@ pub fn status(sh: &Shared) -> Value {
           }, "actions": ["sync_now"] },
         { "id": "fichiers", "titre": "Fichiers et synchronisation",
           "sections": ["accès aux fichiers", "historique des versions", "libération d'espace", "toujours sur cet appareil", "lecteur", "file d'écriture", "blocs pas encore dispersés"],
-          "actions": ["sync_now", "free_space", "set_auto_free", "keep_offline"] },
+          "actions": ["sync_now", "release_old_versions"],
+          "configurer": { "accès aux fichiers": "Fichiers", "libération d'espace": "Fichiers" } },
         { "id": "noeud", "titre": "Mon Nœud",
-          "sections": ["remplacement de mon nœud annoncé", "nœud rattaché", "espace", "rattachement automatique"], "actions": ["set_node_label", "admin_node", "change_node"] },
-        { "id": "explorateur", "titre": "Explorateur", "cadre": "explorer.html", "sections": [], "actions": [] },
+          "sections": ["remplacement de mon nœud annoncé", "nœud rattaché", "espace", "rattachement automatique"], "actions": ["admin_node", "change_node"],
+          "configurer": { "nœud rattaché": "Mon Nœud" } },
+        { "id": "explorateur", "titre": "Mes fichiers", "cadre": "explorer.html", "sections": [], "actions": [] },
         { "id": "contacts", "titre": "Contacts", "sections": ["contacts", "mon identifiant"],
           "actions": [] },
         { "id": "partages", "titre": "Partages",
           "sections": ["partages donnés", "partages reçus"], "actions": [] },
-        { "id": "messages", "titre": "Messages du Nœud",
+        { "id": "messages", "titre": "Messages",
           "sections": ["remplacement de la clé d'alerte", "alerte du nœud", "messages du nœud", "écrire à mon nœud", "messages envoyés au nœud"],
           "actions": ["mark_all_read"] },
         { "id": "urgence", "titre": "Écriture d'urgence",
           "sections": ["écriture d'urgence"], "actions": [] },
-        { "id": "securite", "titre": "Identité et sécurité",
-          "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "mes appareils", "sécurité renforcée (2FA)", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"] },
+        { "id": "securite", "titre": "Mon compte",
+          "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "mes appareils", "sécurité renforcée (2FA)", "annuaire (entrée User)", "autorisation de secours", "incidents d'intégrité"], "actions": ["rotate_identity"],
+          "configurer": { "utilisateur": "Identité" } },
         { "id": "diagnostic", "titre": "Diagnostic", "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "État de santé", "sections": ["santé"] },
-                                  { "titre": "Avancé", "sections": ["journal"] }] },
-        { "id": "parametres", "titre": "Paramètres", "autres": true,
-          "sections": ["configuration"], "actions": [] }
+                                  { "titre": "Avancé", "sections": ["journal"] }],
+          "configurer": { "journal": "Journal" } },
+        { "id": "parametres", "titre": "Paramètres", "sections": [],
+          "actions": ["set_pseudo", "set_node_label", "set_access", "set_always_free", "set_auto_free", "set_log_retention"], "onglets": true }
     ]);
     simple_pages(sh, &mut v, new_phrase.is_some(), setup.is_some());
     v
@@ -1034,18 +1047,21 @@ fn simple_pages(sh: &Shared, v: &mut Value, new_phrase: bool, setup: bool) {
     let mut pages = vec![
         json!({ "id": "accueil", "titre": "Accueil", "sections": accueil, "actions": ["sync_now"] }),
         json!({ "id": "explorateur", "titre": "Mes fichiers", "cadre": "explorer.html", "sections": [], "actions": [] }),
-        json!({ "id": "partages", "titre": "Partager",
+        json!({ "id": "partages", "titre": "Partages",
                 "sections": ["partages donnés", "partages reçus", "contacts", "mon identifiant"],
                 "actions": [] }),
         json!({ "id": "compte", "titre": "Mon compte",
                 "sections": ["opérations de sécurité en attente", "2FA à réactiver", "utilisateur", "mes appareils", "sécurité renforcée (2FA)", "espace", "accès aux fichiers", "historique des versions"],
-                "actions": ["change_node", "rotate_identity"] }),
+                "actions": ["change_node", "rotate_identity"],
+                "configurer": { "utilisateur": "Identité", "accès aux fichiers": "Fichiers" } }),
     ];
     if t.messages_received > 0 || v.pointer("/alerte du nœud/message").is_some_and(|m| !m.is_null()) {
         pages.push(json!({ "id": "messages", "titre": "Messages",
             "sections": ["alerte du nœud", "messages du nœud", "écrire à mon nœud"],
             "actions": ["mark_all_read"] }));
     }
+    pages.push(json!({ "id": "parametres", "titre": "Paramètres", "sections": [],
+          "actions": ["set_pseudo", "set_node_label", "set_access", "set_always_free", "set_auto_free", "set_log_retention"], "onglets": true }));
     v["pages simples"] = json!(pages);
 }
 
@@ -1603,14 +1619,12 @@ fn status_base(sh: &Shared) -> Value {
             "accès aux fichiers": access_mode(&sh.config),
             "dossier synchronisé": folder_path(&sh.config).display().to_string(),
         },
-        "accès aux fichiers": {
-            "_contenu": crate::setup::access_summary(&current_access(sh), &identity_dir(sh)),
-            "_formulaires": [crate::setup::access_form(&current_access(sh), &identity_dir(sh)),
-                { "nom": "set_always_free", "titre": "Protection contre le vol", "libellé": "Enregistrer", "expert": true,
+        "accès aux fichiers": crate::setup::access_summary(&current_access(sh), &identity_dir(sh)),
+        "_réglages de l'accès": [
+                { "nom": "set_always_free", "titre": "Configuration — Fichiers", "libellé": "Enregistrer la protection contre le vol", "expert": true,
                   "champs": ["toujours libérer l'espace"], "types": { "toujours libérer l'espace": "bool" },
                   "valeurs": { "toujours libérer l'espace": sh.always_free.load(std::sync::atomic::Ordering::Relaxed) },
                   "aide": { "toujours libérer l'espace": "Ne garde aucun contenu de fichier sur cet appareil une fois reçu par votre Nœud et dispersé chez ses partenaires : un voleur de l'ordinateur ne trouve rien quand S3m n'est pas lancé. Chaque ouverture retélécharge le fichier ; hors connexion, seuls les éléments « gardés sur cet appareil » restent lisibles." } }],
-        },
         "écriture d'urgence": emergency_status(sh, now),
         "actions": [
             { "nom": "sync_now", "libellé": "Synchroniser maintenant", "champs": [] },

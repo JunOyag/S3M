@@ -416,7 +416,7 @@ pub const FIELDS: &[Field] = &[
         "Les événements plus anciens sont retirés chaque jour (90 jours par défaut).",
     ),
     f(
-        "Vie privée",
+        "Géolocalisation",
         "enregistrer l'adresse des utilisateurs",
         "record_user_ips",
         Kind::Bool,

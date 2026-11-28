@@ -108,17 +108,25 @@ pour eux. À l'équilibre, un Nœud consacre donc **1 / (1 + coef) de ses
 volumes à ses utilisateurs (25 %) et coef / (1 + coef) à ses partenaires
 (75 %)**, hors index, sauvegarde du Nœud et versions passées.
 
+- **Pile d'espaces** : la capacité totale (volumes actifs) se partage entre
+  le **quota utilisateurs total**, le **quota utilisateurs de secours**
+  ([`protocols.espace-secours`](../../04-protocols/espace-secours.md) :
+  utilisateurs accueillis × espace par utilisateur), le **réservé système**
+  (2 % de la capacité : index, sauvegarde du Nœud, journal) et le **quota à
+  disposition des partenaires** (capacité − quotas − secours − système).
+  Le **ratio de sauvegarde** = quota des partenaires / (quotas +
+  système) doit valoir coef (3) au moins.
 - **Quotas** : la somme des quotas accordés (rattachement manuel ou
   automatique, changement de quota) ne dépasse jamais 1 / (1 + coef) de la
-  capacité des volumes actifs. Au-delà, la demande est refusée avec une
-  explication.
+  capacité restante après le secours et le système. Au-delà, la demande est
+  refusée avec une explication.
 - **Espace offert automatique** (`partner_policy.offer_auto`, par défaut) :
-  `offer_bytes` = coef × max(quotas accordés, données stockées), 10 Gio au
-  moins, plafonné à coef / (1 + coef) de la capacité. Il est recalculé à
-  chaque cycle. Désactivé, la valeur saisie s'applique telle quelle.
-- **Voyant « Équilibre du stockage »** (santé du Nœud) : rouge si les
-  quotas dépassent la part des utilisateurs, ou si l'espace offert est
-  inférieur à coef fois les données déjà stockées.
+  `offer_bytes` = quota à disposition des partenaires, recalculé à chaque
+  cycle ; capacité inconnue : coef × max(quotas, données stockées), 10 Gio
+  au moins. Désactivé, la valeur saisie s'applique telle quelle.
+- **Équilibre du stockage** : section et voyant (santé du Nœud, dans les
+  deux modes) qui montrent la pile et le ratio. Le voyant est rouge si le
+  ratio passe sous coef.
 
 ### Réconciliation {: #reconciliation }
 

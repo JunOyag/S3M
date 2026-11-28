@@ -664,21 +664,22 @@ fn a_scheduled_purge_is_unique_and_a_2fa_code_purges_at_once() {
     assert!(s.pending_ops.get(&pk(&USER)).is_none_or(|v| v.is_empty()), "purge programmée retirée");
 }
 
-/// Dimensionnement (`node.PartnerAccount#dimensionnement`) : les
-/// utilisateurs ont droit au quart des volumes (k = 4, coef = 3), l'espace
-/// offert suit trois fois leurs quotas, plafonné aux trois quarts.
+/// Dimensionnement (`node.PartnerAccount#dimensionnement`) : pile d'espaces
+/// (utilisateurs, secours, système, partenaires) ; les utilisateurs ont
+/// droit à 1 / (1 + coef) de ce qui reste après le secours et le système,
+/// l'espace offert automatique est le quota à disposition des partenaires.
 #[test]
 fn users_get_a_quarter_and_partners_three_quarters_of_the_volumes() {
     const G: u64 = 1 << 30;
     let mut s = service_with_user(NODE, 10 * G);
     s.capacity_bytes = 400 * G;
-    assert_eq!(s.users_cap(), Some(100 * G));
-    assert_eq!(s.user_room(None), Some(90 * G));
+    let (e, sys) = (s.emergency_reserve(), s.system_reserve());
+    assert_eq!(sys, 8 * G, "2 % de la capacité");
+    assert_eq!(s.users_cap(), Some((400 * G - e - sys) / 4));
+    assert_eq!(s.user_room(None), Some((400 * G - e - sys) / 4 - 10 * G));
     s.refresh_offer();
-    assert_eq!(s.partner_policy.offer_bytes, 30 * G, "trois fois les quotas");
-    s.users.get_mut(&pk(&USER)).unwrap().quota_bytes = 200 * G;
-    s.refresh_offer();
-    assert_eq!(s.partner_policy.offer_bytes, 300 * G, "plafonné aux trois quarts");
+    assert_eq!(s.partner_policy.offer_bytes, 400 * G - 10 * G - e - sys, "quota à disposition des partenaires");
+    assert_eq!(s.partners_room(), s.partner_policy.offer_bytes);
     s.partner_policy.offer_auto = false;
     s.partner_policy.offer_bytes = 5 * G;
     s.refresh_offer();

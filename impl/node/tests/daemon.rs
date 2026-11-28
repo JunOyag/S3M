@@ -27,7 +27,7 @@ fn config(dir: &std::path::Path) -> Config {
         volumes: vec![VolumeSpec {
             volume_id: 1,
             mount_path: dir.join("vol"),
-            max_capacity_bytes: 1 << 30,
+            max_capacity_bytes: 100 << 30,
             draining: false,
         }],
         listen: "/ip4/127.0.0.1/tcp/0".into(),
@@ -168,7 +168,7 @@ async fn node_starts_serves_a_guarded_dashboard_and_persists_its_state() {
         for a in p["actions"].as_array().unwrap() {
             // Actions présentes seulement en situation (liste de volumes en
             // cours, messages non lus).
-            let conditional = ["volume_apply", "volume_draft_clear", "mark_all_user_messages_read"];
+            let conditional = ["volume_apply", "volume_draft_clear", "mark_all_user_messages_read", "set_config"];
             let n = a.as_str().unwrap();
             assert!(names.contains(&n) || conditional.contains(&n), "action {a} absente");
         }

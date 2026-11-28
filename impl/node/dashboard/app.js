@@ -1194,6 +1194,12 @@ function render(value, key) {
 // `fixes` : valeurs envoyées sans champ visible (ligne éditée) ; `done` :
 // appelé après succès (fermeture du panneau).
 function actionForm(a, done) {
+  // `_aller` : bouton vers une page, et un onglet de réglages.
+  if (a["nom"] === "_aller") {
+    const box = el("div", undefined, "form-button");
+    box.appendChild(goButton(a["libellé"], a["page"], a["onglet"], a["style"] || "secondary"));
+    return box;
+  }
   // `fichier` : bouton qui fait choisir un fichier sur l'appareil ; son
   // contenu (texte) est envoyé dans ce champ.
   if (a["fichier"]) {
@@ -1690,6 +1696,20 @@ function pagesOf(status) {
   return out;
 }
 
+// Onglet à ouvrir à la prochaine page (bouton « Configurer »).
+let pendingTab = null;
+function goButton(label, target, tab, cls) {
+  const b = el("button", label, cls || "secondary");
+  b.type = "button";
+  b.title = tab ? "Ouvrir les réglages : onglet « " + tab + " »" : "";
+  b.addEventListener("click", () => {
+    pendingTab = tab || null;
+    actionsKey = "";
+    go(target);
+  });
+  return b;
+}
+
 function go(id) {
   page = id;
   try {
@@ -1886,6 +1906,9 @@ function show(status) {
       s.appendChild(labelEl("h2", k));
       s.appendChild(render(v, k));
     }
+    // `configurer` : { section: onglet } — bouton vers la page des réglages.
+    const tab = (p["configurer"] || {})[k];
+    if (tab) s.appendChild(goButton("Configurer", status["page des réglages"] || "configuration", tab, "secondary small configure"));
     into.appendChild(s);
   };
   p.sections.forEach((k) => section(k, frag));
@@ -1964,7 +1987,9 @@ function show(status) {
         if (h) h.remove();
         s.appendChild(x);
       });
-      pick(Math.min(tabState[page] || 0, actions.length - 1));
+      const wanted = pendingTab ? groupsByName.findIndex((g) => g.name === pendingTab) : -1;
+      pendingTab = null;
+      pick(wanted >= 0 ? wanted : Math.min(tabState[page] || 0, actions.length - 1));
     } else {
       actions.forEach((a) => s.appendChild(actionForm(a)));
     }
@@ -1987,12 +2012,13 @@ function connect() {
   const ws = new WebSocket("ws://" + location.host + "/api/ws");
   ws.onopen = () => {
     ws.send(token);
-    live.textContent = "en direct";
-    live.className = "";
+    live.textContent = "● En ligne";
+    live.className = "online";
   };
   ws.onmessage = (m) => show(JSON.parse(m.data));
   ws.onclose = () => {
-    live.textContent = "déconnecté — nouvelle tentative…";
+    live.textContent = "● Hors ligne — nouvelle tentative…";
+    live.className = "offline";
     setTimeout(connect, 3000);
   };
 }

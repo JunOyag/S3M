@@ -265,7 +265,10 @@ async fn a_new_identity_explains_its_setup_steps() {
     let names: Vec<&str> = st["actions"].as_array().unwrap().iter().filter_map(|a| a["nom"].as_str()).collect();
     for p in simple {
         for a in p["actions"].as_array().unwrap() {
-            assert!(names.contains(&a.as_str().unwrap()), "action {a} absente");
+            // Selon le mode d'accès (dossier synchronisé, fichiers configurés).
+            let conditional = ["set_auto_free", "release_old_versions"];
+            let n = a.as_str().unwrap();
+            assert!(names.contains(&n) || conditional.contains(&n), "action {a} absente");
         }
     }
     let _ = std::fs::remove_dir_all(&dir);

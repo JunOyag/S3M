@@ -441,10 +441,33 @@ impl NodeService {
         self.node_id
     }
 
-    /// Part du disque réservée aux utilisateurs : 1 / (1 + coef) de la
-    /// capacité (`node.PartnerAccount#dimensionnement`) ; `None` : inconnue.
+    /// Réservé système (index, sauvegarde du Nœud, journal) : 2 % de la
+    /// capacité, 1 Gio au moins.
+    pub fn system_reserve(&self) -> u64 {
+        (self.capacity_bytes / 50).max(1 << 30).min(self.capacity_bytes)
+    }
+
+    /// Espace de secours promis aux utilisateurs en détresse (`U_backup` ×
+    /// part par déposant).
+    pub fn emergency_reserve(&self) -> u64 {
+        self.emergency.max_users as u64 * self.emergency.per_depositor_bytes
+    }
+
+    /// Part des utilisateurs : 1 / (1 + coef) de ce qui reste après le
+    /// secours et le système (`node.PartnerAccount#dimensionnement`) ;
+    /// `None` : capacité inconnue.
     pub fn users_cap(&self) -> Option<u64> {
-        (self.capacity_bytes > 0).then(|| self.capacity_bytes / (1 + crate::dispersal_engine::COEF as u64))
+        (self.capacity_bytes > 0).then(|| {
+            self.capacity_bytes.saturating_sub(self.emergency_reserve() + self.system_reserve())
+                / (1 + crate::dispersal_engine::COEF as u64)
+        })
+    }
+
+    /// Quota à disposition des partenaires : capacité − quotas des
+    /// utilisateurs − secours − système.
+    pub fn partners_room(&self) -> u64 {
+        self.capacity_bytes
+            .saturating_sub(self.quotas_total(None) + self.emergency_reserve() + self.system_reserve())
     }
 
     /// Quotas accordés, hors `except`.
@@ -457,19 +480,19 @@ impl NodeService {
         self.users_cap().map(|c| c.saturating_sub(self.quotas_total(except)))
     }
 
-    /// Espace offert calculé (`offer_auto`) : coef × max(quotas, utilisé),
-    /// 10 Gio au moins, plafonné à coef / (1 + coef) de la capacité.
+    /// Espace offert calculé (`offer_auto`) : le quota à disposition des
+    /// partenaires ; capacité inconnue : coef × max(quotas, utilisé), 10 Gio
+    /// au moins.
     pub fn refresh_offer(&mut self) {
         if !self.partner_policy.offer_auto {
             return;
         }
         let coef = crate::dispersal_engine::COEF as u64;
-        let used: u64 = self.users.values().map(|u| u.used_bytes).sum();
-        let want = (coef * self.quotas_total(None).max(used)).max(10 << 30);
         self.partner_policy.offer_bytes = if self.capacity_bytes > 0 {
-            want.min(self.capacity_bytes / (1 + coef) * coef)
+            self.partners_room()
         } else {
-            want
+            let used: u64 = self.users.values().map(|u| u.used_bytes).sum();
+            (coef * self.quotas_total(None).max(used)).max(10 << 30)
         };
     }
 

@@ -826,14 +826,16 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         a.push(json!({ "nom": "restart_node", "titre": "Redémarrage",
             "libellé": "Redémarrer le Nœud", "champs": [],
             "confirmer": "Redémarrer le Nœud ? Il est indisponible quelques secondes ; l'état est enregistré avant l'arrêt. Le tableau de bord se recharge ensuite." }));
-        a.push(json!({ "nom": "test_alerts", "titre": "Alertes", "style": "secondary",
+        a.push(json!({ "nom": "test_alerts", "titre": "Configuration — Alertes", "style": "secondary",
             "libellé": "Envoyer une alerte d'essai", "champs": [],
             "texte": "Envoie une alerte d'essai sur les canaux configurés (onglet Alertes de la configuration) : fenêtre, webhook, courriel." }));
-        a.push(json!({ "nom": "geoip_update", "titre": "Géolocalisation",
+        let g = geoip_status(sh);
+        let texte: Vec<String> = g.as_object().map(|o| o.iter().filter(|(k, _)| !k.starts_with('_'))
+            .map(|(k, x)| format!("{k} : {}", x.as_str().map(str::to_string).unwrap_or_else(|| x.to_string()))).collect()).unwrap_or_default();
+        a.push(json!({ "nom": "geoip_update", "titre": "Configuration — Géolocalisation", "texte": texte,
             "libellé": "Mettre à jour la base de géolocalisation", "champs": [] }));
         a.extend(forms);
     }
-    v["géolocalisation"] = geoip_status(sh);
     v["journal"] = json!({
         "_contenu": journal_rows(sh),
         "_note": format!("Journal conservé {} jours (Configuration › Journal).", sh.config.journal_days),
@@ -910,36 +912,44 @@ pub fn status(sh: &Shared, now: u64) -> Value {
         ));
     }
     v["pages"] = json!([
-        { "id": "accueil", "titre": "Vue d'ensemble", "résumé": true, "carte": true,
-          "sections": ["opérations critiques en attente", "horloge", "alertes matérielles", "maintenance", "restauration", "alertes d'intégrité signalées", "identité"], "actions": ["set_node_name", "restart_node"] },
+        { "id": "accueil", "titre": "Accueil", "résumé": true, "carte": true,
+          "sections": ["opérations critiques en attente", "horloge", "alertes matérielles", "maintenance", "restauration", "alertes d'intégrité signalées", "santé du nœud", "équilibre du stockage", "identité"], "actions": ["restart_node"],
+          "configurer": { "identité": "Identité", "équilibre du stockage": "Partenaires" } },
         { "id": "utilisateurs", "titre": "Utilisateurs",
           "sections": ["utilisateurs rattachés", "rattachement automatique"],
-          "actions": ["attach_user", "set_attach_policy"] },
+          "actions": [], "configurer": { "rattachement automatique": "Utilisateurs" } },
         { "id": "partenaires", "titre": "Partenaires", "carte": true,
-          "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner", "rehabilitate_partners"] },
+          "sections": ["partenaires", "recherche de partenaires"], "actions": ["add_partner", "rehabilitate_partners"],
+          "configurer": { "partenaires": "Partenaires", "recherche de partenaires": "Partenaires" } },
         { "id": "carte", "titre": "Carte du monde", "cadre": "map.html", "sections": [], "actions": [] },
-        { "id": "volumes", "titre": "Volumes",
+        { "id": "volumes", "titre": "Disques",
           "sections": ["volumes", "liste des actions", "imports de volumes", "journal des volumes"],
           "actions": ["volume_apply", "volume_draft_clear"] },
         { "id": "stockage", "titre": "Stockage et protection",
-          "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [] },
+          "sections": ["dispersion", "contrôles et réparation", "snapshot du nœud"], "actions": [],
+          "configurer": { "dispersion": "Contrôles", "contrôles et réparation": "Contrôles" } },
         { "id": "messages", "titre": "Messages",
           "sections": ["messages des utilisateurs", "messages envoyés", "clé d'annonce"],
           "actions": ["mark_all_user_messages_read", "send_message", "create_announce_key", "replace_announce_key", "send_alert"] },
         { "id": "secours", "titre": "Espace de secours",
-          "sections": ["espace de secours"], "actions": ["set_emergency_policy"] },
+          "sections": ["espace de secours"], "actions": [], "configurer": { "espace de secours": "Espace de secours" } },
         { "id": "reseau", "titre": "Réseau",
-          "sections": ["traversée de NAT", "annuaire (entrée Node)", "republication DHT", "géolocalisation"], "actions": ["geoip_update"] },
+          "sections": ["traversée de NAT", "annuaire (entrée Node)", "republication DHT"], "actions": [],
+          "configurer": { "traversée de NAT": "Relais", "annuaire (entrée Node)": "Réseau" } },
         { "id": "distance", "titre": "Administration à distance",
-          "sections": ["2FA du nœud", "opérations critiques en attente", "administration à distance", "phrase secrète du Nœud"], "actions": ["show_totp", "regenerate_totp"] },
-        { "id": "configuration", "titre": "Configuration", "sections": ["configuration"], "actions": ["set_config", "test_alerts"], "onglets": true },
+          "sections": ["2FA du nœud", "opérations critiques en attente", "administration à distance", "phrase secrète du Nœud"], "actions": ["show_totp", "regenerate_totp"],
+          "configurer": { "administration à distance": "Administration à distance" } },
+        { "id": "configuration", "titre": "Configuration", "sections": [],
+          "actions": ["set_config", "set_node_name", "set_attach_policy", "set_emergency_policy", "geoip_update", "test_alerts"], "onglets": true },
         { "id": "diagnostic", "titre": "Diagnostic", "autres": true, "sections": [], "actions": [],
           "onglets de sections": [{ "titre": "Général", "sections": ["migration"] },
-                                  { "titre": "Avancé", "sections": ["journal"] }] }
+                                  { "titre": "Avancé", "sections": ["journal"] }],
+          "configurer": { "journal": "Journal" } }
     ]);
     node2fa_status(sh, &mut v);
     balance_status(sh, &mut v);
     simple_pages(&mut v);
+    users_buttons(&mut v);
     v
 }
 
@@ -989,9 +999,11 @@ fn simple_pages(v: &mut Value) {
     let bal = voyant(
         Some(b["tenable"].as_bool().unwrap_or(true)),
         "Équilibre du stockage",
-        format!("utilisateurs : {} (quotas {}, part {}) ; partenaires : {} offerts", gio("données des utilisateurs (octets)"),
-            gio("quotas accordés (octets)"), gio("part des utilisateurs (octets)"), gio("espace offert aux partenaires (octets)")),
-        if b["tenable"].as_bool().unwrap_or(true) { "" } else { "Les quotas dépassent le quart des disques ou l'espace offert est trop petit : ajoutez un volume, réduisez des quotas, ou laissez l'espace offert en automatique." },
+        format!("capacité {} : utilisateurs {}, secours {}, système {}, partenaires {} — ratio {}",
+            gio("capacité totale (octets)"), gio("quota utilisateurs total (octets)"), gio("quota utilisateurs de secours (octets)"),
+            gio("réservé système (octets)"), gio("quota à disposition des partenaires (octets)"),
+            b["ratio de sauvegarde"].as_str().unwrap_or("—")),
+        if b["tenable"].as_bool().unwrap_or(true) { "" } else { "Ratio de sauvegarde sous 3 : ajoutez un volume, ou réduisez les quotas des utilisateurs ou l'espace de secours." },
     );
     v["santé du nœud"] = json!([disks, net, part, usr, bal]);
     v["mes utilisateurs"] = json!(users
@@ -1010,23 +1022,17 @@ fn simple_pages(v: &mut Value) {
             "4": "Attendez la fin (journal des volumes, mode expert) avant de débrancher l'ancien disque.",
         },
     });
-    v["réglages essentiels"] = json!({
-        "_contenu": {
-            "nom du nœud": v.pointer("/identité/nom"),
-            "accueil automatique des utilisateurs": v.pointer("/rattachement automatique/activé"),
-            "_note": "Tous les réglages (espace offert aux partenaires, réseau, alertes par courriel ou webhook…) : passez en mode expert, écran Configuration.",
-        },
-    });
     v["pages simples"] = json!([
         { "id": "accueil", "titre": "Accueil",
-          "sections": ["opérations critiques en attente", "2FA du nœud", "horloge", "alertes matérielles", "maintenance", "restauration", "santé du nœud", "identité"], "actions": ["restart_node"] },
-        { "id": "utilisateurs", "titre": "Utilisateurs", "sections": ["mes utilisateurs"], "actions": ["attach_user"] },
+          "sections": ["opérations critiques en attente", "2FA du nœud", "horloge", "alertes matérielles", "maintenance", "restauration", "santé du nœud", "équilibre du stockage", "identité"], "actions": ["restart_node"],
+          "configurer": { "identité": "Identité", "équilibre du stockage": "Partenaires" } },
+        { "id": "utilisateurs", "titre": "Utilisateurs", "sections": ["mes utilisateurs"], "actions": [] },
         { "id": "volumes", "titre": "Disques", "sections": ["alertes matérielles", "volumes", "liste des actions", "remplacer un disque"],
           "actions": ["volume_apply", "volume_draft_clear"] },
         { "id": "messages", "titre": "Messages", "sections": ["messages des utilisateurs", "messages envoyés"],
           "actions": ["mark_all_user_messages_read", "send_message"] },
-        { "id": "reglages", "titre": "Réglages essentiels", "sections": ["réglages essentiels"],
-          "actions": ["set_node_name", "set_attach_policy", "test_alerts"] }
+        { "id": "configuration", "titre": "Configuration", "sections": [],
+          "actions": ["set_config", "set_node_name", "set_attach_policy", "set_emergency_policy", "geoip_update", "test_alerts"], "onglets": true }
     ]);
 }
 
@@ -1413,9 +1419,9 @@ fn status_base(sh: &Shared, now: u64) -> Value {
                               "valeurs": { "quota (Gio)": gib }, "types": { "quota (Gio)": "number" },
                               "aide": { "quota (Gio)": format!("Utilisé : {:.2} Gio", u.used_bytes as f64 / (1u64 << 30) as f64) } },
                             { "nom": "set_user_inactivity", "titre": "Durée d'inactivité avant suppression", "libellé": "Enregistrer",
-                              "champs": ["jours"], "types": { "jours": "durée" }, "unités": { "jours": "j" }, "libellés": { "jours": "durée" }, "fixes": { "utilisateur": hx(id) },
-                              "valeurs": { "jours": s.inactivity_days.get(id).map_or(String::new(), |d| d.to_string()) },
-                              "aide": { "jours": format!("Vide : politique du Nœud ({}) ; 0 : éternel ; sinon au moins {} jours sans connexion avant suppression définitive",
+                              "champs": ["délai d'inactivité avant suppression (j)"], "types": { "délai d'inactivité avant suppression (j)": "number" }, "fixes": { "utilisateur": hx(id) },
+                              "valeurs": { "délai d'inactivité avant suppression (j)": s.inactivity_days.get(id).map_or(String::new(), |d| d.to_string()) },
+                              "aide": { "délai d'inactivité avant suppression (j)": format!("Nombre entier de jours. Vide : politique du Nœud ({}) ; 0 : jamais ; sinon au moins {} jours sans connexion avant suppression définitive",
                                   if s.auto_attached.contains(id) { format!("{} j", s.attach_policy.inactivity_days) } else { "éternel, rattachement manuel".into() },
                                   crate::inactivity::MIN_DAYS) } },
                             { "nom": "set_user_label", "titre": "Pseudo", "libellé": "Enregistrer",
@@ -1538,7 +1544,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
         "utilisateurs rattachés": users,
         "rattachement automatique": {
             "activé": pol.enabled, "quota par utilisateur (octets)": pol.quota_bytes,
-            "utilisateurs maximum": pol.max_users, "budget total (octets)": pol.budget_bytes,
+            "nombre maxi d'utilisateurs": pol.max_users, "délai d'inactivité avant suppression (j)": pol.inactivity_days, "budget total (octets)": pol.budget_bytes,
             "utilisateurs rattachés automatiquement": s.auto_attached.len(),
             "budget utilisé (octets)": auto_used,
         },
@@ -1583,7 +1589,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
             },
         },
         "actions": [
-            { "nom": "set_node_name", "titre": "Nom du Nœud", "libellé": "Enregistrer",
+            { "nom": "set_node_name", "titre": "Configuration — Identité", "libellé": "Enregistrer le nom du Nœud",
               "champs": ["nom"], "valeurs": { "nom": s.name.clone().unwrap_or_default() },
               "aide": { "nom": "Publié dans l'annuaire et affiché par les connecteurs avec l'empreinte du Nœud (64 octets au plus) ; vide pour aucun nom" } },
             { "nom": "send_message", "titre": "Écrire à tous les utilisateurs", "libellé": "Envoyer à tous",
@@ -1600,11 +1606,7 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "types": { "message": "texte" },
               "aide": { "phrase d'annonce": "Les 24 mots remis à la création de la clé d'annonce ; ils ne sont pas conservés",
                         "nœud de remplacement": "Identifiant du Nœud vers lequel les utilisateurs doivent se rattacher (facultatif)" } },
-            { "nom": "attach_user", "titre": "Rattacher un utilisateur manuellement", "libellé": "Rattacher",
-              "champs": ["user_id", "salt", "quota (Gio)"],
-              "libellés": { "user_id": "identifiant de l'utilisateur", "salt": "sel d'attachement" },
-              "types": { "quota (Gio)": "number" },
-              "aide": { "user_id": "Affiché par l'assistant de S3m de l'utilisateur", "salt": "Affiché à côté de l'identifiant (32 caractères)" } },
+
             { "nom": "rehabilitate_partners", "titre": "Partenaires mis en retrait à tort",
               "libellé": "Réhabiliter les partenaires en retrait", "champs": [],
               "texte": "Efface les manquements des partenaires en retrait : ils redeviennent partenaires et gardent les fragments qu'ils hébergent (utile après une restauration du Nœud, qui a pu leur compter des manquements à tort).",
@@ -1613,18 +1615,18 @@ fn status_base(sh: &Shared, now: u64) -> Value {
               "champs": ["node_id", "addr"],
               "libellés": { "node_id": "identifiant du Nœud", "addr": "adresse" },
               "aide": { "addr": "/ip4/…/tcp/…/p2p/…" } },
-            { "nom": "set_attach_policy", "titre": "Rattachement automatique des utilisateurs",
+            { "nom": "set_attach_policy", "titre": "Configuration — Utilisateurs",
               "libellé": "Enregistrer",
-              "champs": ["enabled", "quota par utilisateur (Gio)", "max_users", "inactivité avant suppression (jours)"],
-              "libellés": { "enabled": "accepter automatiquement les nouveaux utilisateurs", "max_users": "utilisateurs au plus", "inactivité avant suppression (jours)": "inactivité avant suppression" },
+              "champs": ["enabled", "quota par utilisateur (Gio)", "max_users", "délai d'inactivité avant suppression (j)"],
+              "libellés": { "enabled": "rattachement automatique des nouveaux utilisateurs", "max_users": "nombre maxi d'utilisateurs" },
               "valeurs": { "enabled": s.attach_policy.enabled,
                            "quota par utilisateur (Gio)": s.attach_policy.quota_bytes as f64 / (1u64 << 30) as f64,
                            "max_users": s.attach_policy.max_users,
-                           "inactivité avant suppression (jours)": s.attach_policy.inactivity_days },
-              "types": { "enabled": "bool", "quota par utilisateur (Gio)": "number", "max_users": "number", "inactivité avant suppression (jours)": "durée" }, "unités": { "inactivité avant suppression (jours)": "j" },
-              "aide": { "max_users": "Budget total réservé = quota par utilisateur × utilisateurs au plus",
-                        "inactivité avant suppression (jours)": format!("Utilisateurs rattachés automatiquement : supprimés définitivement, données comprises, après ce nombre de jours sans connexion ; 0 : éternels ; au moins {} jours", crate::inactivity::MIN_DAYS) } },
-            { "nom": "set_emergency_policy", "titre": "Accueil des utilisateurs en détresse",
+                           "délai d'inactivité avant suppression (j)": s.attach_policy.inactivity_days },
+              "types": { "enabled": "bool", "quota par utilisateur (Gio)": "number", "max_users": "number", "délai d'inactivité avant suppression (j)": "number" },
+              "aide": { "max_users": "Nombre maximal d'utilisateurs rattachés automatiquement (budget total = quota par utilisateur × ce nombre)",
+                        "délai d'inactivité avant suppression (j)": format!("Nombre entier de jours (ex. 180) sans connexion après lequel un utilisateur rattaché automatiquement est supprimé définitivement, données comprises ; 0 : jamais ; sinon au moins {} jours", crate::inactivity::MIN_DAYS) } },
+            { "nom": "set_emergency_policy", "titre": "Configuration — Espace de secours",
               "libellé": "Enregistrer",
               "champs": ["utilisateurs accueillis au plus", "espace par utilisateur (Gio)"],
               "valeurs": { "utilisateurs accueillis au plus": s.emergency.max_users,
@@ -2122,6 +2124,25 @@ pub fn refresh_capacity(sh: &Shared) {
     s.refresh_offer();
 }
 
+/// « Ajouter un utilisateur » (rattachement manuel, en fenêtre) et
+/// « Configuration » (onglet Utilisateurs) sous les tableaux d'utilisateurs.
+fn users_buttons(v: &mut Value) {
+    let forms = json!([
+        { "nom": "attach_user", "libellé": "Ajouter un utilisateur", "panneau": { "titre": "Ajouter un utilisateur",
+            "texte": ["Rattachement manuel : l'utilisateur vous communique son identifiant et son sel, affichés par l'assistant de S3m."],
+            "formulaires": [{ "nom": "attach_user", "libellé": "Rattacher",
+                "champs": ["user_id", "salt", "quota (Gio)"],
+                "libellés": { "user_id": "identifiant de l'utilisateur", "salt": "sel d'attachement" },
+                "types": { "quota (Gio)": "number" },
+                "aide": { "user_id": "Affiché par l'assistant de S3m de l'utilisateur", "salt": "Affiché à côté de l'identifiant (32 caractères)" } }] } },
+        { "nom": "_aller", "libellé": "Configuration", "page": "configuration", "onglet": "Utilisateurs" }
+    ]);
+    for k in ["utilisateurs rattachés", "mes utilisateurs"] {
+        let rows = v[k].take();
+        v[k] = json!({ "_contenu": rows, "_formulaires": forms });
+    }
+}
+
 /// Section « équilibre du stockage » (`node.PartnerAccount#dimensionnement`) :
 /// les utilisateurs ont droit à 1 / (1 + coef) des volumes, les partenaires
 /// au reste.
@@ -2131,22 +2152,29 @@ fn balance_status(sh: &Shared, v: &mut Value) {
     let quotas = s.quotas_total(None);
     let hosted: u64 = s.partners.values().map(|p| p.ledger.hosted_by_partner).sum::<u64>() * crate::exchange::FRAGMENT_BYTES;
     let coef = crate::dispersal_engine::COEF as u64;
-    let cap = s.users_cap();
+    let (emergency, system, room) = (s.emergency_reserve(), s.system_reserve(), s.partners_room());
     let offer = s.partner_policy.offer_bytes;
-    // Tenable : quotas dans la part des utilisateurs, et offre suffisante
-    // pour disperser ce qui est déjà stocké.
-    let ok = cap.is_none_or(|c| quotas <= c) && offer >= coef * used;
-    v["équilibre du stockage"] = json!({
-        "capacité des volumes (octets)": s.capacity_bytes,
-        "part des utilisateurs (octets)": cap,
-        "quotas accordés (octets)": quotas,
+    // Ratio de sauvegarde : quota des partenaires / (quotas + système) ;
+    // tenable à partir de coef (3 fragments de parité par bloc).
+    let base = quotas + system;
+    let ratio = if base == 0 { None } else { Some((room as f64 / base as f64 * 100.0).round() / 100.0) };
+    let ok = s.capacity_bytes == 0 || ratio.is_none_or(|r| r >= coef as f64);
+    let mut b = json!({
+        "capacité totale (octets)": s.capacity_bytes,
+        "quota utilisateurs total (octets)": quotas,
+        "quota utilisateurs de secours (octets)": emergency,
+        "réservé système (octets)": system,
+        "quota à disposition des partenaires (octets)": room,
+        "ratio de sauvegarde": ratio.map(|r| format!("{r} (objectif : {coef} au moins)")),
         "données des utilisateurs (octets)": used,
-        "espace offert aux partenaires (octets)": offer,
         "fragments des partenaires gardés ici (octets)": hosted,
-        "réglage de l'espace offert": if s.partner_policy.offer_auto { "automatique" } else { "manuel" },
         "tenable": ok,
-        "_note": "Chaque donnée d'un utilisateur est protégée par trois fois sa taille de fragments chez les partenaires, et ce Nœud garde autant pour eux : un quart des volumes pour les utilisateurs, trois quarts pour les partenaires.",
+        "_note": "Quota à disposition des partenaires = capacité totale − quotas des utilisateurs − secours − système. Chaque donnée d'un utilisateur est protégée par trois fois sa taille de fragments chez les partenaires, qui en gardent autant ici : le ratio de sauvegarde doit valoir 3 au moins.",
     });
+    if !s.partner_policy.offer_auto {
+        b["espace offert aux partenaires, réglé à la main (octets)"] = json!(offer);
+    }
+    v["équilibre du stockage"] = b;
 }
 
 fn unix_now() -> u64 {
@@ -2474,7 +2502,7 @@ fn act_inner(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             if !s.users.contains_key(&id) {
                 return Err("utilisateur inconnu".into());
             }
-            match field(&v, "jours").map(str::trim).unwrap_or("") {
+            match field(&v, "délai d'inactivité avant suppression (j)").or_else(|_| field(&v, "jours")).map(str::trim).unwrap_or("") {
                 "" => {
                     s.inactivity_days.remove(&id);
                 }
@@ -2526,7 +2554,7 @@ fn act_inner(sh: &Shared, name: &str, v: Value) -> Result<Value, String> {
             if let Ok(m) = number(&v, "max_users") {
                 p.max_users = m as usize;
             }
-            if let Ok(d) = number(&v, "inactivité avant suppression (jours)") {
+            if let Ok(d) = number(&v, "délai d'inactivité avant suppression (j)").or_else(|_| number(&v, "inactivité avant suppression (jours)")) {
                 p.inactivity_days = crate::inactivity::validate_days(d)?;
             }
             // Budget total : quota par utilisateur × nombre maximal d'utilisateurs.
